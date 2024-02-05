@@ -1,0 +1,12 @@
+# include: package:pedantic/analysis_options.yaml
+
+analyzer:
+  errors:
+    # allow for asset_does_not_exist
+    unrecognized_error_code: ignore
+    # ignore this in pubspec.yaml
+    asset_does_not_exist: ignore
+    always_declare_return_types: ignore
+    not_a_type: ignore
+    duplicate_ignore: ignore
+    invalid_annotation_target: ignore
