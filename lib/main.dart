@@ -3,6 +3,7 @@ import 'package:bitsdojo_window/bitsdojo_window.dart';
 import 'package:flutter_data/flutter_data.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:ndk/ndk.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/screens/profile_screen.dart';
 import 'package:zapstore/screens/search_screen.dart';
@@ -12,7 +13,8 @@ void main() {
   runApp(
     ProviderScope(
       overrides: [
-        configureRepositoryLocalStorage(clear: LocalStorageClearStrategy.never),
+        configureRepositoryLocalStorage(
+            clear: LocalStorageClearStrategy.always),
       ],
       child: const ZapStoreApp(),
     ),
@@ -31,12 +33,19 @@ void main() {
 
 const borderColor = Color(0xFF805306);
 
+final newInitializer = FutureProvider<void>((ref) async {
+  await ref.read(repositoryInitializerProvider.future);
+  await ref
+      .read(frameProvider.notifier)
+      .initialize({'wss://relay.nostr.band', 'wss://relay.damus.io'});
+});
+
 class ZapStoreApp extends HookConsumerWidget {
   const ZapStoreApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final initializer = ref.watch(repositoryInitializerProvider);
+    final initializer = ref.watch(newInitializer);
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark(),

@@ -40,8 +40,16 @@ dependencies:
   build_runner: ^2.4.8
   collection: ^1.18.0
   path_provider: ^2.1.2
-  web_socket_client: ^0.1.0
-  dart_nostr: ^8.0.0
+  ndk: ^0.0.1
+  bech32: ^0.2.2
+  expansion_tile_card: ^3.0.0
+  desktop_drop: ^0.4.4
+  equatable: ^2.0.5
+  crypto: ^3.0.3
+
+dependency_overrides:
+  ndk:
+    path: ../ndk
 
 dev_dependencies:
   flutter_test:

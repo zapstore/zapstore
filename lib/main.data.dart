@@ -8,8 +8,6 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:zapstore/models/metadata.dart';
-import 'package:zapstore/models/note.dart';
 import 'package:zapstore/models/user.dart';
 
 // ignore: prefer_function_declarations_over_variables
@@ -31,18 +29,14 @@ ConfigureRepositoryLocalStorage configureRepositoryLocalStorage = ({FutureFn<Str
 };
 
 final repositoryProviders = <String, Provider<Repository<DataModelMixin>>>{
-  'fileMetadata': fileMetadataRepositoryProvider,
-'notes': notesRepositoryProvider,
-'users': usersRepositoryProvider
+  'users': usersRepositoryProvider
 };
 
 final repositoryInitializerProvider =
   FutureProvider<RepositoryInitializer>((ref) async {
-    DataHelpers.setInternalType<FileMetadata>('fileMetadata');
-    DataHelpers.setInternalType<Note>('notes');
     DataHelpers.setInternalType<User>('users');
-    final adapters = <String, RemoteAdapter>{'fileMetadata': ref.watch(internalFileMetadataRemoteAdapterProvider), 'notes': ref.watch(internalNotesRemoteAdapterProvider), 'users': ref.watch(internalUsersRemoteAdapterProvider)};
-    final remotes = <String, bool>{'fileMetadata': true, 'notes': true, 'users': true};
+    final adapters = <String, RemoteAdapter>{'users': ref.watch(internalUsersRemoteAdapterProvider)};
+    final remotes = <String, bool>{'users': true};
 
     await ref.watch(graphNotifierProvider).initialize();
 
@@ -60,14 +54,10 @@ final repositoryInitializerProvider =
     return RepositoryInitializer();
 });
 extension RepositoryWidgetRefX on WidgetRef {
-  Repository<FileMetadata> get fileMetadata => watch(fileMetadataRepositoryProvider)..remoteAdapter.internalWatch = watch;
-  Repository<Note> get notes => watch(notesRepositoryProvider)..remoteAdapter.internalWatch = watch;
   Repository<User> get users => watch(usersRepositoryProvider)..remoteAdapter.internalWatch = watch;
 }
 
 extension RepositoryRefX on Ref {
 
-  Repository<FileMetadata> get fileMetadata => watch(fileMetadataRepositoryProvider)..remoteAdapter.internalWatch = watch as Watcher;
-  Repository<Note> get notes => watch(notesRepositoryProvider)..remoteAdapter.internalWatch = watch as Watcher;
   Repository<User> get users => watch(usersRepositoryProvider)..remoteAdapter.internalWatch = watch as Watcher;
 }
