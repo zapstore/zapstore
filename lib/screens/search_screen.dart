@@ -23,8 +23,15 @@ class SearchScreen extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final searchState = useState<String?>(null);
     final subscriptionIdState = useState<String?>(null);
-    final value =
-        ref.watch(subscriptionFrameProvider(subscriptionIdState.value));
+    final value = ref
+        .watch(subscriptionFrameProvider(subscriptionIdState.value))
+        .where((e) => searchState.value != null
+            ? e.content.contains(searchState.value!)
+            : true)
+        .toList();
+
+    final ids = value.map((e) => e.id).toSet();
+    value.retainWhere((x) => ids.remove(x.id));
 
     return Expanded(
       child: DropTarget(
@@ -44,7 +51,6 @@ class SearchScreen extends HookConsumerWidget {
               }
             ]));
           }
-          // print(detail.files.map((e) => e.path));
         },
         child: Padding(
           padding: const EdgeInsets.all(12.0),
@@ -61,9 +67,9 @@ class SearchScreen extends HookConsumerWidget {
                     subscriptionIdState.value!,
                     {
                       'kinds': [1063],
-                      'limit': 20,
-                      'search': query,
-                      // '#m': ['video/mp4'],
+                      // 'limit': 20,
+                      // 'search': query,
+                      '#m': ['application/pwa+zip'],
                       // 'since': DateTime.now()
                       //         .subtract(Duration(days: 1))
                       //         .millisecondsSinceEpoch ~/
@@ -109,11 +115,10 @@ class CardWidget extends HookConsumerWidget {
     final isSha256Ok = useState<bool?>(null);
 
     return ExpansionTileCard(
-      // key: cardA,
       leading: ClipRRect(
         borderRadius: BorderRadius.circular(15.0),
         child: Image.network(
-          note.tagMap['url']!.first,
+          note.tagMap['thumb']!.first,
           width: 80,
           height: 80,
           fit: BoxFit.cover,
@@ -129,7 +134,7 @@ class CardWidget extends HookConsumerWidget {
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Type: ${note.tagMap['m']?.first}'),
+          Text('Type: ${note.tagMap['m']?.first} (${note.id})'),
         ],
       ),
       onExpansionChanged: (isOpen) async {
@@ -140,8 +145,9 @@ class CardWidget extends HookConsumerWidget {
             print('fd has ${note.pubkey}! (${existingUser!.name}) ');
             authorUser.value = existingUser;
           } else {
+            print('fetch in network');
             authorUser.value =
-                await ref.read(profileProvider(note.pubkey).future);
+                await ref.read(profileProvider((note.pubkey, false)).future);
           }
         }
       },
@@ -167,36 +173,42 @@ class CardWidget extends HookConsumerWidget {
                 if (!isWebOfTrust)
                   Text('Author is not in your web of trust',
                       style: TextStyle(color: Colors.red)),
-                Text(
-                  'SHA-256: ${note.tagMap['x']?.first}',
-                  style: TextStyle(
-                      color: (isSha256Ok.value != null)
-                          ? (isSha256Ok.value! ? Colors.green : Colors.red)
-                          : Colors.white),
-                ),
-                TextButton(
-                  child: const Column(
-                    children: <Widget>[
-                      Text('Install'),
-                      Icon(Icons.arrow_downward),
-                    ],
+                if (isSha256Ok.value == true)
+                  Text(
+                    'Installed! Hash and signature matched',
+                    style: TextStyle(color: Colors.green),
                   ),
-                  onPressed: () async {
-                    final uri = Uri.parse(note.tagMap['url']!.first);
-                    final response = await http.get(uri);
-                    final dir = ref.read(downloadsPath);
-                    File file = File(path.join(dir, uri.pathSegments.last));
-                    await file.writeAsBytes(response.bodyBytes);
-                    final digest = sha256.convert(response.bodyBytes);
-                    isSha256Ok.value =
-                        digest.toString() == note.tagMap['x']!.first;
-                    if (isSha256Ok.value == false) {
-                      print('actual digest $digest');
-                    } else {
-                      print('digest ok $digest');
-                    }
-                  },
-                ),
+                if (isSha256Ok.value == false)
+                  Text(
+                    'Removed! Hash or signature did not match',
+                    style: TextStyle(color: Colors.red),
+                  ),
+                SizedBox(height: 20),
+                if (isSha256Ok.value != false)
+                  ElevatedButton.icon(
+                    label: Text('Install'),
+                    icon: Icon(Icons.arrow_downward),
+                    onPressed: () async {
+                      final uri = Uri.parse(note.tagMap['url']!.first);
+                      final response = await http.get(uri);
+                      final dir = ref.read(downloadsPath);
+
+                      File file =
+                          File(path.join(dir, note.tagMap['name']!.first));
+                      await file.writeAsBytes(response.bodyBytes);
+
+                      final digest = sha256.convert(response.bodyBytes);
+                      isSha256Ok.value =
+                          digest.toString() == note.tagMap['x']!.first;
+
+                      if (isSha256Ok.value == false) {
+                        print('actual digest $digest');
+                        await file.delete();
+                      } else {
+                        print('digest ok $digest');
+                      }
+                    },
+                  ),
               ],
             ),
           ),

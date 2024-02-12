@@ -12,9 +12,11 @@ import 'package:zapstore/models/user.dart';
 import 'package:convert/convert.dart';
 
 final profileProvider =
-    FutureProvider.family<User, String>((ref, pubkey) async {
+    FutureProvider.family<User, (String, bool)>((ref, record) async {
+  final (pubkey, loadContacts) = record;
   final completer = Completer<User>();
   final notifier = ref.read(frameProvider.notifier);
+  print('profile provider sending req');
   notifier.send(jsonEncode([
     "REQ",
     pubkey,
@@ -29,14 +31,20 @@ final profileProvider =
   User? u;
   List<String>? contacts;
   _sub = ref.watch(frameProvider.notifier).addListener((frame) async {
-    // print('listener: ${frame.event}');
+    print('listener: ${frame.event}');
     final event = frame.event;
 
     if (event is Metadata) {
-      u = (await ref.users.findOne(event.pubkey)) ?? User(id: event.pubkey);
+      u = (await ref.users.findOne(event.pubkey, remote: false)) ??
+          User(id: event.pubkey);
       final map = jsonDecode(event.content);
       u!.name = map['displayName'] ?? map['display_name'] ?? map['name'];
       u!.nip05 = map['nip05'];
+    }
+
+    if (loadContacts == false && u != null && completer.isCompleted == false) {
+      completer.complete(u);
+      return;
     }
 
     if (event is ContactList) {
@@ -85,7 +93,8 @@ class ProfileScreen extends HookConsumerWidget {
             ElevatedButton(
                 onPressed: () async {
                   final pubkey = bech32Decode(controller.text);
-                  final uid = await ref.read(profileProvider(pubkey).future);
+                  final uid =
+                      await ref.read(profileProvider((pubkey, true)).future);
                   ref.read(loggedInUser.notifier).state =
                       await ref.users.findOne(uid, remote: false);
                 },

@@ -46,6 +46,7 @@ dependencies:
   desktop_drop: ^0.4.4
   equatable: ^2.0.5
   crypto: ^3.0.3
+  android_package_installer: ^0.0.2
 
 dependency_overrides:
   ndk:
@@ -61,6 +62,7 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^2.0.0
+  flutter_launcher_icons: "^0.13.1"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -76,3 +78,12 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - assets/images/logo.png
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: false
+  image_path: "assets/images/logo.png"
+  min_sdk_android: 21 # android min sdk min:16, default 21
+  macos:
+    generate: true
+    image_path: "assets/images/logo.png"

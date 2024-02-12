@@ -9,7 +9,7 @@ import 'package:zapstore/screens/profile_screen.dart';
 import 'package:zapstore/screens/search_screen.dart';
 
 void main() {
-  appWindow.size = const Size(140, 260);
+  appWindow.size = const Size(400, 700);
   runApp(
     ProviderScope(
       overrides: [
@@ -22,7 +22,7 @@ void main() {
   appWindow.show();
   doWhenWindowReady(() {
     final win = appWindow;
-    const initialSize = Size(140, 260);
+    const initialSize = Size(400, 700);
     win.minSize = initialSize;
     win.size = initialSize;
     win.alignment = Alignment.center;
@@ -37,7 +37,7 @@ final newInitializer = FutureProvider<void>((ref) async {
   await ref.read(repositoryInitializerProvider.future);
   await ref
       .read(frameProvider.notifier)
-      .initialize({'wss://relay.nostr.band', 'wss://relay.damus.io'});
+      .initialize({'wss://relay.damus.io', 'wss://relay.nostr.band'});
 });
 
 class ZapStoreApp extends HookConsumerWidget {
