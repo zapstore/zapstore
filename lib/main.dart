@@ -1,175 +1,293 @@
 import 'package:flutter/material.dart';
 import 'package:bitsdojo_window/bitsdojo_window.dart';
 import 'package:flutter_data/flutter_data.dart';
-import 'package:flutter_hooks/flutter_hooks.dart';
+import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:ndk/ndk.dart';
+import 'package:ndk/ndk.dart' as ndk;
 import 'package:zapstore/main.data.dart';
+import 'package:zapstore/models/release.dart';
+import 'package:zapstore/screens/app_detail_screen.dart';
 import 'package:zapstore/screens/profile_screen.dart';
 import 'package:zapstore/screens/search_screen.dart';
 
 void main() {
-  appWindow.size = const Size(400, 700);
   runApp(
     ProviderScope(
       overrides: [
         configureRepositoryLocalStorage(
             clear: LocalStorageClearStrategy.always),
       ],
-      child: const ZapStoreApp(),
+      child: const ZapstoreApp(),
     ),
   );
   appWindow.show();
   doWhenWindowReady(() {
     final win = appWindow;
-    const initialSize = Size(400, 700);
+    const initialSize = Size(200, 350);
     win.minSize = initialSize;
     win.size = initialSize;
     win.alignment = Alignment.center;
-    // win.title = "Custom window with Flutter";
     win.show();
   });
 }
 
-const borderColor = Color(0xFF805306);
-
-final newInitializer = FutureProvider<void>((ref) async {
-  await ref.read(repositoryInitializerProvider.future);
-  await ref
-      .read(frameProvider.notifier)
-      .initialize({'wss://relay.damus.io', 'wss://relay.nostr.band'});
-});
-
-class ZapStoreApp extends HookConsumerWidget {
-  const ZapStoreApp({super.key});
+class ZapstoreApp extends StatelessWidget {
+  const ZapstoreApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final initializer = ref.watch(newInitializer);
-    return MaterialApp(
+  Widget build(BuildContext context) {
+    return MaterialApp.router(
+      routerConfig: goRouter,
       debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark(),
-      home: Scaffold(
-        body: Column(
-          children: [
-            WindowTitleBarBox(
-              child: Row(
-                children: [
-                  Expanded(child: MoveWindow()),
-                  // const WindowButtons()
-                ],
+      theme: ThemeData.dark(useMaterial3: true),
+    );
+  }
+}
+
+// private navigators
+final _rootNavigatorKey = GlobalKey<NavigatorState>();
+final _searchNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'search');
+final _updatesNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'updates');
+final _profileNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'profile');
+
+final goRouter = GoRouter(
+  initialLocation: '/search',
+  // * Passing a navigatorKey causes an issue on hot reload:
+  // * https://github.com/flutter/flutter/issues/113757#issuecomment-1518421380
+  // * However it's still necessary otherwise the navigator pops back to
+  // * root on hot reload
+  navigatorKey: _rootNavigatorKey,
+  // debugLogDiagnostics: true,
+  routes: [
+    // Stateful navigation based on:
+    // https://github.com/flutter/packages/blob/main/packages/go_router/example/lib/stateful_shell_route.dart
+    StatefulShellRoute.indexedStack(
+      builder: (context, state, navigationShell) {
+        return ScaffoldWithNestedNavigation(navigationShell: navigationShell);
+      },
+      branches: [
+        StatefulShellBranch(
+          navigatorKey: _searchNavigatorKey,
+          routes: [
+            GoRoute(
+              path: '/search',
+              pageBuilder: (context, state) => NoTransitionPage(
+                child: SearchScreen(),
               ),
+              routes: [
+                GoRoute(
+                  path: 'details',
+                  builder: (context, state) =>
+                      AppDetailScreen(release: state.extra as Release),
+                ),
+              ],
             ),
-            Expanded(
-              child: Center(
-                child: initializer.when(
-                  data: (_) => NavigationRailPage(),
-                  error: (err, stack) => Text('error $err'),
-                  loading: () => CircularProgressIndicator(),
+          ],
+        ),
+        StatefulShellBranch(
+          navigatorKey: _updatesNavigatorKey,
+          routes: [
+            GoRoute(
+              path: '/updates',
+              pageBuilder: (context, state) => NoTransitionPage(
+                child: Center(
+                  child: ElevatedButton(
+                    onPressed: () => context.go('/search/details', extra: 1),
+                    child: const Text('Go to the Details screen'),
+                  ),
                 ),
               ),
             ),
           ],
         ),
+        StatefulShellBranch(
+          navigatorKey: _profileNavigatorKey,
+          routes: [
+            GoRoute(
+              path: '/profile',
+              pageBuilder: (context, state) => NoTransitionPage(
+                child: Center(
+                  child: ProfileScreen(),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    ),
+  ],
+);
+
+final newInitializer = FutureProvider<void>((ref) async {
+  await ref.read(repositoryInitializerProvider.future);
+  await ref.read(ndk.frameProvider.notifier).initialize('wss://relay.damus.io');
+});
+
+// Stateful navigation based on:
+// https://github.com/flutter/packages/blob/main/packages/go_router/example/lib/stateful_shell_route.dart
+class ScaffoldWithNestedNavigation extends HookConsumerWidget {
+  const ScaffoldWithNestedNavigation({
+    Key? key,
+    required this.navigationShell,
+  }) : super(
+            key: key ?? const ValueKey<String>('ScaffoldWithNestedNavigation'));
+  final StatefulNavigationShell navigationShell;
+
+  void _goBranch(int index) {
+    navigationShell.goBranch(
+      index,
+      // A common pattern when using bottom navigation bars is to support
+      // navigating to the initial location when tapping the item that is
+      // already active. This example demonstrates how to support this behavior,
+      // using the initialLocation parameter of goBranch.
+      initialLocation: index == navigationShell.currentIndex,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final initializer = ref.watch(newInitializer);
+    return SafeArea(
+      child: initializer.when(
+        data: (_) => LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth < 450) {
+              return ScaffoldWithNavigationBar(
+                body: navigationShell,
+                selectedIndex: navigationShell.currentIndex,
+                onDestinationSelected: _goBranch,
+              );
+            } else {
+              return ScaffoldWithNavigationRail(
+                body: navigationShell,
+                selectedIndex: navigationShell.currentIndex,
+                onDestinationSelected: _goBranch,
+              );
+            }
+          },
+        ),
+        error: (e, _) => Text('error'),
+        loading: () => CircularProgressIndicator(),
       ),
     );
   }
 }
 
-class NavigationRailPage extends HookConsumerWidget {
-  const NavigationRailPage({super.key});
+class ScaffoldWithNavigationBar extends StatelessWidget {
+  const ScaffoldWithNavigationBar({
+    super.key,
+    required this.body,
+    required this.selectedIndex,
+    required this.onDestinationSelected,
+  });
+  final Widget body;
+  final int selectedIndex;
+  final ValueChanged<int> onDestinationSelected;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final selectedIndex = useState(0);
-
-    final width = MediaQuery.of(context).size.width;
-    final bool isSmallScreen = width < 600;
-
+  Widget build(BuildContext context) {
     return Scaffold(
-      bottomNavigationBar: isSmallScreen
-          ? BottomNavigationBar(
-              items: _navBarItems,
-              currentIndex: selectedIndex.value,
-              onTap: (int index) {
-                selectedIndex.value = index;
-              })
-          : null,
+      body: body,
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: selectedIndex,
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
+        destinations: const [
+          NavigationDestination(
+            label: 'Search',
+            icon: Icon(Icons.search_outlined),
+          ),
+          NavigationDestination(
+            label: 'Updates',
+            icon: Icon(Icons.download_for_offline_outlined),
+          ),
+          NavigationDestination(
+            label: 'Profile',
+            icon: Icon(Icons.person_outline),
+          ),
+          NavigationDestination(
+            label: 'Notifications',
+            icon: Icon(Icons.notifications_outlined),
+          ),
+        ],
+        onDestinationSelected: onDestinationSelected,
+      ),
+    );
+  }
+}
+
+class ScaffoldWithNavigationRail extends StatelessWidget {
+  const ScaffoldWithNavigationRail({
+    super.key,
+    required this.body,
+    required this.selectedIndex,
+    required this.onDestinationSelected,
+  });
+  final Widget body;
+  final int selectedIndex;
+  final ValueChanged<int> onDestinationSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
       body: Row(
         children: [
-          if (!isSmallScreen)
-            NavigationRail(
-              selectedIndex: selectedIndex.value,
-              onDestinationSelected: (int index) {
-                selectedIndex.value = index;
-              },
-              extended: !isSmallScreen,
-              destinations: _navBarItems
-                  .map((item) => NavigationRailDestination(
-                      icon: item.icon,
-                      selectedIcon: item.activeIcon,
-                      label: Text(item.label!)))
-                  .toList(),
-            ),
-          // const VerticalDivider(thickness: 1, width: 1),
-          switch (selectedIndex.value) {
-            0 => SearchScreen(),
-            1 => const Image(image: AssetImage('assets/images/logo.png')),
-            2 => ProfileScreen(),
-            _ => throw Error(),
-          },
+          NavigationRail(
+            selectedIndex: selectedIndex,
+            onDestinationSelected: onDestinationSelected,
+            labelType: NavigationRailLabelType.all,
+            destinations: [
+              NavigationRailDestination(
+                label: Text('Search'),
+                icon: Icon(Icons.search_outlined),
+              ),
+              NavigationRailDestination(
+                label: Text('Updates'),
+                icon: Icon(Icons.download_for_offline_outlined),
+              ),
+              NavigationRailDestination(
+                label: Text('Profile'),
+                icon: Icon(Icons.person_outline),
+              ),
+            ],
+          ),
+          body,
         ],
       ),
     );
   }
 }
 
-const _navBarItems = [
-  BottomNavigationBarItem(
-    icon: Icon(Icons.search_outlined),
-    activeIcon: Icon(Icons.search_rounded),
-    label: 'Search',
-  ),
-  BottomNavigationBarItem(
-    icon: Icon(Icons.download_for_offline_outlined),
-    activeIcon: Icon(Icons.download_for_offline_rounded),
-    label: 'Updates',
-  ),
-  BottomNavigationBarItem(
-    icon: Icon(Icons.person_outline_rounded),
-    activeIcon: Icon(Icons.person_rounded),
-    label: 'Profile',
-  ),
-];
 
-const sidebarColor = Color(0xFFF6A00C);
-const backgroundStartColor = Color(0xFFFFD500);
-const backgroundEndColor = Color(0xFFF6A00C);
+// const borderColor = Color(0xFF805306);
 
-final buttonColors = WindowButtonColors(
-    iconNormal: const Color(0xFF805306),
-    mouseOver: const Color(0xFFF6A00C),
-    mouseDown: const Color(0xFF805306),
-    iconMouseOver: const Color(0xFF805306),
-    iconMouseDown: const Color(0xFFFFD500));
+// const sidebarColor = Color(0xFFF6A00C);
+// const backgroundStartColor = Color(0xFFFFD500);
+// const backgroundEndColor = Color(0xFFF6A00C);
 
-final closeButtonColors = WindowButtonColors(
-    mouseOver: const Color(0xFFD32F2F),
-    mouseDown: const Color(0xFFB71C1C),
-    iconNormal: const Color(0xFF805306),
-    iconMouseOver: Colors.white);
+// final buttonColors = WindowButtonColors(
+//     iconNormal: const Color(0xFF805306),
+//     mouseOver: const Color(0xFFF6A00C),
+//     mouseDown: const Color(0xFF805306),
+//     iconMouseOver: const Color(0xFF805306),
+//     iconMouseDown: const Color(0xFFFFD500));
 
-class WindowButtons extends StatelessWidget {
-  const WindowButtons({super.key});
+// final closeButtonColors = WindowButtonColors(
+//     mouseOver: const Color(0xFFD32F2F),
+//     mouseDown: const Color(0xFFB71C1C),
+//     iconNormal: const Color(0xFF805306),
+//     iconMouseOver: Colors.white);
 
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        MinimizeWindowButton(colors: buttonColors),
-        MaximizeWindowButton(colors: buttonColors),
-        CloseWindowButton(colors: closeButtonColors),
-      ],
-    );
-  }
-}
+// class WindowButtons extends StatelessWidget {
+//   const WindowButtons({super.key});
+
+//   @override
+//   Widget build(BuildContext context) {
+//     return Row(
+//       children: [
+//         MinimizeWindowButton(colors: buttonColors),
+//         MaximizeWindowButton(colors: buttonColors),
+//         CloseWindowButton(colors: closeButtonColors),
+//       ],
+//     );
+//   }
+// }

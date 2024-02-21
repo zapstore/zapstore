@@ -1,5 +1,5 @@
 {
-  "dart.flutterSdkPath": "~/fvm/versions/3.16.0",
+  "dart.flutterSdkPath": "~/fvm/default",
   // Remove .fvm files from search
   "search.exclude": {
     "**/.fvm": true

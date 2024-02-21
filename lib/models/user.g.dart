@@ -33,12 +33,12 @@ mixin $UserLocalAdapter on LocalAdapter<User> {
   @override
   User deserialize(map) {
     map = transformDeserialize(map);
-    return _$UserFromJson(map);
+    return User.fromMapFactory(map);
   }
 
   @override
   Map<String, dynamic> serialize(model, {bool withRelationships = true}) {
-    final map = _$UserToJson(model);
+    final map = model.toMap();
     return transformSerialize(map, withRelationships: withRelationships);
   }
 }
@@ -48,7 +48,7 @@ final _usersFinders = <String, dynamic>{};
 // ignore: must_be_immutable
 class $UserHiveLocalAdapter = HiveLocalAdapter<User> with $UserLocalAdapter;
 
-class $UserRemoteAdapter = RemoteAdapter<User> with UserAdapter;
+class $UserRemoteAdapter = RemoteAdapter<User> with NostrAdapter<User>;
 
 final internalUsersRemoteAdapterProvider = Provider<RemoteAdapter<User>>(
     (ref) => $UserRemoteAdapter(
@@ -58,7 +58,7 @@ final usersRepositoryProvider =
     Provider<Repository<User>>((ref) => Repository<User>(ref));
 
 extension UserDataRepositoryX on Repository<User> {
-  UserAdapter get userAdapter => remoteAdapter as UserAdapter;
+  NostrAdapter<User> get nostrAdapter => remoteAdapter as NostrAdapter<User>;
 }
 
 extension UserRelationshipGraphNodeX on RelationshipGraphNode<User> {
@@ -76,29 +76,3 @@ extension UserRelationshipGraphNodeX on RelationshipGraphNode<User> {
         parent: this is RelationshipMeta ? this as RelationshipMeta : null);
   }
 }
-
-// **************************************************************************
-// JsonSerializableGenerator
-// **************************************************************************
-
-User _$UserFromJson(Map<String, dynamic> json) => User(
-      id: json['id'] as String,
-      following: json['following'] == null
-          ? null
-          : HasMany<User>.fromJson(json['following'] as Map<String, dynamic>),
-      followers: json['followers'] == null
-          ? null
-          : HasMany<User>.fromJson(json['followers'] as Map<String, dynamic>),
-    )
-      ..name = json['name'] as String?
-      ..pictureUrl = json['pictureUrl'] as String?
-      ..nip05 = json['nip05'] as String?;
-
-Map<String, dynamic> _$UserToJson(User instance) => <String, dynamic>{
-      'id': instance.id,
-      'name': instance.name,
-      'pictureUrl': instance.pictureUrl,
-      'nip05': instance.nip05,
-      'following': instance.following,
-      'followers': instance.followers,
-    };
