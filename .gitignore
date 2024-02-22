@@ -42,4 +42,6 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+/tmp
 /flutter_data
+.fvm/

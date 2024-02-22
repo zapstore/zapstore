@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:bitsdojo_window/bitsdojo_window.dart';
 import 'package:flutter_data/flutter_data.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -20,15 +19,6 @@ void main() {
       child: const ZapstoreApp(),
     ),
   );
-  appWindow.show();
-  doWhenWindowReady(() {
-    final win = appWindow;
-    const initialSize = Size(200, 350);
-    win.minSize = initialSize;
-    win.size = initialSize;
-    win.alignment = Alignment.center;
-    win.show();
-  });
 }
 
 class ZapstoreApp extends StatelessWidget {

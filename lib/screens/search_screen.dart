@@ -1,18 +1,22 @@
 import 'dart:io';
 import 'dart:math';
 
+import 'package:android_package_installer/android_package_installer.dart';
 import 'package:crypto/crypto.dart';
 import 'package:expansion_tile_card/expansion_tile_card.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_data/flutter_data.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:zapstore/models/file_metadata.dart';
 import 'package:zapstore/models/user.dart';
 import 'package:zapstore/screens/profile_screen.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
+import 'package:permission_handler/permission_handler.dart';
 
 import '../main.data.dart';
 
@@ -31,6 +35,29 @@ class SearchScreen extends HookConsumerWidget {
       padding: const EdgeInsets.all(12.0),
       child: Column(
         children: [
+          TextButton(
+              onPressed: () async {
+                var status = await Permission.storage.status;
+                if (!status.isGranted) {
+                  // If not we will ask for permission first
+                  await Permission.storage.request();
+                }
+                final apk = await rootBundle.load('tmp/gg.apk');
+                final dir = await getApplicationDocumentsDirectory();
+                await dir.create(recursive: true);
+                final buffer = apk.buffer;
+                await File('${dir.path}/gg.apk').writeAsBytes(
+                    buffer.asUint8List(apk.offsetInBytes, apk.lengthInBytes));
+
+                int? code = await AndroidPackageInstaller.installApk(
+                    apkFilePath: '${dir.path}/gg.apk');
+                if (code != null) {
+                  PackageInstallerStatus installationStatus =
+                      PackageInstallerStatus.byCode(code);
+                  print(installationStatus.name);
+                }
+              },
+              child: Text('install')),
           SearchBar(
             elevation: MaterialStatePropertyAll(2.2),
             onSubmitted: (query) async {
