@@ -10,6 +10,12 @@ part of 'file_metadata.dart';
 
 mixin $FileMetadataLocalAdapter on LocalAdapter<FileMetadata> {
   static final Map<String, RelationshipMeta> _kFileMetadataRelationshipMetas = {
+    'author': RelationshipMeta<User>(
+      name: 'author',
+      type: 'users',
+      kind: 'BelongsTo',
+      instance: (_) => (_ as FileMetadata).author,
+    ),
     'release': RelationshipMeta<Release>(
       name: 'release',
       inverseName: 'artifacts',
@@ -26,7 +32,7 @@ mixin $FileMetadataLocalAdapter on LocalAdapter<FileMetadata> {
   @override
   FileMetadata deserialize(map) {
     map = transformDeserialize(map);
-    return FileMetadata.fromMap(map);
+    return FileMetadata.fromMapFactory(map);
   }
 
   @override
@@ -43,7 +49,7 @@ class $FileMetadataHiveLocalAdapter = HiveLocalAdapter<FileMetadata>
     with $FileMetadataLocalAdapter;
 
 class $FileMetadataRemoteAdapter = RemoteAdapter<FileMetadata>
-    with NostrAdapter<FileMetadata>;
+    with NostrAdapter<FileMetadata>, FileMetadataAdapter;
 
 final internalFileMetadataRemoteAdapterProvider =
     Provider<RemoteAdapter<FileMetadata>>((ref) => $FileMetadataRemoteAdapter(
@@ -56,10 +62,19 @@ final fileMetadataRepositoryProvider =
 extension FileMetadataDataRepositoryX on Repository<FileMetadata> {
   NostrAdapter<FileMetadata> get nostrAdapter =>
       remoteAdapter as NostrAdapter<FileMetadata>;
+  FileMetadataAdapter get fileMetadataAdapter =>
+      remoteAdapter as FileMetadataAdapter;
 }
 
 extension FileMetadataRelationshipGraphNodeX
     on RelationshipGraphNode<FileMetadata> {
+  RelationshipGraphNode<User> get author {
+    final meta = $FileMetadataLocalAdapter
+        ._kFileMetadataRelationshipMetas['author'] as RelationshipMeta<User>;
+    return meta.clone(
+        parent: this is RelationshipMeta ? this as RelationshipMeta : null);
+  }
+
   RelationshipGraphNode<Release> get release {
     final meta =
         $FileMetadataLocalAdapter._kFileMetadataRelationshipMetas['release']

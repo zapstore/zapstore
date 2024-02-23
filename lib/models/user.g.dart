@@ -48,7 +48,8 @@ final _usersFinders = <String, dynamic>{};
 // ignore: must_be_immutable
 class $UserHiveLocalAdapter = HiveLocalAdapter<User> with $UserLocalAdapter;
 
-class $UserRemoteAdapter = RemoteAdapter<User> with NostrAdapter<User>;
+class $UserRemoteAdapter = RemoteAdapter<User>
+    with NostrAdapter<User>, UserAdapter;
 
 final internalUsersRemoteAdapterProvider = Provider<RemoteAdapter<User>>(
     (ref) => $UserRemoteAdapter(
@@ -59,6 +60,7 @@ final usersRepositoryProvider =
 
 extension UserDataRepositoryX on Repository<User> {
   NostrAdapter<User> get nostrAdapter => remoteAdapter as NostrAdapter<User>;
+  UserAdapter get userAdapter => remoteAdapter as UserAdapter;
 }
 
 extension UserRelationshipGraphNodeX on RelationshipGraphNode<User> {

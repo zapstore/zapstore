@@ -1,4 +1,4 @@
-import 'package:collection/collection.dart';
+import 'package:equatable/equatable.dart';
 import 'package:flutter_data/flutter_data.dart';
 import 'package:ndk/ndk.dart' as ndk;
 
@@ -7,14 +7,14 @@ part 'user.g.dart';
 abstract class BaseEvent<T extends BaseEvent<T>> = ndk.Event
     with DataModelMixin<T>;
 
-@DataRepository([NostrAdapter],
+@DataRepository([NostrAdapter, UserAdapter],
     fromJson: 'User.fromMapFactory(map)', toJson: 'model.toMap()')
-class User extends BaseEvent<User> with ndk.User {
+class User extends BaseEvent<User> with ndk.User, EquatableMixin {
   User.fromMap(super.map) : super.fromMap();
 
   factory User.fromMapFactory(Map<String, dynamic> map) {
     final user = User.fromMap(map);
-    user.following = HasMany<User>.fromJson({});
+    user.following = HasMany<User>.fromJson(map['following']);
     return user;
   }
 
@@ -22,6 +22,82 @@ class User extends BaseEvent<User> with ndk.User {
   late final HasMany<User> following;
   @DataRelationship(inverse: 'following')
   late final HasMany<User> followers = HasMany();
+
+  @override
+  List<Object?> get props => [id];
+}
+
+mixin UserAdapter on NostrAdapter<User> {
+  @override
+  Future<DeserializedData<User>> deserialize(Object? data) async {
+    final users = <User>[];
+    final list = data is Iterable ? data : [data as Map];
+    for (final e in list) {
+      final map = e as Map<String, dynamic>;
+      if (map['kind'] == 3) {
+        for (final [_, id, ..._] in map['tags'] as Iterable) {
+          users.add(User.fromMapFactory({
+            'id': id,
+            'content': '',
+            'pubkey': id,
+            'created_at': DateTime.now().millisecondsSinceEpoch ~/ 1000,
+            'kind': 0,
+            'tags': [],
+            'following': {'_': null},
+          }));
+        }
+      }
+    }
+
+    for (final e in list) {
+      final map = e as Map<String, dynamic>;
+      if (map['kind'] == 0) {
+        map['id'] = map['pubkey'];
+        // TODO workaround - should not assume empty is null
+        if (users.isNotEmpty) {
+          map['following'] = users.map((e) => e.id).toList();
+        }
+        final data0 = await super.deserialize(map);
+        final user = data0.model;
+        if (user != null) {
+          users.add(user);
+        }
+      }
+    }
+
+    return DeserializedData(users);
+  }
+
+  @override
+  Future<User?> findOne(Object id,
+      {bool? remote,
+      bool? background,
+      Map<String, dynamic>? params,
+      Map<String, String>? headers,
+      OnSuccessOne<User>? onSuccess,
+      OnErrorOne<User>? onError,
+      DataRequestLabel? label}) async {
+    if (remote == false) {
+      final key = graph.getKeyForId(internalType, id.toString());
+      return localAdapter.findOne(key!);
+    }
+
+    final req = ndk.Req(
+      authors: {id.toString()},
+      kinds: {kind, ...?params?.remove('kinds')},
+      tags: params ?? {},
+    );
+
+    print('[findOne] req $req');
+    final result = await notifier.query(req);
+    final data = await deserialize(result);
+
+    for (final m in data.models) {
+      print('saving model of kind ${m.kind}: ${m.content}');
+      m.init().saveLocal();
+    }
+    return data.models.firstWhere((e) => e.id == id);
+  }
 }
 
 mixin NostrAdapter<T extends BaseEvent<T>> on RemoteAdapter<T> {
@@ -51,9 +127,11 @@ mixin NostrAdapter<T extends BaseEvent<T>> on RemoteAdapter<T> {
   //   super.dispose();
   // }
 
-  Map<String, int> typeKind = {
-    'fileMetadata': 1063,
-    'releases': 30063,
+  Map<int, String> kindType = {
+    0: 'users',
+    3: 'users',
+    1063: 'fileMetadata',
+    30063: 'releases',
   };
 
   @override
@@ -65,8 +143,7 @@ mixin NostrAdapter<T extends BaseEvent<T>> on RemoteAdapter<T> {
     for (final e in list) {
       final map = e as Map<String, dynamic>;
       final kind = map['kind'] as int;
-      final xType =
-          typeKind.entries.firstWhereOrNull((e) => e.value == kind)?.key;
+      final xType = kindType[kind];
       if (xType != null) {
         if (xType == internalType) {
           final newData = await super.deserialize(map);
@@ -80,6 +157,9 @@ mixin NostrAdapter<T extends BaseEvent<T>> on RemoteAdapter<T> {
     return DeserializedData<T>(models, included: included);
   }
 
+  int get kind =>
+      kindType.entries.firstWhere((e) => e.value == internalType).key;
+
   @override
   Future<List<T>> findAll(
       {bool? remote,
@@ -90,81 +170,23 @@ mixin NostrAdapter<T extends BaseEvent<T>> on RemoteAdapter<T> {
       OnSuccessAll<T>? onSuccess,
       OnErrorAll<T>? onError,
       DataRequestLabel? label}) async {
-    final req = ndk.Req(
-      kinds: {typeKind[internalType] as int, ...?params?.remove('kinds')},
-      tags: params ?? {},
-    );
     if (remote == false) {
       return localAdapter.findAll();
     }
+
+    final req = ndk.Req(
+      kinds: {kind, ...?params?.remove('kinds')},
+      tags: params ?? {},
+    );
 
     print('req $req');
     final result = await notifier.query(req);
     final data = await deserialize(result);
     print('req result ${data.models.length}');
     for (final m in data.models) {
+      print('saving model of kind ${m.kind}: ${m.content}');
       m.init().saveLocal();
     }
     return data.models;
   }
 }
-
-// final profileProvider =
-//     FutureProvider.family<User, (String, bool)>((ref, record) async {
-//   final (pubkey, loadContacts) = record;
-//   final completer = Completer<User>();
-//   final notifier = ref.read(frameProvider.notifier);
-//   print('profile provider sending req');
-//   notifier.send(jsonEncode([
-//     "REQ",
-//     pubkey,
-//     {
-//       'authors': [pubkey],
-//       'kinds': [0, 3],
-//     }
-//   ]));
-
-//   late Function _sub;
-
-//   User? u;
-//   List<String>? contacts;
-//   _sub = ref.watch(frameProvider.notifier).addListener((frame) async {
-//     print('listener: ${frame.event}');
-//     final event = frame.event;
-
-//     if (event is Metadata) {
-//       u = (await ref.users.findOne(event.pubkey, remote: false)) ??
-//           User(id: event.pubkey);
-//       final map = jsonDecode(event.content);
-//       u!.name = map['displayName'] ?? map['display_name'] ?? map['name'];
-//       u!.nip05 = map['nip05'];
-//     }
-
-//     if (loadContacts == false && u != null && completer.isCompleted == false) {
-//       completer.complete(u);
-//       return;
-//     }
-
-//     if (event is ContactList) {
-//       contacts = [...?contacts, ...event.tagMap['p']!];
-//     }
-
-//     if (u != null && contacts != null) {
-//       if (completer.isCompleted == false) {
-//         print('completing with $u');
-//         contacts!.forEach((c) {
-//           final uc = User(id: c);
-//           u!.following.add(uc);
-//           uc.saveLocal();
-//         });
-//         u!.saveLocal();
-//         completer.complete(u);
-//       }
-//     }
-//   });
-//   ref.onDispose(() {
-//     print('disposing');
-//     _sub();
-//   });
-//   return completer.future;
-// });

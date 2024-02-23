@@ -1,3 +1,5 @@
+// ignore_for_file: prefer_const_literals_to_create_immutables, prefer_const_constructors
+
 import 'package:flutter/material.dart';
 import 'package:flutter_data/flutter_data.dart';
 import 'package:go_router/go_router.dart';
@@ -29,6 +31,10 @@ class ZapstoreApp extends StatelessWidget {
     return MaterialApp.router(
       routerConfig: goRouter,
       debugShowCheckedModeBanner: false,
+      darkTheme: ThemeData(
+        primarySwatch: Colors.purple,
+        brightness: Brightness.dark,
+      ),
       theme: ThemeData.dark(useMaterial3: true),
     );
   }
@@ -39,6 +45,8 @@ final _rootNavigatorKey = GlobalKey<NavigatorState>();
 final _searchNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'search');
 final _updatesNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'updates');
 final _profileNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'profile');
+final _notificationsNavigatorKey =
+    GlobalKey<NavigatorState>(debugLabel: 'notifications');
 
 final goRouter = GoRouter(
   initialLocation: '/search',
@@ -82,8 +90,8 @@ final goRouter = GoRouter(
               pageBuilder: (context, state) => NoTransitionPage(
                 child: Center(
                   child: ElevatedButton(
-                    onPressed: () => context.go('/search/details', extra: 1),
-                    child: const Text('Go to the Details screen'),
+                    onPressed: () => {},
+                    child: const Text('Updates coming soon!'),
                   ),
                 ),
               ),
@@ -98,6 +106,22 @@ final goRouter = GoRouter(
               pageBuilder: (context, state) => NoTransitionPage(
                 child: Center(
                   child: ProfileScreen(),
+                ),
+              ),
+            ),
+          ],
+        ),
+        StatefulShellBranch(
+          navigatorKey: _notificationsNavigatorKey,
+          routes: [
+            GoRoute(
+              path: '/notifications',
+              pageBuilder: (context, state) => NoTransitionPage(
+                child: Center(
+                  child: ElevatedButton(
+                    onPressed: () => {},
+                    child: const Text('Notifications coming soon!'),
+                  ),
                 ),
               ),
             ),
@@ -136,34 +160,29 @@ class ScaffoldWithNestedNavigation extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final initializer = ref.watch(newInitializer);
     return SafeArea(
-      child: initializer.when(
-        data: (_) => LayoutBuilder(
-          builder: (context, constraints) {
-            if (constraints.maxWidth < 450) {
-              return ScaffoldWithNavigationBar(
-                body: navigationShell,
-                selectedIndex: navigationShell.currentIndex,
-                onDestinationSelected: _goBranch,
-              );
-            } else {
-              return ScaffoldWithNavigationRail(
-                body: navigationShell,
-                selectedIndex: navigationShell.currentIndex,
-                onDestinationSelected: _goBranch,
-              );
-            }
-          },
-        ),
-        error: (e, _) => Text('error'),
-        loading: () => CircularProgressIndicator(),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth < 450) {
+            return ScaffoldWithNavigationBar(
+              body: navigationShell,
+              selectedIndex: navigationShell.currentIndex,
+              onDestinationSelected: _goBranch,
+            );
+          } else {
+            return ScaffoldWithNavigationRail(
+              body: navigationShell,
+              selectedIndex: navigationShell.currentIndex,
+              onDestinationSelected: _goBranch,
+            );
+          }
+        },
       ),
     );
   }
 }
 
-class ScaffoldWithNavigationBar extends StatelessWidget {
+class ScaffoldWithNavigationBar extends HookConsumerWidget {
   const ScaffoldWithNavigationBar({
     super.key,
     required this.body,
@@ -175,9 +194,14 @@ class ScaffoldWithNavigationBar extends StatelessWidget {
   final ValueChanged<int> onDestinationSelected;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final initializer = ref.watch(newInitializer);
     return Scaffold(
-      body: body,
+      body: initializer.when(
+        data: (_) => body,
+        error: (e, _) => const Text('error'),
+        loading: () => const Center(child: CircularProgressIndicator()),
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: selectedIndex,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
@@ -226,17 +250,21 @@ class ScaffoldWithNavigationRail extends StatelessWidget {
             onDestinationSelected: onDestinationSelected,
             labelType: NavigationRailLabelType.all,
             destinations: [
-              NavigationRailDestination(
+              const NavigationRailDestination(
                 label: Text('Search'),
                 icon: Icon(Icons.search_outlined),
               ),
-              NavigationRailDestination(
+              const NavigationRailDestination(
                 label: Text('Updates'),
                 icon: Icon(Icons.download_for_offline_outlined),
               ),
-              NavigationRailDestination(
+              const NavigationRailDestination(
                 label: Text('Profile'),
                 icon: Icon(Icons.person_outline),
+              ),
+              const NavigationRailDestination(
+                label: Text('Notifications'),
+                icon: Icon(Icons.notifications_outlined),
               ),
             ],
           ),

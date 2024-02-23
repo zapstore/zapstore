@@ -10,6 +10,8 @@ part 'release.g.dart';
 class Release extends BaseEvent<Release> with ndk.Release {
   Release.fromMap(super.map) : super.fromMap();
 
+  String get identifier => tagMap['i']!.first;
+
   factory Release.fromMapFactory(Map<String, dynamic> map) {
     final m = Release.fromMap(map);
     m.artifacts = HasMany<FileMetadata>.fromJson(map['artifacts']);
@@ -35,23 +37,3 @@ mixin ReleaseAdapter on RemoteAdapter<Release> {
     return result;
   }
 }
-
-// main() async {
-//   final container = ProviderContainer();
-//   await container.read(repositoryInitializerProvider.future);
-//   // ignore: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
-//   final fm = container
-//       .read(releasesRepositoryProvider)
-//       .remoteAdapter
-//       .localAdapter
-//       .deserialize({
-//     'id': 's938j89j4f',
-//     'content': 'some shit',
-//     'pubkey': '78hf47hf',
-//     'kind': 1063,
-//     'tags': [
-//       ['m', 'application/pwa+zip']
-//     ]
-//   });
-//   print(fm.bs);
-// }
