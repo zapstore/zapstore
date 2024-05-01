@@ -1,29 +1,22 @@
 import 'package:flutter_data/flutter_data.dart';
-import 'package:ndk/ndk.dart' as ndk;
+import 'package:json_annotation/json_annotation.dart';
+import 'package:purplebase/purplebase.dart';
+import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/file_metadata.dart';
 import 'package:zapstore/models/user.dart';
 
 part 'release.g.dart';
 
-@DataRepository([NostrAdapter, ReleaseAdapter],
-    fromJson: 'Release.fromMapFactory(map)', toJson: 'model.toMap()')
-class Release extends BaseEvent<Release> with ndk.Release {
-  Release.fromMap(super.map) : super.fromMap();
-
-  String get identifier => tagMap['i']!.first;
-
-  factory Release.fromMapFactory(Map<String, dynamic> map) {
-    final m = Release.fromMap(map);
-    m.artifacts = HasMany<FileMetadata>.fromJson(map['artifacts']);
-    return m;
-  }
-
+@JsonSerializable()
+@DataAdapter([NostrAdapter, ReleaseAdapter])
+class Release extends ZapstoreEvent<Release> with BaseRelease {
   late final HasMany<FileMetadata> artifacts;
+  late final BelongsTo<App> app;
 }
 
-mixin ReleaseAdapter on RemoteAdapter<Release> {
+mixin ReleaseAdapter on Adapter<Release> {
   @override
-  Future<DeserializedData<Release>> deserialize(Object? data) {
+  DeserializedData<Release> deserialize(Object? data, {String? key}) {
     final list = data is Iterable ? data : [data as Map];
     for (final e in list) {
       final map = e as Map<String, dynamic>;
@@ -31,9 +24,15 @@ mixin ReleaseAdapter on RemoteAdapter<Release> {
           .where((e) => e.first == 'e')
           .map((e) => e[1].toString());
       map['artifacts'] = eTags.toList();
+      final appIdentifier =
+          map['tags'].firstWhere((t) => t.first == 'd')[1].split('@').first;
+      map['app'] = (adapters['apps'] as Adapter<App>)
+          .findAllLocal()
+          .where((a) => a.identifier == appIdentifier)
+          // ignore: invalid_use_of_visible_for_testing_member
+          .safeFirst
+          ?.id;
     }
-    final result = super.deserialize(data);
-
-    return result;
+    return super.deserialize(data);
   }
 }

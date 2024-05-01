@@ -1,14 +1,16 @@
+import 'package:android_package_manager/android_package_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
+import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:ndk/ndk.dart' as ndk;
 import 'package:zapstore/main.data.dart';
-import 'package:zapstore/models/user.dart';
+import 'package:zapstore/services/session_service.dart';
+import 'package:zapstore/widgets/card.dart';
 
-final loggedInUser = StateProvider<User?>((ref) => null);
+class AppDrawer extends HookConsumerWidget {
+  AppDrawer({super.key});
 
-class ProfileScreen extends HookConsumerWidget {
-  const ProfileScreen({super.key});
+  // final packageManager = AndroidPackageManager();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -19,19 +21,30 @@ class ProfileScreen extends HookConsumerWidget {
       padding: const EdgeInsets.all(12.0),
       child: Column(
         children: [
-          if (u2 == null) TextField(controller: controller),
-          SizedBox(height: 10),
+          // Text('npub or NIP-05'),
+          if (u2 == null) TextField(autocorrect: false, controller: controller),
+          Gap(5),
           if (u2 == null)
             ElevatedButton(
               onPressed: () async {
-                final pubkey = controller.text.hexKey;
                 ref.read(loggedInUser.notifier).state =
-                    await ref.users.findOne(pubkey, params: {
-                  'kinds': {3}
-                });
+                    await ref.users.findOne(controller.text);
               },
-              child: Text('Log in with npub'),
+              child: Text('Log in'),
             ),
+          ElevatedButton(
+            onPressed: () async {
+              ref.read(loggedInUser.notifier).state = null;
+              controller.clear();
+              // final as = await packageManager.getInstalledApplications();
+              // for (final a in as!) {
+              //   if (!a.packageName!.contains('android')) {
+              //     print(a.packageName);
+              //   }
+              // }
+            },
+            child: Text('check'),
+          ),
           if (u2 != null)
             Expanded(
               child: Column(
@@ -39,17 +52,18 @@ class ProfileScreen extends HookConsumerWidget {
                   Card(
                     child: ListTile(
                       dense: true,
-                      leading: CircleAvatar(
-                        backgroundImage: NetworkImage(u2.profilePicture ?? ''),
+                      leading: CircularImage(
+                        size: 20,
+                        url: u2.avatarUrl,
                       ),
                       title: Text(
                         u2.name ?? u2.id?.toString() ?? '',
                       ),
-                      subtitle: Text('following ${u2.following.length}'),
+                      // subtitle: Text('following ${u2.following.length}'),
                     ),
                   ),
                   ElevatedButton(
-                    onPressed: () {
+                    onPressed: () async {
                       ref.read(loggedInUser.notifier).state = null;
                       controller.clear();
                     },

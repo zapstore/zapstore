@@ -1,212 +1,172 @@
-import 'package:async_button_builder/async_button_builder.dart';
-import 'package:expansion_tile_card/expansion_tile_card.dart';
+// ignore_for_file: prefer_const_literals_to_create_immutables
+
+import 'dart:convert';
+
+import 'package:auto_size_text/auto_size_text.dart';
+import 'package:carousel_slider/carousel_slider.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_hooks/flutter_hooks.dart';
-import 'package:flutter_styled_toast/flutter_styled_toast.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:ndk/ndk.dart' as ndk;
-import 'package:url_launcher/url_launcher_string.dart';
-import 'package:zapstore/main.data.dart';
-import 'package:zapstore/models/file_metadata.dart';
-import 'package:zapstore/models/release.dart';
+import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/user.dart';
-import 'package:zapstore/screens/profile_screen.dart';
+import 'package:zapstore/widgets/card.dart';
+import 'package:zapstore/widgets/pill_widget.dart';
+
+final List<String> imgList = [
+  'https://images.unsplash.com/photo-1520342868574-5fa3804e551c?ixlib=rb-0.3.5&ixid=eyJhcHBfaWQiOjEyMDd9&s=6ff92caffcdd63681a35134a6770ed3b&auto=format&fit=crop&w=1951&q=80',
+  'https://images.unsplash.com/photo-1522205408450-add114ad53fe?ixlib=rb-0.3.5&ixid=eyJhcHBfaWQiOjEyMDd9&s=368f45b0888aeb0b7b08e3a1084d3ede&auto=format&fit=crop&w=1950&q=80',
+  'https://images.unsplash.com/photo-1519125323398-675f0ddb6308?ixlib=rb-0.3.5&ixid=eyJhcHBfaWQiOjEyMDd9&s=94a1e718d89ca60a6337a6008341ca50&auto=format&fit=crop&w=1950&q=80',
+  'https://images.unsplash.com/photo-1523205771623-e0faa4d2813d?ixlib=rb-0.3.5&ixid=eyJhcHBfaWQiOjEyMDd9&s=89719a0d55dd05e2deae4120227e6efc&auto=format&fit=crop&w=1953&q=80',
+  'https://images.unsplash.com/photo-1508704019882-f9cf40e475b4?ixlib=rb-0.3.5&ixid=eyJhcHBfaWQiOjEyMDd9&s=8c6e5e3aba713b17aa1fe71ab4f0ae5b&auto=format&fit=crop&w=1352&q=80',
+  'https://images.unsplash.com/photo-1519985176271-adb1088fa94c?ixlib=rb-0.3.5&ixid=eyJhcHBfaWQiOjEyMDd9&s=a0c8d632e977f94e5d312d9893258f59&auto=format&fit=crop&w=1355&q=80'
+];
 
 class AppDetailScreen extends HookConsumerWidget {
-  final Release release;
+  final App app;
   const AppDetailScreen({
-    required this.release,
+    required this.app,
     super.key,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final artifacts = release.artifacts.toList();
-    return ListView.builder(
-      shrinkWrap: true,
-      itemCount: release.artifacts.length,
-      itemBuilder: (context, index) {
-        final event = artifacts[index];
-        return CardWidget(fileMetadata: event);
-      },
-    );
-  }
-}
+    final user = User.fromMap({
+      'kind': 0,
+      'created_at': 112899202,
+      'pubkey':
+          'a9e95a4eb32b55441b222ae5674f063949bfd0759b82deb03d7cd262e82d5626',
+      'content': jsonEncode(
+          {'name': 'test', 'picture': 'https://picsum.photos/200/300'}),
+      'tags': [],
+    });
 
-class CardWidget extends HookConsumerWidget {
-  final FileMetadata fileMetadata;
-
-  const CardWidget({super.key, required this.fileMetadata});
-
-  User? get author => fileMetadata.author.value;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final currentUser = ref.read(loggedInUser);
-    final fetchUser = useMemoized(() => ref.users.findOne(author!.id!));
-    useFuture(fetchUser);
-
-    final isWebOfTrust = [...?currentUser?.following.toList()]
-        .contains(fileMetadata.author.value);
-
-    return ExpansionTileCard(
-      leading: ClipRRect(
-        borderRadius: BorderRadius.circular(15.0),
-        child: Image.network(
-          fileMetadata.release.value!.image,
-          width: 80,
-          height: 80,
-          fit: BoxFit.cover,
-          errorBuilder: (context, err, _) => Text(err.toString()),
-        ),
-      ),
-      onExpansionChanged: (_) {
-        ref.users.findOne(author!.id!);
-      },
-      title: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            fileMetadata.content,
-            overflow: TextOverflow.ellipsis,
-            maxLines: 1,
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 26),
-          ),
-          SizedBox(height: 10),
-          Row(
-            children: [
-              CircleAvatar(
-                backgroundImage: NetworkImage(author?.profilePicture ?? ''),
-                maxRadius: 10,
-              ),
-              SizedBox(width: 10),
-              Text(
-                '${author?.name ?? author?.id}',
-                style: TextStyle(fontSize: 14),
-              ),
-            ],
-          )
-        ],
-      ),
+    return Column(
       children: [
-        Align(
-          alignment: Alignment.centerLeft,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 16.0,
-              vertical: 8.0,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (isWebOfTrust)
-                  Text(
-                    'You are following this author!',
-                    style: TextStyle(color: Colors.green),
-                  ),
-                if (!isWebOfTrust)
+        Expanded(
+          child: CustomScrollView(
+            slivers: [
+              // SliverAppBar(
+              //   pinned: true,
+              //   leading: IconButton(
+              //     icon: Icon(Icons.arrow_back),
+              //     onPressed: () {
+              //       context.pop();
+              //     },
+              //   ),
+              // ),
+              SliverList(
+                delegate: SliverChildListDelegate([
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.start,
                     children: [
-                      Text('Author is not in your web of trust',
-                          style: TextStyle(color: Colors.red)),
-                      GestureDetector(
-                        onTap: () => launchUrlString(
-                          'https://primal.net/p/${author?.id.toString().npub}',
+                      CircularImage(
+                        url: 'https://picsum.photos/200/200',
+                        size: 80,
+                        radius: 25,
+                      ),
+                      Gap(16),
+                      Expanded(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            AutoSizeText(
+                              'Mutiny Wallet',
+                              minFontSize: 16,
+                              style: TextStyle(
+                                  fontSize: 28, fontWeight: FontWeight.bold),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            Gap(8),
+                            PillWidget(text: '0.5.6'),
+                          ],
                         ),
-                        child: Text(
-                          'see profile',
-                          style: TextStyle(
-                            color: Colors.blue,
-                            decoration: TextDecoration.underline,
-                          ),
-                        ),
-                      )
+                      ),
                     ],
                   ),
-                AsyncButtonBuilder(
-                  loadingWidget: const Padding(
-                    padding: EdgeInsets.all(8.0),
-                    child: SizedBox(
-                      height: 16.0,
-                      width: 16.0,
-                      child: CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                      ),
+                  Gap(16),
+                  CarouselSlider(
+                    options: CarouselOptions(
+                      enableInfiniteScroll: false,
                     ),
+                    items: imgList
+                        .map((item) => Padding(
+                              padding: const EdgeInsets.only(right: 10),
+                              child: Image.network(item,
+                                  fit: BoxFit.cover, width: 1000),
+                            ))
+                        .toList(),
                   ),
-                  successWidget: const Padding(
-                    padding: EdgeInsets.all(4.0),
-                    child: Icon(
-                      Icons.check,
-                      color: Colors.purpleAccent,
+                  Divider(height: 24),
+                  MarkdownBody(
+                    styleSheet: MarkdownStyleSheet(
+                      h1: TextStyle(fontWeight: FontWeight.bold),
+                      h2: TextStyle(fontWeight: FontWeight.bold),
+                      p: TextStyle(fontSize: 16, fontWeight: FontWeight.w300),
                     ),
+                    selectable: false,
+                    data:
+                        'Lorem ipsum dolor sit amet\n - consectetur adipisicing elit\n - sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, ',
                   ),
-                  onPressed: () async {
-                    try {
-                      await fileMetadata.install();
-                      showToastWidget(
-                          Text(
-                            'Success!',
-                            style: TextStyle(fontSize: 20),
+                  Gap(10),
+                  AuthorContainer(user: user, text: 'Built by', oneLine: false),
+                  Gap(10),
+                  Divider(height: 24),
+                  Container(
+                    padding: EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[900],
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Column(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(8),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [Text('Source'), Text('github link')],
                           ),
-                          // ignore: use_build_context_synchronously
-                          context: context,
-                          position: StyledToastPosition.center,
-                          animation: StyledToastAnimation.scale,
-                          reverseAnimation: StyledToastAnimation.fade,
-                          duration: Duration(seconds: 4),
-                          animDuration: Duration(seconds: 1),
-                          curve: Curves.elasticOut,
-                          reverseCurve: Curves.linear);
-                    } on Exception catch (e) {
-                      showToastWidget(
-                          Text(
-                            'Error! $e',
-                            style: TextStyle(fontSize: 20),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.all(8),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [Text('Github stars'), Text('456')],
                           ),
-                          // ignore: use_build_context_synchronously
-                          context: context,
-                          position: StyledToastPosition.center,
-                          animation: StyledToastAnimation.scale,
-                          reverseAnimation: StyledToastAnimation.fade,
-                          duration: Duration(seconds: 4),
-                          animDuration: Duration(seconds: 1),
-                          curve: Curves.elasticOut,
-                          reverseCurve: Curves.linear);
-                    }
-                  },
-                  loadingSwitchInCurve: Curves.bounceInOut,
-                  loadingTransitionBuilder: (child, animation) {
-                    return SlideTransition(
-                      position: Tween<Offset>(
-                        begin: const Offset(0, 1.0),
-                        end: const Offset(0, 0),
-                      ).animate(animation),
-                      child: child,
-                    );
-                  },
-                  builder: (context, child, callback, state) {
-                    return Material(
-                      color: state.maybeWhen(
-                        success: () => Colors.purple[100],
-                        orElse: () => Colors.black12,
-                      ),
-                      // This prevents the loading indicator showing below the
-                      // button
-                      clipBehavior: Clip.hardEdge,
-                      shape: const StadiumBorder(),
-                      child: InkWell(
-                        onTap: callback,
-                        child: child,
-                      ),
-                    );
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.all(12.0),
-                    child: const Icon(Icons.download),
-                  ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.all(8),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [Text('Github forks'), Text('3')],
+                          ),
+                        )
+                      ],
+                    ),
+                  )
+                ]),
+              ),
+            ],
+          ),
+        ),
+        Container(
+          height: 50.0,
+          padding: EdgeInsets.all(8),
+          // color: Colors.blue,
+          child: Center(
+            child: Expanded(
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size.fromHeight(50),
                 ),
-              ],
+                onPressed: () {},
+                child: const Text('Install'),
+              ),
             ),
           ),
         ),

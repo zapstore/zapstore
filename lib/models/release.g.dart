@@ -3,12 +3,12 @@
 part of 'release.dart';
 
 // **************************************************************************
-// RepositoryGenerator
+// AdapterGenerator
 // **************************************************************************
 
 // ignore_for_file: non_constant_identifier_names, duplicate_ignore
 
-mixin $ReleaseLocalAdapter on LocalAdapter<Release> {
+mixin _$ReleaseAdapter on Adapter<Release> {
   static final Map<String, RelationshipMeta> _kReleaseRelationshipMetas = {
     'artifacts': RelationshipMeta<FileMetadata>(
       name: 'artifacts',
@@ -16,6 +16,13 @@ mixin $ReleaseLocalAdapter on LocalAdapter<Release> {
       type: 'fileMetadata',
       kind: 'HasMany',
       instance: (_) => (_ as Release).artifacts,
+    ),
+    'app': RelationshipMeta<App>(
+      name: 'app',
+      inverseName: 'releases',
+      type: 'apps',
+      kind: 'BelongsTo',
+      instance: (_) => (_ as Release).app,
     )
   };
 
@@ -24,45 +31,73 @@ mixin $ReleaseLocalAdapter on LocalAdapter<Release> {
       _kReleaseRelationshipMetas;
 
   @override
-  Release deserialize(map) {
+  Release deserializeLocal(map, {String? key}) {
     map = transformDeserialize(map);
-    return Release.fromMapFactory(map);
+    return internalWrapStopInit(() => _$ReleaseFromJson(map), key: key);
   }
 
   @override
-  Map<String, dynamic> serialize(model, {bool withRelationships = true}) {
-    final map = model.toMap();
+  Map<String, dynamic> serializeLocal(model, {bool withRelationships = true}) {
+    final map = _$ReleaseToJson(model);
     return transformSerialize(map, withRelationships: withRelationships);
   }
 }
 
 final _releasesFinders = <String, dynamic>{};
 
-// ignore: must_be_immutable
-class $ReleaseHiveLocalAdapter = HiveLocalAdapter<Release>
-    with $ReleaseLocalAdapter;
+class $ReleaseAdapter = Adapter<Release>
+    with _$ReleaseAdapter, NostrAdapter<Release>, ReleaseAdapter;
 
-class $ReleaseRemoteAdapter = RemoteAdapter<Release>
-    with NostrAdapter<Release>, ReleaseAdapter;
+final releasesAdapterProvider = Provider<Adapter<Release>>(
+    (ref) => $ReleaseAdapter(ref, InternalHolder(_releasesFinders)));
 
-final internalReleasesRemoteAdapterProvider = Provider<RemoteAdapter<Release>>(
-    (ref) => $ReleaseRemoteAdapter(
-        $ReleaseHiveLocalAdapter(ref), InternalHolder(_releasesFinders)));
-
-final releasesRepositoryProvider =
-    Provider<Repository<Release>>((ref) => Repository<Release>(ref));
-
-extension ReleaseDataRepositoryX on Repository<Release> {
-  NostrAdapter<Release> get nostrAdapter =>
-      remoteAdapter as NostrAdapter<Release>;
-  ReleaseAdapter get releaseAdapter => remoteAdapter as ReleaseAdapter;
+extension ReleaseAdapterX on Adapter<Release> {
+  NostrAdapter<Release> get nostrAdapter => this as NostrAdapter<Release>;
+  ReleaseAdapter get releaseAdapter => this as ReleaseAdapter;
 }
 
 extension ReleaseRelationshipGraphNodeX on RelationshipGraphNode<Release> {
   RelationshipGraphNode<FileMetadata> get artifacts {
-    final meta = $ReleaseLocalAdapter._kReleaseRelationshipMetas['artifacts']
+    final meta = _$ReleaseAdapter._kReleaseRelationshipMetas['artifacts']
         as RelationshipMeta<FileMetadata>;
     return meta.clone(
         parent: this is RelationshipMeta ? this as RelationshipMeta : null);
   }
+
+  RelationshipGraphNode<App> get app {
+    final meta = _$ReleaseAdapter._kReleaseRelationshipMetas['app']
+        as RelationshipMeta<App>;
+    return meta.clone(
+        parent: this is RelationshipMeta ? this as RelationshipMeta : null);
+  }
 }
+
+// **************************************************************************
+// JsonSerializableGenerator
+// **************************************************************************
+
+Release _$ReleaseFromJson(Map<String, dynamic> json) => Release()
+  ..id = json['id']
+  ..pubkey = json['pubkey'] as String
+  ..createdAt = DateTime.parse(json['createdAt'] as String)
+  ..content = json['content'] as String
+  ..kind = json['kind'] as int
+  ..tags = (json['tags'] as List<dynamic>)
+      .map((e) => (e as List<dynamic>).map((e) => e as String).toList())
+      .toList()
+  ..signature = json['signature'] as String?
+  ..artifacts =
+      HasMany<FileMetadata>.fromJson(json['artifacts'] as Map<String, dynamic>)
+  ..app = BelongsTo<App>.fromJson(json['app'] as Map<String, dynamic>);
+
+Map<String, dynamic> _$ReleaseToJson(Release instance) => <String, dynamic>{
+      'id': instance.id,
+      'pubkey': instance.pubkey,
+      'createdAt': instance.createdAt.toIso8601String(),
+      'content': instance.content,
+      'kind': instance.kind,
+      'tags': instance.tags,
+      'signature': instance.signature,
+      'artifacts': instance.artifacts,
+      'app': instance.app,
+    };

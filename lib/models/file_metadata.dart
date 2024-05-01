@@ -4,7 +4,8 @@ import 'package:android_package_installer/android_package_installer.dart';
 import 'package:android_package_manager/android_package_manager.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_data/flutter_data.dart';
-import 'package:ndk/ndk.dart' as ndk;
+import 'package:json_annotation/json_annotation.dart';
+import 'package:purplebase/purplebase.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:zapstore/models/release.dart';
@@ -16,17 +17,9 @@ part 'file_metadata.g.dart';
 
 final packageManager = AndroidPackageManager();
 
-@DataRepository([NostrAdapter, FileMetadataAdapter],
-    fromJson: 'FileMetadata.fromMapFactory(map)', toJson: 'model.toMap()')
-class FileMetadata extends BaseEvent<FileMetadata> with ndk.FileMetadata {
-  FileMetadata.fromMap(super.map) : super.fromMap();
-
-  factory FileMetadata.fromMapFactory(Map<String, dynamic> map) {
-    final m = FileMetadata.fromMap(map);
-    m.author = BelongsTo<User>.fromJson(map['author']);
-    return m;
-  }
-
+@JsonSerializable()
+@DataAdapter([NostrAdapter, FileMetadataAdapter])
+class FileMetadata extends ZapstoreEvent<FileMetadata> with BaseFileMetadata {
   late final BelongsTo<User> author;
   late final BelongsTo<Release> release = BelongsTo();
 
@@ -66,16 +59,14 @@ class FileMetadata extends BaseEvent<FileMetadata> with ndk.FileMetadata {
   }
 }
 
-mixin FileMetadataAdapter on RemoteAdapter<FileMetadata> {
+mixin FileMetadataAdapter on Adapter<FileMetadata> {
   @override
-  Future<DeserializedData<FileMetadata>> deserialize(Object? data) async {
+  DeserializedData<FileMetadata> deserialize(Object? data, {String? key}) {
     final list = data is Iterable ? data : [data as Map];
     for (final e in list) {
       final map = e as Map<String, dynamic>;
       map['author'] = map['pubkey'];
     }
-    final result = await super.deserialize(data);
-    print(result);
-    return result;
+    return super.deserialize(data);
   }
 }

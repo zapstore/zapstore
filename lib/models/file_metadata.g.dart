@@ -3,12 +3,12 @@
 part of 'file_metadata.dart';
 
 // **************************************************************************
-// RepositoryGenerator
+// AdapterGenerator
 // **************************************************************************
 
 // ignore_for_file: non_constant_identifier_names, duplicate_ignore
 
-mixin $FileMetadataLocalAdapter on LocalAdapter<FileMetadata> {
+mixin _$FileMetadataAdapter on Adapter<FileMetadata> {
   static final Map<String, RelationshipMeta> _kFileMetadataRelationshipMetas = {
     'author': RelationshipMeta<User>(
       name: 'author',
@@ -30,56 +30,74 @@ mixin $FileMetadataLocalAdapter on LocalAdapter<FileMetadata> {
       _kFileMetadataRelationshipMetas;
 
   @override
-  FileMetadata deserialize(map) {
+  FileMetadata deserializeLocal(map, {String? key}) {
     map = transformDeserialize(map);
-    return FileMetadata.fromMapFactory(map);
+    return internalWrapStopInit(() => _$FileMetadataFromJson(map), key: key);
   }
 
   @override
-  Map<String, dynamic> serialize(model, {bool withRelationships = true}) {
-    final map = model.toMap();
+  Map<String, dynamic> serializeLocal(model, {bool withRelationships = true}) {
+    final map = _$FileMetadataToJson(model);
     return transformSerialize(map, withRelationships: withRelationships);
   }
 }
 
 final _fileMetadataFinders = <String, dynamic>{};
 
-// ignore: must_be_immutable
-class $FileMetadataHiveLocalAdapter = HiveLocalAdapter<FileMetadata>
-    with $FileMetadataLocalAdapter;
+class $FileMetadataAdapter = Adapter<FileMetadata>
+    with _$FileMetadataAdapter, NostrAdapter<FileMetadata>, FileMetadataAdapter;
 
-class $FileMetadataRemoteAdapter = RemoteAdapter<FileMetadata>
-    with NostrAdapter<FileMetadata>, FileMetadataAdapter;
+final fileMetadataAdapterProvider = Provider<Adapter<FileMetadata>>(
+    (ref) => $FileMetadataAdapter(ref, InternalHolder(_fileMetadataFinders)));
 
-final internalFileMetadataRemoteAdapterProvider =
-    Provider<RemoteAdapter<FileMetadata>>((ref) => $FileMetadataRemoteAdapter(
-        $FileMetadataHiveLocalAdapter(ref),
-        InternalHolder(_fileMetadataFinders)));
-
-final fileMetadataRepositoryProvider =
-    Provider<Repository<FileMetadata>>((ref) => Repository<FileMetadata>(ref));
-
-extension FileMetadataDataRepositoryX on Repository<FileMetadata> {
+extension FileMetadataAdapterX on Adapter<FileMetadata> {
   NostrAdapter<FileMetadata> get nostrAdapter =>
-      remoteAdapter as NostrAdapter<FileMetadata>;
-  FileMetadataAdapter get fileMetadataAdapter =>
-      remoteAdapter as FileMetadataAdapter;
+      this as NostrAdapter<FileMetadata>;
+  FileMetadataAdapter get fileMetadataAdapter => this as FileMetadataAdapter;
 }
 
 extension FileMetadataRelationshipGraphNodeX
     on RelationshipGraphNode<FileMetadata> {
   RelationshipGraphNode<User> get author {
-    final meta = $FileMetadataLocalAdapter
-        ._kFileMetadataRelationshipMetas['author'] as RelationshipMeta<User>;
+    final meta = _$FileMetadataAdapter._kFileMetadataRelationshipMetas['author']
+        as RelationshipMeta<User>;
     return meta.clone(
         parent: this is RelationshipMeta ? this as RelationshipMeta : null);
   }
 
   RelationshipGraphNode<Release> get release {
     final meta =
-        $FileMetadataLocalAdapter._kFileMetadataRelationshipMetas['release']
+        _$FileMetadataAdapter._kFileMetadataRelationshipMetas['release']
             as RelationshipMeta<Release>;
     return meta.clone(
         parent: this is RelationshipMeta ? this as RelationshipMeta : null);
   }
 }
+
+// **************************************************************************
+// JsonSerializableGenerator
+// **************************************************************************
+
+FileMetadata _$FileMetadataFromJson(Map<String, dynamic> json) => FileMetadata()
+  ..id = json['id']
+  ..pubkey = json['pubkey'] as String
+  ..createdAt = DateTime.parse(json['createdAt'] as String)
+  ..content = json['content'] as String
+  ..kind = json['kind'] as int
+  ..tags = (json['tags'] as List<dynamic>)
+      .map((e) => (e as List<dynamic>).map((e) => e as String).toList())
+      .toList()
+  ..signature = json['signature'] as String?
+  ..author = BelongsTo<User>.fromJson(json['author'] as Map<String, dynamic>);
+
+Map<String, dynamic> _$FileMetadataToJson(FileMetadata instance) =>
+    <String, dynamic>{
+      'id': instance.id,
+      'pubkey': instance.pubkey,
+      'createdAt': instance.createdAt.toIso8601String(),
+      'content': instance.content,
+      'kind': instance.kind,
+      'tags': instance.tags,
+      'signature': instance.signature,
+      'author': instance.author,
+    };

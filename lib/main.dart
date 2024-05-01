@@ -1,27 +1,38 @@
-// ignore_for_file: prefer_const_literals_to_create_immutables, prefer_const_constructors
-
 import 'package:flutter/material.dart';
 import 'package:flutter_data/flutter_data.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:ndk/ndk.dart' as ndk;
+import 'package:path_provider/path_provider.dart';
 import 'package:zapstore/main.data.dart';
-import 'package:zapstore/models/release.dart';
+import 'package:zapstore/models/app.dart';
 import 'package:zapstore/screens/app_detail_screen.dart';
-import 'package:zapstore/screens/profile_screen.dart';
+import 'package:zapstore/screens/settings_screen.dart';
+import 'package:zapstore/screens/updates_screen.dart';
+import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/widgets/app_drawer.dart';
 import 'package:zapstore/screens/search_screen.dart';
 
 void main() {
   runApp(
     ProviderScope(
       overrides: [
-        configureRepositoryLocalStorage(
-            clear: LocalStorageClearStrategy.always),
+        localStorageProvider.overrideWithValue(
+          LocalStorage(
+            baseDirFn: () async {
+              final path = (await getApplicationSupportDirectory()).path;
+              print('initializing local storage at $path');
+              return path;
+            },
+            clear: LocalStorageClearStrategy.whenError,
+          ),
+        )
       ],
       child: const ZapstoreApp(),
     ),
   );
 }
+
+const kBackgroundColor = Color.fromARGB(255, 6, 6, 6);
 
 class ZapstoreApp extends StatelessWidget {
   const ZapstoreApp({super.key});
@@ -31,11 +42,17 @@ class ZapstoreApp extends StatelessWidget {
     return MaterialApp.router(
       routerConfig: goRouter,
       debugShowCheckedModeBanner: false,
-      darkTheme: ThemeData(
-        primarySwatch: Colors.purple,
+      theme: ThemeData(
+        primarySwatch: Colors.lightBlue,
         brightness: Brightness.dark,
+        fontFamily: 'Inter',
+        useMaterial3: true,
+        scaffoldBackgroundColor: kBackgroundColor,
+        visualDensity: VisualDensity.adaptivePlatformDensity,
+        // textTheme: context.theme.textTheme.copyWith(
+        //     bodyLarge:
+        //         TextStyle(color: Colors.white, fontWeight: FontWeight.w300))
       ),
-      theme: ThemeData.dark(useMaterial3: true),
     );
   }
 }
@@ -44,21 +61,16 @@ class ZapstoreApp extends StatelessWidget {
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 final _searchNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'search');
 final _updatesNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'updates');
-final _profileNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'profile');
-final _notificationsNavigatorKey =
-    GlobalKey<NavigatorState>(debugLabel: 'notifications');
+final _settingsNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'settings');
 
 final goRouter = GoRouter(
-  initialLocation: '/search',
+  initialLocation: '/',
   // * Passing a navigatorKey causes an issue on hot reload:
   // * https://github.com/flutter/flutter/issues/113757#issuecomment-1518421380
   // * However it's still necessary otherwise the navigator pops back to
   // * root on hot reload
   navigatorKey: _rootNavigatorKey,
-  // debugLogDiagnostics: true,
   routes: [
-    // Stateful navigation based on:
-    // https://github.com/flutter/packages/blob/main/packages/go_router/example/lib/stateful_shell_route.dart
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) {
         return ScaffoldWithNestedNavigation(navigationShell: navigationShell);
@@ -68,15 +80,19 @@ final goRouter = GoRouter(
           navigatorKey: _searchNavigatorKey,
           routes: [
             GoRoute(
-              path: '/search',
-              pageBuilder: (context, state) => NoTransitionPage(
-                child: SearchScreen(),
-              ),
+              path: '/',
+              builder: (context, state) => SearchScreen(),
               routes: [
                 GoRoute(
                   path: 'details',
                   builder: (context, state) =>
-                      AppDetailScreen(release: state.extra as Release),
+                      AppDetailScreen(app: state.extra as App),
+                  // pageBuilder: (context, state) =>
+                  //     buildWithSlideTransition<void>(
+                  //   context: context,
+                  //   state: state,
+                  //   child: AppDetailScreen(app: state.extra as App),
+                  // ),
                 ),
               ],
             ),
@@ -87,41 +103,18 @@ final goRouter = GoRouter(
           routes: [
             GoRoute(
               path: '/updates',
-              pageBuilder: (context, state) => NoTransitionPage(
-                child: Center(
-                  child: ElevatedButton(
-                    onPressed: () => {},
-                    child: const Text('Updates coming soon!'),
-                  ),
-                ),
-              ),
+              builder: (context, state) => UpdatesScreen(),
             ),
           ],
         ),
         StatefulShellBranch(
-          navigatorKey: _profileNavigatorKey,
+          navigatorKey: _settingsNavigatorKey,
           routes: [
             GoRoute(
-              path: '/profile',
+              path: '/settings',
               pageBuilder: (context, state) => NoTransitionPage(
                 child: Center(
-                  child: ProfileScreen(),
-                ),
-              ),
-            ),
-          ],
-        ),
-        StatefulShellBranch(
-          navigatorKey: _notificationsNavigatorKey,
-          routes: [
-            GoRoute(
-              path: '/notifications',
-              pageBuilder: (context, state) => NoTransitionPage(
-                child: Center(
-                  child: ElevatedButton(
-                    onPressed: () => {},
-                    child: const Text('Notifications coming soon!'),
-                  ),
+                  child: SettingsScreen(),
                 ),
               ),
             ),
@@ -133,12 +126,12 @@ final goRouter = GoRouter(
 );
 
 final newInitializer = FutureProvider<void>((ref) async {
-  await ref.read(repositoryInitializerProvider.future);
-  await ref.read(ndk.frameProvider.notifier).initialize('wss://relay.damus.io');
+  await ref.read(initializeFlutterData(adapterProvidersMap).future);
+  // ref
+  //     .read(p.relayMessageNotifierProvider.notifier)
+  //     .initialize(['wss://relay.zap.store', 'wss://relay.nostr.band']);
 });
 
-// Stateful navigation based on:
-// https://github.com/flutter/packages/blob/main/packages/go_router/example/lib/stateful_shell_route.dart
 class ScaffoldWithNestedNavigation extends HookConsumerWidget {
   const ScaffoldWithNestedNavigation({
     Key? key,
@@ -163,7 +156,7 @@ class ScaffoldWithNestedNavigation extends HookConsumerWidget {
     return SafeArea(
       child: LayoutBuilder(
         builder: (context, constraints) {
-          if (constraints.maxWidth < 450) {
+          if (constraints.maxWidth < 550) {
             return ScaffoldWithNavigationBar(
               body: navigationShell,
               selectedIndex: navigationShell.currentIndex,
@@ -197,33 +190,47 @@ class ScaffoldWithNavigationBar extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final initializer = ref.watch(newInitializer);
     return Scaffold(
-      body: initializer.when(
-        data: (_) => body,
-        error: (e, _) => const Text('error'),
-        loading: () => const Center(child: CircularProgressIndicator()),
+      body: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+        child: initializer.when(
+          data: (_) => body,
+          error: (e, _) => const Text('error'),
+          loading: () => const Center(child: CircularProgressIndicator()),
+        ),
       ),
       bottomNavigationBar: NavigationBar(
+        height: 60,
+        backgroundColor: kBackgroundColor,
+        indicatorColor: Colors.transparent,
         selectedIndex: selectedIndex,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
         destinations: const [
           NavigationDestination(
-            label: 'Search',
-            icon: Icon(Icons.search_outlined),
+            label: 'Home',
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home_filled),
           ),
           NavigationDestination(
             label: 'Updates',
             icon: Icon(Icons.download_for_offline_outlined),
+            selectedIcon: Icon(Icons.download_for_offline),
           ),
           NavigationDestination(
-            label: 'Profile',
-            icon: Icon(Icons.person_outline),
-          ),
-          NavigationDestination(
-            label: 'Notifications',
-            icon: Icon(Icons.notifications_outlined),
+            label: 'Settings',
+            icon: Icon(Icons.settings_outlined),
+            selectedIcon: Icon(Icons.settings),
           ),
         ],
         onDestinationSelected: onDestinationSelected,
+      ),
+      drawer: Drawer(
+        child: Column(
+          children: [
+            DrawerHeader(
+              child: AppDrawer(),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -262,10 +269,6 @@ class ScaffoldWithNavigationRail extends StatelessWidget {
                 label: Text('Profile'),
                 icon: Icon(Icons.person_outline),
               ),
-              const NavigationRailDestination(
-                label: Text('Notifications'),
-                icon: Icon(Icons.notifications_outlined),
-              ),
             ],
           ),
           body,
@@ -275,37 +278,34 @@ class ScaffoldWithNavigationRail extends StatelessWidget {
   }
 }
 
-
-// const borderColor = Color(0xFF805306);
-
-// const sidebarColor = Color(0xFFF6A00C);
-// const backgroundStartColor = Color(0xFFFFD500);
-// const backgroundEndColor = Color(0xFFF6A00C);
-
-// final buttonColors = WindowButtonColors(
-//     iconNormal: const Color(0xFF805306),
-//     mouseOver: const Color(0xFFF6A00C),
-//     mouseDown: const Color(0xFF805306),
-//     iconMouseOver: const Color(0xFF805306),
-//     iconMouseDown: const Color(0xFFFFD500));
-
-// final closeButtonColors = WindowButtonColors(
-//     mouseOver: const Color(0xFFD32F2F),
-//     mouseDown: const Color(0xFFB71C1C),
-//     iconNormal: const Color(0xFF805306),
-//     iconMouseOver: Colors.white);
-
-// class WindowButtons extends StatelessWidget {
-//   const WindowButtons({super.key});
-
-//   @override
-//   Widget build(BuildContext context) {
-//     return Row(
-//       children: [
-//         MinimizeWindowButton(colors: buttonColors),
-//         MaximizeWindowButton(colors: buttonColors),
-//         CloseWindowButton(colors: closeButtonColors),
-//       ],
-//     );
-//   }
-// }
+CustomTransitionPage buildWithSlideTransition<T>({
+  required BuildContext context,
+  required GoRouterState state,
+  required Widget child,
+}) {
+  return CustomTransitionPage<T>(
+    key: state.pageKey,
+    child: child,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      return SlideTransition(
+        position:
+            Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero).animate(
+          CurvedAnimation(
+            parent: animation,
+            curve: Curves.fastOutSlowIn,
+          ),
+        ),
+        child: AnimatedBuilder(
+          animation: animation,
+          builder: (context, child) {
+            return Container(
+              color: context.theme.colorScheme.background,
+              child: child,
+            );
+          },
+          child: child,
+        ),
+      );
+    },
+  );
+}
