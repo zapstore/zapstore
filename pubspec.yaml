@@ -47,7 +47,6 @@ dependencies:
   device_apps: ^2.2.0
   purplebase:
   sqlite3_flutter_libs: ^0.5.20
-  carousel_slider: ^4.2.1
   flutter_markdown: ^0.7.1
   cached_network_image: ^3.3.1
   gap: ^3.0.1

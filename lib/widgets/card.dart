@@ -27,7 +27,7 @@ class CardWidget extends HookConsumerWidget {
             mainAxisAlignment: MainAxisAlignment.start,
             children: [
               CircularImage(
-                url: app.icon,
+                url: app.icon ?? '',
                 size: 80,
                 radius: 25,
               ),

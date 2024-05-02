@@ -69,8 +69,11 @@ mixin UserAdapter on NostrAdapter<User> {
       OnSuccessAll<User>? onSuccess,
       OnErrorAll<User>? onError,
       DataRequestLabel? label}) async {
-    final req =
-        RelayRequest(authors: Set<String>.from(params!['ids']), kinds: {kind});
+    final ids = params!['ids'];
+    if (ids.isEmpty) {
+      return [];
+    }
+    final req = RelayRequest(authors: Set<String>.from(ids), kinds: {kind});
 
     final result =
         await notifier.query(req, relayUrls: ['wss://relay.nostr.band']);

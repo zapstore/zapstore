@@ -1,5 +1,5 @@
 import 'package:auto_size_text/auto_size_text.dart';
-import 'package:carousel_slider/carousel_slider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:gap/gap.dart';
@@ -68,17 +68,21 @@ class AppDetailScreen extends HookConsumerWidget {
                   ),
                   Gap(16),
                   if ((app.tagMap['image'] ?? []).isNotEmpty)
-                    CarouselSlider(
-                      options: CarouselOptions(
-                        enableInfiniteScroll: false,
+                    Scrollbar(
+                      interactive: true,
+                      trackVisibility: true,
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            for (final i in app.tagMap['image']!)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 12),
+                                child: CachedNetworkImage(imageUrl: i),
+                              ),
+                          ],
+                        ),
                       ),
-                      items: app.tagMap['image']!
-                          .map((i) => Padding(
-                                padding: const EdgeInsets.only(right: 10),
-                                child: Image.network(i,
-                                    fit: BoxFit.cover, width: 1000),
-                              ))
-                          .toList(),
                     ),
                   Divider(height: 24),
                   MarkdownBody(
@@ -148,20 +152,17 @@ class AppDetailScreen extends HookConsumerWidget {
           ),
         ),
         Container(
-          height: 50.0,
+          height: 50,
           padding: EdgeInsets.all(8),
-          // color: Colors.blue,
           child: Center(
-            child: Expanded(
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size.fromHeight(50),
-                ),
-                onPressed: () {},
-                child: const Text('Install'),
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                foregroundColor: Colors.white,
+                minimumSize: const Size.fromHeight(50),
               ),
+              onPressed: () {},
+              child: const Text('Install'),
             ),
           ),
         ),
