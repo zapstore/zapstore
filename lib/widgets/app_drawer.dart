@@ -32,19 +32,19 @@ class AppDrawer extends HookConsumerWidget {
               },
               child: Text('Log in'),
             ),
-          ElevatedButton(
-            onPressed: () async {
-              ref.read(loggedInUser.notifier).state = null;
-              controller.clear();
-              // final as = await packageManager.getInstalledApplications();
-              // for (final a in as!) {
-              //   if (!a.packageName!.contains('android')) {
-              //     print(a.packageName);
-              //   }
-              // }
-            },
-            child: Text('check'),
-          ),
+          // ElevatedButton(
+          //   onPressed: () async {
+          //     ref.read(loggedInUser.notifier).state = null;
+          //     controller.clear();
+          //     // final as = await packageManager.getInstalledApplications();
+          //     // for (final a in as!) {
+          //     //   if (!a.packageName!.contains('android')) {
+          //     //     print(a.packageName);
+          //     //   }
+          //     // }
+          //   },
+          //   child: Text('check'),
+          // ),
           if (u2 != null)
             Expanded(
               child: Column(

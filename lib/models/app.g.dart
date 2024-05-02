@@ -16,6 +16,18 @@ mixin _$AppAdapter on Adapter<App> {
       type: 'releases',
       kind: 'HasMany',
       instance: (_) => (_ as App).releases,
+    ),
+    'signer': RelationshipMeta<User>(
+      name: 'signer',
+      type: 'users',
+      kind: 'BelongsTo',
+      instance: (_) => (_ as App).signer,
+    ),
+    'developer': RelationshipMeta<User>(
+      name: 'developer',
+      type: 'users',
+      kind: 'BelongsTo',
+      instance: (_) => (_ as App).developer,
     )
   };
 
@@ -25,7 +37,7 @@ mixin _$AppAdapter on Adapter<App> {
   @override
   App deserializeLocal(map, {String? key}) {
     map = transformDeserialize(map);
-    return internalWrapStopInit(() => App.fromJson(map), key: key);
+    return internalWrapStopInit(() => _$AppFromJson(map), key: key);
   }
 
   @override
@@ -37,21 +49,33 @@ mixin _$AppAdapter on Adapter<App> {
 
 final _appsFinders = <String, dynamic>{};
 
-class $AppAdapter = Adapter<App>
-    with _$AppAdapter, NostrAdapter<App>, CoolAdapter;
+class $AppAdapter = Adapter<App> with _$AppAdapter, NostrAdapter<App>;
 
 final appsAdapterProvider = Provider<Adapter<App>>(
     (ref) => $AppAdapter(ref, InternalHolder(_appsFinders)));
 
 extension AppAdapterX on Adapter<App> {
   NostrAdapter<App> get nostrAdapter => this as NostrAdapter<App>;
-  CoolAdapter get coolAdapter => this as CoolAdapter;
 }
 
 extension AppRelationshipGraphNodeX on RelationshipGraphNode<App> {
   RelationshipGraphNode<Release> get releases {
     final meta = _$AppAdapter._kAppRelationshipMetas['releases']
         as RelationshipMeta<Release>;
+    return meta.clone(
+        parent: this is RelationshipMeta ? this as RelationshipMeta : null);
+  }
+
+  RelationshipGraphNode<User> get signer {
+    final meta =
+        _$AppAdapter._kAppRelationshipMetas['signer'] as RelationshipMeta<User>;
+    return meta.clone(
+        parent: this is RelationshipMeta ? this as RelationshipMeta : null);
+  }
+
+  RelationshipGraphNode<User> get developer {
+    final meta = _$AppAdapter._kAppRelationshipMetas['developer']
+        as RelationshipMeta<User>;
     return meta.clone(
         parent: this is RelationshipMeta ? this as RelationshipMeta : null);
   }
@@ -66,13 +90,16 @@ App _$AppFromJson(Map<String, dynamic> json) => App()
   ..pubkey = json['pubkey'] as String
   ..createdAt = DateTime.parse(json['createdAt'] as String)
   ..content = json['content'] as String
-  ..kind = json['kind'] as int
+  ..kind = (json['kind'] as num).toInt()
   ..tags = (json['tags'] as List<dynamic>)
       .map((e) => (e as List<dynamic>).map((e) => e as String).toList())
       .toList()
   ..signature = json['signature'] as String?
   ..releases =
-      HasMany<Release>.fromJson(json['releases'] as Map<String, dynamic>);
+      HasMany<Release>.fromJson(json['releases'] as Map<String, dynamic>)
+  ..signer = BelongsTo<User>.fromJson(json['signer'] as Map<String, dynamic>)
+  ..developer =
+      BelongsTo<User>.fromJson(json['developer'] as Map<String, dynamic>);
 
 Map<String, dynamic> _$AppToJson(App instance) => <String, dynamic>{
       'id': instance.id,
@@ -83,4 +110,6 @@ Map<String, dynamic> _$AppToJson(App instance) => <String, dynamic>{
       'tags': instance.tags,
       'signature': instance.signature,
       'releases': instance.releases,
+      'signer': instance.signer,
+      'developer': instance.developer,
     };

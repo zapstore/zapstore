@@ -22,6 +22,12 @@ mixin _$FileMetadataAdapter on Adapter<FileMetadata> {
       type: 'releases',
       kind: 'BelongsTo',
       instance: (_) => (_ as FileMetadata).release,
+    ),
+    'signer': RelationshipMeta<User>(
+      name: 'signer',
+      type: 'users',
+      kind: 'BelongsTo',
+      instance: (_) => (_ as FileMetadata).signer,
     )
   };
 
@@ -72,6 +78,13 @@ extension FileMetadataRelationshipGraphNodeX
     return meta.clone(
         parent: this is RelationshipMeta ? this as RelationshipMeta : null);
   }
+
+  RelationshipGraphNode<User> get signer {
+    final meta = _$FileMetadataAdapter._kFileMetadataRelationshipMetas['signer']
+        as RelationshipMeta<User>;
+    return meta.clone(
+        parent: this is RelationshipMeta ? this as RelationshipMeta : null);
+  }
 }
 
 // **************************************************************************
@@ -83,12 +96,13 @@ FileMetadata _$FileMetadataFromJson(Map<String, dynamic> json) => FileMetadata()
   ..pubkey = json['pubkey'] as String
   ..createdAt = DateTime.parse(json['createdAt'] as String)
   ..content = json['content'] as String
-  ..kind = json['kind'] as int
+  ..kind = (json['kind'] as num).toInt()
   ..tags = (json['tags'] as List<dynamic>)
       .map((e) => (e as List<dynamic>).map((e) => e as String).toList())
       .toList()
   ..signature = json['signature'] as String?
-  ..author = BelongsTo<User>.fromJson(json['author'] as Map<String, dynamic>);
+  ..author = BelongsTo<User>.fromJson(json['author'] as Map<String, dynamic>)
+  ..signer = BelongsTo<User>.fromJson(json['signer'] as Map<String, dynamic>);
 
 Map<String, dynamic> _$FileMetadataToJson(FileMetadata instance) =>
     <String, dynamic>{
@@ -100,4 +114,5 @@ Map<String, dynamic> _$FileMetadataToJson(FileMetadata instance) =>
       'tags': instance.tags,
       'signature': instance.signature,
       'author': instance.author,
+      'signer': instance.signer,
     };

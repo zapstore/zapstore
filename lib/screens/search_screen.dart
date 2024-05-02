@@ -1,4 +1,5 @@
-// ignore_for_file: prefer_const_literals_to_create_immutables
+import 'dart:developer';
+import 'dart:ffi';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_data/flutter_data.dart';
@@ -6,7 +7,7 @@ import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
-import 'package:zapstore/screens/app_detail_screen.dart';
+import 'package:zapstore/models/release.dart';
 import 'package:zapstore/widgets/card.dart';
 import 'package:zapstore/widgets/user_avatar.dart';
 
@@ -24,12 +25,6 @@ class SearchScreen extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(searchStateProvider);
-
-    if (state.isLoading) {
-      return Center(child: CircularProgressIndicator());
-    }
-
-    final apps = state.model;
 
     return Column(
       children: [
@@ -61,17 +56,58 @@ class SearchScreen extends HookConsumerWidget {
                 autoFocus: true,
                 elevation: MaterialStatePropertyAll(2.2),
                 onSubmitted: (query) async {
-                  ref.read(screenInfoProvider.notifier).state = 'No items';
-                  final apps = [App(), App(), App(), App()];
-                  // await ref.apps.findAll(params: {'search': query});
+                  // debugger;
 
-                  // final releases = await ref.releases.findAll(
-                  //     params: {'#i': apps.map((a) => a.identifier).toSet()});
+                  // final app = App()
+                  //   ..id = '1'
+                  //   ..kind = 32267
+                  //   ..createdAt = DateTime.now()
+                  //   ..pubkey =
+                  //       'a9e95a4eb32b55441b222ae5674f063949bfd0759b82deb03d7cd262e82d5626'
+                  //   ..content = 'testing'
+                  //   ..tags = [
+                  //     ['d', 'com.test']
+                  //   ]
+                  //   ..releases = HasMany()
+                  //   ..init()
+                  //   ..saveLocal();
+
+                  // final release = ref.releases.deserialize({
+                  //   'kind': 30063,
+                  //   'created_at': 112899202,
+                  //   'pubkey':
+                  //       'a9e95a4eb32b55441b222ae5674f063949bfd0759b82deb03d7cd262e82d5626',
+                  //   'content': 'mutiny',
+                  //   'tags': [
+                  //     ['d', 'com.test@v0.6.4']
+                  //   ],
+                  // });
+                  // debugger;
+
+                  // ref.read(searchStateProvider.notifier).state =
+                  //     DataState([app]);
+                  // print(release.model!.app.value?.id);
+
+                  ref.read(screenInfoProvider.notifier).state =
+                      'No apps found for "$query"';
+                  ref.read(searchStateProvider.notifier).state =
+                      DataState([], isLoading: true);
+                  final apps =
+                      await ref.apps.findAll(params: {'search': query});
+
+                  // load all signers and developers
+                  final userIds = {
+                    for (final app in apps) app.signer.id,
+                    for (final app in apps) app.developer.id
+                  };
+                  await ref.users.findAll(params: {'ids': userIds});
+
+                  await ref.releases.findAll(
+                      params: {'#i': apps.map((a) => a.identifier).toSet()});
 
                   // await ref.fileMetadata.findAll(
                   //   params: {
-                  //     'ids':
-                  //         releases.map((r) => r.tagMap['e']!.first).toSet(),
+                  //     'ids': releases.map((r) => r.tagMap['e']!.first).toSet(),
                   //     '#m': [kAndroidMimeType],
                   //   },
                   // );
@@ -83,22 +119,24 @@ class SearchScreen extends HookConsumerWidget {
           ],
         ),
         Gap(10),
-        if (apps.isEmpty)
+        if (state.model.isEmpty || state.isLoading)
           Expanded(
             child: Center(
-              child: Text(
-                ref.read(screenInfoProvider),
-                textAlign: TextAlign.center,
-              ),
+              child: state.isLoading
+                  ? CircularProgressIndicator()
+                  : Text(
+                      ref.read(screenInfoProvider),
+                      textAlign: TextAlign.center,
+                    ),
             ),
           ),
-        if (apps.isNotEmpty)
+        if (state.hasModel)
           Expanded(
             child: ListView.builder(
               shrinkWrap: true,
-              itemCount: apps.length,
+              itemCount: state.model.length,
               itemBuilder: (context, index) {
-                final app = apps[index];
+                final app = state.model[index];
                 return CardWidget(app: app);
               },
             ),

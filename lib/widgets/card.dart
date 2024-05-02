@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:auto_size_text/auto_size_text.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
@@ -16,18 +17,9 @@ class CardWidget extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final user = User.fromMap({
-      'kind': 0,
-      'created_at': 112899202,
-      'pubkey':
-          'a9e95a4eb32b55441b222ae5674f063949bfd0759b82deb03d7cd262e82d5626',
-      'content': jsonEncode(
-          {'name': 'test', 'picture': 'https://picsum.photos/200/300'}),
-      'tags': [],
-    });
-
     return Card(
       margin: EdgeInsets.only(top: 20),
+      elevation: 0,
       child: GestureDetector(
         onTap: () => context.go('/details', extra: app),
         child: Padding(
@@ -37,7 +29,7 @@ class CardWidget extends HookConsumerWidget {
             mainAxisAlignment: MainAxisAlignment.start,
             children: [
               CircularImage(
-                url: 'https://picsum.photos/200/200',
+                url: app.icon,
                 size: 80,
                 radius: 25,
               ),
@@ -46,19 +38,19 @@ class CardWidget extends HookConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Mutiny Wallet - Mutiny Wallet - Muti',
-                      // '${app.name} - ${app.name}',
+                    AutoSizeText(
+                      app.releases.safeFirst?.identifier.split('@').last ??
+                          'none',
+                      minFontSize: 16,
                       style:
-                          TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                          TextStyle(fontSize: 23, fontWeight: FontWeight.bold),
                       overflow: TextOverflow.ellipsis,
                       maxLines: 1,
-                      softWrap: true,
                     ),
                     Padding(
                       padding: const EdgeInsets.only(top: 4),
                       child: Text(
-                        'Best web-based Lightning and Ecash wallet web-based Lightning and Ecash wallet',
+                        app.content,
                         style: TextStyle(
                             fontSize: 14, fontWeight: FontWeight.w300),
                         overflow: TextOverflow.ellipsis,
@@ -67,10 +59,17 @@ class CardWidget extends HookConsumerWidget {
                       ),
                     ),
                     Gap(10),
-                    AuthorContainer(user: user),
-                    AuthorContainer(user: user),
-                    Gap(16),
-                    TagsContainer(),
+                    if (app.developer.isPresent)
+                      AuthorContainer(
+                        user: app.developer.value!,
+                        text: 'Built by',
+                      ),
+                    if (app.signer.isPresent)
+                      AuthorContainer(user: app.signer.value!),
+                    // Gap(16),
+                    // TagsContainer(
+                    //   tags: app.tagMap['t'] ?? [],
+                    // ),
                   ],
                 ),
               ),
@@ -83,17 +82,21 @@ class CardWidget extends HookConsumerWidget {
 }
 
 class TagsContainer extends StatelessWidget {
+  final List<String> tags;
   const TagsContainer({
     super.key,
+    required this.tags,
   });
 
   @override
   Widget build(BuildContext context) {
     return Row(
-      children: const [
-        PillWidget(text: 'nostr'),
-        Gap(6),
-        PillWidget(text: 'wallet'),
+      children: [
+        for (final tag in tags)
+          Padding(
+            padding: const EdgeInsets.only(right: 6),
+            child: PillWidget(text: tag),
+          ),
       ],
     );
   }
@@ -156,14 +159,11 @@ class CircularImage extends StatelessWidget {
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius.toDouble()),
-      child: Container(
+      child: CachedNetworkImage(
+        imageUrl: url ?? '',
+        fit: BoxFit.cover,
         width: size.toDouble(),
         height: size.toDouble(),
-        color: Colors.grey[850],
-        child: CachedNetworkImage(
-          imageUrl: url ?? '',
-          fit: BoxFit.cover,
-        ),
       ),
     );
   }

@@ -23,6 +23,12 @@ mixin _$ReleaseAdapter on Adapter<Release> {
       type: 'apps',
       kind: 'BelongsTo',
       instance: (_) => (_ as Release).app,
+    ),
+    'signer': RelationshipMeta<User>(
+      name: 'signer',
+      type: 'users',
+      kind: 'BelongsTo',
+      instance: (_) => (_ as Release).signer,
     )
   };
 
@@ -70,6 +76,13 @@ extension ReleaseRelationshipGraphNodeX on RelationshipGraphNode<Release> {
     return meta.clone(
         parent: this is RelationshipMeta ? this as RelationshipMeta : null);
   }
+
+  RelationshipGraphNode<User> get signer {
+    final meta = _$ReleaseAdapter._kReleaseRelationshipMetas['signer']
+        as RelationshipMeta<User>;
+    return meta.clone(
+        parent: this is RelationshipMeta ? this as RelationshipMeta : null);
+  }
 }
 
 // **************************************************************************
@@ -81,14 +94,15 @@ Release _$ReleaseFromJson(Map<String, dynamic> json) => Release()
   ..pubkey = json['pubkey'] as String
   ..createdAt = DateTime.parse(json['createdAt'] as String)
   ..content = json['content'] as String
-  ..kind = json['kind'] as int
+  ..kind = (json['kind'] as num).toInt()
   ..tags = (json['tags'] as List<dynamic>)
       .map((e) => (e as List<dynamic>).map((e) => e as String).toList())
       .toList()
   ..signature = json['signature'] as String?
   ..artifacts =
       HasMany<FileMetadata>.fromJson(json['artifacts'] as Map<String, dynamic>)
-  ..app = BelongsTo<App>.fromJson(json['app'] as Map<String, dynamic>);
+  ..app = BelongsTo<App>.fromJson(json['app'] as Map<String, dynamic>)
+  ..signer = BelongsTo<User>.fromJson(json['signer'] as Map<String, dynamic>);
 
 Map<String, dynamic> _$ReleaseToJson(Release instance) => <String, dynamic>{
       'id': instance.id,
@@ -100,4 +114,5 @@ Map<String, dynamic> _$ReleaseToJson(Release instance) => <String, dynamic>{
       'signature': instance.signature,
       'artifacts': instance.artifacts,
       'app': instance.app,
+      'signer': instance.signer,
     };

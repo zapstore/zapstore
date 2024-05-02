@@ -1,13 +1,13 @@
 import 'dart:io';
 
 import 'package:android_package_installer/android_package_installer.dart';
-import 'package:android_package_manager/android_package_manager.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_data/flutter_data.dart';
 import 'package:json_annotation/json_annotation.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:zapstore/models/nostr_adapter.dart';
 import 'package:zapstore/models/release.dart';
 import 'package:zapstore/models/user.dart';
 import 'package:http/http.dart' as http;
@@ -15,13 +15,12 @@ import 'package:path/path.dart' as path;
 
 part 'file_metadata.g.dart';
 
-final packageManager = AndroidPackageManager();
-
 @JsonSerializable()
 @DataAdapter([NostrAdapter, FileMetadataAdapter])
 class FileMetadata extends ZapstoreEvent<FileMetadata> with BaseFileMetadata {
   late final BelongsTo<User> author;
   late final BelongsTo<Release> release = BelongsTo();
+  late final BelongsTo<User> signer;
 
   Future<void> install() async {
     // throw Exception('something nasty');

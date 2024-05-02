@@ -3,6 +3,7 @@ import 'package:json_annotation/json_annotation.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/file_metadata.dart';
+import 'package:zapstore/models/nostr_adapter.dart';
 import 'package:zapstore/models/user.dart';
 
 part 'release.g.dart';
@@ -12,6 +13,7 @@ part 'release.g.dart';
 class Release extends ZapstoreEvent<Release> with BaseRelease {
   late final HasMany<FileMetadata> artifacts;
   late final BelongsTo<App> app;
+  late final BelongsTo<User> signer;
 }
 
 mixin ReleaseAdapter on Adapter<Release> {
@@ -26,12 +28,7 @@ mixin ReleaseAdapter on Adapter<Release> {
       map['artifacts'] = eTags.toList();
       final appIdentifier =
           map['tags'].firstWhere((t) => t.first == 'd')[1].split('@').first;
-      map['app'] = (adapters['apps'] as Adapter<App>)
-          .findAllLocal()
-          .where((a) => a.identifier == appIdentifier)
-          // ignore: invalid_use_of_visible_for_testing_member
-          .safeFirst
-          ?.id;
+      map['app'] = appIdentifier;
     }
     return super.deserialize(data);
   }

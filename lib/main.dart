@@ -3,8 +3,10 @@ import 'package:flutter_data/flutter_data.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
+import 'package:zapstore/models/user.dart';
 import 'package:zapstore/screens/app_detail_screen.dart';
 import 'package:zapstore/screens/settings_screen.dart';
 import 'package:zapstore/screens/updates_screen.dart';
@@ -23,7 +25,7 @@ void main() {
               print('initializing local storage at $path');
               return path;
             },
-            clear: LocalStorageClearStrategy.whenError,
+            clear: LocalStorageClearStrategy.always, // TODO whenError
           ),
         )
       ],
@@ -127,9 +129,9 @@ final goRouter = GoRouter(
 
 final newInitializer = FutureProvider<void>((ref) async {
   await ref.read(initializeFlutterData(adapterProvidersMap).future);
-  // ref
-  //     .read(p.relayMessageNotifierProvider.notifier)
-  //     .initialize(['wss://relay.zap.store', 'wss://relay.nostr.band']);
+  ref
+      .read(relayMessageNotifierProvider.notifier)
+      .initialize(['wss://relay.zap.store', 'wss://relay.nostr.band']);
 });
 
 class ScaffoldWithNestedNavigation extends HookConsumerWidget {

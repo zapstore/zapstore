@@ -81,7 +81,7 @@ User _$UserFromJson(Map<String, dynamic> json) => User()
   ..pubkey = json['pubkey'] as String
   ..createdAt = DateTime.parse(json['createdAt'] as String)
   ..content = json['content'] as String
-  ..kind = json['kind'] as int
+  ..kind = (json['kind'] as num).toInt()
   ..tags = (json['tags'] as List<dynamic>)
       .map((e) => (e as List<dynamic>).map((e) => e as String).toList())
       .toList()
