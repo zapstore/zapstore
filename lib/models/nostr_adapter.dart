@@ -70,8 +70,9 @@ mixin NostrAdapter<T extends ZapstoreEvent<T>> on Adapter<T> {
       return findAllLocal();
     }
 
+    final additionalKinds = params?.remove('kinds');
     final req = RelayRequest(
-      kinds: {kind, ...?params?.remove('kinds')},
+      kinds: {kind, ...?additionalKinds},
       tags: params ?? {},
     );
     print(req);

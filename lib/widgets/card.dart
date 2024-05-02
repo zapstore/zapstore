@@ -16,7 +16,7 @@ class CardWidget extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Card(
-      margin: EdgeInsets.only(top: 20),
+      margin: EdgeInsets.only(top: 8, bottom: 8),
       elevation: 0,
       child: GestureDetector(
         onTap: () => context.go('/details', extra: app),

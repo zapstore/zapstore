@@ -17,6 +17,7 @@ class AppDetailScreen extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final scrollController = ScrollController();
     return Column(
       children: [
         Expanded(
@@ -69,9 +70,11 @@ class AppDetailScreen extends HookConsumerWidget {
                   Gap(16),
                   if ((app.tagMap['image'] ?? []).isNotEmpty)
                     Scrollbar(
+                      controller: scrollController,
                       interactive: true,
                       trackVisibility: true,
                       child: SingleChildScrollView(
+                        controller: scrollController,
                         scrollDirection: Axis.horizontal,
                         child: Row(
                           children: [
