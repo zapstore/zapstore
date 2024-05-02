@@ -34,7 +34,7 @@ class FileMetadata extends ZapstoreEvent<FileMetadata> with BaseFileMetadata {
 
     final uri = Uri.parse(url);
     final response = await http.get(uri);
-    final dir = await getApplicationDocumentsDirectory();
+    final dir = await getApplicationSupportDirectory();
     final file = File(path.join(dir.path, path.basename(url)));
     await file.writeAsBytes(response.bodyBytes);
 
@@ -53,8 +53,6 @@ class FileMetadata extends ZapstoreEvent<FileMetadata> with BaseFileMetadata {
       throw Exception(
           'installation error: ${code != null ? PackageInstallerStatus.byCode(code) : ''}');
     }
-    // final apps = await packageManager.getInstalledPackages();
-    // apps?.firstWhere((e) => e.packageName == release.value!.identifier);
   }
 }
 

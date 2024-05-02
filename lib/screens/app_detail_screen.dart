@@ -164,7 +164,9 @@ class AppDetailScreen extends HookConsumerWidget {
                 foregroundColor: Colors.white,
                 minimumSize: const Size.fromHeight(50),
               ),
-              onPressed: () {},
+              onPressed: () {
+                app.releases.first.artifacts.first.install();
+              },
               child: const Text('Install'),
             ),
           ),
