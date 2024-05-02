@@ -1,6 +1,5 @@
 import 'package:flutter_data/flutter_data.dart';
 import 'package:purplebase/purplebase.dart';
-import 'package:zapstore/models/user.dart';
 
 abstract class ZapstoreEvent<T extends ZapstoreEvent<T>> = BaseEvent
     with DataModelMixin<T>;

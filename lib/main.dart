@@ -6,7 +6,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
-import 'package:zapstore/models/user.dart';
 import 'package:zapstore/screens/app_detail_screen.dart';
 import 'package:zapstore/screens/settings_screen.dart';
 import 'package:zapstore/screens/updates_screen.dart';

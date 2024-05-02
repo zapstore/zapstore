@@ -19,11 +19,14 @@ mixin UserAdapter on NostrAdapter<User> {
   DeserializedData<User> deserialize(Object? data, {String? key}) {
     final users = <User>[];
     final list = data is Iterable ? data : [data as Map];
+
+    // first process kind 3 (if any)
     for (final e in list) {
       final map = e as Map<String, dynamic>;
       if (map['kind'] == 3) {
+        final contactMaps = [];
         for (final [_, id, ..._] in map['tags'] as Iterable) {
-          super.deserialize({
+          contactMaps.add({
             'id': id,
             'content': '',
             'pubkey': id,
@@ -32,6 +35,8 @@ mixin UserAdapter on NostrAdapter<User> {
             'tags': [],
           });
         }
+        final data = super.deserialize(contactMaps);
+        users.addAll(data.models);
       }
     }
 
@@ -66,7 +71,6 @@ mixin UserAdapter on NostrAdapter<User> {
       DataRequestLabel? label}) async {
     final req =
         RelayRequest(authors: Set<String>.from(params!['ids']), kinds: {kind});
-    print('in user findall $req');
 
     final result =
         await notifier.query(req, relayUrls: ['wss://relay.nostr.band']);
@@ -99,13 +103,13 @@ mixin UserAdapter on NostrAdapter<User> {
 
     final req = RelayRequest(
       authors: {publicKey},
-      kinds: {kind, ...?params?.remove('kinds')},
+      kinds: {kind, if (params?['contacts'] != null) 3},
       tags: params ?? {},
     );
 
     final result =
         await notifier.query(req, relayUrls: ['wss://relay.nostr.band']);
-    final data = deserialize(result);
-    return data.model?..saveLocal();
+    final data = await deserializeAsync(result, save: true);
+    return data.models.firstWhere((e) => e.id == publicKey);
   }
 }

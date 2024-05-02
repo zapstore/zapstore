@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:auto_size_text/auto_size_text.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -39,8 +37,7 @@ class CardWidget extends HookConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     AutoSizeText(
-                      app.releases.safeFirst?.identifier.split('@').last ??
-                          'none',
+                      app.name,
                       minFontSize: 16,
                       style:
                           TextStyle(fontSize: 23, fontWeight: FontWeight.bold),

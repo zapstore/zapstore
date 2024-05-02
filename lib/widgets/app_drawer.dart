@@ -1,4 +1,3 @@
-import 'package:android_package_manager/android_package_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gap/gap.dart';
@@ -9,8 +8,6 @@ import 'package:zapstore/widgets/card.dart';
 
 class AppDrawer extends HookConsumerWidget {
   AppDrawer({super.key});
-
-  // final packageManager = AndroidPackageManager();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -27,8 +24,8 @@ class AppDrawer extends HookConsumerWidget {
           if (u2 == null)
             ElevatedButton(
               onPressed: () async {
-                ref.read(loggedInUser.notifier).state =
-                    await ref.users.findOne(controller.text);
+                ref.read(loggedInUser.notifier).state = await ref.users
+                    .findOne(controller.text, params: {'contacts': true});
               },
               child: Text('Log in'),
             ),
@@ -59,7 +56,7 @@ class AppDrawer extends HookConsumerWidget {
                       title: Text(
                         u2.name ?? u2.id?.toString() ?? '',
                       ),
-                      // subtitle: Text('following ${u2.following.length}'),
+                      subtitle: Text('following ${u2.following.length}'),
                     ),
                   ),
                   ElevatedButton(

@@ -1,16 +1,10 @@
-// ignore_for_file: prefer_const_literals_to_create_immutables
-
-import 'dart:convert';
-
 import 'package:auto_size_text/auto_size_text.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_data/flutter_data.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:zapstore/models/app.dart';
-import 'package:zapstore/models/user.dart';
 import 'package:zapstore/widgets/card.dart';
 import 'package:zapstore/widgets/pill_widget.dart';
 
@@ -63,25 +57,29 @@ class AppDetailScreen extends HookConsumerWidget {
                               overflow: TextOverflow.ellipsis,
                             ),
                             Gap(8),
-                            PillWidget(text: '0.5.9', color: Colors.grey[800]),
+                            if (app.releases.isNotEmpty)
+                              PillWidget(
+                                  text: app.releases.first.version,
+                                  color: Colors.grey[800]),
                           ],
                         ),
                       ),
                     ],
                   ),
                   Gap(16),
-                  CarouselSlider(
-                    options: CarouselOptions(
-                      enableInfiniteScroll: false,
+                  if ((app.tagMap['image'] ?? []).isNotEmpty)
+                    CarouselSlider(
+                      options: CarouselOptions(
+                        enableInfiniteScroll: false,
+                      ),
+                      items: app.tagMap['image']!
+                          .map((i) => Padding(
+                                padding: const EdgeInsets.only(right: 10),
+                                child: Image.network(i,
+                                    fit: BoxFit.cover, width: 1000),
+                              ))
+                          .toList(),
                     ),
-                    items: (app.tagMap['image'] ?? [])
-                        .map((i) => Padding(
-                              padding: const EdgeInsets.only(right: 10),
-                              child: Image.network(i,
-                                  fit: BoxFit.cover, width: 1000),
-                            ))
-                        .toList(),
-                  ),
                   Divider(height: 24),
                   MarkdownBody(
                     styleSheet: MarkdownStyleSheet(
