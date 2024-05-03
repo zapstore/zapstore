@@ -76,14 +76,17 @@ class AppDetailScreen extends HookConsumerWidget {
                       child: SingleChildScrollView(
                         controller: scrollController,
                         scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: [
-                            for (final i in app.tagMap['image']!)
-                              Padding(
-                                padding: const EdgeInsets.only(right: 12),
-                                child: CachedNetworkImage(imageUrl: i),
-                              ),
-                          ],
+                        child: SizedBox(
+                          height: 320,
+                          child: Row(
+                            children: [
+                              for (final i in app.tagMap['image']!)
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 12),
+                                  child: CachedNetworkImage(imageUrl: i),
+                                ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -92,7 +95,7 @@ class AppDetailScreen extends HookConsumerWidget {
                     styleSheet: MarkdownStyleSheet(
                       h1: TextStyle(fontWeight: FontWeight.bold),
                       h2: TextStyle(fontWeight: FontWeight.bold),
-                      p: TextStyle(fontSize: 16, fontWeight: FontWeight.w300),
+                      p: TextStyle(fontSize: 18, fontWeight: FontWeight.w300),
                     ),
                     selectable: false,
                     data: app.content,

@@ -50,6 +50,7 @@ class ZapstoreApp extends StatelessWidget {
         useMaterial3: true,
         scaffoldBackgroundColor: kBackgroundColor,
         visualDensity: VisualDensity.adaptivePlatformDensity,
+
         // textTheme: context.theme.textTheme.copyWith(
         //     bodyLarge:
         //         TextStyle(color: Colors.white, fontWeight: FontWeight.w300))
@@ -225,13 +226,7 @@ class ScaffoldWithNavigationBar extends HookConsumerWidget {
         onDestinationSelected: onDestinationSelected,
       ),
       drawer: Drawer(
-        child: Column(
-          children: [
-            DrawerHeader(
-              child: AppDrawer(),
-            ),
-          ],
-        ),
+        child: AppDrawer(),
       ),
     );
   }

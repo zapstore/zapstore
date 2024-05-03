@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:collection/collection.dart';
 import 'package:flutter_data/flutter_data.dart';
 import 'package:json_annotation/json_annotation.dart';
 import 'package:purplebase/purplebase.dart';
@@ -17,46 +20,47 @@ class User extends ZapstoreEvent<User> with BaseUser {
 mixin UserAdapter on NostrAdapter<User> {
   @override
   DeserializedData<User> deserialize(Object? data, {String? key}) {
+    final Iterable<Map<String, dynamic>> list =
+        (data is Iterable ? data : [data as Map]).cast();
+
+    final k0s = list
+        .where((e) => e['kind'] == 0 && jsonDecode(e['content']).isNotEmpty)
+        .toList()
+        .groupSetsBy((e) => e['pubkey'] as String);
+    final k3 = (list.where((e) => e['kind'] == 3).toList()
+          ..sortBy<num>((e) => e['created_at']))
+        .firstOrNull;
+
+    // collect contacts and then assign them to user
+    final included = <DataModelMixin>[];
+    if (k3 != null) {
+      final contactMaps = [];
+      for (final [_, id, ..._] in k3['tags'] as Iterable) {
+        contactMaps.add({
+          'id': id,
+          'content': '',
+          'pubkey': id,
+          'created_at': DateTime.now().millisecondsSinceEpoch ~/ 1000,
+          'kind': 0,
+          'tags': [],
+        });
+      }
+      final data = super.deserialize(contactMaps);
+      included.addAll(data.models);
+    }
+
     final users = <User>[];
-    final list = data is Iterable ? data : [data as Map];
-
-    // first process kind 3 (if any)
-    for (final e in list) {
-      final map = e as Map<String, dynamic>;
-      if (map['kind'] == 3) {
-        final contactMaps = [];
-        for (final [_, id, ..._] in map['tags'] as Iterable) {
-          contactMaps.add({
-            'id': id,
-            'content': '',
-            'pubkey': id,
-            'created_at': DateTime.now().millisecondsSinceEpoch ~/ 1000,
-            'kind': 0,
-            'tags': [],
-          });
-        }
-        final data = super.deserialize(contactMaps);
-        users.addAll(data.models);
+    for (final _ in k0s.entries) {
+      if (_.value.length > 1) {
+        print('more than one for ${_.key}');
       }
+      final k0 = _.value.first;
+      k0['id'] = k0['pubkey'];
+      k0['following'] = included.map((e) => e.id).toList();
+      users.addAll(super.deserialize(k0).models);
     }
 
-    for (final e in list) {
-      final map = e as Map<String, dynamic>;
-      if (map['kind'] == 0) {
-        map['id'] = map['pubkey'];
-        // TODO workaround - should not assume empty is null
-        if (users.isNotEmpty) {
-          map['following'] = users.map((e) => e.id).toList();
-        }
-        final data0 = super.deserialize(map);
-        final user = data0.model;
-        if (user != null) {
-          users.add(user);
-        }
-      }
-    }
-
-    return DeserializedData(users);
+    return DeserializedData<User>(users, included: included);
   }
 
   @override
@@ -90,6 +94,8 @@ mixin UserAdapter on NostrAdapter<User> {
       OnSuccessOne<User>? onSuccess,
       OnErrorOne<User>? onError,
       DataRequestLabel? label}) async {
+    if (id.toString().isEmpty) return null;
+
     var publicKey = id.toString();
 
     if (publicKey.startsWith('npub')) {
@@ -113,6 +119,8 @@ mixin UserAdapter on NostrAdapter<User> {
     final result =
         await notifier.query(req, relayUrls: ['wss://relay.nostr.band']);
     final data = await deserializeAsync(result, save: true);
-    return data.models.firstWhere((e) => e.id == publicKey);
+    return data.models.firstWhere((e) {
+      return e.id == publicKey;
+    });
   }
 }

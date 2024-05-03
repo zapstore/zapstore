@@ -5,6 +5,7 @@ import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
+import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/card.dart';
 import 'package:zapstore/widgets/user_avatar.dart';
 
@@ -74,12 +75,17 @@ class SearchScreen extends HookConsumerWidget {
         ),
         Gap(10),
         if (state.hasMessage)
-          Text(
-            state.message!,
-            textAlign: TextAlign.center,
+          Expanded(
+            child: Center(
+              child: Text(
+                state.message!,
+                textAlign: TextAlign.center,
+                style: context.theme.textTheme.bodyLarge,
+              ),
+            ),
           ),
         if (state.hasException) Text(state.exception!.toString()),
-        if (state.hasModel)
+        if (state.hasModel && state.model.isNotEmpty)
           Expanded(
             child: ListView.builder(
               shrinkWrap: true,

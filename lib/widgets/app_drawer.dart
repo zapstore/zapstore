@@ -11,51 +11,62 @@ class AppDrawer extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final u2 = ref.watch(loggedInUser);
+    final user = ref.watch(loggedInUser);
     final controller = useTextEditingController();
 
     return Padding(
-      padding: const EdgeInsets.all(12.0),
-      child: Column(
+      padding: const EdgeInsets.only(top: 24, left: 16),
+      child: ListView(
         children: [
-          // Text('npub or NIP-05'),
-          if (u2 == null) TextField(autocorrect: false, controller: controller),
-          Gap(5),
-          if (u2 == null)
-            ElevatedButton(
-              onPressed: () async {
-                ref.read(loggedInUser.notifier).state = await ref.users
-                    .findOne(controller.text, params: {'contacts': true});
-              },
-              child: Text('Log in'),
-            ),
-          if (u2 != null)
-            Expanded(
-              child: Column(
-                children: [
-                  Card(
-                    child: ListTile(
-                      dense: true,
-                      leading: CircularImage(
-                        size: 20,
-                        url: u2.avatarUrl,
-                      ),
-                      title: Text(
-                        u2.name ?? u2.id?.toString() ?? '',
-                      ),
-                      subtitle: Text('following ${u2.following.length}'),
-                    ),
-                  ),
-                  ElevatedButton(
-                    onPressed: () async {
-                      ref.read(loggedInUser.notifier).state = null;
-                      controller.clear();
-                    },
-                    child: Text('Log out'),
-                  ),
-                ],
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: EdgeInsets.only(top: 4, bottom: 4),
+                child: Row(
+                  children: [
+                    CircularImage(url: user?.avatarUrl, size: 46),
+                    Gap(10),
+                    Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (user != null)
+                          Text(
+                            user.name,
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        if (user != null)
+                          Text('${user.following.length} contacts'),
+                      ],
+                    )
+                  ],
+                ),
               ),
-            ),
+              if (user == null)
+                TextField(
+                  autocorrect: false,
+                  controller: controller,
+                ),
+              Gap(5),
+              if (user == null)
+                ElevatedButton(
+                  onPressed: () async {
+                    ref.read(loggedInUser.notifier).state = await ref.users
+                        .findOne(controller.text, params: {'contacts': true});
+                  },
+                  child: Text('Log in'),
+                ),
+              if (user != null)
+                ElevatedButton(
+                  onPressed: () async {
+                    ref.read(loggedInUser.notifier).state = null;
+                    controller.clear();
+                  },
+                  child: Text('Log out'),
+                ),
+            ],
+          ),
         ],
       ),
     );

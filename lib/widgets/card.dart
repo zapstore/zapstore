@@ -110,8 +110,6 @@ class AuthorContainer extends StatelessWidget {
     this.oneLine = true,
   });
 
-  String get name => user.name ?? user.npub;
-
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -120,7 +118,14 @@ class AuthorContainer extends StatelessWidget {
         children: [
           CircularImage(url: user.avatarUrl, size: oneLine ? 22 : 46),
           Gap(10),
-          if (oneLine) Text('$text $name'),
+          if (oneLine)
+            Expanded(
+              child: Text(
+                '$text ${user.name}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           if (!oneLine)
             Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -129,8 +134,12 @@ class AuthorContainer extends StatelessWidget {
                 Text(text),
                 Padding(
                   padding: const EdgeInsets.only(left: 1),
-                  child:
-                      Text(name, style: TextStyle(fontWeight: FontWeight.bold)),
+                  child: Text(
+                    user.name,
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ],
             )
@@ -158,6 +167,7 @@ class CircularImage extends StatelessWidget {
       borderRadius: BorderRadius.circular(radius.toDouble()),
       child: CachedNetworkImage(
         imageUrl: url ?? '',
+        errorWidget: (_, __, ___) => Container(color: Colors.grey[800]),
         fit: BoxFit.cover,
         width: size.toDouble(),
         height: size.toDouble(),

@@ -45,3 +45,5 @@ app.*.map.json
 /tmp
 /flutter_data
 .fvm/
+
+TODO.txt
