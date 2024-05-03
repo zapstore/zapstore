@@ -59,7 +59,7 @@ class AppDetailScreen extends HookConsumerWidget {
                       mainAxisAlignment: MainAxisAlignment.start,
                       children: [
                         CircularImage(
-                          url: app.icons.first,
+                          url: app.icons.firstOrNull,
                           size: 80,
                           radius: 25,
                         ),

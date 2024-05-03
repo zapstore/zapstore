@@ -55,11 +55,15 @@ extension AppX on App {
   // NOTE: we MUST call getInstalledApps() to use currentVersion
   bool get canUpdate =>
       currentVersion != null &&
-      releases.latest != null &&
-      releases.latest!.version.compareTo(currentVersion!) == 1;
+      releases.latest?.androidArtifacts.firstOrNull != null &&
+      releases.latest!.androidArtifacts.first.version!
+              .compareTo(currentVersion!) ==
+          1;
 
   bool get isUpdated =>
       currentVersion != null &&
-      releases.latest != null &&
-      releases.latest!.version.compareTo(currentVersion!) == 0;
+      releases.latest?.androidArtifacts.firstOrNull != null &&
+      releases.latest!.androidArtifacts.first.version!
+              .compareTo(currentVersion!) ==
+          0;
 }

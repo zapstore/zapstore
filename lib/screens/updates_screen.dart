@@ -136,13 +136,20 @@ class UpdatesAppCard extends StatelessWidget {
                   ),
                   // NOTE: we MUST call getInstalledApps() in order to use currentVersion
                   if (app.currentVersion != null)
-                    PillWidget(text: app.currentVersion!),
-                  if (app.currentVersion != app.releases.latest!.version)
-                    PillWidget(text: app.releases.latest!.version),
+                    PillWidget(
+                        text: app.currentVersion!, color: Colors.grey[800]),
+                  if (app.currentVersion !=
+                      app.releases.latest!.androidArtifacts.first.version)
+                    PillWidget(
+                      text:
+                          app.releases.latest!.androidArtifacts.first.version!,
+                      color: Colors.grey[800],
+                    ),
                 ],
               ),
             ),
-            if (app.currentVersion != app.releases.latest!.version)
+            if (app.currentVersion !=
+                app.releases.latest!.androidArtifacts.first.version)
               Expanded(child: InstallButton(app: app))
           ],
         ),
