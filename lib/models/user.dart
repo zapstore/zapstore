@@ -27,13 +27,17 @@ mixin UserAdapter on NostrAdapter<User> {
         .where((e) => e['kind'] == 0 && jsonDecode(e['content']).isNotEmpty)
         .toList()
         .groupSetsBy((e) => e['pubkey'] as String);
-    final k3 = (list.where((e) => e['kind'] == 3).toList()
-          ..sortBy<num>((e) => e['created_at']))
-        .firstOrNull;
+    final k3s = list
+        .where((e) => e['kind'] == 3)
+        .toList()
+        .groupSetsBy((e) => e['pubkey'] as String);
 
     // collect contacts and then assign them to user
-    final included = <DataModelMixin>[];
-    if (k3 != null) {
+    final included = <String, List<DataModelMixin>>{};
+    for (final _ in k3s.entries) {
+      final sl = _.value.sorted(
+          (a, b) => (b['created_at'] as int).compareTo(a['created_at']));
+      final k3 = sl.first;
       final contactMaps = [];
       for (final [_, id, ..._] in k3['tags'] as Iterable) {
         contactMaps.add({
@@ -46,21 +50,26 @@ mixin UserAdapter on NostrAdapter<User> {
         });
       }
       final data = super.deserialize(contactMaps);
-      included.addAll(data.models);
+      included[k3['pubkey']] = data.models;
     }
 
     final users = <User>[];
     for (final _ in k0s.entries) {
-      if (_.value.length > 1) {
+      final sl = _.value.sorted(
+          (a, b) => (b['created_at'] as int).compareTo(a['created_at']));
+      if (sl.length > 1) {
         print('more than one for ${_.key}');
       }
-      final k0 = _.value.first;
-      k0['id'] = k0['pubkey'];
-      k0['following'] = included.map((e) => e.id).toList();
+      final k0 = sl.first;
+      final id = k0['id'] = k0['pubkey'];
+      if (included.containsKey(id)) {
+        k0['following'] = included[id]!.map((e) => e.id).toList();
+      }
       users.addAll(super.deserialize(k0).models);
     }
 
-    return DeserializedData<User>(users, included: included);
+    return DeserializedData<User>(users,
+        included: included.values.expand((_) => _).toList());
   }
 
   @override
@@ -77,7 +86,10 @@ mixin UserAdapter on NostrAdapter<User> {
     if (ids.isEmpty) {
       return [];
     }
-    final req = RelayRequest(authors: Set<String>.from(ids), kinds: {kind});
+    final req = RelayRequest(
+      authors: Set<String>.from(ids),
+      kinds: {kind, if (params['contacts'] != null) 3},
+    );
 
     final result =
         await notifier.query(req, relayUrls: ['wss://relay.nostr.band']);

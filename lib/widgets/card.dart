@@ -27,7 +27,7 @@ class CardWidget extends HookConsumerWidget {
             mainAxisAlignment: MainAxisAlignment.start,
             children: [
               CircularImage(
-                url: app.icon ?? '',
+                url: app.icons.first,
                 size: 80,
                 radius: 25,
               ),
@@ -37,7 +37,7 @@ class CardWidget extends HookConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     AutoSizeText(
-                      app.name,
+                      app.name!,
                       minFontSize: 16,
                       style:
                           TextStyle(fontSize: 23, fontWeight: FontWeight.bold),
@@ -61,8 +61,8 @@ class CardWidget extends HookConsumerWidget {
                         user: app.developer.value!,
                         text: 'Built by',
                       ),
-                    if (app.signer.isPresent)
-                      AuthorContainer(user: app.signer.value!),
+                    // if (app.signer.isPresent)
+                    //   AuthorContainer(user: app.signer.value!),
                     // Gap(16),
                     // TagsContainer(
                     //   tags: app.tagMap['t'] ?? [],
@@ -158,20 +158,28 @@ class CircularImage extends StatelessWidget {
   });
 
   final String? url;
-  final int size;
-  final int radius;
+  final double size;
+  final double radius;
 
   @override
   Widget build(BuildContext context) {
+    final fallbackContainer = Container(
+      height: size,
+      width: size,
+      color: Colors.grey[800],
+    );
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius.toDouble()),
-      child: CachedNetworkImage(
-        imageUrl: url ?? '',
-        errorWidget: (_, __, ___) => Container(color: Colors.grey[800]),
-        fit: BoxFit.cover,
-        width: size.toDouble(),
-        height: size.toDouble(),
-      ),
+      child: url == null
+          ? fallbackContainer
+          : CachedNetworkImage(
+              imageUrl: url!,
+              errorWidget: (_, __, ___) => fallbackContainer,
+              useOldImageOnUrlChange: true,
+              fit: BoxFit.cover,
+              width: size,
+              height: size,
+            ),
     );
   }
 }

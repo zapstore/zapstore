@@ -49,13 +49,15 @@ mixin _$AppAdapter on Adapter<App> {
 
 final _appsFinders = <String, dynamic>{};
 
-class $AppAdapter = Adapter<App> with _$AppAdapter, NostrAdapter<App>;
+class $AppAdapter = Adapter<App>
+    with _$AppAdapter, NostrAdapter<App>, AppAdapter;
 
 final appsAdapterProvider = Provider<Adapter<App>>(
     (ref) => $AppAdapter(ref, InternalHolder(_appsFinders)));
 
 extension AppAdapterX on Adapter<App> {
   NostrAdapter<App> get nostrAdapter => this as NostrAdapter<App>;
+  AppAdapter get appAdapter => this as AppAdapter;
 }
 
 extension AppRelationshipGraphNodeX on RelationshipGraphNode<App> {
@@ -99,7 +101,8 @@ App _$AppFromJson(Map<String, dynamic> json) => App()
       HasMany<Release>.fromJson(json['releases'] as Map<String, dynamic>)
   ..signer = BelongsTo<User>.fromJson(json['signer'] as Map<String, dynamic>)
   ..developer =
-      BelongsTo<User>.fromJson(json['developer'] as Map<String, dynamic>);
+      BelongsTo<User>.fromJson(json['developer'] as Map<String, dynamic>)
+  ..currentVersion = json['currentVersion'] as String?;
 
 Map<String, dynamic> _$AppToJson(App instance) => <String, dynamic>{
       'id': instance.id,
@@ -112,4 +115,5 @@ Map<String, dynamic> _$AppToJson(App instance) => <String, dynamic>{
       'releases': instance.releases,
       'signer': instance.signer,
       'developer': instance.developer,
+      'currentVersion': instance.currentVersion,
     };

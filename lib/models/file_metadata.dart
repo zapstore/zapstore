@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:android_package_installer/android_package_installer.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_data/flutter_data.dart';
+import 'package:http/http.dart';
 import 'package:json_annotation/json_annotation.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:path_provider/path_provider.dart';
@@ -32,19 +33,33 @@ class FileMetadata extends ZapstoreEvent<FileMetadata> with BaseFileMetadata {
 
     // download file
 
-    final uri = Uri.parse(url);
-    final response = await http.get(uri);
+    late Uri uri;
+    late Response response;
+    try {
+      uri = Uri.parse(urls.first);
+      print('about to download apk');
+      response = await http.get(uri);
+      print('downloaded apk');
+    } catch (e) {
+      // try with x
+      uri = Uri.parse('https://cdn.zap.store/$hash');
+      response = await http.get(uri);
+    }
+
     final dir = await getApplicationSupportDirectory();
-    final file = File(path.join(dir.path, path.basename(url)));
+    final file = File(path.join(dir.path, path.basename(uri.path)));
     await file.writeAsBytes(response.bodyBytes);
 
     // check hash
 
+    print('checking digest...');
     final digest = sha256.convert(response.bodyBytes);
     final shaOk = digest.toString() == hash;
 
     if (!shaOk) {
       throw Exception('sha not ok');
+    } else {
+      print('digest ok, installing');
     }
 
     int? code =

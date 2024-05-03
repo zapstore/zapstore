@@ -53,7 +53,8 @@ class AppDrawer extends HookConsumerWidget {
                 ElevatedButton(
                   onPressed: () async {
                     ref.read(loggedInUser.notifier).state = await ref.users
-                        .findOne(controller.text, params: {'contacts': true});
+                        .findOne(controller.text.trim(),
+                            params: {'contacts': true});
                   },
                   child: Text('Log in'),
                 ),

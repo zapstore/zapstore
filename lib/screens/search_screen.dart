@@ -120,12 +120,12 @@ final searchStateProvider = StateNotifierProvider.autoDispose<
             isLoading: false, message: 'Please provide a longer search term');
       }
       n.updateWith(model: <App>[], isLoading: true, message: null);
-      final r = RegExp(query, caseSensitive: false);
+      final r = RegExp(query.replaceAll(' ', '|'), caseSensitive: false);
       final apps = ref.apps
           .findAllLocal()
           .where((app) =>
               (app.url ?? '').contains(r) ||
-              app.name.contains(r) ||
+              app.name!.contains(r) ||
               app.content.contains(r) ||
               app.tags.any((e) => e.contains(r)))
           .toList();
@@ -150,13 +150,8 @@ final searchStateProvider = StateNotifierProvider.autoDispose<
         final userIds = {
           for (final app in apps) app.signer.id,
           for (final app in apps) app.developer.id
-        };
-        await ref.users.findAll(params: {'ids': userIds});
-
-        final ids = apps.map((a) => a.identifier).toSet();
-        if (ids.isNotEmpty) {
-          await ref.releases.findAll(params: {'#i': ids});
-        }
+        }.nonNulls;
+        ref.users.findAll(params: {'ids': userIds});
         n.updateWith(isLoading: false);
       } catch (e) {
         n.updateWith(isLoading: false);

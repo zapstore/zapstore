@@ -1,3 +1,4 @@
+import 'package:collection/collection.dart';
 import 'package:flutter_data/flutter_data.dart';
 import 'package:json_annotation/json_annotation.dart';
 import 'package:purplebase/purplebase.dart';
@@ -32,4 +33,15 @@ mixin ReleaseAdapter on Adapter<Release> {
     }
     return super.deserialize(data);
   }
+}
+
+extension HasManyReleaseX on HasMany<Release> {
+  Release? get latest =>
+      toList().sorted((a, b) => a.createdAt.compareTo(b.createdAt)).firstOrNull;
+}
+
+extension ReleaseX on Release {
+  Set<FileMetadata> get androidArtifacts => artifacts
+      .where((a) => a.mimeType == 'application/vnd.android.package-archive')
+      .toSet();
 }

@@ -1,53 +1,21 @@
-import 'package:android_package_manager/android_package_manager.dart';
+import 'package:auto_size_text/auto_size_text.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_data/flutter_data.dart';
+import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
+import 'package:zapstore/models/release.dart';
+import 'package:zapstore/screens/app_detail_screen.dart';
 import 'package:zapstore/widgets/card.dart';
-
-final testApp = {
-  "id": "945b30320b5b9ca315adecda68b1e18effd10e8933d2fd770cd04c014af153a4",
-  "pubkey": "78ce6faa72264387284e647ba6938995735ec8c7d5c5a65737e55130f026307d",
-  "sig":
-      "c5d4d8a0dfe4a3e52a45866f4c29e3ae063cbc3a5607a6a01979d30a31655cc6a567e7f3388f3f0772fddb6ad6702b181fc24d3d9e9cdff795af8edec6122af5",
-  "kind": 32267,
-  "created_at": 1714425637,
-  "content":
-      "Primal is a Nostr client featuring:\n\n- Easy onboarding\\\n- Smooth, fast and rich feeds\\\n- Content discovery\n",
-  "tags": [
-    ["d", "net.primal.android"],
-    ["name", "Primal"],
-    ["repository", "https://github.com/PrimalHQ/primal-android-app"],
-    [
-      "icon",
-      "https://cdn.zap.store/778bc7fc496a95187b9dcc7c2ba8325a156912d64a2e22e91ed52d0dbf00716c.png"
-    ],
-  ]
-};
+import 'package:zapstore/widgets/pill_widget.dart';
 
 final installedAppsStateProvider = StateNotifierProvider.autoDispose<
     DataStateNotifier<List<App>>, DataState<List<App>>>((ref) {
-  final packageManager = AndroidPackageManager();
-  final n = DataStateNotifier(
-      data: DataState<List<App>>(
-    [],
-    // ref.apps.deserialize(testApp).models,
-    isLoading: true,
-  ));
-
-  () async {
-    final infos = await packageManager.getInstalledPackages();
-    final ids = infos!
-        .map((i) => i.packageName)
-        .nonNulls
-        .where((n) => !n.startsWith('android') || !n.startsWith('com.android'))
-        .toSet();
-    print('querying for $ids');
-    final apps = await ref.apps.findAll(params: {'#d': ids});
-    print('got ${apps.length}');
-    n.updateWith(model: apps);
-  }();
+  final n = DataStateNotifier(data: DataState<List<App>>([], isLoading: true));
+  ref.apps.appAdapter
+      .getInstalledApps()
+      .then((apps) => n.updateWith(model: apps.toList(), isLoading: false));
   return n;
 });
 
@@ -58,13 +26,127 @@ class UpdatesScreen extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(installedAppsStateProvider);
 
-    return ListView.builder(
-      shrinkWrap: true,
-      itemCount: state.model.length,
-      itemBuilder: (context, index) {
-        final app = state.model[index];
-        return CardWidget(app: app);
-      },
+    if (state.isLoading) {
+      return Center(
+        child: CircularProgressIndicator(),
+      );
+    }
+
+    final updatableApps = state.model.where((app) => app.canUpdate).toList();
+    final updatedApps = state.model.where((app) => app.isUpdated).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('Installed apps',
+                style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold)),
+            // Expanded(
+            //   child: TextButton(
+            //     style: TextButton.styleFrom(
+            //       foregroundColor: Colors.lightBlue,
+            //     ),
+            //     onPressed: () {},
+            //     child: const Text('Update All'),
+            //   ),
+            // ),
+          ],
+        ),
+        Gap(20),
+        if (updatableApps.isNotEmpty)
+          Text(
+            '${updatableApps.length} updates available'.toUpperCase(),
+            style: TextStyle(
+              fontSize: 16,
+              letterSpacing: 3,
+              fontWeight: FontWeight.w300,
+            ),
+          ),
+        Gap(10),
+        if (updatableApps.isNotEmpty)
+          ListView.builder(
+            shrinkWrap: true,
+            itemCount: updatableApps.length,
+            itemBuilder: (context, index) {
+              final app = updatableApps[index];
+              return UpdatesAppCard(app: app);
+            },
+          ),
+        Gap(40),
+        if (updatedApps.isNotEmpty)
+          Text(
+            'Up to date'.toUpperCase(),
+            style: TextStyle(
+              fontSize: 16,
+              letterSpacing: 3,
+              fontWeight: FontWeight.w300,
+            ),
+          ),
+        Gap(10),
+        ListView.builder(
+          shrinkWrap: true,
+          itemCount: updatedApps.length,
+          itemBuilder: (context, index) {
+            final app = updatedApps[index];
+            return UpdatesAppCard(app: app);
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class UpdatesAppCard extends StatelessWidget {
+  const UpdatesAppCard({
+    super.key,
+    required this.app,
+  });
+
+  final App app;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: EdgeInsets.only(top: 8, bottom: 8),
+      elevation: 0,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.start,
+          children: [
+            CircularImage(
+              url: app.icons.first,
+              size: 80,
+              radius: 25,
+            ),
+            Gap(16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  AutoSizeText(
+                    app.name!,
+                    minFontSize: 16,
+                    style: TextStyle(fontSize: 23, fontWeight: FontWeight.bold),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                  // NOTE: we MUST call getInstalledApps() in order to use currentVersion
+                  if (app.currentVersion != null)
+                    PillWidget(text: app.currentVersion!),
+                  if (app.currentVersion != app.releases.latest!.version)
+                    PillWidget(text: app.releases.latest!.version),
+                ],
+              ),
+            ),
+            if (app.currentVersion != app.releases.latest!.version)
+              Expanded(child: InstallButton(app: app))
+          ],
+        ),
+      ),
     );
   }
 }
