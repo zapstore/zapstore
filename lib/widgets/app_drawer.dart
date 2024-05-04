@@ -1,3 +1,4 @@
+import 'package:async_button_builder/async_button_builder.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gap/gap.dart';
@@ -27,34 +28,54 @@ class AppDrawer extends HookConsumerWidget {
                   children: [
                     CircularImage(url: user?.avatarUrl, size: 46),
                     Gap(10),
-                    Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (user != null)
-                          Text(
-                            user.name,
-                            style: TextStyle(fontWeight: FontWeight.bold),
+                    if (user != null)
+                      Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Text(
+                                user.nameOrNpub,
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                              Gap(4),
+                              Icon(Icons.verified,
+                                  color: Colors.lightBlue, size: 18),
+                            ],
                           ),
-                        if (user != null)
                           Text('${user.following.length} contacts'),
-                      ],
-                    )
+                        ],
+                      ),
                   ],
                 ),
               ),
               if (user == null)
                 TextField(
+                  autofocus: true,
                   autocorrect: false,
                   controller: controller,
+                  decoration: InputDecoration(
+                    labelText: 'Input your NIP-05 address',
+                  ),
                 ),
               Gap(5),
               if (user == null)
-                ElevatedButton(
+                AsyncButtonBuilder(
+                  loadingWidget: SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator()),
                   onPressed: () async {
                     ref.read(loggedInUser.notifier).state = await ref.users
                         .findOne(controller.text.trim(),
                             params: {'contacts': true});
+                  },
+                  builder: (context, child, callback, buttonState) {
+                    return ElevatedButton(
+                      onPressed: callback,
+                      child: child,
+                    );
                   },
                   child: Text('Log in'),
                 ),

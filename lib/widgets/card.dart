@@ -103,6 +103,7 @@ class AuthorContainer extends StatelessWidget {
   final User user;
   final String text;
   final bool oneLine;
+
   const AuthorContainer({
     super.key,
     required this.user,
@@ -121,7 +122,7 @@ class AuthorContainer extends StatelessWidget {
           if (oneLine)
             Expanded(
               child: Text(
-                '$text ${user.name}',
+                '$text ${user.nameOrNpub}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -135,7 +136,7 @@ class AuthorContainer extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.only(left: 1),
                   child: Text(
-                    user.name,
+                    user.nameOrNpub,
                     style: TextStyle(fontWeight: FontWeight.bold),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

@@ -15,6 +15,8 @@ class User extends ZapstoreEvent<User> with BaseUser {
   late final HasMany<User> following;
   @DataRelationship(inverse: 'following')
   late final HasMany<User> followers = HasMany();
+
+  String get nameOrNpub => name ?? '${npub.substring(0, 10)}...';
 }
 
 mixin UserAdapter on NostrAdapter<User> {
@@ -40,14 +42,16 @@ mixin UserAdapter on NostrAdapter<User> {
       final k3 = sl.first;
       final contactMaps = [];
       for (final [_, id, ..._] in k3['tags'] as Iterable) {
-        contactMaps.add({
-          'id': id,
-          'content': '',
-          'pubkey': id,
-          'created_at': DateTime.now().millisecondsSinceEpoch ~/ 1000,
-          'kind': 0,
-          'tags': [],
-        });
+        if (!existsId(id)) {
+          contactMaps.add({
+            'id': id,
+            'content': '',
+            'pubkey': id,
+            'created_at': DateTime.now().millisecondsSinceEpoch ~/ 1000,
+            'kind': 0,
+            'tags': [],
+          });
+        }
       }
       final data = super.deserialize(contactMaps);
       included[k3['pubkey']] = data.models;

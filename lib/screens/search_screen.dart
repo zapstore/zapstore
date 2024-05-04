@@ -151,7 +151,7 @@ final searchStateProvider = StateNotifierProvider.autoDispose<
           for (final app in apps) app.signer.id,
           for (final app in apps) app.developer.id
         }.nonNulls;
-        ref.users.findAll(params: {'ids': userIds});
+        await ref.users.findAll(params: {'ids': userIds});
         n.updateWith(isLoading: false);
       } catch (e) {
         n.updateWith(isLoading: false);

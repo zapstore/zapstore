@@ -8,6 +8,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
@@ -243,12 +244,13 @@ class AppDetailScreen extends HookConsumerWidget {
 }
 
 class ReleaseCard extends StatelessWidget {
-  const ReleaseCard({
+  ReleaseCard({
     super.key,
     required this.release,
   });
 
   final Release release;
+  final formatter = DateFormat('dd MMM yyyy');
 
   @override
   Widget build(BuildContext context) {
@@ -274,7 +276,7 @@ class ReleaseCard extends StatelessWidget {
               padding: const EdgeInsets.all(8),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [Text('Version'), Text(release.version)],
+                children: [Text('Version'), Text(metadata.version!)],
               ),
             ),
             Padding(
@@ -283,7 +285,7 @@ class ReleaseCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text('Date'),
-                  Text(release.createdAt.toIso8601String())
+                  Text(formatter.format(release.createdAt)),
                 ],
               ),
             ),

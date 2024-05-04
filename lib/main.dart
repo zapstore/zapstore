@@ -9,7 +9,6 @@ import 'package:zapstore/models/app.dart';
 import 'package:zapstore/screens/app_detail_screen.dart';
 import 'package:zapstore/screens/settings_screen.dart';
 import 'package:zapstore/screens/updates_screen.dart';
-import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/app_drawer.dart';
 import 'package:zapstore/screens/search_screen.dart';
 
@@ -50,10 +49,6 @@ class ZapstoreApp extends StatelessWidget {
         useMaterial3: true,
         scaffoldBackgroundColor: kBackgroundColor,
         visualDensity: VisualDensity.adaptivePlatformDensity,
-
-        // textTheme: context.theme.textTheme.copyWith(
-        //     bodyLarge:
-        //         TextStyle(color: Colors.white, fontWeight: FontWeight.w300))
       ),
     );
   }
@@ -89,12 +84,6 @@ final goRouter = GoRouter(
                   path: 'details',
                   builder: (context, state) =>
                       AppDetailScreen(app: state.extra as App),
-                  // pageBuilder: (context, state) =>
-                  //     buildWithSlideTransition<void>(
-                  //   context: context,
-                  //   state: state,
-                  //   child: AppDetailScreen(app: state.extra as App),
-                  // ),
                 ),
               ],
             ),
@@ -272,36 +261,4 @@ class ScaffoldWithNavigationRail extends StatelessWidget {
       ),
     );
   }
-}
-
-CustomTransitionPage buildWithSlideTransition<T>({
-  required BuildContext context,
-  required GoRouterState state,
-  required Widget child,
-}) {
-  return CustomTransitionPage<T>(
-    key: state.pageKey,
-    child: child,
-    transitionsBuilder: (context, animation, secondaryAnimation, child) {
-      return SlideTransition(
-        position:
-            Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero).animate(
-          CurvedAnimation(
-            parent: animation,
-            curve: Curves.fastOutSlowIn,
-          ),
-        ),
-        child: AnimatedBuilder(
-          animation: animation,
-          builder: (context, child) {
-            return Container(
-              color: context.theme.colorScheme.background,
-              child: child,
-            );
-          },
-          child: child,
-        ),
-      );
-    },
-  );
 }

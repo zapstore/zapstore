@@ -282,14 +282,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.0.5"
-  expansion_tile_card:
-    dependency: "direct main"
-    description:
-      name: expansion_tile_card
-      sha256: "27ce4cb518f00e21d0f2309aaa6462b26b148e93cee2029a73088cecf42b1eb0"
-      url: "https://pub.dev"
-    source: hosted
-    version: "3.0.0"
   fake_async:
     dependency: transitive
     description:
@@ -453,22 +445,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.3.1"
-  gtk_window:
-    dependency: "direct main"
-    description:
-      name: gtk_window
-      sha256: "2760fda48314e4f38a0f4f7056cbb4885e230de4aa6a2905ca6345067e4109f4"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.1.1"
-  handy_window:
-    dependency: transitive
-    description:
-      name: handy_window
-      sha256: "21a68a08e227c9fa6508cfebb57b81745a53e61c1b97e5029602f602f492c749"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.2.1"
   hooks_riverpod:
     dependency: "direct main"
     description:
@@ -518,7 +494,7 @@ packages:
     source: hosted
     version: "0.5.3+2"
   intl:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: intl
       sha256: "3bc132a9dbce73a7e4a21a17d06e1878839ffbf975568bc875c60537824b0c4d"
@@ -836,14 +812,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.27.7"
-  screen_retriever:
-    dependency: transitive
-    description:
-      name: screen_retriever
-      sha256: "6ee02c8a1158e6dae7ca430da79436e3b1c9563c8cf02f524af997c201ac2b90"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.1.9"
   shelf:
     dependency: transitive
     description:
@@ -1129,14 +1097,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "5.5.0"
-  window_manager:
-    dependency: transitive
-    description:
-      name: window_manager
-      sha256: b3c895bdf936c77b83c5254bec2e6b3f066710c1f89c38b20b8acc382b525494
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.3.8"
   ws:
     dependency: transitive
     description:
