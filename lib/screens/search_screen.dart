@@ -57,7 +57,10 @@ class SearchScreen extends HookConsumerWidget {
                   if (controller.text.isNotEmpty && !state.isLoading)
                     IconButton(
                       hoverColor: Colors.transparent,
-                      onPressed: controller.clear,
+                      onPressed: () {
+                        controller.clear();
+                        // TODO request focus
+                      },
                       icon: Icon(Icons.close),
                     ),
                 ],
@@ -89,8 +92,9 @@ class SearchScreen extends HookConsumerWidget {
           Expanded(
             child: SingleChildScrollView(
               child: Column(
+                key: UniqueKey(),
                 children: [
-                  for (final app in state.model) CardWidget(app: app),
+                  for (final app in state.model) AppCard(app: app),
                 ],
               ),
             ),
@@ -165,7 +169,6 @@ final searchStateProvider = StateNotifierProvider.autoDispose<
   ref.onDispose(() {
     sub.close();
     dispose();
-    print('disposing the thing');
   });
 
   return n;

@@ -8,10 +8,10 @@ import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/user.dart';
 import 'package:zapstore/widgets/pill_widget.dart';
 
-class CardWidget extends HookConsumerWidget {
+class AppCard extends HookConsumerWidget {
   final App app;
 
-  const CardWidget({super.key, required this.app});
+  const AppCard({super.key, required this.app});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
