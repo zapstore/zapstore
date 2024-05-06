@@ -39,9 +39,3 @@ extension HasManyReleaseX on HasMany<Release> {
   Release? get latest =>
       toList().sorted((a, b) => a.createdAt.compareTo(b.createdAt)).firstOrNull;
 }
-
-extension ReleaseX on Release {
-  Set<FileMetadata> get androidArtifacts => artifacts
-      .where((a) => a.mimeType == 'application/vnd.android.package-archive')
-      .toSet();
-}

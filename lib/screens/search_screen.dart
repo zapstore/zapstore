@@ -17,6 +17,7 @@ class SearchScreen extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final controller = useTextEditingController();
+    final focusNode = useFocusNode();
     final state = ref.watch(searchStateProvider);
 
     return Column(
@@ -31,6 +32,7 @@ class SearchScreen extends HookConsumerWidget {
             Expanded(
               child: SearchBar(
                 controller: controller,
+                focusNode: focusNode,
                 shape: MaterialStateProperty.all(
                   RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(28),
@@ -59,7 +61,7 @@ class SearchScreen extends HookConsumerWidget {
                       hoverColor: Colors.transparent,
                       onPressed: () {
                         controller.clear();
-                        // TODO request focus
+                        focusNode.requestFocus();
                       },
                       icon: Icon(Icons.close),
                     ),
@@ -67,7 +69,7 @@ class SearchScreen extends HookConsumerWidget {
                 hintText: 'Search for apps',
                 hintStyle: MaterialStateProperty.all(
                     TextStyle(color: Colors.grey[600])),
-                autoFocus: true,
+                autoFocus: state.model.isEmpty,
                 elevation: MaterialStateProperty.all(2.2),
                 onSubmitted: (query) async {
                   ref.read(searchQueryProvider.notifier).state = query;

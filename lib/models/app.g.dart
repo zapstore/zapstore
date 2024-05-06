@@ -92,28 +92,26 @@ App _$AppFromJson(Map<String, dynamic> json) => App()
   ..pubkey = json['pubkey'] as String
   ..createdAt = DateTime.parse(json['createdAt'] as String)
   ..content = json['content'] as String
-  ..kind = (json['kind'] as num).toInt()
   ..tags = (json['tags'] as List<dynamic>)
       .map((e) => (e as List<dynamic>).map((e) => e as String).toList())
       .toList()
   ..signature = json['signature'] as String?
+  ..kind = (json['kind'] as num).toInt()
   ..releases =
       HasMany<Release>.fromJson(json['releases'] as Map<String, dynamic>)
   ..signer = BelongsTo<User>.fromJson(json['signer'] as Map<String, dynamic>)
   ..developer =
-      BelongsTo<User>.fromJson(json['developer'] as Map<String, dynamic>)
-  ..installedVersion = json['currentVersion'] as String?;
+      BelongsTo<User>.fromJson(json['developer'] as Map<String, dynamic>);
 
 Map<String, dynamic> _$AppToJson(App instance) => <String, dynamic>{
       'id': instance.id,
       'pubkey': instance.pubkey,
       'createdAt': instance.createdAt.toIso8601String(),
       'content': instance.content,
-      'kind': instance.kind,
       'tags': instance.tags,
       'signature': instance.signature,
+      'kind': instance.kind,
       'releases': instance.releases,
       'signer': instance.signer,
       'developer': instance.developer,
-      'currentVersion': instance.installedVersion,
     };

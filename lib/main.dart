@@ -83,7 +83,7 @@ final goRouter = GoRouter(
                 GoRoute(
                   path: 'details',
                   builder: (context, state) =>
-                      AppDetailScreen(app: state.extra as App),
+                      AppDetailScreen(model: state.extra as App),
                 ),
               ],
             ),

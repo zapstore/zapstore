@@ -56,16 +56,17 @@ class AppDrawer extends HookConsumerWidget {
                   autocorrect: false,
                   controller: controller,
                   decoration: InputDecoration(
-                    labelText: 'Input your NIP-05 address',
+                    labelText: 'NIP-05 address or npub (no nsec!)',
                   ),
                 ),
               Gap(5),
               if (user == null)
                 AsyncButtonBuilder(
                   loadingWidget: SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator()),
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(),
+                  ),
                   onPressed: () async {
                     ref.read(loggedInUser.notifier).state = await ref.users
                         .findOne(controller.text.trim(),

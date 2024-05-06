@@ -1,5 +1,6 @@
 import 'package:auto_size_text/auto_size_text.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:external_app_launcher/external_app_launcher.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
@@ -9,16 +10,15 @@ import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
-import 'package:zapstore/models/file_metadata.dart';
 import 'package:zapstore/models/release.dart';
 import 'package:zapstore/screens/search_screen.dart';
 import 'package:zapstore/widgets/card.dart';
 import 'package:zapstore/widgets/pill_widget.dart';
 
 class AppDetailScreen extends HookConsumerWidget {
-  final App app;
+  final App model;
   AppDetailScreen({
-    required this.app,
+    required this.model,
     super.key,
   });
 
@@ -26,14 +26,19 @@ class AppDetailScreen extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scrollController = ScrollController();
 
+    final state = ref.apps.watchOne(model.id!,
+        alsoWatch: (_) => {_.releases, _.releases.artifacts});
+
     useFuture(useMemoized(() async {
-      final releases = await ref.releases.findAll(params: {'#a': app.aTag});
+      final releases = await ref.releases.findAll(params: {'#a': model.aTag});
       final metadataIds = releases.map((r) => r.tagMap['e']!).expand((_) => _);
       await ref.fileMetadata.findAll(params: {
         'ids': metadataIds,
         '#m': [kAndroidMimeType]
       });
     }));
+
+    final app = state.model ?? model;
 
     return Column(
       children: [
@@ -52,39 +57,7 @@ class AppDetailScreen extends HookConsumerWidget {
               SliverList(
                 delegate: SliverChildListDelegate(
                   [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.start,
-                      children: [
-                        CircularImage(
-                          url: app.icons.firstOrNull,
-                          size: 80,
-                          radius: 25,
-                        ),
-                        Gap(16),
-                        Expanded(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              AutoSizeText(
-                                app.name!,
-                                minFontSize: 16,
-                                style: TextStyle(
-                                    fontSize: 28, fontWeight: FontWeight.bold),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              Gap(8),
-                              if (app.releases.isNotEmpty)
-                                PillWidget(
-                                    text: app.releases.first.version,
-                                    color: Colors.grey[800]),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
+                    VersionedAppHeader(app: app),
                     Gap(16),
                     if (app.images.isNotEmpty)
                       Scrollbar(
@@ -230,13 +203,76 @@ class AppDetailScreen extends HookConsumerWidget {
         ),
         SizedBox(
           height: 50,
-          child: app.releases.latest?.androidArtifacts.firstOrNull == null
-              ? Container()
-              : Center(
-                  child: InstallButton(
-                      metadata: app.releases.latest!.androidArtifacts.first),
-                ),
+          child: Center(
+            child: InstallButton(app: app),
+          ),
         ),
+      ],
+    );
+  }
+}
+
+class VersionedAppHeader extends StatelessWidget {
+  const VersionedAppHeader({
+    super.key,
+    required this.app,
+    this.showUpdate = false,
+  });
+
+  final bool showUpdate;
+  final App app;
+
+  @override
+  Widget build(BuildContext context) {
+    final isUpdate = app.canUpdate && showUpdate;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment: MainAxisAlignment.start,
+      children: [
+        CircularImage(
+          url: app.icons.firstOrNull,
+          size: 80,
+          radius: 25,
+        ),
+        Gap(16),
+        Expanded(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AutoSizeText(
+                app.name!,
+                minFontSize: 16,
+                style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              Gap(8),
+              Wrap(
+                children: [
+                  if (isUpdate)
+                    PillWidget(
+                        text: app.installedVersion!, color: Colors.grey[800]),
+                  if (isUpdate) Icon(Icons.arrow_right),
+                  if (app.latestMetadata != null)
+                    PillWidget(
+                      text: app.latestMetadata!.version!,
+                      color: Colors.grey[800],
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        if (isUpdate)
+          SizedBox(
+            width: 90,
+            height: 40,
+            child: InstallButton(
+              app: app,
+              compact: true,
+            ),
+          ),
       ],
     );
   }
@@ -253,7 +289,7 @@ class ReleaseCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final metadata = release.androidArtifacts.firstOrNull;
+    final metadata = release.app.value!.latestMetadata;
     return Card(
       margin: EdgeInsets.only(top: 8, bottom: 8),
       elevation: 0,
@@ -310,62 +346,62 @@ class ReleaseCard extends StatelessWidget {
 class InstallButton extends ConsumerWidget {
   InstallButton({
     super.key,
-    required this.metadata,
+    required this.app,
+    this.compact = false,
   });
 
-  final FileMetadata metadata;
-  bool get canUpdate => metadata.release.value!.app.value!.canUpdate;
+  final bool compact;
+  final App app;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final progress =
-        ref.watch(installationProgressProvider(metadata.id!.toString()));
+    final progress = ref.watch(installationProgressProvider(app.identifier!));
 
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton(
-        onPressed: () {
-          metadata.install();
+        onPressed: switch (app.status) {
+          AppInstallStatus.notInstallable => null,
+          AppInstallStatus.updated => () async {
+              await LaunchApp.openApp(androidPackageName: app.id!.toString());
+            },
+          _ => () => switch (progress) {
+                IdleInstallProgress() => app.install(),
+                _ => null,
+              }
         },
         style: ElevatedButton.styleFrom(
+          disabledForegroundColor: Colors.white,
+          disabledBackgroundColor: Colors.blueGrey,
           foregroundColor: Colors.white,
           backgroundColor: switch (progress) {
-            DownloadingInstallProgress() => Colors.blue[800],
-            FinishedInstallProgress(e: final e) =>
-              e != null ? Colors.red : Colors.orangeAccent,
+            DownloadingInstallProgress() => Colors.blue[900],
+            ErrorInstallProgress() => Colors.red,
             _ => Colors.blue,
           },
         ),
-        child: switch (progress) {
-          IdleInstallProgress() => canUpdate ? Text('Update') : Text('Install'),
-          DownloadingInstallProgress(progress: final progress) =>
-            Text('Downloading: ${(progress * 100).floor()}%'),
-          DeviceInstallProgress() =>
-            Text('${canUpdate ? 'Updating' : 'Installing'} on device'),
-          FinishedInstallProgress(e: final e) =>
-            e != null ? Text(e.toString()) : Text('Done'),
+        child: switch (app.status) {
+          AppInstallStatus.notInstallable => Text('Sorry, can\'t install'),
+          AppInstallStatus.updated => Text('Open'),
+          _ => switch (progress) {
+              IdleInstallProgress() => app.canUpdate
+                  ? AutoSizeText(
+                      'Update ${compact ? '' : 'to ${app.latestMetadata!.version!}'}',
+                      maxLines: 1)
+                  : Text('Install'),
+              DownloadingInstallProgress(progress: final p, host: final h) =>
+                Text(
+                    '${compact ? '' : 'Downloading from $h '}${(p * 100).floor()}%'),
+              DeviceInstallProgress() => compact
+                  ? SizedBox(
+                      width: 14, height: 14, child: CircularProgressIndicator())
+                  : Text(
+                      '${app.canUpdate ? 'Updating' : 'Installing'} on device'),
+              ErrorInstallProgress(e: final e) =>
+                compact ? Icon(Icons.error) : Text(e.toString()),
+            }
         },
       ),
     );
   }
 }
-
-sealed class InstallProgress {}
-
-class IdleInstallProgress extends InstallProgress {}
-
-class DeviceInstallProgress extends InstallProgress {}
-
-class FinishedInstallProgress extends InstallProgress {
-  final Exception? e;
-  FinishedInstallProgress({this.e});
-}
-
-class DownloadingInstallProgress extends InstallProgress {
-  final double progress;
-  DownloadingInstallProgress(this.progress);
-}
-
-final installationProgressProvider =
-    StateProvider.family<InstallProgress, String>(
-        (_, arg) => IdleInstallProgress());

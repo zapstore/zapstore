@@ -274,6 +274,22 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.2.0"
+  device_info_plus:
+    dependency: "direct main"
+    description:
+      name: device_info_plus
+      sha256: eead12d1a1ed83d8283ab4c2f3fca23ac4082f29f25f29dff0f758f57d06ec91
+      url: "https://pub.dev"
+    source: hosted
+    version: "10.1.0"
+  device_info_plus_platform_interface:
+    dependency: transitive
+    description:
+      name: device_info_plus_platform_interface
+      sha256: d3b01d5868b50ae571cd1dc6e502fc94d956b665756180f7b16ead09e836fd64
+      url: "https://pub.dev"
+    source: hosted
+    version: "7.0.0"
   equatable:
     dependency: transitive
     description:
@@ -282,6 +298,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.0.5"
+  external_app_launcher:
+    dependency: "direct main"
+    description:
+      name: external_app_launcher
+      sha256: a80847a8e24cce37f1c953ec20a9600c3b12167e279b5868945e880cea717bf7
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.0.0"
   fake_async:
     dependency: transitive
     description:
@@ -433,10 +457,10 @@ packages:
     dependency: "direct main"
     description:
       name: go_router
-      sha256: b465e99ce64ba75e61c8c0ce3d87b66d8ac07f0b35d0a7e0263fcfc10f99e836
+      sha256: "9e0f7d1a3e7dc5010903e330fbc5497872c4c3cf6626381d69083cc1d5113c1e"
       url: "https://pub.dev"
     source: hosted
-    version: "13.2.5"
+    version: "14.0.2"
   graphs:
     dependency: transitive
     description:
@@ -1097,6 +1121,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "5.5.0"
+  win32_registry:
+    dependency: transitive
+    description:
+      name: win32_registry
+      sha256: "10589e0d7f4e053f2c61023a31c9ce01146656a70b7b7f0828c0b46d7da2a9bb"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.1.3"
   ws:
     dependency: transitive
     description:
