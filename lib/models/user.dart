@@ -10,7 +10,7 @@ part 'user.g.dart';
 
 @JsonSerializable()
 @DataAdapter([NostrAdapter, UserAdapter])
-class User extends ZapstoreEvent<User> with BaseUser {
+class User extends Event<User> with BaseUser {
   @DataRelationship(inverse: 'followers')
   late final HasMany<User> following;
   @DataRelationship(inverse: 'following')

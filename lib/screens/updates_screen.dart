@@ -12,11 +12,9 @@ import 'package:zapstore/widgets/pill_widget.dart';
 
 final installedAppsStateProvider = StateNotifierProvider.autoDispose<
     DataStateNotifier<List<App>>, DataState<List<App>>>((ref) {
-  final n = DataStateNotifier(data: DataState<List<App>>([], isLoading: true));
-  ref.apps.appAdapter
-      .getInstalledApps()
-      .then((apps) => n.updateWith(model: apps.toList(), isLoading: false));
-  return n;
+  return ref.apps.watchAllNotifier(
+      remote: true,
+      params: {'installed': true}).where((app) => app.installedVersion != null);
 });
 
 class UpdatesScreen extends HookConsumerWidget {
@@ -35,65 +33,52 @@ class UpdatesScreen extends HookConsumerWidget {
     final updatableApps = state.model.where((app) => app.canUpdate).toList();
     final updatedApps = state.model.where((app) => app.isUpdated).toList();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('Installed apps',
-                style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold)),
-            // Expanded(
-            //   child: TextButton(
-            //     style: TextButton.styleFrom(
-            //       foregroundColor: Colors.lightBlue,
-            //     ),
-            //     onPressed: () {},
-            //     child: const Text('Update All'),
-            //   ),
-            // ),
-          ],
-        ),
-        Gap(20),
-        if (updatableApps.isNotEmpty)
-          Text(
-            '${updatableApps.length} updates available'.toUpperCase(),
-            style: TextStyle(
-              fontSize: 16,
-              letterSpacing: 3,
-              fontWeight: FontWeight.w300,
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Installed apps',
+                  style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold)),
+              // Expanded(
+              //   child: TextButton(
+              //     style: TextButton.styleFrom(
+              //       foregroundColor: Colors.lightBlue,
+              //     ),
+              //     onPressed: () {},
+              //     child: const Text('Update All'),
+              //   ),
+              // ),
+            ],
+          ),
+          Gap(20),
+          if (updatableApps.isNotEmpty)
+            Text(
+              '${updatableApps.length} updates available'.toUpperCase(),
+              style: TextStyle(
+                fontSize: 16,
+                letterSpacing: 3,
+                fontWeight: FontWeight.w300,
+              ),
             ),
-          ),
-        Gap(10),
-        if (updatableApps.isNotEmpty)
-          ListView.builder(
-            shrinkWrap: true,
-            itemCount: updatableApps.length,
-            itemBuilder: (context, index) {
-              final app = updatableApps[index];
-              return UpdatesAppCard(app: app);
-            },
-          ),
-        Gap(40),
-        if (updatedApps.isNotEmpty)
-          Text(
-            'Up to date'.toUpperCase(),
-            style: TextStyle(
-              fontSize: 16,
-              letterSpacing: 3,
-              fontWeight: FontWeight.w300,
+          Gap(10),
+          for (final app in updatableApps) UpdatesAppCard(app: app),
+          Gap(40),
+          if (updatedApps.isNotEmpty)
+            Text(
+              'Up to date'.toUpperCase(),
+              style: TextStyle(
+                fontSize: 16,
+                letterSpacing: 3,
+                fontWeight: FontWeight.w300,
+              ),
             ),
-          ),
-        Gap(10),
-        ListView.builder(
-          shrinkWrap: true,
-          itemCount: updatedApps.length,
-          itemBuilder: (context, index) {
-            final app = updatedApps[index];
-            return UpdatesAppCard(app: app);
-          },
-        ),
-      ],
+          Gap(10),
+          for (final app in updatedApps) UpdatesAppCard(app: app),
+        ],
+      ),
     );
   }
 }
@@ -105,6 +90,10 @@ class UpdatesAppCard extends StatelessWidget {
   });
 
   final App app;
+
+  bool get isUpdate =>
+      app.installedVersion !=
+      app.releases.latest!.androidArtifacts.first.version;
 
   @override
   Widget build(BuildContext context) {
@@ -134,23 +123,31 @@ class UpdatesAppCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     maxLines: 1,
                   ),
-                  // NOTE: we MUST call getInstalledApps() in order to use currentVersion
-                  if (app.currentVersion != null)
-                    PillWidget(
-                        text: app.currentVersion!, color: Colors.grey[800]),
-                  if (app.currentVersion !=
-                      app.releases.latest!.androidArtifacts.first.version)
-                    PillWidget(
-                      text:
-                          app.releases.latest!.androidArtifacts.first.version!,
-                      color: Colors.grey[800],
-                    ),
+                  Wrap(
+                    children: [
+                      PillWidget(
+                          text: app.installedVersion!, color: Colors.grey[800]),
+                      if (isUpdate) Icon(Icons.arrow_right),
+                      if (isUpdate)
+                        PillWidget(
+                          text: app
+                              .releases.latest!.androidArtifacts.first.version!,
+                          color: Colors.grey[800],
+                        ),
+                    ],
+                  )
                 ],
               ),
             ),
-            if (app.currentVersion !=
+            if (app.installedVersion !=
                 app.releases.latest!.androidArtifacts.first.version)
-              Expanded(child: InstallButton(app: app))
+              SizedBox(
+                width: 100,
+                height: 40,
+                child: InstallButton(
+                  metadata: app.releases.latest!.androidArtifacts.first,
+                ),
+              ),
           ],
         ),
       ),

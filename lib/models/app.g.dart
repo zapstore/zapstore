@@ -102,7 +102,7 @@ App _$AppFromJson(Map<String, dynamic> json) => App()
   ..signer = BelongsTo<User>.fromJson(json['signer'] as Map<String, dynamic>)
   ..developer =
       BelongsTo<User>.fromJson(json['developer'] as Map<String, dynamic>)
-  ..currentVersion = json['currentVersion'] as String?;
+  ..installedVersion = json['currentVersion'] as String?;
 
 Map<String, dynamic> _$AppToJson(App instance) => <String, dynamic>{
       'id': instance.id,
@@ -115,5 +115,5 @@ Map<String, dynamic> _$AppToJson(App instance) => <String, dynamic>{
       'releases': instance.releases,
       'signer': instance.signer,
       'developer': instance.developer,
-      'currentVersion': instance.currentVersion,
+      'currentVersion': instance.installedVersion,
     };

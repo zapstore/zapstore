@@ -1,10 +1,9 @@
 import 'package:flutter_data/flutter_data.dart';
 import 'package:purplebase/purplebase.dart';
 
-abstract class ZapstoreEvent<T extends ZapstoreEvent<T>> = BaseEvent
-    with DataModelMixin<T>;
+abstract class Event<T extends Event<T>> = BaseEvent with DataModelMixin<T>;
 
-mixin NostrAdapter<T extends ZapstoreEvent<T>> on Adapter<T> {
+mixin NostrAdapter<T extends Event<T>> on Adapter<T> {
   late final RelayMessageNotifier notifier =
       ref.read(relayMessageNotifierProvider.notifier);
 

@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:async_button_builder/async_button_builder.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
@@ -40,6 +38,7 @@ class SettingsScreen extends HookConsumerWidget {
             final user = ref.read(loggedInUser);
             final text = '${controller.text.trim()} [from ${user?.npub}]';
             final event = BaseEvent.partial(content: text).sign(kI);
+            // TODO only send to relay.zap.store?
             await ref.apps.nostrAdapter.notifier.publish(event);
             controller.clear();
           },

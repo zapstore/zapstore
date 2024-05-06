@@ -35,7 +35,7 @@ dependencies:
   crypto: ^3.0.3
   android_package_installer: ^0.0.2
   go_router: ^13.2.0
-  permission_handler: ^11.3.0
+  permission_handler: ^11.3.1
   path: ^1.9.0
   http: ^1.2.1
   async_button_builder: ^3.0.0+1

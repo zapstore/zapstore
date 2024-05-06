@@ -1,6 +1,3 @@
-import 'dart:async';
-
-import 'package:async_button_builder/async_button_builder.dart';
 import 'package:auto_size_text/auto_size_text.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -12,9 +9,9 @@ import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
+import 'package:zapstore/models/file_metadata.dart';
 import 'package:zapstore/models/release.dart';
 import 'package:zapstore/screens/search_screen.dart';
-import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/card.dart';
 import 'package:zapstore/widgets/pill_widget.dart';
 
@@ -231,12 +228,14 @@ class AppDetailScreen extends HookConsumerWidget {
             ],
           ),
         ),
-        Container(
+        SizedBox(
           height: 50,
-          padding: EdgeInsets.all(8),
-          child: Center(
-            child: InstallButton(app: app),
-          ),
+          child: app.releases.latest?.androidArtifacts.firstOrNull == null
+              ? Container()
+              : Center(
+                  child: InstallButton(
+                      metadata: app.releases.latest!.androidArtifacts.first),
+                ),
         ),
       ],
     );
@@ -254,7 +253,7 @@ class ReleaseCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final metadata = release.androidArtifacts.first;
+    final metadata = release.androidArtifacts.firstOrNull;
     return Card(
       margin: EdgeInsets.only(top: 8, bottom: 8),
       elevation: 0,
@@ -272,13 +271,14 @@ class ReleaseCard extends StatelessWidget {
             Gap(10),
             MarkdownBody(data: release.content),
             Gap(30),
-            Padding(
-              padding: const EdgeInsets.all(8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [Text('Version'), Text(metadata.version!)],
+            if (metadata != null)
+              Padding(
+                padding: const EdgeInsets.all(8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [Text('Version'), Text(metadata.version!)],
+                ),
               ),
-            ),
             Padding(
               padding: const EdgeInsets.all(8),
               child: Row(
@@ -289,16 +289,17 @@ class ReleaseCard extends StatelessWidget {
                 ],
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.all(8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Size'),
-                  Text('${int.parse(metadata.size!) ~/ 1024 ~/ 1024} MB')
-                ],
+            if (metadata != null)
+              Padding(
+                padding: const EdgeInsets.all(8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Size'),
+                    Text('${int.parse(metadata.size!) ~/ 1024 ~/ 1024} MB')
+                  ],
+                ),
               ),
-            ),
           ],
         ),
       ),
@@ -306,59 +307,65 @@ class ReleaseCard extends StatelessWidget {
   }
 }
 
-class InstallButton extends HookConsumerWidget {
+class InstallButton extends ConsumerWidget {
   InstallButton({
     super.key,
-    required this.app,
+    required this.metadata,
   });
 
-  final App app;
-
-  final installLabelProvider =
-      StateProvider<(String, String)>((_) => ('Install', 'Installing...'));
+  final FileMetadata metadata;
+  bool get canUpdate => metadata.release.value!.app.value!.canUpdate;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    useFuture(useMemoized(() async {
-      final apps =
-          await ref.apps.appAdapter.getInstalledApps(only: app.id.toString());
-      ref.read(installLabelProvider.notifier).state = apps.first.isUpdated
-          ? ('Install', 'Installing...')
-          : ('Update', 'Updating...');
-    }));
+    final progress =
+        ref.watch(installationProgressProvider(metadata.id!.toString()));
 
-    return AsyncButtonBuilder(
-      loadingWidget: Text(ref.watch(installLabelProvider).$2),
-      onPressed: () async {
-        final a = app.releases.latest!.androidArtifacts.firstOrNull;
-        if (a != null) {
-          final completer = Completer();
-          a.install().then(completer.complete).catchError((e) {
-            context.showError(e);
-            completer.completeError(e);
-          });
-          return completer.future;
-        }
-      },
-      builder: (context, child, callback, buttonState) {
-        final buttonColor = buttonState.when(
-          idle: () => Colors.blue,
-          loading: () => Colors.blue[800],
-          success: () => Colors.orangeAccent,
-          error: (err, stack) => Colors.orange,
-        );
-
-        return OutlinedButton(
-          onPressed: callback,
-          style: OutlinedButton.styleFrom(
-            foregroundColor: Colors.white,
-            backgroundColor: buttonColor,
-            minimumSize: const Size.fromHeight(50),
-          ),
-          child: child,
-        );
-      },
-      child: Text(ref.watch(installLabelProvider).$1),
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton(
+        onPressed: () {
+          metadata.install();
+        },
+        style: ElevatedButton.styleFrom(
+          foregroundColor: Colors.white,
+          backgroundColor: switch (progress) {
+            DownloadingInstallProgress() => Colors.blue[800],
+            FinishedInstallProgress(e: final e) =>
+              e != null ? Colors.red : Colors.orangeAccent,
+            _ => Colors.blue,
+          },
+        ),
+        child: switch (progress) {
+          IdleInstallProgress() => canUpdate ? Text('Update') : Text('Install'),
+          DownloadingInstallProgress(progress: final progress) =>
+            Text('Downloading: ${(progress * 100).floor()}%'),
+          DeviceInstallProgress() =>
+            Text('${canUpdate ? 'Updating' : 'Installing'} on device'),
+          FinishedInstallProgress(e: final e) =>
+            e != null ? Text(e.toString()) : Text('Done'),
+        },
+      ),
     );
   }
 }
+
+sealed class InstallProgress {}
+
+class IdleInstallProgress extends InstallProgress {}
+
+class DeviceInstallProgress extends InstallProgress {}
+
+class FinishedInstallProgress extends InstallProgress {
+  final Exception? e;
+  FinishedInstallProgress({this.e});
+}
+
+class DownloadingInstallProgress extends InstallProgress {
+  final double progress;
+  DownloadingInstallProgress(this.progress);
+}
+
+final installationProgressProvider =
+    StateProvider.family<InstallProgress, String>(
+        (_, arg) => IdleInstallProgress());

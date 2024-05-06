@@ -87,13 +87,12 @@ class SearchScreen extends HookConsumerWidget {
         if (state.hasException) Text(state.exception!.toString()),
         if (state.hasModel && state.model.isNotEmpty)
           Expanded(
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: state.model.length,
-              itemBuilder: (context, index) {
-                final app = state.model[index];
-                return CardWidget(app: app);
-              },
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  for (final app in state.model) CardWidget(app: app),
+                ],
+              ),
             ),
           ),
       ],
@@ -154,7 +153,7 @@ final searchStateProvider = StateNotifierProvider.autoDispose<
         await ref.users.findAll(params: {'ids': userIds});
         n.updateWith(isLoading: false);
       } catch (e) {
-        n.updateWith(isLoading: false);
+        n.updateWith(isLoading: false, exception: e);
       }
     }
   });
