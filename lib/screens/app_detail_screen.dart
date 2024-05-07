@@ -352,24 +352,30 @@ class InstallButton extends ConsumerWidget {
       child: ElevatedButton(
         onPressed: switch (app.status) {
           AppInstallStatus.notInstallable => null,
-          AppInstallStatus.updated => () async {
-              await LaunchApp.openApp(androidPackageName: app.id!.toString());
+          AppInstallStatus.updated => () {
+              LaunchApp.openApp(androidPackageName: app.id!.toString());
             },
           _ => switch (progress) {
-              IdleInstallProgress() => () {
-                  app.install().catchError((e) {
-                    context.showError(e.toString());
-                  });
+              IdleInstallProgress() => () => app.install(),
+              ErrorInstallProgress(e: final e) => () {
+                  // show error and reset state to idle
+                  context.showError(e.toString());
+                  ref
+                      .read(installationProgressProvider(app.id!.toString())
+                          .notifier)
+                      .state = IdleInstallProgress();
                 },
               _ => null,
             }
         },
         style: ElevatedButton.styleFrom(
-          disabledForegroundColor: Colors.white,
-          disabledBackgroundColor: Colors.blue[700],
-          foregroundColor: Colors.white,
-          backgroundColor: Colors.blue[700],
-        ),
+            disabledForegroundColor: Colors.white,
+            disabledBackgroundColor: Colors.blue[700],
+            foregroundColor: Colors.white,
+            backgroundColor: switch (progress) {
+              ErrorInstallProgress() => Colors.red,
+              _ => Colors.blue[700],
+            }),
         child: switch (app.status) {
           AppInstallStatus.notInstallable => Text('Sorry, can\'t install'),
           AppInstallStatus.updated => Text('Open'),
@@ -387,6 +393,9 @@ class InstallButton extends ConsumerWidget {
                       width: 14, height: 14, child: CircularProgressIndicator())
                   : Text(
                       '${app.canUpdate ? 'Updating' : 'Installing'} on device'),
+              ErrorInstallProgress() => compact
+                  ? SizedBox(width: 14, height: 14, child: Icon(Icons.error))
+                  : Text('Error, tap to see message'),
             }
         },
       ),

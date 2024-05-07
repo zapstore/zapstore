@@ -74,7 +74,6 @@ mixin NostrAdapter<T extends Event<T>> on Adapter<T> {
       kinds: {kind, ...?additionalKinds},
       tags: params ?? {},
     );
-    print(req);
 
     final result =
         await notifier.query(req, relayUrls: ['wss://relay.zap.store']);

@@ -42,7 +42,7 @@ dependencies:
   flutter_styled_toast: ^2.2.1
   url_launcher: ^6.2.5
   device_apps: ^2.2.0
-  purplebase:
+  purplebase: ^0.1.0
   sqlite3_flutter_libs: ^0.5.20
   flutter_markdown: ^0.7.1
   cached_network_image: ^3.3.1
@@ -55,7 +55,9 @@ dependencies:
 
 dependency_overrides:
   purplebase:
-    path: ../purplebase
+    git:
+      url: https://github.com/purplebase/purplebase
+      ref: 617e018201a875281b7c484bcd79ead7fea078d6
   flutter_data:
     path: ../flutter_data
 

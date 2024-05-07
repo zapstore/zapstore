@@ -6,7 +6,7 @@ extension ContextX on BuildContext {
   void showError(String message) {
     showToast(
       message,
-      duration: Duration(seconds: 7),
+      duration: Duration(seconds: 5),
       textStyle: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
       animDuration: Duration(milliseconds: 300),
       animation: StyledToastAnimation.fade,

@@ -26,7 +26,11 @@ mixin UserAdapter on NostrAdapter<User> {
         (data is Iterable ? data : [data as Map]).cast();
 
     final k0s = list
-        .where((e) => e['kind'] == 0 && jsonDecode(e['content']).isNotEmpty)
+        .where((e) {
+          final map = Map<String, dynamic>.from(jsonDecode(e['content']));
+          final name = map['name'] ?? map['display_name'] ?? map['displayName'];
+          return e['kind'] == 0 && name != null;
+        })
         .toList()
         .groupSetsBy((e) => e['pubkey'] as String);
     final k3s = list
@@ -61,9 +65,6 @@ mixin UserAdapter on NostrAdapter<User> {
     for (final _ in k0s.entries) {
       final sl = _.value.sorted(
           (a, b) => (b['created_at'] as int).compareTo(a['created_at']));
-      if (sl.length > 1) {
-        print('more than one for ${_.key}');
-      }
       final k0 = sl.first;
       final id = k0['id'] = k0['pubkey'];
       if (included.containsKey(id)) {

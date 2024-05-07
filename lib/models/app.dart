@@ -89,7 +89,7 @@ mixin AppAdapter on Adapter<App> {
       DataRequestLabel? label}) async {
     final map = await getInstalledAppsMap();
 
-    findApps(Map<String, dynamic> params) async {
+    loadAppModels(Map<String, dynamic> params) async {
       final apps = await super.findAll(params: params);
       final releases = await ref.releases
           .findAll(params: {'#a': apps.map((app) => app.aTag)});
@@ -98,6 +98,11 @@ mixin AppAdapter on Adapter<App> {
         'ids': metadataIds,
         '#m': [kAndroidMimeType]
       });
+      final userIds = {
+        for (final app in apps) app.signer.id,
+        for (final app in apps) app.developer.id
+      }.nonNulls;
+      await ref.users.findAll(params: {'ids': userIds});
       return apps;
     }
 
@@ -109,14 +114,14 @@ mixin AppAdapter on Adapter<App> {
 
         final apps = findAllLocal();
         if (apps.isNotEmpty) {
-          findApps(params);
+          loadAppModels(params);
           return apps;
         }
-        return findApps(params);
+        return loadAppModels(params);
       }
     }
 
-    return findApps(params);
+    return loadAppModels(params);
   }
 
   static AndroidPackageManager? _packageManager;
@@ -178,7 +183,9 @@ extension AppX on App {
     if (!installPermission.isGranted) {
       final newStatus = await Permission.requestInstallPackages.request();
       if (newStatus.isDenied) {
-        throw Exception('Installation permission denied');
+        notifier.state =
+            ErrorInstallProgress(Exception('Installation permission denied'));
+        return;
       }
     }
 
@@ -190,8 +197,9 @@ extension AppX on App {
 
       if (await _isHashMismatch(file.path, hash)) {
         await file.delete();
-        notifier.state = IdleInstallProgress();
-        throw Exception('Hash mismatch, aborted installation');
+        notifier.state = ErrorInstallProgress(
+            Exception('Hash mismatch, aborted installation'));
+        return;
       }
 
       final result = await InstallPlugin.install(file.path);
@@ -266,6 +274,11 @@ class DownloadingInstallProgress extends AppInstallProgress {
 }
 
 class DeviceInstallProgress extends AppInstallProgress {}
+
+class ErrorInstallProgress extends AppInstallProgress {
+  final Exception e;
+  ErrorInstallProgress(this.e);
+}
 
 final installedAppProvider = StateProvider<Map<String, String>>((_) => {});
 
