@@ -2,9 +2,7 @@ import 'package:auto_size_text/auto_size_text.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:external_app_launcher/external_app_launcher.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
-import 'package:flutter_styled_toast/flutter_styled_toast.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -12,7 +10,6 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/release.dart';
-import 'package:zapstore/screens/search_screen.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/card.dart';
 import 'package:zapstore/widgets/pill_widget.dart';
@@ -30,15 +27,6 @@ class AppDetailScreen extends HookConsumerWidget {
 
     final state = ref.apps.watchOne(model.id!,
         alsoWatch: (_) => {_.releases, _.releases.artifacts});
-
-    useFuture(useMemoized(() async {
-      final releases = await ref.releases.findAll(params: {'#a': model.aTag});
-      final metadataIds = releases.map((r) => r.tagMap['e']!).expand((_) => _);
-      await ref.fileMetadata.findAll(params: {
-        'ids': metadataIds,
-        '#m': [kAndroidMimeType]
-      });
-    }));
 
     final app = state.model ?? model;
 
@@ -99,20 +87,6 @@ class AppDetailScreen extends HookConsumerWidget {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          if (app.signer.isPresent)
-                            GestureDetector(
-                              onTap: () async {
-                                final url = Uri.parse(
-                                    'https://primal.net/p/${app.signer.value!.npub}');
-                                if (!await launchUrl(url)) {
-                                  throw Exception('Could not launch $url');
-                                }
-                              },
-                              child: AuthorContainer(
-                                  user: app.signer.value!,
-                                  text: 'Curated by',
-                                  oneLine: false),
-                            ),
                           if (app.developer.isPresent)
                             GestureDetector(
                               onTap: () async {
@@ -125,6 +99,20 @@ class AppDetailScreen extends HookConsumerWidget {
                               child: AuthorContainer(
                                   user: app.developer.value!,
                                   text: 'Built by',
+                                  oneLine: false),
+                            ),
+                          if (app.signer.isPresent)
+                            GestureDetector(
+                              onTap: () async {
+                                final url = Uri.parse(
+                                    'https://primal.net/p/${app.signer.value!.npub}');
+                                if (!await launchUrl(url)) {
+                                  throw Exception('Could not launch $url');
+                                }
+                              },
+                              child: AuthorContainer(
+                                  user: app.signer.value!,
+                                  text: 'Signed by',
                                   oneLine: false),
                             ),
                         ],

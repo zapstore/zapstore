@@ -13,12 +13,14 @@ import 'package:json_annotation/json_annotation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:purplebase/purplebase.dart';
+import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/file_metadata.dart';
 import 'package:zapstore/models/nostr_adapter.dart';
 import 'package:zapstore/models/release.dart';
 import 'package:zapstore/models/user.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
+import 'package:zapstore/screens/search_screen.dart';
 
 part 'app.g.dart';
 
@@ -30,7 +32,7 @@ class App extends Event<App> with BaseApp {
   late final BelongsTo<User> developer;
 
   String? get installedVersion =>
-      adapter.ref.read(installedAppProvider)[id!.toString()];
+      DataModel.adapterFor(this).ref.read(installedAppProvider)[id!.toString()];
 
   FileMetadata? get latestMetadata {
     //   if (Platform.isAndroid) {
@@ -87,6 +89,18 @@ mixin AppAdapter on Adapter<App> {
       DataRequestLabel? label}) async {
     final map = await getInstalledAppsMap();
 
+    findApps(Map<String, dynamic> params) async {
+      final apps = await super.findAll(params: params);
+      final releases = await ref.releases
+          .findAll(params: {'#a': apps.map((app) => app.aTag)});
+      final metadataIds = releases.map((r) => r.tagMap['e']!).expand((_) => _);
+      await ref.fileMetadata.findAll(params: {
+        'ids': metadataIds,
+        '#m': [kAndroidMimeType]
+      });
+      return apps;
+    }
+
     if (params!.containsKey('installed')) {
       if (map.keys.isNotEmpty) {
         params['#d'] = map.keys;
@@ -95,14 +109,14 @@ mixin AppAdapter on Adapter<App> {
 
         final apps = findAllLocal();
         if (apps.isNotEmpty) {
-          super.findAll(params: params);
+          findApps(params);
           return apps;
         }
-        return super.findAll(params: params);
+        return findApps(params);
       }
     }
 
-    return super.findAll(params: params);
+    return findApps(params);
   }
 
   static AndroidPackageManager? _packageManager;
@@ -192,7 +206,7 @@ extension AppX on App {
     if (await file.exists()) {
       await installOnDevice();
     } else {
-      StreamSubscription? _sub;
+      StreamSubscription? sub;
       final client = http.Client();
       final sink = file.openWrite();
 
@@ -209,7 +223,7 @@ extension AppX on App {
       }
       final totalBytes = response.contentLength ?? int.tryParse(size) ?? 1;
 
-      _sub = response.stream.listen((chunk) {
+      sub = response.stream.listen((chunk) {
         final data = Uint8List.fromList(chunk);
         sink.add(data);
         downloadedBytes += data.length;
@@ -218,7 +232,7 @@ extension AppX on App {
       }, onError: (e) {
         throw e;
       }, onDone: () async {
-        await _sub?.cancel();
+        await sub?.cancel();
         await sink.close();
         client.close();
         await installOnDevice();
