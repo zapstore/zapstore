@@ -33,7 +33,6 @@ dependencies:
   collection: ^1.18.0
   path_provider: ^2.1.2
   crypto: ^3.0.3
-  android_package_installer: ^0.0.2
   go_router: ^14.0.2
   permission_handler: ^11.3.1
   path: ^1.9.0
@@ -52,12 +51,9 @@ dependencies:
   intl: ^0.18.1
   device_info_plus: ^10.1.0
   external_app_launcher: ^4.0.0
+  install_plugin: ^2.1.0
 
 dependency_overrides:
-  android_package_installer:
-    git:
-      url: https://github.com/ImranR98/android_package_installer
-      ref: main
   purplebase:
     path: ../purplebase
   flutter_data:

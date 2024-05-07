@@ -1,13 +1,14 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
-import 'package:android_package_installer/android_package_installer.dart';
 import 'package:android_package_manager/android_package_manager.dart';
 import 'package:collection/collection.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_data/flutter_data.dart';
+import 'package:install_plugin/install_plugin.dart';
 import 'package:json_annotation/json_annotation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -174,29 +175,24 @@ extension AppX on App {
       notifier.state = DeviceInstallProgress();
 
       if (await _isHashMismatch(file.path, hash)) {
-        notifier.state = ErrorInstallProgress(
-            e: Exception('Hash mismatch, aborted installation'));
         await file.delete();
-        return;
+        notifier.state = IdleInstallProgress();
+        throw Exception('Hash mismatch, aborted installation');
       }
 
-      int? code =
-          await AndroidPackageInstaller.installApk(apkFilePath: file.path);
-      if (code != 0) {
-        notifier.state = ErrorInstallProgress(
-            e: Exception(
-                'Install: ${code != null ? PackageInstallerStatus.byCode(code) : ''}'));
+      final result = await InstallPlugin.install(file.path);
+      if (result['isSuccess']) {
+        await file.delete();
+        await adapter.getInstalledAppsMap();
+        saveLocal();
       }
-
-      await file.delete();
-      await adapter.getInstalledAppsMap();
-      saveLocal();
       notifier.state = IdleInstallProgress();
     }
 
     if (await file.exists()) {
       await installOnDevice();
     } else {
+      StreamSubscription? _sub;
       final client = http.Client();
       final sink = file.openWrite();
 
@@ -213,15 +209,16 @@ extension AppX on App {
       }
       final totalBytes = response.contentLength ?? int.tryParse(size) ?? 1;
 
-      response.stream.listen((chunk) {
+      _sub = response.stream.listen((chunk) {
         final data = Uint8List.fromList(chunk);
         sink.add(data);
         downloadedBytes += data.length;
         notifier.state =
             DownloadingInstallProgress(downloadedBytes / totalBytes, uri.host);
       }, onError: (e) {
-        notifier.state = ErrorInstallProgress(e: e);
+        throw e;
       }, onDone: () async {
+        await _sub?.cancel();
         await sink.close();
         client.close();
         await installOnDevice();
@@ -255,11 +252,6 @@ class DownloadingInstallProgress extends AppInstallProgress {
 }
 
 class DeviceInstallProgress extends AppInstallProgress {}
-
-class ErrorInstallProgress extends AppInstallProgress {
-  final Exception e;
-  ErrorInstallProgress({required this.e});
-}
 
 final installedAppProvider = StateProvider<Map<String, String>>((_) => {});
 

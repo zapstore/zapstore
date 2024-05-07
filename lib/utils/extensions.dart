@@ -6,13 +6,13 @@ extension ContextX on BuildContext {
   void showError(String message) {
     showToast(
       message,
-      duration: Duration(seconds: 5),
-      textStyle: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+      duration: Duration(seconds: 7),
+      textStyle: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
       animDuration: Duration(milliseconds: 300),
       animation: StyledToastAnimation.fade,
       reverseAnimation: StyledToastAnimation.fade,
-      backgroundColor: const Color.fromARGB(183, 244, 67, 54),
-      position: StyledToastPosition.top,
+      backgroundColor: Color.fromARGB(230, 244, 67, 54),
+      position: StyledToastPosition.center,
       context: this,
     );
   }

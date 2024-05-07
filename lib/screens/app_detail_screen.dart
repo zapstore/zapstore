@@ -4,6 +4,7 @@ import 'package:external_app_launcher/external_app_launcher.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:flutter_styled_toast/flutter_styled_toast.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -12,6 +13,7 @@ import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/release.dart';
 import 'package:zapstore/screens/search_screen.dart';
+import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/card.dart';
 import 'package:zapstore/widgets/pill_widget.dart';
 
@@ -365,20 +367,20 @@ class InstallButton extends ConsumerWidget {
           AppInstallStatus.updated => () async {
               await LaunchApp.openApp(androidPackageName: app.id!.toString());
             },
-          _ => () => switch (progress) {
-                IdleInstallProgress() => app.install(),
-                _ => null,
-              }
+          _ => switch (progress) {
+              IdleInstallProgress() => () {
+                  app.install().catchError((e) {
+                    context.showError(e.toString());
+                  });
+                },
+              _ => null,
+            }
         },
         style: ElevatedButton.styleFrom(
           disabledForegroundColor: Colors.white,
-          disabledBackgroundColor: Colors.blueGrey,
+          disabledBackgroundColor: Colors.blue[700],
           foregroundColor: Colors.white,
-          backgroundColor: switch (progress) {
-            DownloadingInstallProgress() => Colors.blue[900],
-            ErrorInstallProgress() => Colors.red,
-            _ => Colors.blue,
-          },
+          backgroundColor: Colors.blue[700],
         ),
         child: switch (app.status) {
           AppInstallStatus.notInstallable => Text('Sorry, can\'t install'),
@@ -397,8 +399,6 @@ class InstallButton extends ConsumerWidget {
                       width: 14, height: 14, child: CircularProgressIndicator())
                   : Text(
                       '${app.canUpdate ? 'Updating' : 'Installing'} on device'),
-              ErrorInstallProgress(e: final e) =>
-                compact ? Icon(Icons.error) : Text(e.toString()),
             }
         },
       ),
