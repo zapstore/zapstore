@@ -4,6 +4,7 @@ import 'package:collection/collection.dart';
 import 'package:flutter_data/flutter_data.dart';
 import 'package:json_annotation/json_annotation.dart';
 import 'package:purplebase/purplebase.dart';
+import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/nostr_adapter.dart';
 
 part 'user.g.dart';
@@ -87,12 +88,12 @@ mixin UserAdapter on NostrAdapter<User> {
       OnSuccessAll<User>? onSuccess,
       OnErrorAll<User>? onError,
       DataRequestLabel? label}) async {
-    final ids = params!['ids'];
-    if (ids.isEmpty) {
+    final authors = params!['authors'];
+    if (authors.isEmpty) {
       return [];
     }
     final req = RelayRequest(
-      authors: Set<String>.from(ids),
+      authors: Set<String>.from(authors),
       kinds: {kind, if (params['contacts'] != null) 3},
     );
 
@@ -137,11 +138,31 @@ mixin UserAdapter on NostrAdapter<User> {
       tags: params ?? {},
     );
 
+    // trigger trust service indexing in the background
+    sendRequest<dynamic>(
+        Uri.parse('https://zap.store/api/trust/${publicKey.npub}/r'));
+
     final result =
         await notifier.query(req, relayUrls: ['wss://relay.nostr.band']);
     final data = await deserializeAsync(result, save: true);
     return data.models.firstWhere((e) {
       return e.id == publicKey;
     });
+  }
+
+  Future<List<User>> getTrusted(User u1, User u2) async {
+    final url = 'https://zap.store/api/trust/${u1.npub}/${u2.npub}';
+    final users = await sendRequest(
+      Uri.parse(url),
+      onSuccess: (response, label) async {
+        if (response.body == null) return null;
+        final map =
+            Map<String, dynamic>.from(jsonDecode(response.body.toString()));
+
+        final trustedKeys = map.keys.map((npub) => npub.hexKey);
+        return await findAll(params: {'authors': trustedKeys});
+      },
+    );
+    return users!;
   }
 }

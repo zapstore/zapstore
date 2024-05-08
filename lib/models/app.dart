@@ -62,6 +62,7 @@ mixin AppAdapter on Adapter<App> {
         onStateChange: (state) async {
           if (state == AppLifecycleState.resumed) {
             await getInstalledAppsMap();
+            // TODO its triggering in all screens?
             triggerNotify();
           }
         },
@@ -102,7 +103,7 @@ mixin AppAdapter on Adapter<App> {
         for (final app in apps) app.signer.id,
         for (final app in apps) app.developer.id
       }.nonNulls;
-      await ref.users.findAll(params: {'ids': userIds});
+      await ref.users.findAll(params: {'authors': userIds});
       return apps;
     }
 

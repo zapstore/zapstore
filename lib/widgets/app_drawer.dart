@@ -44,7 +44,8 @@ class AppDrawer extends HookConsumerWidget {
                                   color: Colors.lightBlue, size: 18),
                             ],
                           ),
-                          Text('${user.following.length} contacts'),
+                          if (user.following.isNotEmpty)
+                            Text('${user.following.length} contacts'),
                         ],
                       ),
                   ],

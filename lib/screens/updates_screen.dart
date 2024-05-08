@@ -11,6 +11,7 @@ import 'package:zapstore/screens/app_detail_screen.dart';
 
 final installedAppsStateProvider = StateNotifierProvider.autoDispose<
     DataStateNotifier<List<App>>, DataState<List<App>>>((ref) {
+  print('running  watchAllNotifier for updates');
   return ref.apps.watchAllNotifier(
       remote: true,
       params: {'installed': true}).where((app) => app.installedVersion != null);

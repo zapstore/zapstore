@@ -4,6 +4,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:purplebase/purplebase.dart';
+import 'package:zapstore/main.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/services/session_service.dart';
@@ -17,12 +18,18 @@ class SettingsScreen extends HookConsumerWidget {
     final controller = useTextEditingController();
     return SingleChildScrollView(
       child: Column(
+        mainAxisAlignment: MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             'Share your feedback',
             style: context.theme.textTheme.headlineLarge!
                 .copyWith(fontWeight: FontWeight.bold),
+          ),
+          Gap(10),
+          Text(
+            'zap.store is free and open source software',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
           ),
           Gap(10),
           Text('Comments, suggestions and error reports welcome here.'),
@@ -38,7 +45,11 @@ class SettingsScreen extends HookConsumerWidget {
                 width: 14, height: 14, child: CircularProgressIndicator()),
             onPressed: () async {
               final user = ref.read(loggedInUser);
-              final text = '${controller.text.trim()} [from ${user?.npub}]';
+              if (user == null) {
+                scaffoldKey.currentState!.openDrawer();
+                return;
+              }
+              final text = '${controller.text.trim()} [from ${user.npub}]';
               final event = BaseEvent.partial(content: text).sign(kI);
               await ref.apps.nostrAdapter.notifier
                   .publish(event, relayUrls: ['wss://relay.zap.store']);
@@ -50,14 +61,8 @@ class SettingsScreen extends HookConsumerWidget {
                 child: child,
               );
             },
-            child: Text('Send'),
-          ),
-          Divider(),
-          Gap(30),
-          Text(
-            'How does zap.store work',
-            style: context.theme.textTheme.headlineLarge!
-                .copyWith(fontWeight: FontWeight.bold),
+            child: Text(
+                ref.watch(loggedInUser) != null ? 'Send' : 'Tap to log in'),
           ),
         ],
       ),

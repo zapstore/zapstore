@@ -1,16 +1,20 @@
 import 'package:auto_size_text/auto_size_text.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:collection/collection.dart';
 import 'package:external_app_launcher/external_app_launcher.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:purplebase/purplebase.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:zapstore/main.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/release.dart';
+import 'package:zapstore/models/user.dart';
 import 'package:zapstore/services/session_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/card.dart';
@@ -28,7 +32,8 @@ class AppDetailScreen extends HookConsumerWidget {
     final scrollController = ScrollController();
 
     final state = ref.apps.watchOne(model.id!,
-        alsoWatch: (_) => {_.releases, _.releases.artifacts});
+        alsoWatch: (_) =>
+            {_.releases, _.releases.artifacts, _.signer, _.developer});
 
     final app = state.model ?? model;
 
@@ -437,6 +442,7 @@ class InstallAlertDialog extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final user = ref.watch(loggedInUser);
     return AlertDialog(
       elevation: 10,
       title: Text(
@@ -445,16 +451,28 @@ class InstallAlertDialog extends ConsumerWidget {
       ),
       content: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-              'By installing this app you are trusting the signer and the developer now and for all future updates. Make sure you know who they are.'),
+              'By installing this app you are trusting the signer now and for all future updates. Make sure you know who they are.'),
           Gap(20),
-          SignerAndDeveloperRow(app: app),
+          // SignerAndDeveloperRow(app: app),
+          AuthorContainer(
+              user: app.signer.value!, text: 'Signed by', oneLine: true),
+          Gap(20),
+          if (user != null) WebOfTrustContainer(user: user, app: app),
+          Gap(20),
+          if (user != null) Text('The app will be downloaded from:\n'),
+          if (user != null)
+            Text(
+              app.latestMetadata!.urls.firstOrNull ?? 'zap.store',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
           // AppDrawer(),
         ],
       ),
       actions: [
-        if (ref.read(loggedInUser) != null)
+        if (user != null)
           TextButton(
             onPressed: () {
               app.install();
@@ -463,7 +481,7 @@ class InstallAlertDialog extends ConsumerWidget {
             },
             child: Text('Install'),
           ),
-        if (ref.read(loggedInUser) == null)
+        if (user == null)
           TextButton(
             onPressed: () {
               Navigator.of(context).pop();
@@ -480,5 +498,62 @@ class InstallAlertDialog extends ConsumerWidget {
         ),
       ],
     );
+  }
+}
+
+class WebOfTrustContainer extends HookConsumerWidget {
+  const WebOfTrustContainer({
+    super.key,
+    required this.user,
+    required this.app,
+  });
+
+  final User user;
+  final App app;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final result = useFuture(useMemoized(
+        () => ref.users.userAdapter.getTrusted(user, app.signer.value!)));
+    if (result.connectionState == ConnectionState.waiting) {
+      return Center(
+          child: Column(
+        children: [
+          Text('Loading web of trust connections...'),
+          SizedBox(width: 14, height: 14, child: CircularProgressIndicator()),
+        ],
+      ));
+    } else if (result.hasError) {
+      return Center(
+          child: Text('Error checking web of trust: ${result.error}'));
+    } else {
+      final trustedUsers = result.data!;
+      final hasUser = trustedUsers.contains(user);
+      return Wrap(
+        children: [
+          if (hasUser) Text('You, '),
+          for (final t in trustedUsers)
+            if (t != user)
+              Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Wrap(
+                    children: [
+                      CircularImage(url: t.avatarUrl, size: 22),
+                      SizedBox(width: 4),
+                      Text(
+                        softWrap: true,
+                        '${t.nameOrNpub}${trustedUsers.indexOf(t) == trustedUsers.length - 1 ? '' : ','}',
+                      ),
+                      SizedBox(width: 6),
+                      if (trustedUsers.indexOf(t) == trustedUsers.length - 1)
+                        Text('and others follow this signer', softWrap: true)
+                    ],
+                  )
+                ],
+              ),
+        ],
+      );
+    }
   }
 }
