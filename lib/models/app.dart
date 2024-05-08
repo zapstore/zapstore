@@ -172,9 +172,6 @@ extension AppX on App {
       return;
     }
 
-    final hash = latestMetadata!.hash!;
-    final size = latestMetadata!.size ?? '';
-
     final adapter = DataModel.adapterFor(this) as AppAdapter;
     final notifier =
         adapter.ref.read(installationProgressProvider(id!.toString()).notifier);
@@ -188,6 +185,9 @@ extension AppX on App {
         return;
       }
     }
+
+    final hash = latestMetadata!.hash!;
+    final size = latestMetadata!.size ?? '';
 
     final dir = await getApplicationSupportDirectory();
     final file = File(path.join(dir.path, hash));

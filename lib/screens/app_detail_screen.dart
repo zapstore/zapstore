@@ -7,9 +7,11 @@ import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:zapstore/main.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/release.dart';
+import 'package:zapstore/services/session_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/card.dart';
 import 'package:zapstore/widgets/pill_widget.dart';
@@ -84,39 +86,7 @@ class AppDetailScreen extends HookConsumerWidget {
                     Gap(10),
                     Padding(
                       padding: const EdgeInsets.only(right: 14),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          if (app.developer.isPresent)
-                            GestureDetector(
-                              onTap: () async {
-                                final url = Uri.parse(
-                                    'https://primal.net/p/${app.developer.value!.npub}');
-                                if (!await launchUrl(url)) {
-                                  throw Exception('Could not launch $url');
-                                }
-                              },
-                              child: AuthorContainer(
-                                  user: app.developer.value!,
-                                  text: 'Built by',
-                                  oneLine: false),
-                            ),
-                          if (app.signer.isPresent)
-                            GestureDetector(
-                              onTap: () async {
-                                final url = Uri.parse(
-                                    'https://primal.net/p/${app.signer.value!.npub}');
-                                if (!await launchUrl(url)) {
-                                  throw Exception('Could not launch $url');
-                                }
-                              },
-                              child: AuthorContainer(
-                                  user: app.signer.value!,
-                                  text: 'Signed by',
-                                  oneLine: false),
-                            ),
-                        ],
-                      ),
+                      child: SignerAndDeveloperRow(app: app),
                     ),
                     Gap(30),
                     Container(
@@ -197,6 +167,48 @@ class AppDetailScreen extends HookConsumerWidget {
             child: InstallButton(app: app),
           ),
         ),
+      ],
+    );
+  }
+}
+
+class SignerAndDeveloperRow extends StatelessWidget {
+  const SignerAndDeveloperRow({
+    super.key,
+    required this.app,
+  });
+
+  final App app;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        if (app.developer.isPresent)
+          GestureDetector(
+            onTap: () async {
+              final url = Uri.parse(
+                  'https://primal.net/p/${app.developer.value!.npub}');
+              if (!await launchUrl(url)) {
+                throw Exception('Could not launch $url');
+              }
+            },
+            child: AuthorContainer(
+                user: app.developer.value!, text: 'Built by', oneLine: false),
+          ),
+        if (app.signer.isPresent)
+          GestureDetector(
+            onTap: () async {
+              final url =
+                  Uri.parse('https://primal.net/p/${app.signer.value!.npub}');
+              if (!await launchUrl(url)) {
+                throw Exception('Could not launch $url');
+              }
+            },
+            child: AuthorContainer(
+                user: app.signer.value!, text: 'Signed by', oneLine: false),
+          ),
       ],
     );
   }
@@ -356,7 +368,19 @@ class InstallButton extends ConsumerWidget {
               LaunchApp.openApp(androidPackageName: app.id!.toString());
             },
           _ => switch (progress) {
-              IdleInstallProgress() => () => app.install(),
+              IdleInstallProgress() => () {
+                  // show trust dialog only if first install
+                  if (app.canInstall) {
+                    showDialog(
+                      context: context,
+                      builder: (BuildContext context) {
+                        return InstallAlertDialog(app: app);
+                      },
+                    );
+                  } else if (app.canUpdate) {
+                    app.install();
+                  }
+                },
               ErrorInstallProgress(e: final e) => () {
                   // show error and reset state to idle
                   context.showError(e.toString());
@@ -399,6 +423,62 @@ class InstallButton extends ConsumerWidget {
             }
         },
       ),
+    );
+  }
+}
+
+class InstallAlertDialog extends ConsumerWidget {
+  const InstallAlertDialog({
+    super.key,
+    required this.app,
+  });
+
+  final App app;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return AlertDialog(
+      elevation: 10,
+      title: Text(
+        'Are you sure you want to install ${app.name}?',
+        style: TextStyle(fontWeight: FontWeight.bold),
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+              'By installing this app you are trusting the signer and the developer now and for all future updates. Make sure you know who they are.'),
+          Gap(20),
+          SignerAndDeveloperRow(app: app),
+          // AppDrawer(),
+        ],
+      ),
+      actions: [
+        if (ref.read(loggedInUser) != null)
+          TextButton(
+            onPressed: () {
+              app.install();
+              // NOTE: can't use context.pop()
+              Navigator.of(context).pop();
+            },
+            child: Text('Install'),
+          ),
+        if (ref.read(loggedInUser) == null)
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              scaffoldKey.currentState!.openDrawer();
+            },
+            child: Text('Log in to view web of trust'),
+          ),
+        TextButton(
+          onPressed: () {
+            // NOTE: can't use context.pop()
+            Navigator.of(context).pop();
+          },
+          child: Text('Go back'),
+        ),
+      ],
     );
   }
 }

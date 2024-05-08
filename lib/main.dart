@@ -166,6 +166,8 @@ class ScaffoldWithNestedNavigation extends HookConsumerWidget {
   }
 }
 
+final GlobalKey<ScaffoldState> scaffoldKey = GlobalKey<ScaffoldState>();
+
 class ScaffoldWithNavigationBar extends HookConsumerWidget {
   const ScaffoldWithNavigationBar({
     super.key,
@@ -181,6 +183,7 @@ class ScaffoldWithNavigationBar extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final initializer = ref.watch(newInitializer);
     return Scaffold(
+      key: scaffoldKey,
       body: Padding(
         padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
         child: initializer.when(

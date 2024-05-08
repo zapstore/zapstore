@@ -15,42 +15,52 @@ class SettingsScreen extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final controller = useTextEditingController();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Share your feedback',
-          style: context.theme.textTheme.headlineLarge,
-        ),
-        Gap(10),
-        Text('Comments, suggestions and error reports welcome here.'),
-        Gap(20),
-        TextField(
-          controller: controller,
-          autofocus: true,
-          maxLines: 10,
-        ),
-        Gap(20),
-        AsyncButtonBuilder(
-          loadingWidget: SizedBox(
-              width: 14, height: 14, child: CircularProgressIndicator()),
-          onPressed: () async {
-            final user = ref.read(loggedInUser);
-            final text = '${controller.text.trim()} [from ${user?.npub}]';
-            final event = BaseEvent.partial(content: text).sign(kI);
-            // TODO only send to relay.zap.store?
-            await ref.apps.nostrAdapter.notifier.publish(event);
-            controller.clear();
-          },
-          builder: (context, child, callback, buttonState) {
-            return ElevatedButton(
-              onPressed: callback,
-              child: child,
-            );
-          },
-          child: Text('Send'),
-        ),
-      ],
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Share your feedback',
+            style: context.theme.textTheme.headlineLarge!
+                .copyWith(fontWeight: FontWeight.bold),
+          ),
+          Gap(10),
+          Text('Comments, suggestions and error reports welcome here.'),
+          Gap(20),
+          TextField(
+            controller: controller,
+            autofocus: true,
+            maxLines: 10,
+          ),
+          Gap(20),
+          AsyncButtonBuilder(
+            loadingWidget: SizedBox(
+                width: 14, height: 14, child: CircularProgressIndicator()),
+            onPressed: () async {
+              final user = ref.read(loggedInUser);
+              final text = '${controller.text.trim()} [from ${user?.npub}]';
+              final event = BaseEvent.partial(content: text).sign(kI);
+              await ref.apps.nostrAdapter.notifier
+                  .publish(event, relayUrls: ['wss://relay.zap.store']);
+              controller.clear();
+            },
+            builder: (context, child, callback, buttonState) {
+              return ElevatedButton(
+                onPressed: callback,
+                child: child,
+              );
+            },
+            child: Text('Send'),
+          ),
+          Divider(),
+          Gap(30),
+          Text(
+            'How does zap.store work',
+            style: context.theme.textTheme.headlineLarge!
+                .copyWith(fontWeight: FontWeight.bold),
+          ),
+        ],
+      ),
     );
   }
 }

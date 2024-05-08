@@ -168,6 +168,10 @@ class CircularImage extends StatelessWidget {
       height: size,
       width: size,
       color: Colors.grey[800],
+      child: Icon(
+        Icons.person,
+        color: Colors.blueGrey,
+      ),
     );
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius.toDouble()),

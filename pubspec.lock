@@ -816,8 +816,8 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: "617e018201a875281b7c484bcd79ead7fea078d6"
-      resolved-ref: "617e018201a875281b7c484bcd79ead7fea078d6"
+      ref: f6a6a7
+      resolved-ref: f6a6a71c5fb791e9eb82e2678ba5e5abaeb01462
       url: "https://github.com/purplebase/purplebase"
     source: git
     version: "0.1.0"

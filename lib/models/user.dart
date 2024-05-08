@@ -113,7 +113,7 @@ mixin UserAdapter on NostrAdapter<User> {
       DataRequestLabel? label}) async {
     if (id.toString().isEmpty) return null;
 
-    var publicKey = id.toString();
+    String? publicKey = id.toString();
 
     if (publicKey.startsWith('npub')) {
       publicKey = publicKey.hexKey;
@@ -125,6 +125,10 @@ mixin UserAdapter on NostrAdapter<User> {
           return (response.body as Map)['names']?[username];
         },
       );
+    }
+
+    if (publicKey == null) {
+      return null;
     }
 
     final req = RelayRequest(
