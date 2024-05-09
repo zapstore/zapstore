@@ -386,7 +386,8 @@ class InstallButton extends ConsumerWidget {
       width: double.infinity,
       child: ElevatedButton(
         onPressed: switch (app.status) {
-          AppInstallStatus.notInstallable => null,
+          AppInstallStatus.noArch => null,
+          AppInstallStatus.downgrade => null,
           AppInstallStatus.updated => () {
               LaunchApp.openApp(androidPackageName: app.id!.toString());
             },
@@ -424,7 +425,10 @@ class InstallButton extends ConsumerWidget {
               _ => Colors.blue[700],
             }),
         child: switch (app.status) {
-          AppInstallStatus.notInstallable => Text('Sorry, can\'t install'),
+          AppInstallStatus.noArch =>
+            Text('Sorry, release does not support your device'),
+          AppInstallStatus.downgrade =>
+            Text('Installed version is higher, can\'t downgrade'),
           AppInstallStatus.updated => Text('Open'),
           _ => switch (progress) {
               IdleInstallProgress() => app.canUpdate
@@ -491,23 +495,25 @@ class InstallAlertDialog extends ConsumerWidget {
         ],
       ),
       actions: [
-        if (user != null)
-          TextButton(
-            onPressed: () {
-              app.install();
-              // NOTE: can't use context.pop()
-              Navigator.of(context).pop();
-            },
-            child: Text('Install'),
-          ),
         if (user == null)
           TextButton(
             onPressed: () {
               Navigator.of(context).pop();
               scaffoldKey.currentState!.openDrawer();
             },
-            child: Text('Log in to view web of trust'),
+            child: Text('Log in to view web of trust',
+                style: TextStyle(fontWeight: FontWeight.bold)),
           ),
+        TextButton(
+          onPressed: () {
+            app.install();
+            // NOTE: can't use context.pop()
+            Navigator.of(context).pop();
+          },
+          child: user != null
+              ? Text('Install', style: TextStyle(fontWeight: FontWeight.bold))
+              : Text('I trust the signer, install anyway'),
+        ),
         TextButton(
           onPressed: () {
             // NOTE: can't use context.pop()

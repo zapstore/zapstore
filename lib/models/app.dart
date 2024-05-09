@@ -156,7 +156,7 @@ extension AppX on App {
 
   AppInstallStatus get status {
     if (latestMetadata == null) {
-      return AppInstallStatus.notInstallable;
+      return AppInstallStatus.noArch;
     }
     if (installedVersion == null) {
       return AppInstallStatus.installable;
@@ -165,7 +165,7 @@ extension AppX on App {
     if (comp == 1) return AppInstallStatus.updatable;
     if (comp == 0) return AppInstallStatus.updated;
     // else it's a downgrade, which is not installable
-    return AppInstallStatus.notInstallable;
+    return AppInstallStatus.downgrade;
   }
 
   Future<void> install() async {
@@ -260,7 +260,7 @@ Future<bool> _isHashMismatch(String path, String hash) async {
 
 // install support
 
-enum AppInstallStatus { updated, updatable, installable, notInstallable }
+enum AppInstallStatus { updated, updatable, installable, downgrade, noArch }
 
 // class
 
