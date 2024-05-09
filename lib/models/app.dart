@@ -39,7 +39,7 @@ class App extends Event<App> with BaseApp {
     //   final androidInfo = await deviceInfo.androidInfo;
     //   return androidInfo.architecture; // e.g. "arm64-v8a"
     // }
-    return releases.latest?.artifacts
+    return releases.ordered.firstOrNull?.artifacts
         .where((a) =>
             a.mimeType == 'application/vnd.android.package-archive' &&
             a.architectures.contains('arm64-v8a'))

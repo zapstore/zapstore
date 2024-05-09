@@ -171,6 +171,7 @@ class CircularImage extends StatelessWidget {
       child: Icon(
         Icons.person,
         color: Colors.blueGrey,
+        size: size * 0.7,
       ),
     );
     return ClipRRect(

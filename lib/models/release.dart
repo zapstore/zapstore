@@ -36,6 +36,6 @@ mixin ReleaseAdapter on Adapter<Release> {
 }
 
 extension HasManyReleaseX on HasMany<Release> {
-  Release? get latest =>
-      toList().sorted((a, b) => a.createdAt.compareTo(b.createdAt)).firstOrNull;
+  List<Release> get ordered =>
+      toList().sorted((a, b) => b.createdAt.compareTo(a.createdAt));
 }

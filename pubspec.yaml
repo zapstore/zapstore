@@ -25,7 +25,7 @@ dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.2
-  flutter_data: ^1.6.0
+  flutter_data: ^2.0.0-rc3
   hooks_riverpod: ^2.4.9
   json_annotation: ^4.8.1
   flutter_hooks: ^0.20.4
@@ -59,7 +59,9 @@ dependency_overrides:
       url: https://github.com/purplebase/purplebase
       ref: f6a6a7
   flutter_data:
-    path: ../flutter_data
+    git:
+      url: https://github.com/flutterdata/flutter_data
+      ref: e54a2e
 
 dev_dependencies:
   flutter_test:

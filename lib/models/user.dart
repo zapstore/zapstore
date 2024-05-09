@@ -4,7 +4,6 @@ import 'package:collection/collection.dart';
 import 'package:flutter_data/flutter_data.dart';
 import 'package:json_annotation/json_annotation.dart';
 import 'package:purplebase/purplebase.dart';
-import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/nostr_adapter.dart';
 
 part 'user.g.dart';

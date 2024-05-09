@@ -8,7 +8,6 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:purplebase/purplebase.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:zapstore/main.dart';
 import 'package:zapstore/main.data.dart';
@@ -37,142 +36,150 @@ class AppDetailScreen extends HookConsumerWidget {
 
     final app = state.model ?? model;
 
-    return Column(
-      children: [
-        Expanded(
-          child: CustomScrollView(
-            slivers: [
-              // SliverAppBar(
-              //   pinned: true,
-              //   leading: IconButton(
-              //     icon: Icon(Icons.arrow_back),
-              //     onPressed: () {
-              //       context.pop();
-              //     },
-              //   ),
-              // ),
-              SliverList(
-                delegate: SliverChildListDelegate(
-                  [
-                    VersionedAppHeader(app: app),
-                    Gap(16),
-                    if (app.images.isNotEmpty)
-                      Scrollbar(
-                        controller: scrollController,
-                        interactive: true,
-                        trackVisibility: true,
-                        child: SingleChildScrollView(
+    return RefreshIndicator(
+      onRefresh: () => ref.apps.findOne(model.id!),
+      child: Column(
+        children: [
+          Expanded(
+            child: CustomScrollView(
+              slivers: [
+                // SliverAppBar(
+                //   pinned: true,
+                //   leading: IconButton(
+                //     icon: Icon(Icons.arrow_back),
+                //     onPressed: () {
+                //       context.pop();
+                //     },
+                //   ),
+                // ),
+                SliverList(
+                  delegate: SliverChildListDelegate(
+                    [
+                      VersionedAppHeader(app: app),
+                      Gap(16),
+                      if (app.images.isNotEmpty)
+                        Scrollbar(
                           controller: scrollController,
-                          scrollDirection: Axis.horizontal,
-                          child: SizedBox(
-                            height: 320,
-                            child: Row(
-                              children: [
-                                for (final i in app.images)
-                                  Padding(
-                                    padding: const EdgeInsets.only(right: 12),
-                                    child: CachedNetworkImage(imageUrl: i),
-                                  ),
-                              ],
+                          interactive: true,
+                          trackVisibility: true,
+                          child: SingleChildScrollView(
+                            controller: scrollController,
+                            scrollDirection: Axis.horizontal,
+                            child: SizedBox(
+                              height: 320,
+                              child: Row(
+                                children: [
+                                  for (final i in app.images)
+                                    Padding(
+                                      padding: const EdgeInsets.only(right: 12),
+                                      child: CachedNetworkImage(imageUrl: i),
+                                    ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
+                      Divider(height: 24),
+                      MarkdownBody(
+                        styleSheet: MarkdownStyleSheet(
+                          h1: TextStyle(fontWeight: FontWeight.bold),
+                          h2: TextStyle(fontWeight: FontWeight.bold),
+                          p: TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.w300),
+                        ),
+                        selectable: false,
+                        data: app.content,
                       ),
-                    Divider(height: 24),
-                    MarkdownBody(
-                      styleSheet: MarkdownStyleSheet(
-                        h1: TextStyle(fontWeight: FontWeight.bold),
-                        h2: TextStyle(fontWeight: FontWeight.bold),
-                        p: TextStyle(fontSize: 18, fontWeight: FontWeight.w300),
+                      Gap(10),
+                      Padding(
+                        padding: const EdgeInsets.only(right: 14),
+                        child: SignerAndDeveloperRow(app: app),
                       ),
-                      selectable: false,
-                      data: app.content,
-                    ),
-                    Gap(10),
-                    Padding(
-                      padding: const EdgeInsets.only(right: 14),
-                      child: SignerAndDeveloperRow(app: app),
-                    ),
-                    Gap(30),
-                    Container(
-                      padding: EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[900],
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Column(
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.all(8),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                SizedBox(child: Text('Source')),
-                                Flexible(
-                                  child: AutoSizeText(
-                                    app.repository!,
-                                    minFontSize: 11,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
+                      Gap(30),
+                      Container(
+                        padding: EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[900],
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Column(
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.all(8),
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  SizedBox(child: Text('Source')),
+                                  Flexible(
+                                    child: AutoSizeText(
+                                      app.repository!,
+                                      minFontSize: 11,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.all(8),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text('Github stars'),
-                                Text(app.githubStars)
-                              ],
+                            Padding(
+                              padding: const EdgeInsets.all(8),
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text('Github stars'),
+                                  Text(app.githubStars)
+                                ],
+                              ),
                             ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.all(8),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text('Github forks'),
-                                Text(app.githubForks)
-                              ],
+                            Padding(
+                              padding: const EdgeInsets.all(8),
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text('Github forks'),
+                                  Text(app.githubForks)
+                                ],
+                              ),
                             ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.all(8),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [Text('License'), Text(app.license)],
+                            Padding(
+                              padding: const EdgeInsets.all(8),
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [Text('License'), Text(app.license)],
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                    Divider(height: 50),
-                    Text(
-                      'Releases'.toUpperCase(),
-                      style: TextStyle(
-                        fontSize: 16,
-                        letterSpacing: 3,
-                        fontWeight: FontWeight.w300,
+                      Divider(height: 50),
+                      Text(
+                        'Releases'.toUpperCase(),
+                        style: TextStyle(
+                          fontSize: 16,
+                          letterSpacing: 3,
+                          fontWeight: FontWeight.w300,
+                        ),
                       ),
-                    ),
-                    for (final release in app.releases.toList())
-                      ReleaseCard(release: release),
-                  ],
+                      for (final release in app.releases.ordered)
+                        ReleaseCard(release: release),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-        SizedBox(
-          height: 50,
-          child: Center(
-            child: InstallButton(app: app),
+          SizedBox(
+            height: 50,
+            child: Center(
+              child: InstallButton(app: app),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -312,7 +319,12 @@ class ReleaseCard extends StatelessWidget {
             Text(release.version,
                 style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
             Gap(10),
-            MarkdownBody(data: release.content),
+            Container(
+              constraints: BoxConstraints(
+                maxHeight: 260,
+              ),
+              child: Markdown(data: release.content),
+            ),
             Gap(30),
             if (metadata != null)
               Padding(
