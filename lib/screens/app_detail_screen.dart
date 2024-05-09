@@ -33,6 +33,8 @@ class AppDetailScreen extends HookConsumerWidget {
     final state = ref.apps.watchOne(model.id!,
         alsoWatch: (_) =>
             {_.releases, _.releases.artifacts, _.signer, _.developer});
+    // hack to refresh on install changes
+    final _ = ref.watch(installedAppProvider);
 
     final app = state.model ?? model;
 
@@ -72,7 +74,11 @@ class AppDetailScreen extends HookConsumerWidget {
                                   for (final i in app.images)
                                     Padding(
                                       padding: const EdgeInsets.only(right: 12),
-                                      child: CachedNetworkImage(imageUrl: i),
+                                      child: CachedNetworkImage(
+                                        imageUrl: i,
+                                        errorWidget: (_, __, ___) =>
+                                            Container(),
+                                      ),
                                     ),
                                 ],
                               ),
@@ -321,7 +327,7 @@ class ReleaseCard extends StatelessWidget {
             Gap(10),
             Container(
               constraints: BoxConstraints(
-                maxHeight: 260,
+                maxHeight: 200,
               ),
               child: Markdown(data: release.content),
             ),
@@ -426,9 +432,10 @@ class InstallButton extends ConsumerWidget {
                       'Update ${compact ? '' : 'to ${app.latestMetadata!.version!}'}',
                       maxLines: 1)
                   : Text('Install'),
-              DownloadingInstallProgress(progress: final p, host: final h) =>
-                Text(
-                    '${compact ? '' : 'Downloading from $h '}${(p * 100).floor()}%'),
+              DownloadingInstallProgress(progress: final p) => Text(
+                  '${(p * 100).floor()}%',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
               DeviceInstallProgress() => compact
                   ? SizedBox(
                       width: 14, height: 14, child: CircularProgressIndicator())

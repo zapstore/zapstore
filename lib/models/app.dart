@@ -113,12 +113,12 @@ mixin AppAdapter on Adapter<App> {
         params.remove('installed');
         print('filtering by installed ${params['#d']}');
 
-        final apps = findAllLocal();
-        if (apps.isNotEmpty) {
-          loadAppModels(params);
-          return apps;
-        }
-        return loadAppModels(params);
+        // final apps = findAllLocal();
+        // if (apps.isNotEmpty) {
+        //   loadAppModels(params);
+        //   return apps;
+        // }
+        return await loadAppModels(params);
       }
     }
 
@@ -237,7 +237,7 @@ extension AppX on App {
         sink.add(data);
         downloadedBytes += data.length;
         notifier.state =
-            DownloadingInstallProgress(downloadedBytes / totalBytes, uri.host);
+            DownloadingInstallProgress(downloadedBytes / totalBytes);
       }, onError: (e) {
         throw e;
       }, onDone: () async {
@@ -270,8 +270,7 @@ class IdleInstallProgress extends AppInstallProgress {}
 
 class DownloadingInstallProgress extends AppInstallProgress {
   final double progress;
-  final String host;
-  DownloadingInstallProgress(this.progress, this.host);
+  DownloadingInstallProgress(this.progress);
 }
 
 class DeviceInstallProgress extends AppInstallProgress {}

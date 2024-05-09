@@ -345,9 +345,11 @@ packages:
   flutter_data:
     dependency: "direct main"
     description:
-      path: "../flutter_data"
-      relative: true
-    source: path
+      path: "."
+      ref: e54a2e
+      resolved-ref: e54a2e5152ae9189e9c6f4e49cba05e6ff867ba0
+      url: "https://github.com/flutterdata/flutter_data"
+    source: git
     version: "2.0.0-rc3"
   flutter_hooks:
     dependency: "direct main"

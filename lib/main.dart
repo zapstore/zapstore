@@ -12,6 +12,8 @@ import 'package:zapstore/screens/updates_screen.dart';
 import 'package:zapstore/widgets/app_drawer.dart';
 import 'package:zapstore/screens/search_screen.dart';
 
+const kDbVersion = 1;
+
 void main() {
   runApp(
     ProviderScope(
@@ -23,7 +25,7 @@ void main() {
               print('initializing local storage at $path');
               return path;
             },
-            clear: LocalStorageClearStrategy.always,
+            clear: LocalStorageClearStrategy.whenError,
           ),
         )
       ],

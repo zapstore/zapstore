@@ -178,14 +178,16 @@ class CircularImage extends StatelessWidget {
       borderRadius: BorderRadius.circular(radius.toDouble()),
       child: url == null
           ? fallbackContainer
-          : CachedNetworkImage(
-              imageUrl: url!,
-              errorWidget: (_, __, ___) => fallbackContainer,
-              useOldImageOnUrlChange: true,
-              fit: BoxFit.cover,
-              width: size,
-              height: size,
-            ),
+          : (url!.endsWith('svg')
+              ? fallbackContainer
+              : CachedNetworkImage(
+                  imageUrl: url!,
+                  errorWidget: (_, __, ___) => fallbackContainer,
+                  useOldImageOnUrlChange: true,
+                  fit: BoxFit.cover,
+                  width: size,
+                  height: size,
+                )),
     );
   }
 }

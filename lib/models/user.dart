@@ -27,9 +27,13 @@ mixin UserAdapter on NostrAdapter<User> {
 
     final k0s = list
         .where((e) {
+          // filter shitty kind 0s
+          if (e['kind'] != 0 || !e['content'].toString().startsWith('{')) {
+            return false;
+          }
           final map = Map<String, dynamic>.from(jsonDecode(e['content']));
           final name = map['name'] ?? map['display_name'] ?? map['displayName'];
-          return e['kind'] == 0 && name != null;
+          return name != null;
         })
         .toList()
         .groupSetsBy((e) => e['pubkey'] as String);

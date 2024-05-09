@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_data/flutter_data.dart';
+import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -7,22 +7,15 @@ import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/screens/app_detail_screen.dart';
 
-// TODO check notifiers are disposed when pop()ing
-
-final installedAppsStateProvider = StateNotifierProvider.autoDispose<
-    DataStateNotifier<List<App>>, DataState<List<App>>>((ref) {
-  print('running  watchAllNotifier for updates');
-  return ref.apps.watchAllNotifier(
-      remote: true,
-      params: {'installed': true}).where((app) => app.installedVersion != null);
-});
-
 class UpdatesScreen extends HookConsumerWidget {
   const UpdatesScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(installedAppsStateProvider);
+    // TODO workaround for bug in watchAll() when remote=true
+    useFuture(useMemoized(
+        () => ref.apps.findAll(remote: true, params: {'installed': true})));
+    final state = ref.apps.watchAll();
 
     if (state.isLoading) {
       return Center(
