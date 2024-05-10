@@ -128,34 +128,42 @@ class AppDetailScreen extends HookConsumerWidget {
                                 ],
                               ),
                             ),
+                            if (app.githubStars != null)
+                              Padding(
+                                padding: const EdgeInsets.all(8),
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text('Github stars'),
+                                    Text(app.githubStars!)
+                                  ],
+                                ),
+                              ),
+                            if (app.githubForks != null)
+                              Padding(
+                                padding: const EdgeInsets.all(8),
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text('Github forks'),
+                                    Text(app.githubForks!)
+                                  ],
+                                ),
+                              ),
                             Padding(
                               padding: const EdgeInsets.all(8),
                               child: Row(
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Text('Github stars'),
-                                  Text(app.githubStars)
+                                  Text('License'),
+                                  Text((app.license == null ||
+                                          app.license == 'NOASSERTION')
+                                      ? 'Unknown'
+                                      : app.license!)
                                 ],
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.all(8),
-                              child: Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text('Github forks'),
-                                  Text(app.githubForks)
-                                ],
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.all(8),
-                              child: Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [Text('License'), Text(app.license)],
                               ),
                             ),
                             Padding(
@@ -399,7 +407,7 @@ class InstallButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final progress = ref.watch(installationProgressProvider(app.identifier!));
+    final progress = ref.watch(installationProgressProvider(app.identifier));
 
     return SizedBox(
       width: double.infinity,
