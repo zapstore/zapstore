@@ -223,8 +223,8 @@ class SignerAndDeveloperRow extends StatelessWidget {
         if (app.developer.isPresent)
           GestureDetector(
             onTap: () async {
-              final url = Uri.parse(
-                  'https://primal.net/p/${app.developer.value!.npub}');
+              final url =
+                  Uri.parse('https://njump.me/${app.developer.value!.npub}');
               if (!await launchUrl(url)) {
                 throw Exception('Could not launch $url');
               }
@@ -236,7 +236,7 @@ class SignerAndDeveloperRow extends StatelessWidget {
           GestureDetector(
             onTap: () async {
               final url =
-                  Uri.parse('https://primal.net/p/${app.signer.value!.npub}');
+                  Uri.parse('https://njump.me/${app.signer.value!.npub}');
               if (!await launchUrl(url)) {
                 throw Exception('Could not launch $url');
               }
