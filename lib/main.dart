@@ -190,7 +190,10 @@ class ScaffoldWithNavigationBar extends HookConsumerWidget {
         padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
         child: initializer.when(
           data: (_) => body,
-          error: (e, _) => const Text('error'),
+          error: (e, stack) {
+            print(stack);
+            return Text('error $e');
+          },
           loading: () => const Center(child: CircularProgressIndicator()),
         ),
       ),

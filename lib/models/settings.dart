@@ -16,10 +16,10 @@ class Settings extends DataModel<Settings> {
 mixin SettingsAdapter on Adapter<Settings> {
   @override
   Future<void> onInitialized() async {
+    await super.onInitialized();
     // ensure it's always present
     if (!existsId('_')) {
       Settings().saveLocal();
     }
-    super.onInitialized();
   }
 }
