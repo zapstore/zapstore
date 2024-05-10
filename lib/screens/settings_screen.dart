@@ -7,7 +7,6 @@ import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/main.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
-import 'package:zapstore/services/session_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 
 class SettingsScreen extends HookConsumerWidget {
@@ -16,6 +15,8 @@ class SettingsScreen extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final controller = useTextEditingController();
+    final user = ref.settings.watchOne('_').model!.user.value;
+
     return SingleChildScrollView(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.start,
@@ -44,7 +45,6 @@ class SettingsScreen extends HookConsumerWidget {
             loadingWidget: SizedBox(
                 width: 14, height: 14, child: CircularProgressIndicator()),
             onPressed: () async {
-              final user = ref.read(loggedInUser);
               if (user == null) {
                 scaffoldKey.currentState!.openDrawer();
                 return;
@@ -61,8 +61,7 @@ class SettingsScreen extends HookConsumerWidget {
                 child: child,
               );
             },
-            child: Text(
-                ref.watch(loggedInUser) != null ? 'Send' : 'Tap to log in'),
+            child: Text(user != null ? 'Send' : 'Tap to log in'),
           ),
         ],
       ),

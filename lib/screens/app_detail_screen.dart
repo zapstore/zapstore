@@ -14,7 +14,6 @@ import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/release.dart';
 import 'package:zapstore/models/user.dart';
-import 'package:zapstore/services/session_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/card.dart';
 import 'package:zapstore/widgets/pill_widget.dart';
@@ -116,7 +115,7 @@ class AppDetailScreen extends HookConsumerWidget {
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceBetween,
                                 children: [
-                                  SizedBox(child: Text('Source')),
+                                  SizedBox(child: Text('Source ')),
                                   Flexible(
                                     child: AutoSizeText(
                                       app.repository!,
@@ -172,7 +171,7 @@ class AppDetailScreen extends HookConsumerWidget {
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Text('SHA-256 hash'),
+                                  Text('SHA-256 hash '),
                                   Flexible(
                                     child: Text(
                                       '${app.latestMetadata!.hash!.substring(0, 26)}...',
@@ -454,8 +453,8 @@ class InstallButton extends ConsumerWidget {
         child: switch (app.status) {
           AppInstallStatus.noArch =>
             Text('Sorry, release does not support your device'),
-          AppInstallStatus.downgrade =>
-            Text('Installed version is higher, can\'t downgrade'),
+          AppInstallStatus.downgrade => Text(
+              'Installed version ${app.installedVersion ?? ''} is higher, can\'t downgrade'),
           AppInstallStatus.updated => Text('Open'),
           _ => switch (progress) {
               IdleInstallProgress() => app.canUpdate
@@ -492,7 +491,7 @@ class InstallAlertDialog extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.watch(loggedInUser);
+    final user = ref.settings.watchOne('_').model!.user.value;
     return AlertDialog(
       elevation: 10,
       title: Text(

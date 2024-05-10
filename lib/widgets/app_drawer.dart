@@ -4,7 +4,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:zapstore/main.data.dart';
-import 'package:zapstore/services/session_service.dart';
+import 'package:zapstore/models/settings.dart';
 import 'package:zapstore/widgets/card.dart';
 
 class AppDrawer extends HookConsumerWidget {
@@ -12,7 +12,11 @@ class AppDrawer extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.watch(loggedInUser);
+    final user = ref.settings
+        .watchOne('_', alsoWatch: (_) => {_.user})
+        .model
+        ?.user
+        .value;
     final controller = useTextEditingController();
 
     return Padding(
@@ -44,8 +48,8 @@ class AppDrawer extends HookConsumerWidget {
                                   color: Colors.lightBlue, size: 18),
                             ],
                           ),
-                          if (user.following.isNotEmpty)
-                            Text('${user.following.length} contacts'),
+                          // if (user.following.isNotEmpty)
+                          //   Text('${user.following.length} contacts'),
                         ],
                       ),
                   ],
@@ -69,9 +73,9 @@ class AppDrawer extends HookConsumerWidget {
                     child: CircularProgressIndicator(),
                   ),
                   onPressed: () async {
-                    ref.read(loggedInUser.notifier).state = await ref.users
-                        .findOne(controller.text.trim(),
-                            params: {'contacts': true});
+                    final user =
+                        await ref.users.findOne(controller.text.trim());
+                    ref.settings.findOneLocalById('_')!.user.value = user;
                   },
                   builder: (context, child, callback, buttonState) {
                     return ElevatedButton(
@@ -84,7 +88,7 @@ class AppDrawer extends HookConsumerWidget {
               if (user != null)
                 ElevatedButton(
                   onPressed: () async {
-                    ref.read(loggedInUser.notifier).state = null;
+                    ref.settings.findOneLocalById('_')!.user.value = null;
                     controller.clear();
                   },
                   child: Text('Log out'),
