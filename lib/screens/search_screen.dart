@@ -60,7 +60,11 @@ class SearchScreen extends HookConsumerWidget {
                     IconButton(
                       hoverColor: Colors.transparent,
                       onPressed: () {
+                        // clear input and results, then return focus
                         controller.clear();
+                        ref
+                            .read(searchStateProvider.notifier)
+                            .updateWith(model: <App>[]);
                         focusNode.requestFocus();
                       },
                       icon: Icon(Icons.close),
@@ -132,7 +136,7 @@ final searchStateProvider = StateNotifierProvider.autoDispose<
               (app.url ?? '').contains(r) ||
               app.name!.contains(r) ||
               app.content.contains(r) ||
-              app.tags.any((e) => e.contains(r)))
+              app.tags.any((e) => e[1].contains(r)))
           .toList();
       n.updateWith(model: apps, isLoading: false);
     }

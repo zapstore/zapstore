@@ -78,6 +78,23 @@ mixin AppAdapter on Adapter<App> {
     super.dispose();
   }
 
+  Future<List<App>> loadAppModels(Map<String, dynamic> params) async {
+    final apps = await super.findAll(params: params);
+    final releases =
+        await ref.releases.findAll(params: {'#a': apps.map((app) => app.aTag)});
+    final metadataIds = releases.map((r) => r.tagMap['e']!).expand((_) => _);
+    await ref.fileMetadata.findAll(params: {
+      'ids': metadataIds,
+      '#m': [kAndroidMimeType]
+    });
+    final userIds = {
+      for (final app in apps) app.signer.id,
+      for (final app in apps) app.developer.id
+    }.nonNulls;
+    await ref.users.findAll(params: {'authors': userIds});
+    return apps;
+  }
+
   @override
   Future<List<App>> findAll(
       {bool? remote = true,
@@ -89,23 +106,6 @@ mixin AppAdapter on Adapter<App> {
       OnErrorAll<App>? onError,
       DataRequestLabel? label}) async {
     final map = await getInstalledAppsMap();
-
-    loadAppModels(Map<String, dynamic> params) async {
-      final apps = await super.findAll(params: params);
-      final releases = await ref.releases
-          .findAll(params: {'#a': apps.map((app) => app.aTag)});
-      final metadataIds = releases.map((r) => r.tagMap['e']!).expand((_) => _);
-      await ref.fileMetadata.findAll(params: {
-        'ids': metadataIds,
-        '#m': [kAndroidMimeType]
-      });
-      final userIds = {
-        for (final app in apps) app.signer.id,
-        for (final app in apps) app.developer.id
-      }.nonNulls;
-      await ref.users.findAll(params: {'authors': userIds});
-      return apps;
-    }
 
     if (params!.containsKey('installed')) {
       if (map.keys.isNotEmpty) {
@@ -123,6 +123,21 @@ mixin AppAdapter on Adapter<App> {
     }
 
     return loadAppModels(params);
+  }
+
+  @override
+  Future<App?> findOne(Object id,
+      {bool remote = true,
+      bool background = false,
+      Map<String, dynamic>? params = const {},
+      Map<String, String>? headers,
+      OnSuccessOne<App>? onSuccess,
+      OnErrorOne<App>? onError,
+      DataRequestLabel? label}) async {
+    final apps = await loadAppModels({
+      '#d': [id]
+    });
+    return apps.firstOrNull;
   }
 
   static AndroidPackageManager? _packageManager;
