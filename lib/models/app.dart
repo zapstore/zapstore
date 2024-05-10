@@ -62,7 +62,6 @@ mixin AppAdapter on Adapter<App> {
         onStateChange: (state) async {
           if (state == AppLifecycleState.resumed) {
             await getInstalledAppsMap();
-            // TODO its triggering in all screens?
             triggerNotify();
           }
         },
@@ -137,7 +136,12 @@ mixin AppAdapter on Adapter<App> {
     final apps = await loadAppModels({
       '#d': [id]
     });
-    return apps.firstOrNull;
+    // If ID not found in relay then clear from local storage
+    if (apps.isEmpty) {
+      deleteLocalById(id);
+      return null;
+    }
+    return apps.first;
   }
 
   static AndroidPackageManager? _packageManager;
@@ -154,7 +158,10 @@ mixin AppAdapter on Adapter<App> {
     final installedPackageInfos = infos!.where((i) => ![
           'android',
           'com.android',
-          'org.chromium.webview_shell'
+          'com.google',
+          'org.chromium.webview_shell',
+          'app.grapheneos',
+          'app.vanadium'
         ].any((e) => i.packageName!.startsWith(e)));
 
     return ref.read(installedAppProvider.notifier).state = {
