@@ -158,6 +158,23 @@ class AppDetailScreen extends HookConsumerWidget {
                                 children: [Text('License'), Text(app.license)],
                               ),
                             ),
+                            Padding(
+                              padding: const EdgeInsets.all(8),
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text('SHA-256 hash'),
+                                  Flexible(
+                                    child: Text(
+                                      '${app.latestMetadata!.hash!.substring(0, 26)}...',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -325,12 +342,14 @@ class ReleaseCard extends StatelessWidget {
             Text(release.version,
                 style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
             Gap(10),
-            Container(
-              constraints: BoxConstraints(
-                maxHeight: 200,
-              ),
-              child: Markdown(data: release.content),
-            ),
+            release.content.length < 3000
+                ? MarkdownBody(data: release.content)
+                : Container(
+                    constraints: BoxConstraints(
+                      maxHeight: 300,
+                    ),
+                    child: Markdown(data: release.content),
+                  ),
             Gap(30),
             if (metadata != null)
               Padding(
