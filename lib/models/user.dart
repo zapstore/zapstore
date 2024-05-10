@@ -142,8 +142,8 @@ mixin UserAdapter on NostrAdapter<User> {
     );
 
     // trigger trust service indexing in the background
-    sendRequest<dynamic>(
-        Uri.parse('https://zap.store/api/trust/${publicKey.npub}/r'));
+    // sendRequest<dynamic>(
+    //     Uri.parse('https://zap.store/api/trust/${publicKey.npub}/r'));
 
     final result =
         await notifier.query(req, relayUrls: ['wss://relay.nostr.band']);
