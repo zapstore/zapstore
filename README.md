@@ -2,7 +2,7 @@
 
 ## Permissionless app store powered by your friends   
 
-We want to provide the best ever experience for an **"App Store"** which doesn't tell you to leave your data or could request to pay with an ancient **FIAT** system payments. 
+Zapstore aims to provide the best ever experience for an **"App Store"** which doesn't tell you to leave your data or could request to pay with an ancient **FIAT** system payments. 
 
 Everytime a service tells you to authenticate with a **KYC** procedures or leaving your personal data like **(email,password,ID CARD,<br>Credit Cards)** could expose them to a data breach.
 
