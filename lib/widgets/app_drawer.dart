@@ -57,7 +57,6 @@ class AppDrawer extends HookConsumerWidget {
               ),
               if (user == null)
                 TextField(
-                  autofocus: true,
                   autocorrect: false,
                   controller: controller,
                   decoration: InputDecoration(

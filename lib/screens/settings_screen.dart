@@ -37,7 +37,6 @@ class SettingsScreen extends HookConsumerWidget {
           Gap(20),
           TextField(
             controller: controller,
-            autofocus: true,
             maxLines: 10,
           ),
           Gap(20),

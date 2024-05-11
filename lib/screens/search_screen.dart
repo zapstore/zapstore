@@ -73,7 +73,6 @@ class SearchScreen extends HookConsumerWidget {
                 hintText: 'Search for apps',
                 hintStyle: MaterialStateProperty.all(
                     TextStyle(color: Colors.grey[600])),
-                autoFocus: state.model.isEmpty,
                 elevation: MaterialStateProperty.all(2.2),
                 onSubmitted: (query) async {
                   ref.read(searchQueryProvider.notifier).state = query;

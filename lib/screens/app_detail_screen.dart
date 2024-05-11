@@ -117,11 +117,16 @@ class AppDetailScreen extends HookConsumerWidget {
                                 children: [
                                   SizedBox(child: Text('Source ')),
                                   Flexible(
-                                    child: AutoSizeText(
-                                      app.repository!,
-                                      minFontSize: 11,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
+                                    child: GestureDetector(
+                                      onTap: () {
+                                        launchUrl(Uri.parse(app.repository!));
+                                      },
+                                      child: AutoSizeText(
+                                        app.repository!,
+                                        minFontSize: 11,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -232,9 +237,7 @@ class SignerAndDeveloperRow extends StatelessWidget {
             onTap: () async {
               final url =
                   Uri.parse('https://njump.me/${app.developer.value!.npub}');
-              if (!await launchUrl(url)) {
-                throw Exception('Could not launch $url');
-              }
+              launchUrl(url);
             },
             child: AuthorContainer(
                 user: app.developer.value!, text: 'Built by', oneLine: false),
@@ -244,9 +247,7 @@ class SignerAndDeveloperRow extends StatelessWidget {
             onTap: () async {
               final url =
                   Uri.parse('https://njump.me/${app.signer.value!.npub}');
-              if (!await launchUrl(url)) {
-                throw Exception('Could not launch $url');
-              }
+              launchUrl(url);
             },
             child: AuthorContainer(
                 user: app.signer.value!, text: 'Signed by', oneLine: false),
