@@ -1,6 +1,7 @@
 # Zapstore <img src="/assets/images/logo.png" width="40">
 
 Permissionless app store powered by your friends   
+![zapstorescreenshot](/assets/images/zapstorescreenshot.png)
 
 ## Introduction
 
