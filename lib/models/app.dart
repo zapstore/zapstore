@@ -79,18 +79,20 @@ mixin AppAdapter on Adapter<App> {
 
   Future<List<App>> loadAppModels(Map<String, dynamic> params) async {
     final apps = await super.findAll(params: params);
-    final releases =
-        await ref.releases.findAll(params: {'#a': apps.map((app) => app.aTag)});
-    final metadataIds = releases.map((r) => r.tagMap['e']!).expand((_) => _);
-    await ref.fileMetadata.findAll(params: {
-      'ids': metadataIds,
-      '#m': [kAndroidMimeType]
-    });
-    final userIds = {
-      for (final app in apps) app.signer.id,
-      for (final app in apps) app.developer.id
-    }.nonNulls;
-    await ref.users.findAll(params: {'authors': userIds});
+    if (params.containsKey('includes')) {
+      final releases = await ref.releases
+          .findAll(params: {'#a': apps.map((app) => app.aTag)});
+      final metadataIds = releases.map((r) => r.tagMap['e']!).expand((_) => _);
+      await ref.fileMetadata.findAll(params: {
+        'ids': metadataIds,
+        '#m': [kAndroidMimeType]
+      });
+      final userIds = {
+        for (final app in apps) app.signer.id,
+        for (final app in apps) app.developer.id
+      }.nonNulls;
+      await ref.users.findAll(params: {'authors': userIds});
+    }
     return apps;
   }
 
@@ -121,7 +123,7 @@ mixin AppAdapter on Adapter<App> {
       }
     }
 
-    return loadAppModels(params);
+    return await loadAppModels(params);
   }
 
   @override
@@ -304,6 +306,5 @@ class ErrorInstallProgress extends AppInstallProgress {
 
 final installedAppProvider = StateProvider<Map<String, String>>((_) => {});
 
-final installationProgressProvider =
-    StateProvider.family<AppInstallProgress, String>(
-        (_, arg) => IdleInstallProgress());
+final installationProgressProvider = StateProvider.autoDispose
+    .family<AppInstallProgress, String>((_, arg) => IdleInstallProgress());

@@ -3,7 +3,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:collection/collection.dart';
 import 'package:external_app_launcher/external_app_launcher.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -15,8 +14,9 @@ import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/release.dart';
 import 'package:zapstore/models/user.dart';
 import 'package:zapstore/utils/extensions.dart';
-import 'package:zapstore/widgets/card.dart';
+import 'package:zapstore/widgets/author_container.dart';
 import 'package:zapstore/widgets/pill_widget.dart';
+import 'package:zapstore/widgets/rounded_image.dart';
 
 class AppDetailScreen extends HookConsumerWidget {
   final App model;
@@ -274,7 +274,7 @@ class VersionedAppHeader extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisAlignment: MainAxisAlignment.start,
       children: [
-        CircularImage(
+        RoundedImage(
           url: app.icons.firstOrNull,
           size: 80,
           radius: 25,
@@ -297,12 +297,12 @@ class VersionedAppHeader extends StatelessWidget {
                 children: [
                   if (isUpdate)
                     PillWidget(
-                        text: app.installedVersion!, color: Colors.grey[800]),
+                        text: app.installedVersion!, color: Colors.grey[800]!),
                   if (isUpdate) Icon(Icons.arrow_right),
                   if (app.latestMetadata != null)
                     PillWidget(
                       text: app.latestMetadata!.version!,
-                      color: Colors.grey[800],
+                      color: Colors.grey[800]!,
                     ),
                 ],
               ),
@@ -432,7 +432,7 @@ class InstallButton extends ConsumerWidget {
                     app.install();
                   }
                 },
-              ErrorInstallProgress(e: final e) => () {
+              ErrorInstallProgress(:final e) => () {
                   // show error and reset state to idle
                   context.showError(e.toString());
                   ref
@@ -463,8 +463,8 @@ class InstallButton extends ConsumerWidget {
                       'Update ${compact ? '' : 'to ${app.latestMetadata!.version!}'}',
                       maxLines: 1)
                   : Text('Install'),
-              DownloadingInstallProgress(progress: final p) => Text(
-                  '${(p * 100).floor()}%',
+              DownloadingInstallProgress(:final progress) => Text(
+                  '${(progress * 100).floor()}%',
                   style: TextStyle(fontWeight: FontWeight.bold),
                 ),
               DeviceInstallProgress() => compact
@@ -553,6 +553,11 @@ class InstallAlertDialog extends ConsumerWidget {
   }
 }
 
+final wotProvider = FutureProvider.autoDispose
+    .family<List<User>, ({User user, App app})>((ref, arg) async {
+  return ref.users.userAdapter.getTrusted(arg.user, arg.app.signer.value!);
+});
+
 class WebOfTrustContainer extends HookConsumerWidget {
   const WebOfTrustContainer({
     super.key,
@@ -565,47 +570,46 @@ class WebOfTrustContainer extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final result = useFuture(useMemoized(
-        () => ref.users.userAdapter.getTrusted(user, app.signer.value!)));
-    if (result.connectionState == ConnectionState.waiting) {
-      return Center(
-          child: Column(
-        children: [
-          Text('Loading web of trust connections...'),
-          SizedBox(width: 14, height: 14, child: CircularProgressIndicator()),
-        ],
-      ));
-    } else if (result.hasError) {
-      return Center(
-          child: Text('Error checking web of trust: ${result.error}'));
-    } else {
-      final trustedUsers = result.data!;
-      final hasUser = trustedUsers.contains(user);
-      return Wrap(
-        children: [
-          if (hasUser) Text('You, '),
-          for (final t in trustedUsers)
-            if (t != user)
-              Wrap(
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
+    return switch (ref.watch(wotProvider((user: user, app: app)))) {
+      AsyncData<List<User>>(value: final trustedUsers) => () {
+          final hasUser = trustedUsers.contains(user);
+          return Wrap(
+            children: [
+              if (hasUser) Text('You, '),
+              for (final t in trustedUsers)
+                if (t != user)
                   Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      CircularImage(url: t.avatarUrl, size: 22),
-                      SizedBox(width: 4),
-                      Text(
-                        softWrap: true,
-                        '${t.nameOrNpub}${trustedUsers.indexOf(t) == trustedUsers.length - 1 ? '' : ','}',
-                      ),
-                      SizedBox(width: 6),
-                      if (trustedUsers.indexOf(t) == trustedUsers.length - 1)
-                        Text('and others follow this signer', softWrap: true)
+                      Wrap(
+                        children: [
+                          RoundedImage(url: t.avatarUrl, size: 22),
+                          SizedBox(width: 4),
+                          Text(
+                            softWrap: true,
+                            '${t.nameOrNpub}${trustedUsers.indexOf(t) == trustedUsers.length - 1 ? '' : ','}',
+                          ),
+                          SizedBox(width: 6),
+                          if (trustedUsers.indexOf(t) ==
+                              trustedUsers.length - 1)
+                            Text('and others follow this signer',
+                                softWrap: true)
+                        ],
+                      )
                     ],
-                  )
-                ],
-              ),
-        ],
-      );
-    }
+                  ),
+            ],
+          );
+        }(),
+      AsyncError(:final error) =>
+        Center(child: Text('Error checking web of trust: $error')),
+      _ => Center(
+            child: Column(
+          children: [
+            Text('Loading web of trust connections...'),
+            SizedBox(width: 14, height: 14, child: CircularProgressIndicator()),
+          ],
+        ))
+    };
   }
 }

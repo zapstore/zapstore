@@ -25,7 +25,8 @@ void main() {
               print('initializing local storage at $path');
               return path;
             },
-            clear: LocalStorageClearStrategy.whenError,
+            // TODO RESTORE!
+            clear: LocalStorageClearStrategy.always,
           ),
         )
       ],

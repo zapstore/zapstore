@@ -345,11 +345,9 @@ packages:
   flutter_data:
     dependency: "direct main"
     description:
-      path: "."
-      ref: "3c9405"
-      resolved-ref: "3c9405be19b52d5bee6f21a33d46abbf09f12c04"
-      url: "https://github.com/flutterdata/flutter_data"
-    source: git
+      path: "../flutter_data"
+      relative: true
+    source: path
     version: "2.0.0-rc3"
   flutter_hooks:
     dependency: "direct main"
@@ -367,6 +365,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.13.1"
+  flutter_layout_grid:
+    dependency: "direct main"
+    description:
+      name: flutter_layout_grid
+      sha256: "962a7ec8c7ea46c3b10606dac9c964f9143d10daa5ca28e40f4ce14eeef85b2a"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.0.6"
   flutter_lints:
     dependency: "direct dev"
     description:
@@ -823,6 +829,14 @@ packages:
       url: "https://github.com/purplebase/purplebase"
     source: git
     version: "0.1.0"
+  quiver:
+    dependency: transitive
+    description:
+      name: quiver
+      sha256: b1c1ac5ce6688d77f65f3375a9abb9319b3cb32486bdc7a1e0fdf004d7ba4e47
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.2.1"
   riverpod:
     dependency: transitive
     description:
@@ -855,6 +869,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.4"
+  skeletonizer:
+    dependency: "direct main"
+    description:
+      name: skeletonizer
+      sha256: "50c3fdf3d1bf6182129c03b53bc7ff6dca10ca0b8e71ccdee148b9322caabdba"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.1.2+1"
   sky_engine:
     dependency: transitive
     description: flutter

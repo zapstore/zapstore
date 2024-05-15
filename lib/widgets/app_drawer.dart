@@ -5,7 +5,7 @@ import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/settings.dart';
-import 'package:zapstore/widgets/card.dart';
+import 'package:zapstore/widgets/rounded_image.dart';
 
 class AppDrawer extends HookConsumerWidget {
   AppDrawer({super.key});
@@ -30,7 +30,7 @@ class AppDrawer extends HookConsumerWidget {
                 padding: EdgeInsets.only(top: 4, bottom: 4),
                 child: Row(
                   children: [
-                    CircularImage(url: user?.avatarUrl, size: 46),
+                    RoundedImage(url: user?.avatarUrl, size: 46),
                     Gap(10),
                     if (user != null)
                       Column(
