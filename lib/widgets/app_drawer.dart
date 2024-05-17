@@ -92,10 +92,6 @@ class AppDrawer extends HookConsumerWidget {
                   },
                   child: Text('Log out'),
                 ),
-              Gap(20),
-              if (user == null)
-                Text(
-                    'Feel free to log in with fran@zap.store if you don\'t want to use yours.'),
             ],
           ),
         ],

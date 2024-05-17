@@ -79,14 +79,15 @@ mixin AppAdapter on Adapter<App> {
 
   Future<List<App>> loadAppModels(Map<String, dynamic> params) async {
     final apps = await super.findAll(params: params);
+    final releases =
+        await ref.releases.findAll(params: {'#a': apps.map((app) => app.aTag)});
+    final metadataIds = releases.map((r) => r.tagMap['e']!).expand((_) => _);
+    await ref.fileMetadata.findAll(params: {
+      'ids': metadataIds,
+      '#m': [kAndroidMimeType]
+    });
+
     if (params.containsKey('includes')) {
-      final releases = await ref.releases
-          .findAll(params: {'#a': apps.map((app) => app.aTag)});
-      final metadataIds = releases.map((r) => r.tagMap['e']!).expand((_) => _);
-      await ref.fileMetadata.findAll(params: {
-        'ids': metadataIds,
-        '#m': [kAndroidMimeType]
-      });
       final userIds = {
         for (final app in apps) app.signer.id,
         for (final app in apps) app.developer.id
@@ -136,6 +137,7 @@ mixin AppAdapter on Adapter<App> {
       OnErrorOne<App>? onError,
       DataRequestLabel? label}) async {
     final apps = await loadAppModels({
+      ...params!,
       '#d': [id]
     });
     // If ID not found in relay then clear from local storage
@@ -179,8 +181,11 @@ extension AppX on App {
   bool get isUpdated => status == AppInstallStatus.updated;
 
   AppInstallStatus get status {
-    if (latestMetadata == null) {
-      return AppInstallStatus.noArch;
+    if (releases.isEmpty) {
+      return AppInstallStatus.loading;
+    }
+    if (releases.isNotEmpty && latestMetadata == null) {
+      return AppInstallStatus.differentArchitecture;
     }
     if (installedVersion == null) {
       return AppInstallStatus.installable;
@@ -284,7 +289,14 @@ Future<bool> _isHashMismatch(String path, String hash) async {
 
 // install support
 
-enum AppInstallStatus { updated, updatable, installable, downgrade, noArch }
+enum AppInstallStatus {
+  updated,
+  updatable,
+  installable,
+  downgrade,
+  differentArchitecture,
+  loading
+}
 
 // class
 

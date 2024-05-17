@@ -823,11 +823,9 @@ packages:
   purplebase:
     dependency: "direct main"
     description:
-      path: "."
-      ref: c70c49
-      resolved-ref: c70c49a8419c5528084bbf948e4589793c8fae88
-      url: "https://github.com/purplebase/purplebase"
-    source: git
+      path: "../purplebase"
+      relative: true
+    source: path
     version: "0.1.0"
   quiver:
     dependency: transitive

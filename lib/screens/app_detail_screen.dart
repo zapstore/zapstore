@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:collection/collection.dart';
 import 'package:external_app_launcher/external_app_launcher.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -32,6 +33,8 @@ class AppDetailScreen extends HookConsumerWidget {
     final state = ref.apps.watchOne(model.id!,
         alsoWatch: (_) =>
             {_.releases, _.releases.artifacts, _.signer, _.developer});
+    useFuture(useMemoized(() =>
+        ref.apps.findOne(model.id!, remote: true, params: {'includes': true})));
     // hack to refresh on install changes
     final _ = ref.watch(installedAppProvider);
 
@@ -170,23 +173,24 @@ class AppDetailScreen extends HookConsumerWidget {
                                 ],
                               ),
                             ),
-                            Padding(
-                              padding: const EdgeInsets.all(8),
-                              child: Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text('SHA-256 hash '),
-                                  Flexible(
-                                    child: Text(
-                                      '${app.latestMetadata!.hash!.substring(0, 26)}...',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
+                            if (app.latestMetadata != null)
+                              Padding(
+                                padding: const EdgeInsets.all(8),
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text('SHA-256 hash '),
+                                    Flexible(
+                                      child: Text(
+                                        '${app.latestMetadata!.hash!.substring(0, 26)}...',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
-                            ),
                           ],
                         ),
                       ),
@@ -413,7 +417,7 @@ class InstallButton extends ConsumerWidget {
       width: double.infinity,
       child: ElevatedButton(
         onPressed: switch (app.status) {
-          AppInstallStatus.noArch => null,
+          AppInstallStatus.differentArchitecture => null,
           AppInstallStatus.downgrade => null,
           AppInstallStatus.updated => () {
               LaunchApp.openApp(androidPackageName: app.id!.toString());
@@ -452,7 +456,9 @@ class InstallButton extends ConsumerWidget {
               _ => Colors.blue[700],
             }),
         child: switch (app.status) {
-          AppInstallStatus.noArch =>
+          AppInstallStatus.loading =>
+            SizedBox(width: 14, height: 14, child: CircularProgressIndicator()),
+          AppInstallStatus.differentArchitecture =>
             Text('Sorry, release does not support your device'),
           AppInstallStatus.downgrade => Text(
               'Installed version ${app.installedVersion ?? ''} is higher, can\'t downgrade'),
@@ -510,15 +516,20 @@ class InstallAlertDialog extends ConsumerWidget {
           AuthorContainer(
               user: app.signer.value!, text: 'Signed by', oneLine: true),
           Gap(20),
-          if (user != null) WebOfTrustContainer(user: user, app: app),
-          Gap(20),
-          if (user != null) Text('The app will be downloaded from:\n'),
           if (user != null)
-            Text(
-              app.latestMetadata!.urls.firstOrNull ?? 'zap.store',
-              style: TextStyle(fontWeight: FontWeight.bold),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                WebOfTrustContainer(user: user, app: app),
+                Gap(20),
+                Text('The app will be downloaded from:\n'),
+                Text(
+                  app.latestMetadata!.urls.firstOrNull ??
+                      'https://cdn.zap.store/${app.latestMetadata!.hash}',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ],
             ),
-          // AppDrawer(),
         ],
       ),
       actions: [
@@ -572,27 +583,31 @@ class WebOfTrustContainer extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return switch (ref.watch(wotProvider((user: user, app: app)))) {
       AsyncData<List<User>>(value: final trustedUsers) => () {
+          // Crappy workaround until we fix the graph,
+          // jack no longer follows zap.store but it still shows
+          const jacksNpub =
+              'npub1sg6plzptd64u62a878hep2kev88swjh3tw00gjsfl8f237lmu63q0uf63m';
           final hasUser = trustedUsers.contains(user);
           return Wrap(
             children: [
               if (hasUser) Text('You, '),
-              for (final t in trustedUsers)
-                if (t != user)
+              for (final tu in trustedUsers)
+                if (tu != user && tu.npub != jacksNpub)
                   Wrap(
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       Wrap(
                         children: [
-                          RoundedImage(url: t.avatarUrl, size: 22),
+                          RoundedImage(url: tu.avatarUrl, size: 22),
                           SizedBox(width: 4),
                           Text(
                             softWrap: true,
-                            '${t.nameOrNpub}${trustedUsers.indexOf(t) == trustedUsers.length - 1 ? '' : ','}',
+                            '${tu.nameOrNpub}${trustedUsers.indexOf(tu) == trustedUsers.length - 1 ? '' : ','}',
                           ),
                           SizedBox(width: 6),
-                          if (trustedUsers.indexOf(t) ==
+                          if (trustedUsers.indexOf(tu) ==
                               trustedUsers.length - 1)
-                            Text('and others follow this signer',
+                            Text('and others follow this signer.',
                                 softWrap: true)
                         ],
                       )

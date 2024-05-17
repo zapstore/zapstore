@@ -124,6 +124,8 @@ final categoriesAppProvider =
   return apps..shuffle();
 });
 
+final selectedAppCategoryProvider = StateProvider((_) => AppCategory.wallets);
+
 class CategoriesContainer extends HookConsumerWidget {
   const CategoriesContainer({
     super.key,
@@ -132,7 +134,7 @@ class CategoriesContainer extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scrollController = useScrollController();
-    final selectedCategory = useState(AppCategory.wallets);
+    final selectedCategory = ref.watch(selectedAppCategoryProvider);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -149,10 +151,12 @@ class CategoriesContainer extends HookConsumerWidget {
                 Padding(
                   padding: const EdgeInsets.only(right: 12),
                   child: GestureDetector(
-                    onTap: () => selectedCategory.value = i,
+                    onTap: () => ref
+                        .read(selectedAppCategoryProvider.notifier)
+                        .state = i,
                     child: PillWidget(
                       text: i.label,
-                      color: i == selectedCategory.value
+                      color: i == selectedCategory
                           ? Colors.blue[700]!
                           : Colors.grey[800]!,
                     ),
@@ -164,8 +168,7 @@ class CategoriesContainer extends HookConsumerWidget {
         Gap(12),
         Consumer(
           builder: (context, ref, _) {
-            final state =
-                ref.watch(categoriesAppProvider(selectedCategory.value));
+            final state = ref.watch(categoriesAppProvider(selectedCategory));
             return WrapLayout(
               apps: switch (state) {
                 AsyncData(:final value) => value,
@@ -196,7 +199,7 @@ class WrapLayout extends StatelessWidget {
       columnGap: 10, // Adjust the gap between columns as needed
       rowGap: 10, // Adjust the gap between rows as needed
       rowSizes:
-          List<FixedTrackSize>.generate((8 / columns).ceil(), (_) => 130.px),
+          List<FixedTrackSize>.generate((8 / columns).ceil(), (_) => 110.px),
       columnSizes: List<FlexibleTrackSize>.generate(columns, (_) => 1.fr),
       children:
           List.generate(8, (i) => TinyAppCard(app: apps.elementAtOrNull(i))),
@@ -204,7 +207,8 @@ class WrapLayout extends StatelessWidget {
   }
 }
 
-final latestReleasesAppProvider = FutureProvider((ref) async {
+// Auto-dispose so that it keeps refreshing
+final latestReleasesAppProvider = FutureProvider.autoDispose((ref) async {
   final releases = await ref.releases.findAll(params: {'limit': 5});
   final appIds = releases.map((r) => r.app.id!.toString());
   return await ref.apps.findAll(params: {'#d': appIds});
@@ -235,7 +239,7 @@ class LatestReleasesContainer extends HookConsumerWidget {
   }
 }
 
-// Data
+// Search
 
 final searchQueryProvider = StateProvider<String?>((ref) => null);
 

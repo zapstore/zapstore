@@ -51,7 +51,6 @@ class AppCard extends HookConsumerWidget {
         ),
       );
     }
-    final latestRelease = app!.releases.ordered.firstOrNull;
     return Card(
       margin: EdgeInsets.only(top: 6, bottom: 6),
       elevation: 0,
@@ -88,9 +87,9 @@ class AppCard extends HookConsumerWidget {
                             maxLines: 1,
                           ),
                         ),
-                        if (latestRelease != null)
+                        if (app!.latestMetadata?.version != null)
                           PillWidget(
-                            text: latestRelease.version,
+                            text: app!.latestMetadata!.version!,
                             size: 10,
                             color: Colors.grey[800]!,
                           ),
@@ -104,7 +103,7 @@ class AppCard extends HookConsumerWidget {
                         style: TextStyle(
                             fontSize: 14, fontWeight: FontWeight.w300),
                         overflow: TextOverflow.ellipsis,
-                        maxLines: 2,
+                        maxLines: 1,
                         softWrap: true,
                       ),
                     ),
@@ -136,13 +135,12 @@ class TinyAppCard extends HookConsumerWidget {
           padding: const EdgeInsets.all(10),
           child: app == null
               ? Skeletonizer.zone(
-                  // effect: ShimmerEffect(),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.start,
                     children: [
-                      Bone.circle(size: 60),
+                      Bone.square(uniRadius: 10, size: 58),
                       Gap(8),
-                      Bone.text(words: 2),
+                      Bone.text(),
                     ],
                   ),
                 )
@@ -161,10 +159,11 @@ class TinyAppCard extends HookConsumerWidget {
                         child: AutoSizeText(
                           app!.name!,
                           textAlign: TextAlign.center,
-                          minFontSize: 11,
-                          style: TextStyle(fontSize: 10),
-                          overflow: TextOverflow.fade,
-                          maxLines: 2,
+                          minFontSize: 10,
+                          style: TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.bold),
+                          overflow: TextOverflow.clip,
+                          maxLines: 1,
                         ),
                       ),
                     ),
