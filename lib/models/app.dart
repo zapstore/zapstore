@@ -6,7 +6,6 @@ import 'dart:typed_data';
 import 'package:android_package_manager/android_package_manager.dart';
 import 'package:collection/collection.dart';
 import 'package:crypto/crypto.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_data/flutter_data.dart';
 import 'package:install_plugin/install_plugin.dart';
 import 'package:json_annotation/json_annotation.dart';
@@ -26,7 +25,7 @@ part 'app.g.dart';
 
 @JsonSerializable()
 @DataAdapter([NostrAdapter, AppAdapter])
-class App extends Event<App> with BaseApp {
+class App extends BaseApp with DataModelMixin<App> {
   late final HasMany<Release> releases;
   late final BelongsTo<User> signer;
   late final BelongsTo<User> developer;
@@ -45,137 +44,7 @@ class App extends Event<App> with BaseApp {
             a.architectures.contains('arm64-v8a'))
         .firstOrNull;
   }
-}
 
-mixin AppAdapter on Adapter<App> {
-  ProviderSubscription? _sub;
-  AppLifecycleListener? _lifecycleListener;
-
-  @override
-  Future<void> onInitialized() async {
-    if (!ref.read(localStorageProvider).inIsolate) {
-      _sub = ref.listen(installedAppProvider, (_, __) {
-        triggerNotify();
-      });
-
-      _lifecycleListener = AppLifecycleListener(
-        onStateChange: (state) async {
-          if (state == AppLifecycleState.resumed) {
-            await getInstalledAppsMap();
-            triggerNotify();
-          }
-        },
-      );
-    }
-    super.onInitialized();
-  }
-
-  @override
-  void dispose() {
-    _sub?.close();
-    _lifecycleListener?.dispose();
-    super.dispose();
-  }
-
-  Future<List<App>> loadAppModels(Map<String, dynamic> params) async {
-    final apps = await super.findAll(params: params);
-    final releases =
-        await ref.releases.findAll(params: {'#a': apps.map((app) => app.aTag)});
-    final metadataIds = releases.map((r) => r.tagMap['e']!).expand((_) => _);
-    await ref.fileMetadata.findAll(params: {
-      'ids': metadataIds,
-      '#m': [kAndroidMimeType]
-    });
-
-    if (params.containsKey('includes')) {
-      final userIds = {
-        for (final app in apps) app.signer.id,
-        for (final app in apps) app.developer.id
-      }.nonNulls;
-      await ref.users.findAll(params: {'authors': userIds});
-    }
-    return apps;
-  }
-
-  @override
-  Future<List<App>> findAll(
-      {bool? remote = true,
-      bool? background,
-      Map<String, dynamic>? params = const {},
-      Map<String, String>? headers,
-      bool? syncLocal,
-      OnSuccessAll<App>? onSuccess,
-      OnErrorAll<App>? onError,
-      DataRequestLabel? label}) async {
-    final map = await getInstalledAppsMap();
-
-    if (params!.containsKey('installed')) {
-      if (map.keys.isNotEmpty) {
-        params['#d'] = map.keys;
-        params.remove('installed');
-        print('filtering by installed ${params['#d']}');
-
-        // final apps = findAllLocal();
-        // if (apps.isNotEmpty) {
-        //   loadAppModels(params);
-        //   return apps;
-        // }
-        return await loadAppModels(params);
-      }
-    }
-
-    return await loadAppModels(params);
-  }
-
-  @override
-  Future<App?> findOne(Object id,
-      {bool remote = true,
-      bool background = false,
-      Map<String, dynamic>? params = const {},
-      Map<String, String>? headers,
-      OnSuccessOne<App>? onSuccess,
-      OnErrorOne<App>? onError,
-      DataRequestLabel? label}) async {
-    final apps = await loadAppModels({
-      ...params!,
-      '#d': [id]
-    });
-    // If ID not found in relay then clear from local storage
-    if (apps.isEmpty) {
-      deleteLocalById(id);
-      return null;
-    }
-    return apps.first;
-  }
-
-  static AndroidPackageManager? _packageManager;
-
-  Future<Map<String, String>> getInstalledAppsMap() async {
-    late List<PackageInfo>? infos;
-    if (Platform.isAndroid) {
-      _packageManager ??= AndroidPackageManager();
-      infos = await _packageManager!.getInstalledPackages();
-    } else {
-      infos = [];
-    }
-
-    final installedPackageInfos = infos!.where((i) => ![
-          'android',
-          'com.android',
-          'com.google',
-          'org.chromium.webview_shell',
-          'app.grapheneos',
-          'app.vanadium'
-        ].any((e) => i.packageName!.startsWith(e)));
-
-    return ref.read(installedAppProvider.notifier).state = {
-      for (final info in installedPackageInfos)
-        info.packageName!: info.versionName!
-    };
-  }
-}
-
-extension AppX on App {
   bool get canInstall => status == AppInstallStatus.installable;
   bool get canUpdate => status == AppInstallStatus.updatable;
   bool get isUpdated => status == AppInstallStatus.updated;
@@ -276,6 +145,144 @@ extension AppX on App {
         await installOnDevice();
       });
     }
+  }
+}
+
+mixin AppAdapter on Adapter<App> {
+  ProviderSubscription? _sub;
+
+  @override
+  Future<void> onInitialized() async {
+    if (!inIsolate) {
+      _sub = ref.listen(installedAppProvider, (_, __) {
+        triggerNotify();
+      });
+    }
+    super.onInitialized();
+  }
+
+  @override
+  void dispose() {
+    _sub?.close();
+    super.dispose();
+  }
+
+  Future<List<App>> loadAppModels(Map<String, dynamic> params) async {
+    final apps = await super.findAll(params: params);
+    final releases =
+        await ref.releases.findAll(params: {'#a': apps.map((app) => app.aTag)});
+    final metadataIds = releases.map((r) => r.tagMap['e']!).expand((_) => _);
+    await ref.fileMetadata.findAll(params: {
+      'ids': metadataIds,
+      '#m': [kAndroidMimeType]
+    });
+
+    if (params.containsKey('includes')) {
+      final userIds = {
+        for (final app in apps) app.signer.id,
+        for (final app in apps) app.developer.id
+      }.nonNulls;
+      await ref.users.findAll(params: {'authors': userIds});
+    }
+    return apps;
+  }
+
+  @override
+  Future<List<App>> findAll(
+      {bool? remote = true,
+      bool? background,
+      Map<String, dynamic>? params = const {},
+      Map<String, String>? headers,
+      bool? syncLocal,
+      OnSuccessAll<App>? onSuccess,
+      OnErrorAll<App>? onError,
+      DataRequestLabel? label}) async {
+    final map = await getInstalledAppsMap(defer: true);
+
+    if (params!.containsKey('installed')) {
+      if (map.keys.isNotEmpty) {
+        params['#d'] = map.keys;
+        params.remove('installed');
+        print('filtering by installed ${params['#d']}');
+
+        // final apps = findAllLocal();
+        // if (apps.isNotEmpty) {
+        //   loadAppModels(params);
+        //   return apps;
+        // }
+        return await loadAppModels(params);
+      }
+    }
+
+    return await loadAppModels(params);
+  }
+
+  @override
+  Future<App?> findOne(Object id,
+      {bool remote = true,
+      bool background = false,
+      Map<String, dynamic>? params = const {},
+      Map<String, String>? headers,
+      OnSuccessOne<App>? onSuccess,
+      OnErrorOne<App>? onError,
+      DataRequestLabel? label}) async {
+    final apps = await loadAppModels({
+      ...params!,
+      '#d': [id]
+    });
+    // If ID not found in relay then clear from local storage
+    if (apps.isEmpty) {
+      deleteLocalById(id);
+      return null;
+    }
+    return apps.first;
+  }
+
+  static AndroidPackageManager? _packageManager;
+
+  Future<Map<String, String>> getInstalledAppsMap({bool defer = false}) async {
+    late List<PackageInfo>? infos;
+    if (Platform.isAndroid) {
+      _packageManager ??= AndroidPackageManager();
+      infos = await _packageManager!.getInstalledPackages();
+    } else {
+      infos = [];
+    }
+
+    final installedPackageInfos = infos!.where((i) => ![
+          'android',
+          'com.android',
+          'com.google',
+          'org.chromium.webview_shell',
+          'app.grapheneos',
+          'app.vanadium'
+        ].any((e) => i.packageName!.startsWith(e)));
+
+    final newState = {
+      for (final info in installedPackageInfos)
+        info.packageName!: info.versionName!
+    };
+
+    // Providers can't set other providers state
+    // while initializing, so defer setting state
+    if (defer) {
+      Future.microtask(() {
+        ref.read(installedAppProvider.notifier).state = newState;
+      });
+      return newState;
+    }
+
+    return ref.read(installedAppProvider.notifier).state = newState;
+  }
+
+  @override
+  DeserializedData<App> deserialize(Object? data, {String? key}) {
+    // map['signer'] = map['pubkey'];
+    //   final zapTags = (map['tags'] as Iterable).where((t) => t[0] == 'zap');
+    //   if (zapTags.length == 1) {
+    //     map['developer'] = (zapTags.first as List)[1];
+    //   }
+    return super.deserialize(data);
   }
 }
 

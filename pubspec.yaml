@@ -2,7 +2,7 @@ name: zapstore
 description: The permissionless app store
 publish_to: 'none'
 
-version: 0.1.1
+version: 0.1.2+12
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -40,6 +40,8 @@ dependencies:
   install_plugin: ^2.1.0
   flutter_layout_grid: ^2.0.6
   skeletonizer: ^1.1.2+1
+  flutter_phoenix: ^1.1.1
+  percent_indicator: ^4.2.3
 
 dependency_overrides:
   purplebase:

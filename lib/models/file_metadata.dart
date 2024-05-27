@@ -9,7 +9,7 @@ part 'file_metadata.g.dart';
 
 @JsonSerializable()
 @DataAdapter([NostrAdapter, FileMetadataAdapter])
-class FileMetadata extends Event<FileMetadata> with BaseFileMetadata {
+class FileMetadata extends BaseFileMetadata with DataModelMixin<FileMetadata> {
   late final BelongsTo<User> author;
   late final BelongsTo<Release> release = BelongsTo();
   late final BelongsTo<User> signer;

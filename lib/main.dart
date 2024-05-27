@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_data/flutter_data.dart';
+import 'package:flutter_phoenix/flutter_phoenix.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
@@ -16,21 +17,22 @@ const kDbVersion = 1;
 
 void main() {
   runApp(
-    ProviderScope(
-      overrides: [
-        localStorageProvider.overrideWithValue(
-          LocalStorage(
-            baseDirFn: () async {
-              final path = (await getApplicationSupportDirectory()).path;
-              print('initializing local storage at $path');
-              return path;
-            },
-            // TODO RESTORE!
-            clear: LocalStorageClearStrategy.always,
-          ),
-        )
-      ],
-      child: const ZapstoreApp(),
+    Phoenix(
+      child: ProviderScope(
+        overrides: [
+          localStorageProvider.overrideWithValue(
+            LocalStorage(
+              baseDirFn: () async {
+                final path = (await getApplicationSupportDirectory()).path;
+                print('initializing local storage at $path');
+                return path;
+              },
+              clear: LocalStorageClearStrategy.whenError,
+            ),
+          )
+        ],
+        child: const ZapstoreApp(),
+      ),
     ),
   );
 }
@@ -107,9 +109,7 @@ final goRouter = GoRouter(
             GoRoute(
               path: '/settings',
               pageBuilder: (context, state) => NoTransitionPage(
-                child: Center(
-                  child: SettingsScreen(),
-                ),
+                child: SettingsScreen(),
               ),
             ),
           ],
@@ -119,12 +119,29 @@ final goRouter = GoRouter(
   ],
 );
 
+AppLifecycleListener? _lifecycleListener;
+
 final newInitializer = FutureProvider<void>((ref) async {
   await ref.read(initializeFlutterData(adapterProvidersMap).future);
   ref
       .read(relayMessageNotifierProvider.notifier)
       .initialize(['wss://relay.zap.store', 'wss://relay.nostr.band']);
+  _lifecycleListener = AppLifecycleListener(
+    onStateChange: (state) async {
+      if (state == AppLifecycleState.resumed) {
+        final adapter = ref.apps.appAdapter;
+        await adapter.getInstalledAppsMap();
+        adapter.triggerNotify();
+      }
+    },
+  );
+
+  ref.onDispose(() {
+    _lifecycleListener?.dispose();
+  });
 });
+
+// Scaffolding
 
 class ScaffoldWithNestedNavigation extends HookConsumerWidget {
   const ScaffoldWithNestedNavigation({
@@ -147,32 +164,41 @@ class ScaffoldWithNestedNavigation extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final initializer = ref.watch(newInitializer);
+
     return SafeArea(
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          if (constraints.maxWidth < 550) {
-            return ScaffoldWithNavigationBar(
-              body: navigationShell,
-              selectedIndex: navigationShell.currentIndex,
-              onDestinationSelected: _goBranch,
-            );
-          } else {
-            return ScaffoldWithNavigationRail(
-              body: navigationShell,
-              selectedIndex: navigationShell.currentIndex,
-              onDestinationSelected: _goBranch,
-            );
-          }
+      child: initializer.when(
+        data: (_) => LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth < 550) {
+              return MobileScaffold(
+                body: navigationShell,
+                selectedIndex: navigationShell.currentIndex,
+                onDestinationSelected: _goBranch,
+              );
+            } else {
+              return DesktopScaffold(
+                body: navigationShell,
+                selectedIndex: navigationShell.currentIndex,
+                onDestinationSelected: _goBranch,
+              );
+            }
+          },
+        ),
+        error: (e, stack) {
+          print(stack);
+          return Text('error $e');
         },
+        loading: () => const Center(child: CircularProgressIndicator()),
       ),
     );
   }
 }
 
-final GlobalKey<ScaffoldState> scaffoldKey = GlobalKey<ScaffoldState>();
+final scaffoldKey = GlobalKey<ScaffoldState>();
 
-class ScaffoldWithNavigationBar extends HookConsumerWidget {
-  const ScaffoldWithNavigationBar({
+class MobileScaffold extends StatelessWidget {
+  const MobileScaffold({
     super.key,
     required this.body,
     required this.selectedIndex,
@@ -183,20 +209,12 @@ class ScaffoldWithNavigationBar extends HookConsumerWidget {
   final ValueChanged<int> onDestinationSelected;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final initializer = ref.watch(newInitializer);
+  Widget build(BuildContext context) {
     return Scaffold(
       key: scaffoldKey,
       body: Padding(
         padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
-        child: initializer.when(
-          data: (_) => body,
-          error: (e, stack) {
-            print(stack);
-            return Text('error $e');
-          },
-          loading: () => const Center(child: CircularProgressIndicator()),
-        ),
+        child: body,
       ),
       bottomNavigationBar: NavigationBar(
         height: 60,
@@ -224,14 +242,17 @@ class ScaffoldWithNavigationBar extends HookConsumerWidget {
         onDestinationSelected: onDestinationSelected,
       ),
       drawer: Drawer(
-        child: AppDrawer(),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
+          child: LoginContainer(),
+        ),
       ),
     );
   }
 }
 
-class ScaffoldWithNavigationRail extends StatelessWidget {
-  const ScaffoldWithNavigationRail({
+class DesktopScaffold extends StatelessWidget {
+  const DesktopScaffold({
     super.key,
     required this.body,
     required this.selectedIndex,
@@ -247,25 +268,37 @@ class ScaffoldWithNavigationRail extends StatelessWidget {
       body: Row(
         children: [
           NavigationRail(
+            minWidth: 120,
             selectedIndex: selectedIndex,
             onDestinationSelected: onDestinationSelected,
             labelType: NavigationRailLabelType.all,
             destinations: [
               const NavigationRailDestination(
-                label: Text('Search'),
-                icon: Icon(Icons.search_outlined),
+                label: Text('Home'),
+                icon: Icon(Icons.home_outlined),
+                selectedIcon: Icon(Icons.home_filled),
               ),
               const NavigationRailDestination(
                 label: Text('Updates'),
                 icon: Icon(Icons.download_for_offline_outlined),
+                selectedIcon: Icon(Icons.download_for_offline),
               ),
               const NavigationRailDestination(
-                label: Text('Profile'),
-                icon: Icon(Icons.person_outline),
+                label: Text('Settings'),
+                icon: Icon(Icons.settings_outlined),
+                selectedIcon: Icon(Icons.settings),
               ),
             ],
           ),
-          body,
+          Flexible(
+            child: Container(
+              constraints: BoxConstraints(
+                maxWidth: 768,
+              ),
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+              child: body,
+            ),
+          ),
         ],
       ),
     );

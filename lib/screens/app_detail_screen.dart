@@ -8,13 +8,15 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:percent_indicator/linear_percent_indicator.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:zapstore/main.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/release.dart';
+import 'package:zapstore/models/settings.dart';
 import 'package:zapstore/models/user.dart';
 import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/widgets/app_drawer.dart';
 import 'package:zapstore/widgets/author_container.dart';
 import 'package:zapstore/widgets/pill_widget.dart';
 import 'package:zapstore/widgets/rounded_image.dart';
@@ -196,15 +198,15 @@ class AppDetailScreen extends HookConsumerWidget {
                       ),
                       Divider(height: 50),
                       Text(
-                        'Releases'.toUpperCase(),
+                        'Latest release'.toUpperCase(),
                         style: TextStyle(
                           fontSize: 16,
                           letterSpacing: 3,
                           fontWeight: FontWeight.w300,
                         ),
                       ),
-                      for (final release in app.releases.ordered)
-                        ReleaseCard(release: release),
+                      if (app.releases.ordered.isNotEmpty)
+                        ReleaseCard(release: app.releases.ordered.first),
                     ],
                   ),
                 ),
@@ -413,55 +415,67 @@ class InstallButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final progress = ref.watch(installationProgressProvider(app.identifier));
 
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton(
-        onPressed: switch (app.status) {
-          AppInstallStatus.differentArchitecture => null,
-          AppInstallStatus.downgrade => null,
-          AppInstallStatus.updated => () {
-              LaunchApp.openApp(androidPackageName: app.id!.toString());
+    return GestureDetector(
+      onTap: switch (app.status) {
+        AppInstallStatus.differentArchitecture => null,
+        AppInstallStatus.downgrade => null,
+        AppInstallStatus.updated => () {
+            LaunchApp.openApp(androidPackageName: app.id!.toString());
+          },
+        _ => switch (progress) {
+            IdleInstallProgress() => () {
+                print(app.canInstall);
+                // show trust dialog only if first install
+                if (app.canInstall) {
+                  showDialog(
+                    context: context,
+                    builder: (BuildContext context) {
+                      return InstallAlertDialog(app: app);
+                    },
+                  );
+                } else if (app.canUpdate) {
+                  app.install();
+                }
+              },
+            ErrorInstallProgress(:final e) => () {
+                // show error and reset state to idle
+                context.showError(e.toString());
+                ref
+                    .read(installationProgressProvider(app.id!.toString())
+                        .notifier)
+                    .state = IdleInstallProgress();
+              },
+            _ => null,
+          }
+      },
+      child: LinearPercentIndicator(
+        lineHeight: 40,
+        percent: switch (progress) {
+          DeviceInstallProgress() => 1,
+          DownloadingInstallProgress(:final progress) => progress,
+          _ => switch (app.status) {
+              AppInstallStatus.updated => 1,
+              _ => 0,
             },
-          _ => switch (progress) {
-              IdleInstallProgress() => () {
-                  // show trust dialog only if first install
-                  if (app.canInstall) {
-                    showDialog(
-                      context: context,
-                      builder: (BuildContext context) {
-                        return InstallAlertDialog(app: app);
-                      },
-                    );
-                  } else if (app.canUpdate) {
-                    app.install();
-                  }
-                },
-              ErrorInstallProgress(:final e) => () {
-                  // show error and reset state to idle
-                  context.showError(e.toString());
-                  ref
-                      .read(installationProgressProvider(app.id!.toString())
-                          .notifier)
-                      .state = IdleInstallProgress();
-                },
-              _ => null,
-            }
         },
-        style: ElevatedButton.styleFrom(
-            disabledForegroundColor: Colors.white,
-            disabledBackgroundColor: Colors.blue[700],
-            foregroundColor: Colors.white,
-            backgroundColor: switch (progress) {
-              ErrorInstallProgress() => Colors.red,
-              _ => Colors.blue[700],
-            }),
-        child: switch (app.status) {
+        backgroundColor: switch (progress) {
+          ErrorInstallProgress() => Colors.red,
+          _ => Colors.blue[700],
+        },
+        progressColor: Colors.blue[800],
+        barRadius: Radius.circular(18),
+        animateFromLastPercent: true,
+        center: switch (app.status) {
           AppInstallStatus.loading =>
             SizedBox(width: 14, height: 14, child: CircularProgressIndicator()),
-          AppInstallStatus.differentArchitecture =>
-            Text('Sorry, release does not support your device'),
+          AppInstallStatus.differentArchitecture => Text(
+              'Sorry, release does not support your device',
+              textAlign: TextAlign.center,
+            ),
           AppInstallStatus.downgrade => Text(
-              'Installed version ${app.installedVersion ?? ''} is higher, can\'t downgrade'),
+              'Installed version ${app.installedVersion ?? ''} is higher, can\'t downgrade',
+              textAlign: TextAlign.center,
+            ),
           AppInstallStatus.updated => Text('Open'),
           _ => switch (progress) {
               IdleInstallProgress() => app.canUpdate
@@ -498,59 +512,71 @@ class InstallAlertDialog extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.settings.watchOne('_').model!.user.value;
+    final user = ref.settings
+        .watchOne('_', alsoWatch: (_) => {_.user})
+        .model!
+        .user
+        .value;
     return AlertDialog(
       elevation: 10,
       title: Text(
         'Are you sure you want to install ${app.name}?',
         style: TextStyle(fontWeight: FontWeight.bold),
       ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-              'By installing this app you are trusting the signer now and for all future updates. Make sure you know who they are.'),
-          Gap(20),
-          // SignerAndDeveloperRow(app: app),
-          AuthorContainer(
-              user: app.signer.value!, text: 'Signed by', oneLine: true),
-          Gap(20),
-          if (user != null)
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                WebOfTrustContainer(user: user, app: app),
-                Gap(20),
-                Text('The app will be downloaded from:\n'),
-                Text(
-                  app.latestMetadata!.urls.firstOrNull ??
-                      'https://cdn.zap.store/${app.latestMetadata!.hash}',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-        ],
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+                'By installing this app you are trusting the signer now and for all future updates. Make sure you know who they are.'),
+            Gap(20),
+            // SignerAndDeveloperRow(app: app),
+            if (app.signer.value != null)
+              AuthorContainer(
+                  user: app.signer.value!, text: 'Signed by', oneLine: true),
+            Gap(20),
+            if (app.signer.value != null)
+              WebOfTrustContainer(
+                  user: user, npub: user?.npub, npub2: app.signer.value!.npub),
+            if (user != null)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Gap(20),
+                  Text('The app will be downloaded from:\n'),
+                  Text(
+                    app.latestMetadata!.urls.firstOrNull ??
+                        'https://cdn.zap.store/${app.latestMetadata!.hash}',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+          ],
+        ),
       ),
       actions: [
         if (user == null)
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              scaffoldKey.currentState!.openDrawer();
-            },
-            child: Text('Log in to view web of trust',
-                style: TextStyle(fontWeight: FontWeight.bold)),
+          LoginContainer(
+            minimal: true,
+            labelText:
+                'Log in to view your own connections (NIP-05 or npub, no nsec!)',
           ),
-        TextButton(
-          onPressed: () {
-            app.install();
-            // NOTE: can't use context.pop()
-            Navigator.of(context).pop();
-          },
-          child: user != null
-              ? Text('Install', style: TextStyle(fontWeight: FontWeight.bold))
-              : Text('I trust the signer, install anyway'),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: TextButton(
+            onPressed: () {
+              app.install();
+              // NOTE: can't use context.pop()
+              Navigator.of(context).pop();
+            },
+            child: user != null
+                ? Text('Install', style: TextStyle(fontWeight: FontWeight.bold))
+                : Text(
+                    'I trust the signer, install anyway',
+                    textAlign: TextAlign.right,
+                  ),
+          ),
         ),
         TextButton(
           onPressed: () {
@@ -565,66 +591,74 @@ class InstallAlertDialog extends ConsumerWidget {
 }
 
 final wotProvider = FutureProvider.autoDispose
-    .family<List<User>, ({User user, App app})>((ref, arg) async {
-  return ref.users.userAdapter.getTrusted(arg.user, arg.app.signer.value!);
+    .family<List<User>, ({String npub1, String npub2})>((ref, arg) async {
+  final _ =
+      ref.settings.watchOne('_', alsoWatch: (_) => {_.user}).model!.user.value;
+  return ref.users.userAdapter.getTrusted(arg.npub1, arg.npub2);
 });
+
+const franzapsNpub =
+    'npub1wf4pufsucer5va8g9p0rj5dnhvfeh6d8w0g6eayaep5dhps6rsgs43dgh9';
 
 class WebOfTrustContainer extends HookConsumerWidget {
   const WebOfTrustContainer({
     super.key,
-    required this.user,
-    required this.app,
+    this.user,
+    String? npub,
+    required this.npub2,
   });
 
-  final User user;
-  final App app;
+  final User? user;
+  final String npub2;
+  String get npub => user?.npub ?? franzapsNpub;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return switch (ref.watch(wotProvider((user: user, app: app)))) {
-      AsyncData<List<User>>(value: final trustedUsers) => () {
-          // Crappy workaround until we fix the graph,
-          // jack no longer follows zap.store but it still shows
-          const jacksNpub =
-              'npub1sg6plzptd64u62a878hep2kev88swjh3tw00gjsfl8f237lmu63q0uf63m';
-          final hasUser = trustedUsers.contains(user);
-          return Wrap(
-            children: [
-              if (hasUser) Text('You, '),
-              for (final tu in trustedUsers)
-                if (tu != user && tu.npub != jacksNpub)
-                  Wrap(
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      Wrap(
+    return switch (ref.watch(wotProvider((npub1: npub, npub2: npub2)))) {
+      AsyncData<List<User>>(value: final trustedUsers) => Builder(
+          builder: (context) {
+            final hasUser =
+                trustedUsers.firstWhereOrNull((u) => u.npub == npub) != null;
+            return RichText(
+              text: TextSpan(
+                children: [
+                  if (hasUser && npub != franzapsNpub) TextSpan(text: 'You, '),
+                  for (final tu in trustedUsers)
+                    if (tu.npub != npub)
+                      TextSpan(
+                        style: TextStyle(height: 1.6),
                         children: [
-                          RoundedImage(url: tu.avatarUrl, size: 22),
-                          SizedBox(width: 4),
-                          Text(
-                            softWrap: true,
-                            '${tu.nameOrNpub}${trustedUsers.indexOf(tu) == trustedUsers.length - 1 ? '' : ','}',
+                          WidgetSpan(
+                            alignment: PlaceholderAlignment.middle,
+                            child: Wrap(
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                RoundedImage(url: tu.avatarUrl, size: 20),
+                                Text(
+                                  ' ${tu.nameOrNpub}${trustedUsers.indexOf(tu) == trustedUsers.length - 1 ? '' : ',  '}',
+                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
                           ),
-                          SizedBox(width: 6),
                           if (trustedUsers.indexOf(tu) ==
                               trustedUsers.length - 1)
-                            Text('and others follow this signer.',
-                                softWrap: true)
+                            TextSpan(
+                              text: ' and others follow this signer on nostr.',
+                            )
                         ],
-                      )
-                    ],
-                  ),
-            ],
-          );
-        }(),
+                      ),
+                ],
+              ),
+            );
+          },
+        ),
       AsyncError(:final error) =>
         Center(child: Text('Error checking web of trust: $error')),
       _ => Center(
-            child: Column(
-          children: [
-            Text('Loading web of trust connections...'),
-            SizedBox(width: 14, height: 14, child: CircularProgressIndicator()),
-          ],
-        ))
+          child: SizedBox(
+              width: 14, height: 14, child: CircularProgressIndicator()),
+        )
     };
   }
 }

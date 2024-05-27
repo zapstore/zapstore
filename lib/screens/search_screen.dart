@@ -83,16 +83,6 @@ class SearchScreen extends HookConsumerWidget {
           ],
         ),
         Gap(10),
-        // if (state.hasMessage)
-        //   Expanded(
-        //     child: Center(
-        //       child: Text(
-        //         state.message!,
-        //         textAlign: TextAlign.center,
-        //         style: context.theme.textTheme.bodyLarge,
-        //       ),
-        //     ),
-        //   ),
         if (state.hasError) Text(state.error!.toString()),
         Expanded(
           child: SingleChildScrollView(
@@ -120,11 +110,16 @@ class SearchScreen extends HookConsumerWidget {
 
 final categoriesAppProvider =
     FutureProvider.family<List<App>, AppCategory>((ref, category) async {
-  final apps = await ref.apps.findAll(params: {'#d': appCategories[category]!});
+  final appSets = await ref.appCurationSets.findAll(params: {
+    '#d': [category.name]
+  });
+  if (appSets.isEmpty) return [];
+  final apps = await ref.apps
+      .findAll(params: {'#d': appSets.first.aTags.map((a) => a.split(':')[2])});
   return apps..shuffle();
 });
 
-final selectedAppCategoryProvider = StateProvider((_) => AppCategory.wallets);
+final selectedAppCategoryProvider = StateProvider((_) => AppCategory.basics);
 
 class CategoriesContainer extends HookConsumerWidget {
   const CategoriesContainer({
@@ -196,10 +191,10 @@ class WrapLayout extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutGrid(
       key: UniqueKey(),
-      columnGap: 10, // Adjust the gap between columns as needed
-      rowGap: 10, // Adjust the gap between rows as needed
+      columnGap: 10,
+      rowGap: 10,
       rowSizes:
-          List<FixedTrackSize>.generate((8 / columns).ceil(), (_) => 110.px),
+          List<FixedTrackSize>.generate((8 / columns).ceil(), (_) => 130.px),
       columnSizes: List<FlexibleTrackSize>.generate(columns, (_) => 1.fr),
       children:
           List.generate(8, (i) => TinyAppCard(app: apps.elementAtOrNull(i))),
@@ -259,65 +254,11 @@ class SearchResultNotifier extends AsyncNotifier<List<App>> {
 }
 
 enum AppCategory {
-  wallets(label: 'Wallets'),
-  nostr(label: 'Nostr'),
   basics(label: 'Basics'),
-  privacy(label: 'Privacy & Security'),
-  productivity(label: 'Productivity');
+  nostr(label: 'Nostr'),
+  bitcoin(label: 'Bitcoin'),
+  privacy(label: 'Privacy & Security');
 
   final String label;
   const AppCategory({required this.label});
 }
-
-final appCategories = {
-  AppCategory.basics: [
-    "org.fossify.notes",
-    "org.fossify.filemanager",
-    "org.fossify.contacts",
-    "org.fossify.calendar",
-    "io.sanford.wormhole_william",
-    "me.zhanghai.android.files",
-    "org.breezyweather",
-    "app.organicmaps.web",
-  ],
-  AppCategory.wallets: [
-    "com.greenaddress.greenbits_android_wallet",
-    "io.nunchuk.android",
-    "io.bluewallet.bluewallet",
-    "io.aquawallet.android",
-    "app.zeusln.zeus",
-    "com.mutinywallet.mutinywallet",
-    "xyz.elliptica.enuts.beta",
-    "fr.acinq.phoenix.mainnet",
-  ],
-  AppCategory.privacy: [
-    "chat.simplex.app",
-    "im.molly.app",
-    "com.kunzisoft.keepass.free",
-    "com.x8bit.bitwarden",
-    "io.simplelogin.android.fdroid",
-    "eu.darken.myperm",
-    "net.ivpn.client",
-    "ch.protonvpn.android",
-  ],
-  AppCategory.nostr: [
-    "com.greenart7c3.citrine",
-    "com.greenart7c3.nostrsigner",
-    "net.primal.android",
-    "com.oxchat.nostr",
-    "com.vitorpamplona.amethyst",
-    "com.nostr.universe",
-    "com.dluvian.voyage",
-    "com.apps.freerse",
-  ],
-  AppCategory.productivity: [
-    "io.ente.photos.independent",
-    "md.obsidian",
-    "com.logseq.app",
-    "com.nutomic.syncthingandroid",
-    "ch.protonmail.android",
-    "org.localsend.localsend_app",
-    "org.fossify.gallery",
-    "org.fossify.musicplayer",
-  ],
-};

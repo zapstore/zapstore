@@ -11,7 +11,7 @@ part 'release.g.dart';
 
 @JsonSerializable()
 @DataAdapter([NostrAdapter, ReleaseAdapter])
-class Release extends Event<Release> with BaseRelease {
+class Release extends BaseRelease with DataModelMixin<Release> {
   late final HasMany<FileMetadata> artifacts;
   late final BelongsTo<App> app;
   late final BelongsTo<User> signer;

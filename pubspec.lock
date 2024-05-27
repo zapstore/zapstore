@@ -394,6 +394,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.7.1"
+  flutter_phoenix:
+    dependency: "direct main"
+    description:
+      name: flutter_phoenix
+      sha256: "39589dac934ea476d0e43fb60c1ddfba58f14960743640c8250dea11c4333378"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.1.1"
   flutter_riverpod:
     dependency: transitive
     description:
@@ -716,6 +724,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.2.1"
+  percent_indicator:
+    dependency: "direct main"
+    description:
+      name: percent_indicator
+      sha256: c37099ad833a883c9d71782321cb65c3a848c21b6939b6185f0ff6640d05814c
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.2.3"
   permission_handler:
     dependency: "direct main"
     description:

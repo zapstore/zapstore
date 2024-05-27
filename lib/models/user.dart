@@ -10,7 +10,7 @@ part 'user.g.dart';
 
 @JsonSerializable()
 @DataAdapter([NostrAdapter, UserAdapter])
-class User extends Event<User> with BaseUser {
+class User extends BaseUser with DataModelMixin<User> {
   @DataRelationship(inverse: 'followers')
   late final HasMany<User> following;
   @DataRelationship(inverse: 'following')
@@ -102,6 +102,10 @@ mixin UserAdapter on NostrAdapter<User> {
 
     final result =
         await notifier.query(req, relayUrls: ['wss://relay.nostr.band']);
+    if (onSuccess != null) {
+      return await onSuccess.call(DataResponse(statusCode: 200, body: result),
+          label ?? DataRequestLabel('findAll', type: type), this);
+    }
     final data = await deserializeAsync(result, save: true);
     return data.models;
   }
@@ -153,8 +157,8 @@ mixin UserAdapter on NostrAdapter<User> {
     });
   }
 
-  Future<List<User>> getTrusted(User u1, User u2) async {
-    final url = 'https://zap.store/api/trust/${u1.npub}/${u2.npub}';
+  Future<List<User>> getTrusted(String npub1, String npub2) async {
+    final url = 'https://zap.store/api/trust/$npub1/$npub2';
     final users = await sendRequest(
       Uri.parse(url),
       onSuccess: (response, label) async {
@@ -163,7 +167,13 @@ mixin UserAdapter on NostrAdapter<User> {
             Map<String, dynamic>.from(jsonDecode(response.body.toString()));
 
         final trustedKeys = map.keys.map((npub) => npub.hexKey);
-        return await findAll(params: {'authors': trustedKeys});
+        return await findAll(
+          params: {'authors': trustedKeys},
+          onSuccess: (response, label, adapter) {
+            final data = deserialize(response.body);
+            return data.models;
+          },
+        );
       },
     );
     return users!;

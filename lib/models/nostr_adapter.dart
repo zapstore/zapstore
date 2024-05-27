@@ -1,17 +1,17 @@
 import 'package:flutter_data/flutter_data.dart';
 import 'package:purplebase/purplebase.dart';
 
-abstract class Event<T extends Event<T>> = BaseEvent with DataModelMixin<T>;
-
-mixin NostrAdapter<T extends Event<T>> on Adapter<T> {
+mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
   late final RelayMessageNotifier notifier =
       ref.read(relayMessageNotifierProvider.notifier);
 
+  // TODO rethink this
   Map<int, String> kindType = {
     0: 'users',
     3: 'users',
     1063: 'fileMetadata',
     30063: 'releases',
+    30267: 'appCurationSets',
     32267: 'apps'
   };
 
@@ -32,6 +32,7 @@ mixin NostrAdapter<T extends Event<T>> on Adapter<T> {
       if (dTags.length == 1) {
         map['id'] = (dTags.first as List)[1];
       }
+      // TODO remove
       map['signer'] = map['pubkey'];
       final zapTags = (map['tags'] as Iterable).where((t) => t[0] == 'zap');
       if (zapTags.length == 1) {
@@ -52,6 +53,7 @@ mixin NostrAdapter<T extends Event<T>> on Adapter<T> {
     return DeserializedData<T>(models, included: included);
   }
 
+  // TODO remove
   int get kind =>
       kindType.entries.firstWhere((e) => e.value == internalType).key;
 

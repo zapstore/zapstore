@@ -5,7 +5,6 @@ import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 import 'package:zapstore/models/app.dart';
-import 'package:zapstore/models/release.dart';
 import 'package:zapstore/widgets/pill_widget.dart';
 import 'package:zapstore/widgets/rounded_image.dart';
 
@@ -74,6 +73,7 @@ class AppCard extends HookConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Gap(2),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -82,7 +82,7 @@ class AppCard extends HookConsumerWidget {
                             app!.name!,
                             minFontSize: 16,
                             style: TextStyle(
-                                fontSize: 20, fontWeight: FontWeight.bold),
+                                fontSize: 19, fontWeight: FontWeight.bold),
                             overflow: TextOverflow.ellipsis,
                             maxLines: 1,
                           ),
@@ -95,17 +95,14 @@ class AppCard extends HookConsumerWidget {
                           ),
                       ],
                     ),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        // TODO fix markdown?
-                        app!.content,
-                        style: TextStyle(
-                            fontSize: 14, fontWeight: FontWeight.w300),
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
-                        softWrap: true,
-                      ),
+                    Gap(6),
+                    Text(
+                      app!.content,
+                      style:
+                          TextStyle(fontSize: 14, fontWeight: FontWeight.w300),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                      softWrap: true,
                     ),
                   ],
                 ),
@@ -131,16 +128,19 @@ class TinyAppCard extends HookConsumerWidget {
         onTap: () {
           context.go('/details', extra: app);
         },
-        child: Padding(
+        child: Container(
+          constraints: BoxConstraints(
+            maxWidth: 120,
+          ),
           padding: const EdgeInsets.all(10),
           child: app == null
               ? Skeletonizer.zone(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.start,
                     children: [
-                      Bone.square(uniRadius: 10, size: 58),
+                      Bone.square(uniRadius: 10, size: 60),
                       Gap(8),
-                      Bone.text(),
+                      Bone.multiText(lines: 2, fontSize: 10),
                     ],
                   ),
                 )
@@ -150,7 +150,7 @@ class TinyAppCard extends HookConsumerWidget {
                   children: [
                     RoundedImage(
                       url: app!.icons.firstOrNull,
-                      size: 60,
+                      size: 58,
                       radius: 12,
                     ),
                     Gap(8),
@@ -160,10 +160,10 @@ class TinyAppCard extends HookConsumerWidget {
                           app!.name!,
                           textAlign: TextAlign.center,
                           minFontSize: 10,
-                          style: TextStyle(
-                              fontSize: 13, fontWeight: FontWeight.bold),
+                          style: TextStyle(fontSize: 11),
                           overflow: TextOverflow.clip,
-                          maxLines: 1,
+                          maxLines: 2,
+                          wrapWords: false,
                         ),
                       ),
                     ),
