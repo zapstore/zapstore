@@ -13,11 +13,11 @@ class UpdatesScreen extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // TODO workaround for bug in watchAll() when remote=true
-    useFuture(useMemoized(
+    final snapshot = useFuture(useMemoized(
         () => ref.apps.findAll(remote: true, params: {'installed': true})));
     final state = ref.apps.watchAll();
 
-    if (state.isLoading) {
+    if (snapshot.connectionState == ConnectionState.waiting) {
       return Center(
         child: CircularProgressIndicator(),
       );
