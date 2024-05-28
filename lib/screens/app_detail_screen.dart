@@ -196,7 +196,7 @@ class AppDetailScreen extends HookConsumerWidget {
                           ],
                         ),
                       ),
-                      Divider(height: 50),
+                      Divider(height: 60),
                       Text(
                         'Latest release'.toUpperCase(),
                         style: TextStyle(
@@ -205,6 +205,7 @@ class AppDetailScreen extends HookConsumerWidget {
                           fontWeight: FontWeight.w300,
                         ),
                       ),
+                      Gap(10),
                       if (app.releases.ordered.isNotEmpty)
                         ReleaseCard(release: app.releases.ordered.first),
                     ],
@@ -294,11 +295,11 @@ class VersionedAppHeader extends StatelessWidget {
               AutoSizeText(
                 app.name!,
                 minFontSize: 16,
-                style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
-              Gap(8),
+              Gap(14),
               Wrap(
                 children: [
                   if (isUpdate)
@@ -424,7 +425,6 @@ class InstallButton extends ConsumerWidget {
           },
         _ => switch (progress) {
             IdleInstallProgress() => () {
-                print(app.canInstall);
                 // show trust dialog only if first install
                 if (app.canInstall) {
                   showDialog(
@@ -463,7 +463,8 @@ class InstallButton extends ConsumerWidget {
           _ => Colors.blue[700],
         },
         progressColor: Colors.blue[800],
-        barRadius: Radius.circular(18),
+        barRadius: Radius.circular(20),
+        padding: EdgeInsets.all(0),
         animateFromLastPercent: true,
         center: switch (app.status) {
           AppInstallStatus.loading =>
