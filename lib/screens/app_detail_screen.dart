@@ -217,7 +217,7 @@ class AppDetailScreen extends HookConsumerWidget {
           SizedBox(
             height: 50,
             child: Center(
-              child: InstallButton(app: app),
+              child: InstallButton(app: app, disabled: !app.signer.isPresent),
             ),
           ),
         ],
@@ -407,8 +407,10 @@ class InstallButton extends ConsumerWidget {
     super.key,
     required this.app,
     this.compact = false,
+    this.disabled = false,
   });
 
+  final bool disabled;
   final bool compact;
   final App app;
 
@@ -426,7 +428,7 @@ class InstallButton extends ConsumerWidget {
         _ => switch (progress) {
             IdleInstallProgress() => () {
                 // show trust dialog only if first install
-                if (app.canInstall) {
+                if (app.canInstall && !disabled) {
                   showDialog(
                     context: context,
                     builder: (BuildContext context) {
@@ -560,8 +562,7 @@ class InstallAlertDialog extends ConsumerWidget {
         if (user == null)
           LoginContainer(
             minimal: true,
-            labelText:
-                'Log in to view your own connections (NIP-05 or npub, no nsec!)',
+            labelText: 'Log in to view your own web of trust',
           ),
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 10),
