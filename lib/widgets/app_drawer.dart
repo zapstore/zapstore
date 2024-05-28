@@ -23,6 +23,7 @@ class LoginContainer extends HookConsumerWidget {
         ?.user
         .value;
     final controller = useTextEditingController();
+    final isTextFieldEmpty = useState(true);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -62,8 +63,13 @@ class LoginContainer extends HookConsumerWidget {
               TextField(
                 autocorrect: false,
                 controller: controller,
+                onChanged: (value) {
+                  isTextFieldEmpty.value = value.isEmpty;
+                },
                 decoration: InputDecoration(
+                  hintText: 'your@nip05',
                   suffixIcon: AsyncButtonBuilder(
+                    disabled: isTextFieldEmpty.value,
                     loadingWidget: SizedBox(
                       width: 14,
                       height: 14,
