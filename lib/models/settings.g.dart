@@ -62,7 +62,7 @@ extension SettingsRelationshipGraphNodeX on RelationshipGraphNode<Settings> {
 
 Settings _$SettingsFromJson(Map<String, dynamic> json) => Settings()
   ..isLoggedIn = json['isLoggedIn'] as bool
-  ..dbVersion = (json['dbVersion'] as num).toInt();
+  ..dbVersion = (json['dbVersion'] as num?)?.toInt() ?? 1;
 
 Map<String, dynamic> _$SettingsToJson(Settings instance) => <String, dynamic>{
       'isLoggedIn': instance.isLoggedIn,

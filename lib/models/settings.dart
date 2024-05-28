@@ -12,6 +12,7 @@ class Settings extends DataModel<Settings> {
   String get id => '_';
   final BelongsTo<User> user = BelongsTo();
   bool isLoggedIn = false;
+  @JsonKey(defaultValue: 1)
   int dbVersion = kDbVersion;
 }
 
