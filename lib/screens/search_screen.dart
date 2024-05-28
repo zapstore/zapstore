@@ -90,7 +90,16 @@ class SearchScreen extends HookConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               key: UniqueKey(),
               children: [
-                if (state.hasValue && state.value!.isNotEmpty)
+                if ((state.value?.isEmpty ?? false) && !state.isLoading)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 16),
+                    child: Center(
+                        child: Text(
+                      'No results for ${ref.read(searchQueryProvider)}',
+                      style: TextStyle(fontSize: 16),
+                    )),
+                  ),
+                if (state.value?.isNotEmpty ?? false)
                   for (final app in state.value!) AppCard(app: app),
                 Gap(20),
                 CategoriesContainer(),
@@ -239,17 +248,17 @@ class LatestReleasesContainer extends HookConsumerWidget {
 final searchQueryProvider = StateProvider<String?>((ref) => null);
 
 final searchResultProvider =
-    AsyncNotifierProvider<SearchResultNotifier, List<App>>(
+    AsyncNotifierProvider<SearchResultNotifier, List<App>?>(
         SearchResultNotifier.new);
 
-class SearchResultNotifier extends AsyncNotifier<List<App>> {
+class SearchResultNotifier extends AsyncNotifier<List<App>?> {
   @override
-  Future<List<App>> build() async {
+  Future<List<App>?> build() async {
     final query = ref.watch(searchQueryProvider);
     if (query != null) {
       return await ref.apps.findAll(params: {'search': query});
     }
-    return [];
+    return null;
   }
 }
 
