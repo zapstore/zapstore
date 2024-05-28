@@ -26,9 +26,20 @@ part 'app.g.dart';
 @JsonSerializable()
 @DataAdapter([NostrAdapter, AppAdapter])
 class App extends BaseApp with DataModelMixin<App> {
-  late final HasMany<Release> releases;
-  late final BelongsTo<User> signer;
-  late final BelongsTo<User> developer;
+  final HasMany<Release> releases;
+  final BelongsTo<User> signer;
+  final BelongsTo<User> developer;
+
+  App(
+      {super.id,
+      super.pubkey,
+      super.createdAt,
+      super.content,
+      super.tags,
+      super.signature,
+      required this.developer,
+      required this.releases,
+      required this.signer});
 
   String? get installedVersion =>
       DataModel.adapterFor(this).ref.read(installedAppProvider)[id!.toString()];
@@ -277,11 +288,15 @@ mixin AppAdapter on Adapter<App> {
 
   @override
   DeserializedData<App> deserialize(Object? data, {String? key}) {
-    // map['signer'] = map['pubkey'];
-    //   final zapTags = (map['tags'] as Iterable).where((t) => t[0] == 'zap');
-    //   if (zapTags.length == 1) {
-    //     map['developer'] = (zapTags.first as List)[1];
-    //   }
+    final list = data is Iterable ? data : [data as Map];
+    for (final e in list) {
+      final map = e as Map<String, dynamic>;
+      map['signer'] = map['pubkey'];
+      final zapTags = (map['tags'] as Iterable).where((t) => t[0] == 'zap');
+      if (zapTags.length == 1) {
+        map['developer'] = (zapTags.first as List)[1];
+      }
+    }
     return super.deserialize(data);
   }
 }

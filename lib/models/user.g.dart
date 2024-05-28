@@ -76,26 +76,32 @@ extension UserRelationshipGraphNodeX on RelationshipGraphNode<User> {
 // JsonSerializableGenerator
 // **************************************************************************
 
-User _$UserFromJson(Map<String, dynamic> json) => User()
-  ..id = json['id']
-  ..pubkey = json['pubkey'] as String
-  ..createdAt = DateTime.parse(json['createdAt'] as String)
-  ..content = json['content'] as String
-  ..kind = (json['kind'] as num).toInt()
-  ..tags = (json['tags'] as List<dynamic>)
-      .map((e) => (e as List<dynamic>).map((e) => e as String).toList())
-      .toList()
-  ..signature = json['signature'] as String?
-  ..following =
-      HasMany<User>.fromJson(json['following'] as Map<String, dynamic>);
+User _$UserFromJson(Map<String, dynamic> json) => User(
+      id: json['id'],
+      pubkey: json['pubkey'] as String?,
+      createdAt: json['createdAt'] == null
+          ? null
+          : DateTime.parse(json['createdAt'] as String),
+      content: json['content'] as String? ?? '',
+      tags: (json['tags'] as List<dynamic>?)
+              ?.map(
+                  (e) => (e as List<dynamic>).map((e) => e as String).toList())
+              .toList() ??
+          const [],
+      signature: json['signature'] as String?,
+      followers:
+          HasMany<User>.fromJson(json['followers'] as Map<String, dynamic>),
+      following:
+          HasMany<User>.fromJson(json['following'] as Map<String, dynamic>),
+    );
 
 Map<String, dynamic> _$UserToJson(User instance) => <String, dynamic>{
       'id': instance.id,
       'pubkey': instance.pubkey,
       'createdAt': instance.createdAt.toIso8601String(),
       'content': instance.content,
-      'kind': instance.kind,
       'tags': instance.tags,
       'signature': instance.signature,
       'following': instance.following,
+      'followers': instance.followers,
     };

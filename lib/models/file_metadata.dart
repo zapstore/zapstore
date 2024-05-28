@@ -10,9 +10,20 @@ part 'file_metadata.g.dart';
 @JsonSerializable()
 @DataAdapter([NostrAdapter, FileMetadataAdapter])
 class FileMetadata extends BaseFileMetadata with DataModelMixin<FileMetadata> {
-  late final BelongsTo<User> author;
-  late final BelongsTo<Release> release = BelongsTo();
-  late final BelongsTo<User> signer;
+  final BelongsTo<User> author;
+  final BelongsTo<Release> release;
+  final BelongsTo<User> signer;
+
+  FileMetadata(
+      {super.id,
+      super.pubkey,
+      super.createdAt,
+      super.content,
+      super.tags,
+      super.signature,
+      required this.author,
+      required this.release,
+      required this.signer});
 }
 
 mixin FileMetadataAdapter on Adapter<FileMetadata> {

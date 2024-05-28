@@ -11,10 +11,20 @@ part 'user.g.dart';
 @JsonSerializable()
 @DataAdapter([NostrAdapter, UserAdapter])
 class User extends BaseUser with DataModelMixin<User> {
+  User(
+      {super.id,
+      super.pubkey,
+      super.createdAt,
+      super.content,
+      super.tags,
+      super.signature,
+      required this.followers,
+      required this.following});
+
   @DataRelationship(inverse: 'followers')
-  late final HasMany<User> following;
+  final HasMany<User> following;
   @DataRelationship(inverse: 'following')
-  late final HasMany<User> followers = HasMany();
+  final HasMany<User> followers;
 
   String get nameOrNpub => name ?? '${npub.substring(0, 10)}...';
 }

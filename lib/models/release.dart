@@ -12,9 +12,20 @@ part 'release.g.dart';
 @JsonSerializable()
 @DataAdapter([NostrAdapter, ReleaseAdapter])
 class Release extends BaseRelease with DataModelMixin<Release> {
-  late final HasMany<FileMetadata> artifacts;
-  late final BelongsTo<App> app;
-  late final BelongsTo<User> signer;
+  final HasMany<FileMetadata> artifacts;
+  final BelongsTo<App> app;
+  final BelongsTo<User> signer;
+
+  Release(
+      {super.id,
+      super.pubkey,
+      super.createdAt,
+      super.content,
+      super.tags,
+      super.signature,
+      required this.artifacts,
+      required this.app,
+      required this.signer});
 }
 
 mixin ReleaseAdapter on Adapter<Release> {

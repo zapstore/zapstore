@@ -10,7 +10,16 @@ part 'app_curation_set.g.dart';
 @DataAdapter([NostrAdapter, AppCurationSetAdapter])
 class AppCurationSet extends BaseAppCurationSet
     with DataModelMixin<AppCurationSet> {
-  late final HasMany<App> apps;
+  final HasMany<App> apps;
+
+  AppCurationSet(
+      {super.id,
+      super.pubkey,
+      super.createdAt,
+      super.content,
+      super.tags,
+      super.signature,
+      required this.apps});
 }
 
 mixin AppCurationSetAdapter on Adapter<AppCurationSet> {

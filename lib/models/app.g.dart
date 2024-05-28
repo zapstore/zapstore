@@ -87,21 +87,25 @@ extension AppRelationshipGraphNodeX on RelationshipGraphNode<App> {
 // JsonSerializableGenerator
 // **************************************************************************
 
-App _$AppFromJson(Map<String, dynamic> json) => App()
-  ..id = json['id']
-  ..pubkey = json['pubkey'] as String
-  ..createdAt = DateTime.parse(json['createdAt'] as String)
-  ..content = json['content'] as String
-  ..tags = (json['tags'] as List<dynamic>)
-      .map((e) => (e as List<dynamic>).map((e) => e as String).toList())
-      .toList()
-  ..signature = json['signature'] as String?
-  ..kind = (json['kind'] as num).toInt()
-  ..releases =
-      HasMany<Release>.fromJson(json['releases'] as Map<String, dynamic>)
-  ..signer = BelongsTo<User>.fromJson(json['signer'] as Map<String, dynamic>)
-  ..developer =
-      BelongsTo<User>.fromJson(json['developer'] as Map<String, dynamic>);
+App _$AppFromJson(Map<String, dynamic> json) => App(
+      id: json['id'],
+      pubkey: json['pubkey'] as String?,
+      createdAt: json['createdAt'] == null
+          ? null
+          : DateTime.parse(json['createdAt'] as String),
+      content: json['content'] as String? ?? '',
+      tags: (json['tags'] as List<dynamic>?)
+              ?.map(
+                  (e) => (e as List<dynamic>).map((e) => e as String).toList())
+              .toList() ??
+          const [],
+      signature: json['signature'] as String?,
+      developer:
+          BelongsTo<User>.fromJson(json['developer'] as Map<String, dynamic>),
+      releases:
+          HasMany<Release>.fromJson(json['releases'] as Map<String, dynamic>),
+      signer: BelongsTo<User>.fromJson(json['signer'] as Map<String, dynamic>),
+    );
 
 Map<String, dynamic> _$AppToJson(App instance) => <String, dynamic>{
       'id': instance.id,
@@ -110,7 +114,6 @@ Map<String, dynamic> _$AppToJson(App instance) => <String, dynamic>{
       'content': instance.content,
       'tags': instance.tags,
       'signature': instance.signature,
-      'kind': instance.kind,
       'releases': instance.releases,
       'signer': instance.signer,
       'developer': instance.developer,

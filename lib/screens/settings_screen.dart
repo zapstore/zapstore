@@ -56,7 +56,7 @@ class SettingsScreen extends HookConsumerWidget {
               onPressed: () async {
                 final text =
                     '${controller.text.trim()} [from ${user.npub} on ${DateFormat('MMMM d, y').format(DateTime.now())}]';
-                final event = BaseEvent.partial(content: text).sign(kI);
+                final event = BaseEvent(content: text).sign(kI);
                 await ref.apps.nostrAdapter.notifier
                     .publish(event, relayUrls: ['wss://relay.zap.store']);
                 controller.clear();

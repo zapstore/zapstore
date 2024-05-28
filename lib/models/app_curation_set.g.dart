@@ -70,17 +70,21 @@ extension AppCurationSetRelationshipGraphNodeX
 // **************************************************************************
 
 AppCurationSet _$AppCurationSetFromJson(Map<String, dynamic> json) =>
-    AppCurationSet()
-      ..id = json['id']
-      ..pubkey = json['pubkey'] as String
-      ..createdAt = DateTime.parse(json['createdAt'] as String)
-      ..content = json['content'] as String
-      ..kind = (json['kind'] as num).toInt()
-      ..tags = (json['tags'] as List<dynamic>)
-          .map((e) => (e as List<dynamic>).map((e) => e as String).toList())
-          .toList()
-      ..signature = json['signature'] as String?
-      ..apps = HasMany<App>.fromJson(json['apps'] as Map<String, dynamic>);
+    AppCurationSet(
+      id: json['id'],
+      pubkey: json['pubkey'] as String?,
+      createdAt: json['createdAt'] == null
+          ? null
+          : DateTime.parse(json['createdAt'] as String),
+      content: json['content'] as String? ?? '',
+      tags: (json['tags'] as List<dynamic>?)
+              ?.map(
+                  (e) => (e as List<dynamic>).map((e) => e as String).toList())
+              .toList() ??
+          const [],
+      signature: json['signature'] as String?,
+      apps: HasMany<App>.fromJson(json['apps'] as Map<String, dynamic>),
+    );
 
 Map<String, dynamic> _$AppCurationSetToJson(AppCurationSet instance) =>
     <String, dynamic>{
@@ -88,7 +92,6 @@ Map<String, dynamic> _$AppCurationSetToJson(AppCurationSet instance) =>
       'pubkey': instance.pubkey,
       'createdAt': instance.createdAt.toIso8601String(),
       'content': instance.content,
-      'kind': instance.kind,
       'tags': instance.tags,
       'signature': instance.signature,
       'apps': instance.apps,
