@@ -42,6 +42,8 @@ dependencies:
   skeletonizer: ^1.1.2+1
   flutter_phoenix: ^1.1.1
   percent_indicator: ^4.2.3
+  cli_util: ^0.4.1
+  dart_console: ^4.1.0
 
 dependency_overrides:
   purplebase:

@@ -194,7 +194,7 @@ packages:
     source: hosted
     version: "2.0.3"
   cli_util:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: cli_util
       sha256: c05b7406fdabc7a49a3929d4af76bcaccbbffcbcdcf185b082e1ae07da323d19
@@ -249,6 +249,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.8"
+  dart_console:
+    dependency: "direct main"
+    description:
+      name: dart_console
+      sha256: eae9ddd7bb69477a6e9821c75d575874e290887da09292732a35ab510d1de713
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.1.0"
   dart_style:
     dependency: transitive
     description:
@@ -858,7 +866,7 @@ packages:
       path: "../purplebase"
       relative: true
     source: path
-    version: "0.1.0"
+    version: "0.1.1"
   quiver:
     dependency: transitive
     description:
