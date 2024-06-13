@@ -121,6 +121,11 @@ mixin UserAdapter on NostrAdapter<User> {
   }
 
   @override
+  bool isOfflineError(Object? error) {
+    return false;
+  }
+
+  @override
   Future<User?> findOne(Object id,
       {bool remote = true,
       bool background = false,
@@ -131,22 +136,31 @@ mixin UserAdapter on NostrAdapter<User> {
       DataRequestLabel? label}) async {
     if (id.toString().isEmpty) return null;
 
-    String? publicKey = id.toString();
+    var publicKey = id.toString();
 
     if (publicKey.startsWith('npub')) {
       publicKey = publicKey.hexKey;
-    } else if (publicKey.contains('@')) {
-      final [username, domain] = id.toString().split('@');
+    } else {
+      // If it's not an npub we treat the string as NIP-05
+      if (!publicKey.contains('@')) {
+        // If it does not have a @, we treat the string as a domain name
+        publicKey = '_@$publicKey';
+      }
+
+      final [username, domain] = publicKey.split('@');
       publicKey = await sendRequest<dynamic>(
         Uri.parse('https://$domain/.well-known/nostr.json?name=$username'),
         onSuccess: (response, label) {
-          return (response.body as Map)['names']?[username];
+          var body = response.body;
+          if (body is String) {
+            body = jsonDecode(body);
+          }
+          return (body as Map)['names']?[username];
+        },
+        onError: (e, _) {
+          throw e;
         },
       );
-    }
-
-    if (publicKey == null) {
-      return null;
     }
 
     final req = RelayRequest(

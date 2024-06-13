@@ -5,6 +5,7 @@ import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/settings.dart';
+import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/rounded_image.dart';
 
 class LoginContainer extends HookConsumerWidget {
@@ -76,9 +77,13 @@ class LoginContainer extends HookConsumerWidget {
                       child: CircularProgressIndicator(),
                     ),
                     onPressed: () async {
-                      final user =
-                          await ref.users.findOne(controller.text.trim());
-                      ref.settings.findOneLocalById('_')!.user.value = user;
+                      return ref.users
+                          .findOne(controller.text.trim())
+                          .then((user) {
+                        ref.settings.findOneLocalById('_')!.user.value = user;
+                      }).catchError((e) {
+                        context.showError(e.toString());
+                      });
                     },
                     builder: (context, child, callback, buttonState) {
                       return Padding(
