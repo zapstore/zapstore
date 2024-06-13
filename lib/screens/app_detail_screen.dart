@@ -641,35 +641,36 @@ class WebOfTrustContainer extends HookConsumerWidget {
           builder: (context) {
             final hasUser =
                 trustedUsers.firstWhereOrNull((u) => u.npub == npub) != null;
+            final trustedUsersWithoutUser =
+                trustedUsers.where((u) => u.npub != npub).toList();
             return RichText(
               text: TextSpan(
                 children: [
                   if (hasUser && npub != franzapsNpub) TextSpan(text: 'You, '),
-                  for (final tu in trustedUsers)
-                    if (tu.npub != npub)
-                      TextSpan(
-                        style: TextStyle(height: 1.6),
-                        children: [
-                          WidgetSpan(
-                            alignment: PlaceholderAlignment.middle,
-                            child: Wrap(
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              children: [
-                                RoundedImage(url: tu.avatarUrl, size: 20),
-                                Text(
-                                  ' ${tu.nameOrNpub}${trustedUsers.indexOf(tu) == trustedUsers.length - 1 ? '' : ',  '}',
-                                  style: TextStyle(fontWeight: FontWeight.bold),
-                                ),
-                              ],
-                            ),
+                  for (final tu in trustedUsersWithoutUser)
+                    TextSpan(
+                      style: TextStyle(height: 1.6),
+                      children: [
+                        WidgetSpan(
+                          alignment: PlaceholderAlignment.middle,
+                          child: Wrap(
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              RoundedImage(url: tu.avatarUrl, size: 20),
+                              Text(
+                                ' ${tu.nameOrNpub}${trustedUsersWithoutUser.indexOf(tu) == trustedUsersWithoutUser.length - 1 ? '' : ',  '}',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                            ],
                           ),
-                          if (trustedUsers.indexOf(tu) ==
-                              trustedUsers.length - 1)
-                            TextSpan(
-                              text: ' and others follow this signer on nostr.',
-                            )
-                        ],
-                      ),
+                        ),
+                        if (trustedUsersWithoutUser.indexOf(tu) ==
+                            trustedUsersWithoutUser.length - 1)
+                          TextSpan(
+                            text: ' and others follow this signer on nostr.',
+                          )
+                      ],
+                    ),
                 ],
               ),
             );
