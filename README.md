@@ -1,15 +1,19 @@
 # zapstore
 
-To run:
+## Build from source
 
 ```bash
 flutter pub get
-flutter run
+flutter build apk --split-per-abi --debug
 ```
+
+APK will be available at `build/app/outputs/flutter-apk`.
 
 ## Contributing
 
-Contributions welcome on [certain issues](https://github.com/zapstore/zapstore/issues?q=is%3Aopen+is%3Aissue+label%3A%22help+wanted%22)
+Unless it's a minor fix, please reach out to us first before working on any contribution!
+
+We will have a clearer process to contribute once we are out of beta.
 
 ## License
 
