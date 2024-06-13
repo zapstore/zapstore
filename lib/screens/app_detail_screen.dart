@@ -3,8 +3,10 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:collection/collection.dart';
 import 'package:external_app_launcher/external_app_launcher.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:flutter_styled_toast/flutter_styled_toast.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -182,12 +184,30 @@ class AppDetailScreen extends HookConsumerWidget {
                                   mainAxisAlignment:
                                       MainAxisAlignment.spaceBetween,
                                   children: [
-                                    Text('SHA-256 hash '),
+                                    Text('SHA-256 hash (tap to copy)'),
                                     Flexible(
-                                      child: Text(
-                                        '${app.latestMetadata!.hash!.substring(0, 26)}...',
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
+                                      child: GestureDetector(
+                                        onTap: () {
+                                          Clipboard.setData(ClipboardData(
+                                              text: app.latestMetadata!.hash!));
+                                          showToast(
+                                            'Copied SHA-256 to the clipboard',
+                                            duration: Duration(seconds: 2),
+                                            animDuration:
+                                                Duration(milliseconds: 300),
+                                            animation:
+                                                StyledToastAnimation.fade,
+                                            reverseAnimation:
+                                                StyledToastAnimation.fade,
+                                            position:
+                                                StyledToastPosition.bottom,
+                                            context: context,
+                                          );
+                                        },
+                                        child: Text(
+                                          '${app.latestMetadata!.hash!.substring(0, 6)}...${app.latestMetadata!.hash!.substring(58, 64)}',
+                                          maxLines: 1,
+                                        ),
                                       ),
                                     ),
                                   ],
