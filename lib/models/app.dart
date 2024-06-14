@@ -97,7 +97,7 @@ class App extends BaseApp with DataModelMixin<App> {
     }
 
     final hash = latestMetadata!.hash!;
-    final size = latestMetadata!.size ?? '';
+    final size = int.tryParse(latestMetadata!.size ?? '');
 
     final dir = await getApplicationSupportDirectory();
     final file = File(path.join(dir.path, hash));
@@ -106,11 +106,22 @@ class App extends BaseApp with DataModelMixin<App> {
       notifier.state = DeviceInstallProgress();
 
       if (await _isHashMismatch(file.path, hash)) {
+        var e = 'Hash mismatch, ';
+        if (size != null) {
+          if (size == await file.length()) {
+            e += 'likely a malicious file.';
+          } else {
+            e += 'bad data ($size is not ${await file.length()}).';
+          }
+        } else {
+          e += 'possibly broken download.';
+        }
+        e += ' Please try again.';
         await file.delete();
-        notifier.state = ErrorInstallProgress(
-            Exception('Hash mismatch, aborted installation'));
+        notifier.state = ErrorInstallProgress(Exception(e));
         return;
       }
+      notifier.state = HashVerifiedInstallProgress();
 
       final result = await InstallPlugin.install(file.path);
       if (result['isSuccess']) {
@@ -139,7 +150,7 @@ class App extends BaseApp with DataModelMixin<App> {
         uri = Uri.parse(backupUrl);
         response = await client.send(http.Request('GET', uri));
       }
-      final totalBytes = response.contentLength ?? int.tryParse(size) ?? 1;
+      final totalBytes = response.contentLength ?? size ?? 1;
 
       sub = response.stream.listen((chunk) {
         final data = Uint8List.fromList(chunk);
@@ -332,6 +343,8 @@ class DownloadingInstallProgress extends AppInstallProgress {
 }
 
 class DeviceInstallProgress extends AppInstallProgress {}
+
+class HashVerifiedInstallProgress extends AppInstallProgress {}
 
 class ErrorInstallProgress extends AppInstallProgress {
   final Exception e;

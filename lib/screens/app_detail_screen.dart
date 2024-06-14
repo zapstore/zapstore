@@ -184,15 +184,15 @@ class AppDetailScreen extends HookConsumerWidget {
                                   mainAxisAlignment:
                                       MainAxisAlignment.spaceBetween,
                                   children: [
-                                    Text('SHA-256 hash (tap to copy)'),
+                                    Text('APK package SHA-256'),
                                     Flexible(
                                       child: GestureDetector(
                                         onTap: () {
                                           Clipboard.setData(ClipboardData(
                                               text: app.latestMetadata!.hash!));
                                           showToast(
-                                            'Copied SHA-256 to the clipboard',
-                                            duration: Duration(seconds: 2),
+                                            'Copied APK package SHA-256 to the clipboard',
+                                            duration: Duration(seconds: 3),
                                             animDuration:
                                                 Duration(milliseconds: 300),
                                             animation:
@@ -204,9 +204,60 @@ class AppDetailScreen extends HookConsumerWidget {
                                             context: context,
                                           );
                                         },
-                                        child: Text(
-                                          '${app.latestMetadata!.hash!.substring(0, 6)}...${app.latestMetadata!.hash!.substring(58, 64)}',
-                                          maxLines: 1,
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              '${app.latestMetadata!.hash!.substring(0, 6)}...${app.latestMetadata!.hash!.substring(58, 64)}',
+                                              maxLines: 1,
+                                            ),
+                                            Gap(6),
+                                            Icon(Icons.copy_rounded, size: 18)
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            if (app.latestMetadata?.apkSignatureHash != null)
+                              Padding(
+                                padding: const EdgeInsets.all(8),
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text('APK certificate SHA-256'),
+                                    Flexible(
+                                      child: GestureDetector(
+                                        onTap: () {
+                                          Clipboard.setData(ClipboardData(
+                                              text: app.latestMetadata!
+                                                  .apkSignatureHash!));
+                                          showToast(
+                                            'Copied APK certificate SHA-256 to the clipboard',
+                                            duration: Duration(seconds: 3),
+                                            animDuration:
+                                                Duration(milliseconds: 300),
+                                            animation:
+                                                StyledToastAnimation.fade,
+                                            reverseAnimation:
+                                                StyledToastAnimation.fade,
+                                            position:
+                                                StyledToastPosition.bottom,
+                                            context: context,
+                                          );
+                                        },
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              '${app.latestMetadata!.apkSignatureHash!.substring(0, 6)}...${app.latestMetadata!.apkSignatureHash!.substring(58, 64)}',
+                                              maxLines: 1,
+                                            ),
+                                            Gap(6),
+                                            Icon(Icons.copy_rounded, size: 18)
+                                          ],
                                         ),
                                       ),
                                     ),
@@ -461,7 +512,7 @@ class InstallButton extends ConsumerWidget {
               },
             ErrorInstallProgress(:final e) => () {
                 // show error and reset state to idle
-                context.showError(e.toString());
+                context.showError((e as dynamic).message);
                 ref
                     .read(installationProgressProvider(app.id!.toString())
                         .notifier)
@@ -514,7 +565,12 @@ class InstallButton extends ConsumerWidget {
                   ? SizedBox(
                       width: 14, height: 14, child: CircularProgressIndicator())
                   : Text(
-                      '${app.canUpdate ? 'Updating' : 'Installing'} on device'),
+                      'Requesting ${app.canUpdate ? 'update' : 'installation'} on device'),
+              HashVerifiedInstallProgress() => compact
+                  ? SizedBox(
+                      width: 14, height: 14, child: CircularProgressIndicator())
+                  : Text(
+                      'Hash verified, ${app.canUpdate ? 'updating' : 'installing'}'),
               ErrorInstallProgress() => compact
                   ? SizedBox(width: 14, height: 14, child: Icon(Icons.error))
                   : Text('Error, tap to see message'),
@@ -647,7 +703,7 @@ class WebOfTrustContainer extends HookConsumerWidget {
               text: TextSpan(
                 children: [
                   if (hasUser && npub != franzapsNpub) TextSpan(text: 'You, '),
-                  for (final tu in trustedUsersWithoutUser)
+                  for (final trustedUser in trustedUsersWithoutUser)
                     TextSpan(
                       style: TextStyle(height: 1.6),
                       children: [
@@ -656,15 +712,16 @@ class WebOfTrustContainer extends HookConsumerWidget {
                           child: Wrap(
                             crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
-                              RoundedImage(url: tu.avatarUrl, size: 20),
+                              RoundedImage(
+                                  url: trustedUser.avatarUrl, size: 20),
                               Text(
-                                ' ${tu.nameOrNpub}${trustedUsersWithoutUser.indexOf(tu) == trustedUsersWithoutUser.length - 1 ? '' : ',  '}',
+                                ' ${trustedUser.nameOrNpub}${trustedUsersWithoutUser.indexOf(trustedUser) == trustedUsersWithoutUser.length - 1 ? '' : ',  '}',
                                 style: TextStyle(fontWeight: FontWeight.bold),
                               ),
                             ],
                           ),
                         ),
-                        if (trustedUsersWithoutUser.indexOf(tu) ==
+                        if (trustedUsersWithoutUser.indexOf(trustedUser) ==
                             trustedUsersWithoutUser.length - 1)
                           TextSpan(
                             text: ' and others follow this signer on nostr.',
