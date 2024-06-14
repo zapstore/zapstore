@@ -6,11 +6,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
-import 'package:flutter_styled_toast/flutter_styled_toast.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:percent_indicator/linear_percent_indicator.dart';
+import 'package:toastification/toastification.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
@@ -190,19 +190,8 @@ class AppDetailScreen extends HookConsumerWidget {
                                         onTap: () {
                                           Clipboard.setData(ClipboardData(
                                               text: app.latestMetadata!.hash!));
-                                          showToast(
-                                            'Copied APK package SHA-256 to the clipboard',
-                                            duration: Duration(seconds: 3),
-                                            animDuration:
-                                                Duration(milliseconds: 300),
-                                            animation:
-                                                StyledToastAnimation.fade,
-                                            reverseAnimation:
-                                                StyledToastAnimation.fade,
-                                            position:
-                                                StyledToastPosition.bottom,
-                                            context: context,
-                                          );
+                                          context.showInfo(
+                                              'Copied APK package SHA-256 to the clipboard');
                                         },
                                         child: Row(
                                           mainAxisSize: MainAxisSize.min,
@@ -234,19 +223,8 @@ class AppDetailScreen extends HookConsumerWidget {
                                           Clipboard.setData(ClipboardData(
                                               text: app.latestMetadata!
                                                   .apkSignatureHash!));
-                                          showToast(
-                                            'Copied APK certificate SHA-256 to the clipboard',
-                                            duration: Duration(seconds: 3),
-                                            animDuration:
-                                                Duration(milliseconds: 300),
-                                            animation:
-                                                StyledToastAnimation.fade,
-                                            reverseAnimation:
-                                                StyledToastAnimation.fade,
-                                            position:
-                                                StyledToastPosition.bottom,
-                                            context: context,
-                                          );
+                                          context.showInfo(
+                                              'Copied APK certificate SHA-256 to the clipboard');
                                         },
                                         child: Row(
                                           mainAxisSize: MainAxisSize.min,

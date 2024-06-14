@@ -82,7 +82,7 @@ class LoginContainer extends HookConsumerWidget {
                           .then((user) {
                         ref.settings.findOneLocalById('_')!.user.value = user;
                       }).catchError((e) {
-                        context.showError(e.toString());
+                        context.showError(e.message ?? e.toString());
                       });
                     },
                     builder: (context, child, callback, buttonState) {

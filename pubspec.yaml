@@ -25,7 +25,6 @@ dependencies:
   http: ^1.2.1
   async_button_builder: ^3.0.0+1
   android_package_manager: ^0.7.1
-  flutter_styled_toast: ^2.2.1
   url_launcher: ^6.2.5
   device_apps: ^2.2.0
   purplebase: ^0.1.0
@@ -42,6 +41,7 @@ dependencies:
   skeletonizer: ^1.1.2+1
   flutter_phoenix: ^1.1.1
   percent_indicator: ^4.2.3
+  toastification: ^2.0.0
 
 dependency_overrides:
   purplebase:
