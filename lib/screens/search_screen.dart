@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:flutter_layout_grid/flutter_layout_grid.dart';
@@ -117,16 +118,29 @@ class SearchScreen extends HookConsumerWidget {
 
 // Categories
 
+class AppCategoriesNotifier
+    extends FamilyAsyncNotifier<List<App>, AppCategory> {
+  @override
+  FutureOr<List<App>> build(AppCategory arg) async {
+    if (ref.appCurationSets.countLocal < 4) {
+      // Find apps for all categories, so next provider will find it locally
+      final appSets = await ref.appCurationSets
+          .findAll(params: {'#d': AppCategory.values.map((e) => e.name)});
+      await ref.apps
+          .findAll(params: {'#d': appSets.map((s) => s.appIds).flattened});
+    }
+
+    final curationSet = ref.appCurationSets.findOneLocalById(arg.name)!;
+    return ref.apps
+        .findAllLocal()
+        .where((a) => curationSet.appIds.contains(a.id))
+        .toList();
+  }
+}
+
 final categoriesAppProvider =
-    FutureProvider.family<List<App>, AppCategory>((ref, category) async {
-  final appSets = await ref.appCurationSets.findAll(params: {
-    '#d': [category.name]
-  });
-  if (appSets.isEmpty) return [];
-  final apps = await ref.apps
-      .findAll(params: {'#d': appSets.first.aTags.map((a) => a.split(':')[2])});
-  return apps..shuffle();
-});
+    AsyncNotifierProvider.family<AppCategoriesNotifier, List<App>, AppCategory>(
+        AppCategoriesNotifier.new);
 
 final selectedAppCategoryProvider = StateProvider((_) => AppCategory.basics);
 
@@ -211,12 +225,37 @@ class WrapLayout extends StatelessWidget {
   }
 }
 
-// Auto-dispose so that it keeps refreshing
-final latestReleasesAppProvider = FutureProvider.autoDispose((ref) async {
-  final releases = await ref.releases.findAll(params: {'limit': 5});
-  final appIds = releases.map((r) => r.app.id!.toString());
-  return await ref.apps.findAll(params: {'#d': appIds});
-});
+class LatestReleasesAppNotifier extends AutoDisposeAsyncNotifier<List<App>> {
+  @override
+  Future<List<App>> build() async {
+    final timer = Timer.periodic(Duration(hours: 4), (_) => fetch());
+    ref.onDispose(timer.cancel);
+    fetch();
+    return localFetch();
+  }
+
+  List<App> localFetch() {
+    return ref.releases
+        .findAllLocal()
+        .sorted((a, b) => b.createdAt.compareTo(a.createdAt))
+        .take(10)
+        .map((r) => r.app.value)
+        .nonNulls
+        .toSet()
+        .toList();
+  }
+
+  Future<void> fetch() async {
+    final releases = await ref.releases.findAll(params: {'limit': 10});
+    final appIds = releases.map((r) => r.app.id!.toString()).toSet();
+    await ref.apps.findAll(params: {'#d': appIds});
+    update((_) => localFetch());
+  }
+}
+
+final latestReleasesAppProvider =
+    AsyncNotifierProvider.autoDispose<LatestReleasesAppNotifier, List<App>>(
+        LatestReleasesAppNotifier.new);
 
 class LatestReleasesContainer extends HookConsumerWidget {
   const LatestReleasesContainer({
@@ -235,8 +274,9 @@ class LatestReleasesContainer extends HookConsumerWidget {
             style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold)),
         Gap(12),
         Column(
-          children:
-              List.generate(5, (i) => AppCard(app: apps.elementAtOrNull(i))),
+          children: (apps.isEmpty ? [null, null, null] : apps)
+              .map((app) => AppCard(app: app))
+              .toList(),
         )
       ],
     );
