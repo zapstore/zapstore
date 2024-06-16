@@ -1,3 +1,4 @@
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gap/gap.dart';
@@ -23,8 +24,14 @@ class UpdatesScreen extends HookConsumerWidget {
       );
     }
 
-    final updatableApps = state.model.where((app) => app.canUpdate).toList();
-    final updatedApps = state.model.where((app) => app.isUpdated).toList();
+    final updatableApps = state.model
+        .where((app) => app.canUpdate)
+        .toList()
+        .sorted((a, b) => (a.name ?? '').compareTo(b.name ?? ''));
+    final updatedApps = state.model
+        .where((app) => app.isUpdated)
+        .toList()
+        .sorted((a, b) => (a.name ?? '').compareTo(b.name ?? ''));
 
     return RefreshIndicator(
       onRefresh: () => ref.apps.findAll(params: {'installed': true}),
