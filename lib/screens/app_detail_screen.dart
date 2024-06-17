@@ -713,8 +713,11 @@ class WebOfTrustContainer extends HookConsumerWidget {
       AsyncError(:final error) =>
         Center(child: Text('Error checking web of trust: $error')),
       _ => Center(
-          child: SizedBox(
-              width: 14, height: 14, child: CircularProgressIndicator()),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: SizedBox(
+                width: 14, height: 14, child: CircularProgressIndicator()),
+          ),
         )
     };
   }
