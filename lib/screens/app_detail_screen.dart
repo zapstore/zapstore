@@ -1,4 +1,6 @@
+import 'package:android_package_manager/android_package_manager.dart';
 import 'package:auto_size_text/auto_size_text.dart';
+import 'package:basic_utils/basic_utils.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
@@ -215,6 +217,14 @@ class AppDetailScreen extends HookConsumerWidget {
                                                   .apkSignatureHash!));
                                           context.showInfo(
                                               'Copied APK certificate SHA-256 to the clipboard');
+                                          app
+                                              .packageCertificateMatches()
+                                              .then((match) {
+                                            if (match != null && !match) {
+                                              context.showError(
+                                                  'APK certificate mismatch!\nPlease report');
+                                            }
+                                          });
                                         },
                                         child: Row(
                                           mainAxisSize: MainAxisSize.min,

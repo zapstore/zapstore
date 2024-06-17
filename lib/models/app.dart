@@ -4,6 +4,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:android_package_manager/android_package_manager.dart';
+import 'package:basic_utils/basic_utils.dart';
 import 'package:collection/collection.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_data/flutter_data.dart';
@@ -164,6 +165,20 @@ class App extends BaseApp with DataModelMixin<App> {
         await installOnDevice();
       });
     }
+  }
+
+  Future<bool?> packageCertificateMatches() async {
+    final flags = PackageInfoFlags(
+      {PMFlag.getPermissions, PMFlag.getSigningCertificates},
+    );
+    final i = await packageManager.getPackageInfo(
+        packageName: id!.toString(), flags: flags);
+    if (i == null || latestMetadata!.apkSignatureHash == null) {
+      return null;
+    }
+    final bytes = i.signingInfo!.signingCertificateHistory!.first;
+    return latestMetadata!.apkSignatureHash!.toLowerCase() ==
+        CryptoUtils.getHash(bytes).toLowerCase();
   }
 }
 
