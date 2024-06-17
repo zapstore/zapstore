@@ -64,7 +64,8 @@ class UpdatesScreen extends HookConsumerWidget {
                 children: [
                   Gap(20),
                   Text(
-                    '${updatableApps.length} updates available'.toUpperCase(),
+                    '${updatableApps.length} update${updatableApps.length > 1 ? 's' : ''} available'
+                        .toUpperCase(),
                     style: TextStyle(
                       fontSize: 16,
                       letterSpacing: 3,

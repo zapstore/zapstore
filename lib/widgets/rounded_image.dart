@@ -29,7 +29,7 @@ class RoundedImage extends StatelessWidget {
       borderRadius: BorderRadius.circular(radius.toDouble()),
       child: url == null
           ? fallbackContainer
-          : (url!.endsWith('svg')
+          : (url!.endsWith('svg') || url!.endsWith('xml')
               ? fallbackContainer
               : CachedNetworkImage(
                   imageUrl: url!,
