@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
+import 'package:convert/convert.dart';
 
 import 'package:android_package_manager/android_package_manager.dart';
-import 'package:basic_utils/basic_utils.dart';
 import 'package:collection/collection.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_data/flutter_data.dart';
@@ -100,10 +100,12 @@ class App extends BaseApp with DataModelMixin<App> {
     final dir = await getApplicationSupportDirectory();
     final file = File(path.join(dir.path, hash));
 
-    installOnDevice() async {
+    installOnDevice({String? downloadedFileHash}) async {
       notifier.state = DeviceInstallProgress();
 
-      if (await _isHashMismatch(file.path, hash)) {
+      // Only check hash when passed to this function
+      // (when installing from local file, it has already been checked)
+      if (downloadedFileHash != null && downloadedFileHash != hash) {
         var e = 'Hash mismatch, ';
         if (size != null) {
           if (size == await file.length()) {
@@ -150,9 +152,13 @@ class App extends BaseApp with DataModelMixin<App> {
       }
       final totalBytes = response.contentLength ?? size ?? 1;
 
+      final digestOutputSink = AccumulatorSink<Digest>();
+      final digestInputSink = sha256.startChunkedConversion(digestOutputSink);
+
       sub = response.stream.listen((chunk) {
         final data = Uint8List.fromList(chunk);
         sink.add(data);
+        digestInputSink.add(data);
         downloadedBytes += data.length;
         notifier.state =
             DownloadingInstallProgress(downloadedBytes / totalBytes);
@@ -161,8 +167,10 @@ class App extends BaseApp with DataModelMixin<App> {
       }, onDone: () async {
         await sub?.cancel();
         await sink.close();
+        digestInputSink.close();
         client.close();
-        await installOnDevice();
+        final digest = digestOutputSink.events.single.toString();
+        await installOnDevice(downloadedFileHash: digest);
       });
     }
   }
@@ -171,6 +179,7 @@ class App extends BaseApp with DataModelMixin<App> {
     final flags = PackageInfoFlags(
       {PMFlag.getPermissions, PMFlag.getSigningCertificates},
     );
+
     final i = await packageManager.getPackageInfo(
         packageName: id!.toString(), flags: flags);
     if (i == null || latestMetadata!.apkSignatureHash == null) {
@@ -178,7 +187,7 @@ class App extends BaseApp with DataModelMixin<App> {
     }
     final bytes = i.signingInfo!.signingCertificateHistory!.first;
     return latestMetadata!.apkSignatureHash!.toLowerCase() ==
-        CryptoUtils.getHash(bytes).toLowerCase();
+        sha256.convert(bytes).toString().toLowerCase();
   }
 }
 
@@ -319,14 +328,6 @@ mixin AppAdapter on Adapter<App> {
     }
     return super.deserialize(data);
   }
-}
-
-Future<bool> _isHashMismatch(String path, String hash) async {
-  return await Isolate.run(() async {
-    final bytes = await File(path).readAsBytes();
-    final digest = sha256.convert(bytes);
-    return digest.toString() != hash;
-  });
 }
 
 // install support

@@ -42,7 +42,6 @@ dependencies:
   percent_indicator: ^4.2.3
   toastification: ^2.0.0
   system_info2: ^4.0.0
-  basic_utils: ^5.7.0
   badges: ^3.1.2
 
 dependency_overrides:
