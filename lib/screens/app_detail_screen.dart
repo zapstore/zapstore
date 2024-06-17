@@ -1,7 +1,6 @@
 import 'package:auto_size_text/auto_size_text.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:collection/collection.dart';
-import 'package:external_app_launcher/external_app_launcher.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
@@ -10,7 +9,6 @@ import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:percent_indicator/linear_percent_indicator.dart';
-import 'package:toastification/toastification.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
@@ -18,6 +16,7 @@ import 'package:zapstore/models/release.dart';
 import 'package:zapstore/models/settings.dart';
 import 'package:zapstore/models/user.dart';
 import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/utils/system_info.dart';
 import 'package:zapstore/widgets/app_drawer.dart';
 import 'package:zapstore/widgets/author_container.dart';
 import 'package:zapstore/widgets/pill_widget.dart';
@@ -51,15 +50,6 @@ class AppDetailScreen extends HookConsumerWidget {
           Expanded(
             child: CustomScrollView(
               slivers: [
-                // SliverAppBar(
-                //   pinned: true,
-                //   leading: IconButton(
-                //     icon: Icon(Icons.arrow_back),
-                //     onPressed: () {
-                //       context.pop();
-                //     },
-                //   ),
-                // ),
                 SliverList(
                   delegate: SliverChildListDelegate(
                     [
@@ -472,7 +462,7 @@ class InstallButton extends ConsumerWidget {
         AppInstallStatus.differentArchitecture => null,
         AppInstallStatus.downgrade => null,
         AppInstallStatus.updated => () {
-            LaunchApp.openApp(androidPackageName: app.id!.toString());
+            packageManager.openApp(app.id!.toString());
           },
         _ => switch (progress) {
             IdleInstallProgress() => () {
@@ -532,8 +522,9 @@ class InstallButton extends ConsumerWidget {
           _ => switch (progress) {
               IdleInstallProgress() => app.canUpdate
                   ? AutoSizeText(
-                      'Update ${compact ? '' : 'to ${app.latestMetadata!.version!}'}',
-                      maxLines: 1)
+                      'Update${compact ? '' : ' to ${app.latestMetadata!.version!}'}',
+                      maxLines: 1,
+                    )
                   : Text('Install'),
               DownloadingInstallProgress(:final progress) => Text(
                   '${(progress * 100).floor()}%',

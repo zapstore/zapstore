@@ -35,13 +35,14 @@ dependencies:
   auto_size_text: ^3.0.0
   intl: ^0.18.1
   device_info_plus: ^10.1.0
-  external_app_launcher: ^4.0.0
   install_plugin: ^2.1.0
   flutter_layout_grid: ^2.0.6
   skeletonizer: ^1.1.2+1
   flutter_phoenix: ^1.1.1
   percent_indicator: ^4.2.3
   toastification: ^2.0.0
+  system_info2: ^4.0.0
+  basic_utils: ^5.7.0
 
 dependency_overrides:
   purplebase:

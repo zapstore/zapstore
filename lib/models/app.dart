@@ -20,6 +20,7 @@ import 'package:zapstore/models/user.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
 import 'package:zapstore/screens/search_screen.dart';
+import 'package:zapstore/utils/system_info.dart';
 
 part 'app.g.dart';
 
@@ -45,10 +46,6 @@ class App extends BaseApp with DataModelMixin<App> {
       DataModel.adapterFor(this).ref.read(installedAppProvider)[id!.toString()];
 
   FileMetadata? get latestMetadata {
-    //   if (Platform.isAndroid) {
-    //   final androidInfo = await deviceInfo.androidInfo;
-    //   return androidInfo.architecture; // e.g. "arm64-v8a"
-    // }
     return releases.ordered.firstOrNull?.artifacts
         .where((a) =>
             a.mimeType == 'application/vnd.android.package-archive' &&
@@ -260,13 +257,10 @@ mixin AppAdapter on Adapter<App> {
     return apps.first;
   }
 
-  static AndroidPackageManager? _packageManager;
-
   Future<Map<String, String>> getInstalledAppsMap({bool defer = false}) async {
     late List<PackageInfo>? infos;
     if (Platform.isAndroid) {
-      _packageManager ??= AndroidPackageManager();
-      infos = await _packageManager!.getInstalledPackages();
+      infos = await packageManager.getInstalledPackages();
     } else {
       infos = [];
     }

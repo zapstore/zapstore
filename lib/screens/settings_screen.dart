@@ -1,5 +1,6 @@
 import 'package:async_button_builder/async_button_builder.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_data/flutter_data.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:flutter_phoenix/flutter_phoenix.dart';
@@ -12,6 +13,7 @@ import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/settings.dart';
 import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/utils/system_info.dart';
 import 'package:zapstore/widgets/app_drawer.dart';
 
 class SettingsScreen extends HookConsumerWidget {
@@ -19,6 +21,7 @@ class SettingsScreen extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final systemInfoState = ref.watch(systemInfoProvider);
     final controller = useTextEditingController();
     final user = ref.settings
         .watchOne('_', alsoWatch: (_) => {_.user})
@@ -111,6 +114,26 @@ class SettingsScreen extends HookConsumerWidget {
               );
             },
             child: Text('Delete local cache'),
+          ),
+          Gap(40),
+          Text(
+            'System information',
+            style: context.theme.textTheme.headlineLarge!
+                .copyWith(fontWeight: FontWeight.bold),
+          ),
+          Gap(20),
+          GestureDetector(
+            onTap: () {
+              if (systemInfoState.hasValue) {
+                Clipboard.setData(
+                    ClipboardData(text: systemInfoState.value!.toString()));
+                context.showInfo('Copied system information');
+              }
+            },
+            child: Text(switch (systemInfoState) {
+              AsyncData(:final value) => value.toString(),
+              _ => '',
+            }),
           ),
         ],
       ),
