@@ -13,7 +13,7 @@ class UpdatesScreen extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // TODO workaround for bug in watchAll() when remote=true
+    // TODO Workaround for bug in watchAll (when remote=true)
     final snapshot = useFuture(useMemoized(
         () => ref.apps.findAll(remote: true, params: {'installed': true})));
     final state = ref.apps.watchAll();

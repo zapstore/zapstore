@@ -1,6 +1,4 @@
-import 'package:android_package_manager/android_package_manager.dart';
 import 'package:auto_size_text/auto_size_text.dart';
-import 'package:basic_utils/basic_utils.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';

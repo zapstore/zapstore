@@ -23,6 +23,7 @@ class SettingsScreen extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final systemInfoState = ref.watch(systemInfoProvider);
     final controller = useTextEditingController();
+    // throw 'Invalid testing error';
     final user = ref.settings
         .watchOne('_', alsoWatch: (_) => {_.user})
         .model!

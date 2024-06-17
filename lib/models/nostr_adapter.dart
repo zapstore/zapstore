@@ -11,6 +11,7 @@ mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
 
   @override
   DeserializedData<T> deserialize(Object? data, {String? key}) {
+    // throw 'a';
     final list = data is Iterable ? data : [data as Map];
     final models = <T>[];
     final included = <DataModelMixin>[];
