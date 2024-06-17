@@ -105,11 +105,11 @@ class UpdatesAppCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: EdgeInsets.only(top: 8, bottom: 8),
-      elevation: 0,
-      child: GestureDetector(
-        onTap: () => context.go('/details', extra: app),
+    return GestureDetector(
+      onTap: () => context.go('/updates/details', extra: app),
+      child: Card(
+        margin: EdgeInsets.only(top: 8, bottom: 8),
+        elevation: 0,
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: VersionedAppHeader(app: app, showUpdate: true),
