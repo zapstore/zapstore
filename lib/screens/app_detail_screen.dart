@@ -475,7 +475,10 @@ class InstallButton extends ConsumerWidget {
         _ => switch (progress) {
             IdleInstallProgress() => () {
                 // show trust dialog only if first install
-                if (app.canInstall && !disabled) {
+                if (disabled) {
+                  context.showError('Missing signer');
+                }
+                if (app.canInstall) {
                   showDialog(
                     context: context,
                     builder: (BuildContext context) {
@@ -500,7 +503,7 @@ class InstallButton extends ConsumerWidget {
       child: LinearPercentIndicator(
         lineHeight: 40,
         percent: switch (progress) {
-          DeviceInstallProgress() => 1,
+          VerifyingHashProgress() => 1,
           DownloadingInstallProgress(:final progress) => progress,
           _ => switch (app.status) {
               AppInstallStatus.updated => 1,
@@ -538,16 +541,15 @@ class InstallButton extends ConsumerWidget {
                   '${(progress * 100).floor()}%',
                   style: TextStyle(fontWeight: FontWeight.bold),
                 ),
-              DeviceInstallProgress() => compact
+              VerifyingHashProgress() => compact
                   ? SizedBox(
                       width: 14, height: 14, child: CircularProgressIndicator())
-                  : Text(
-                      'Requesting ${app.canUpdate ? 'update' : 'installation'} on device'),
+                  : Text('Verifying file integrity'),
               HashVerifiedInstallProgress() => compact
                   ? SizedBox(
                       width: 14, height: 14, child: CircularProgressIndicator())
                   : Text(
-                      'Hash verified, ${app.canUpdate ? 'updating' : 'installing'}'),
+                      'Hash verified, requesting ${app.canUpdate ? 'update' : 'installation'}'),
               ErrorInstallProgress() => compact
                   ? SizedBox(width: 14, height: 14, child: Icon(Icons.error))
                   : Text('Error, tap to see message'),

@@ -23,7 +23,6 @@ class SettingsScreen extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final systemInfoState = ref.watch(systemInfoProvider);
     final controller = useTextEditingController();
-    // throw 'Invalid testing error';
     final user = ref.settings
         .watchOne('_', alsoWatch: (_) => {_.user})
         .model!
@@ -58,12 +57,14 @@ class SettingsScreen extends HookConsumerWidget {
               loadingWidget: SizedBox(
                   width: 14, height: 14, child: CircularProgressIndicator()),
               onPressed: () async {
-                final text =
-                    '${controller.text.trim()} [from ${user.npub} on ${DateFormat('MMMM d, y').format(DateTime.now())}]';
-                final event = BaseEvent(content: text).sign(kI);
-                await ref.apps.nostrAdapter.notifier
-                    .publish(event, relayUrls: ['wss://relay.zap.store']);
-                controller.clear();
+                if (controller.text.trim().isNotEmpty) {
+                  final text =
+                      '${controller.text.trim()} [from ${user.npub} on ${DateFormat('MMMM d, y').format(DateTime.now())}]';
+                  final event = BaseEvent(content: text).sign(kI);
+                  await ref.apps.nostrAdapter.notifier
+                      .publish(event, relayUrls: ['wss://relay.zap.store']);
+                  controller.clear();
+                }
               },
               builder: (context, child, callback, state) {
                 return switch (state) {

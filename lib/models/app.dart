@@ -117,7 +117,7 @@ class App extends BaseApp with DataModelMixin<App> {
     final file = File(path.join(dir.path, hash));
 
     installOnDevice() async {
-      notifier.state = DeviceInstallProgress();
+      notifier.state = VerifyingHashProgress();
 
       if (await _isHashMismatch(file.path, hash)) {
         var e = 'Hash mismatch, ';
@@ -344,10 +344,10 @@ Future<bool> _isHashMismatch(String path, String hash) async {
     final digestOutputSink = AccumulatorSink<Digest>();
     final digestInputSink = sha256.startChunkedConversion(digestOutputSink);
     String? digest;
-
     try {
       while (true) {
-        final chunk = await reader.readChunk(1024 * 1024);
+        // Chunk size determined from approximate cpu/memory profiling
+        final chunk = await reader.readChunk(2048);
         if (chunk.isEmpty) {
           break; // EOF
         }
@@ -385,7 +385,7 @@ class DownloadingInstallProgress extends AppInstallProgress {
   DownloadingInstallProgress(this.progress);
 }
 
-class DeviceInstallProgress extends AppInstallProgress {}
+class VerifyingHashProgress extends AppInstallProgress {}
 
 class HashVerifiedInstallProgress extends AppInstallProgress {}
 
