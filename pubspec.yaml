@@ -43,6 +43,7 @@ dependencies:
   toastification: ^2.0.0
   system_info2: ^4.0.0
   badges: ^3.1.2
+  convert: ^3.1.1
 
 dependency_overrides:
   purplebase:

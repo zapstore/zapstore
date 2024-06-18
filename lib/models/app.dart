@@ -1,11 +1,10 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:isolate';
 import 'dart:typed_data';
-import 'package:convert/convert.dart';
 
 import 'package:android_package_manager/android_package_manager.dart';
 import 'package:collection/collection.dart';
+import 'package:convert/convert.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_data/flutter_data.dart';
 import 'package:install_plugin/install_plugin.dart';
@@ -43,8 +42,15 @@ class App extends BaseApp with DataModelMixin<App> {
       required this.releases,
       required this.signer});
 
-  String? get installedVersion =>
-      DataModel.adapterFor(this).ref.read(installedAppProvider)[id!.toString()];
+  String? get installedVersion => DataModel.adapterFor(this)
+      .ref
+      .read(installedAppProvider)[id!.toString()]
+      ?.$1;
+
+  int? get installedVersionCode => DataModel.adapterFor(this)
+      .ref
+      .read(installedAppProvider)[id!.toString()]
+      ?.$2;
 
   FileMetadata? get latestMetadata {
     return releases.ordered.firstOrNull?.artifacts
@@ -68,7 +74,15 @@ class App extends BaseApp with DataModelMixin<App> {
     if (installedVersion == null) {
       return AppInstallStatus.installable;
     }
-    final comp = latestMetadata!.version!.compareTo(installedVersion!);
+    var comp = 0;
+    if (latestMetadata!.versionCode != null && id != 'store.zap.app') {
+      // Note: need to exclude zap.store because development versions always
+      // carry a lower version code (e.g. 12) than published ones (e.g. 2012)
+      comp = latestMetadata!.versionCode!.compareTo(installedVersionCode!);
+    } else {
+      comp = latestMetadata!.version!.compareTo(installedVersion!);
+    }
+
     if (comp == 1) return AppInstallStatus.updatable;
     if (comp == 0) return AppInstallStatus.updated;
     // else it's a downgrade, which is not installable
@@ -95,7 +109,7 @@ class App extends BaseApp with DataModelMixin<App> {
     }
 
     final hash = latestMetadata!.hash!;
-    final size = int.tryParse(latestMetadata!.size ?? '');
+    final size = latestMetadata!.size ?? 0;
 
     final dir = await getApplicationSupportDirectory();
     final file = File(path.join(dir.path, hash));
@@ -107,14 +121,10 @@ class App extends BaseApp with DataModelMixin<App> {
       // (when installing from local file, it has already been checked)
       if (downloadedFileHash != null && downloadedFileHash != hash) {
         var e = 'Hash mismatch, ';
-        if (size != null) {
-          if (size == await file.length()) {
-            e += 'likely a malicious file.';
-          } else {
-            e += 'bad data ($size is not ${await file.length()}).';
-          }
+        if (size == await file.length()) {
+          e += 'likely a malicious file.';
         } else {
-          e += 'possibly broken download.';
+          e += 'bad data ($size is not ${await file.length()}).';
         }
         e += ' Please try again.';
         await file.delete();
@@ -150,7 +160,7 @@ class App extends BaseApp with DataModelMixin<App> {
         uri = Uri.parse(backupUrl);
         response = await client.send(http.Request('GET', uri));
       }
-      final totalBytes = response.contentLength ?? size ?? 1;
+      final totalBytes = response.contentLength ?? size;
 
       final digestOutputSink = AccumulatorSink<Digest>();
       final digestInputSink = sha256.startChunkedConversion(digestOutputSink);
@@ -281,7 +291,9 @@ mixin AppAdapter on Adapter<App> {
     return apps.first;
   }
 
-  Future<Map<String, String>> getInstalledAppsMap({bool defer = false}) async {
+  // TODO Make this async on writes / sync on reads (and return a class)
+  Future<Map<String, (String, int)>> getInstalledAppsMap(
+      {bool defer = false}) async {
     late List<PackageInfo>? infos;
     if (Platform.isAndroid) {
       infos = await packageManager.getInstalledPackages();
@@ -300,7 +312,7 @@ mixin AppAdapter on Adapter<App> {
 
     final newState = {
       for (final info in installedPackageInfos)
-        info.packageName!: info.versionName!
+        info.packageName!: (info.versionName!, info.versionCode!)
     };
 
     // Providers can't set other providers state
@@ -361,7 +373,8 @@ class ErrorInstallProgress extends AppInstallProgress {
   ErrorInstallProgress(this.e);
 }
 
-final installedAppProvider = StateProvider<Map<String, String>>((_) => {});
+final installedAppProvider =
+    StateProvider<Map<String, (String, int)>>((_) => {});
 
 final installationProgressProvider = StateProvider.autoDispose
     .family<AppInstallProgress, String>((_, arg) => IdleInstallProgress());

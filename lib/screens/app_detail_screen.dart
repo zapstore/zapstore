@@ -438,7 +438,7 @@ class ReleaseCard extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text('Size'),
-                    Text('${int.parse(metadata.size!) ~/ 1024 ~/ 1024} MB')
+                    Text('${metadata.size! ~/ 1024 ~/ 1024} MB')
                   ],
                 ),
               ),
