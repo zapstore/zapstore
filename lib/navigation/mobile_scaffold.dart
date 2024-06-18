@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:zapstore/main.data.dart';
-import 'package:zapstore/models/app.dart';
 import 'package:zapstore/utils/theme.dart';
 import 'package:zapstore/widgets/drawer_container.dart';
 

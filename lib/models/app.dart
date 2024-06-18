@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:android_package_manager/android_package_manager.dart';
+import 'package:async/async.dart';
 import 'package:collection/collection.dart';
 import 'package:convert/convert.dart';
 import 'package:crypto/crypto.dart';
@@ -114,12 +116,10 @@ class App extends BaseApp with DataModelMixin<App> {
     final dir = await getApplicationSupportDirectory();
     final file = File(path.join(dir.path, hash));
 
-    installOnDevice({String? downloadedFileHash}) async {
+    installOnDevice() async {
       notifier.state = DeviceInstallProgress();
 
-      // Only check hash when passed to this function
-      // (when installing from local file, it has already been checked)
-      if (downloadedFileHash != null && downloadedFileHash != hash) {
+      if (await _isHashMismatch(file.path, hash)) {
         var e = 'Hash mismatch, ';
         if (size == await file.length()) {
           e += 'likely a malicious file.';
@@ -162,13 +162,9 @@ class App extends BaseApp with DataModelMixin<App> {
       }
       final totalBytes = response.contentLength ?? size;
 
-      final digestOutputSink = AccumulatorSink<Digest>();
-      final digestInputSink = sha256.startChunkedConversion(digestOutputSink);
-
       sub = response.stream.listen((chunk) {
         final data = Uint8List.fromList(chunk);
         sink.add(data);
-        digestInputSink.add(data);
         downloadedBytes += data.length;
         notifier.state =
             DownloadingInstallProgress(downloadedBytes / totalBytes);
@@ -177,10 +173,8 @@ class App extends BaseApp with DataModelMixin<App> {
       }, onDone: () async {
         await sub?.cancel();
         await sink.close();
-        digestInputSink.close();
         client.close();
-        final digest = digestOutputSink.events.single.toString();
-        await installOnDevice(downloadedFileHash: digest);
+        await installOnDevice();
       });
     }
   }
@@ -342,6 +336,33 @@ mixin AppAdapter on Adapter<App> {
   }
 }
 
+Future<bool> _isHashMismatch(String path, String hash) async {
+  return await Isolate.run(() async {
+    final file = File(path);
+    final fileStream = file.openRead();
+    final reader = ChunkedStreamReader(fileStream);
+    final digestOutputSink = AccumulatorSink<Digest>();
+    final digestInputSink = sha256.startChunkedConversion(digestOutputSink);
+    String? digest;
+
+    try {
+      while (true) {
+        final chunk = await reader.readChunk(1024 * 1024);
+        if (chunk.isEmpty) {
+          break; // EOF
+        }
+        digestInputSink.add(chunk);
+      }
+    } finally {
+      digestInputSink.close();
+      digest = digestOutputSink.events.single.toString();
+      digestOutputSink.close();
+      reader.cancel();
+    }
+    return digest != hash;
+  });
+}
+
 // install support
 
 enum AppInstallStatus {
@@ -376,5 +397,6 @@ class ErrorInstallProgress extends AppInstallProgress {
 final installedAppProvider =
     StateProvider<Map<String, (String, int)>>((_) => {});
 
-final installationProgressProvider = StateProvider.autoDispose
-    .family<AppInstallProgress, String>((_, arg) => IdleInstallProgress());
+final installationProgressProvider =
+    StateProvider.family<AppInstallProgress, String>(
+        (_, arg) => IdleInstallProgress());

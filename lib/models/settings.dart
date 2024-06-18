@@ -27,6 +27,5 @@ mixin SettingsAdapter on Adapter<Settings> {
     if (!existsId('_')) {
       Settings().saveLocal();
     }
-    print('initing and db version is ${findOneLocalById('_')!.dbVersion} ');
   }
 }
