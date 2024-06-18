@@ -22,6 +22,7 @@ class SearchScreen extends HookConsumerWidget {
     final controller = useTextEditingController();
     final focusNode = useFocusNode();
     final state = ref.watch(searchResultProvider);
+    final scrollController = useScrollController();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -78,6 +79,11 @@ class SearchScreen extends HookConsumerWidget {
                 elevation: MaterialStateProperty.all(2.2),
                 onSubmitted: (query) async {
                   ref.read(searchQueryProvider.notifier).state = query;
+                  scrollController.animateTo(
+                    scrollController.position.minScrollExtent,
+                    duration: Duration(milliseconds: 300),
+                    curve: Curves.easeOut,
+                  );
                 },
               ),
             ),
@@ -87,6 +93,7 @@ class SearchScreen extends HookConsumerWidget {
         if (state.hasError) Text(state.error!.toString()),
         Expanded(
           child: SingleChildScrollView(
+            controller: scrollController,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               key: UniqueKey(),
