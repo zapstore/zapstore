@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:zapstore/main.data.dart';
+import 'package:zapstore/models/app.dart';
 import 'package:zapstore/utils/theme.dart';
 import 'package:zapstore/widgets/drawer_container.dart';
 
-class MobileScaffold extends StatelessWidget {
+class MobileScaffold extends HookConsumerWidget {
   const MobileScaffold({
     super.key,
     required this.body,
@@ -14,7 +17,10 @@ class MobileScaffold extends StatelessWidget {
   final ValueChanged<int> onDestinationSelected;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // TODO Inefficient, should be able to query for this (we need to store app info in database)
+    final appsToUpdate =
+        ref.apps.watchAll().model.where((a) => a.canUpdate).length;
     return Scaffold(
       key: scaffoldKey,
       body: Padding(
@@ -27,7 +33,7 @@ class MobileScaffold extends StatelessWidget {
         indicatorColor: Colors.transparent,
         selectedIndex: selectedIndex,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
-        destinations: const [
+        destinations: [
           NavigationDestination(
             label: 'Home',
             icon: Icon(Icons.home_outlined),
@@ -35,15 +41,18 @@ class MobileScaffold extends StatelessWidget {
           ),
           NavigationDestination(
             label: 'Updates',
-            icon: Badge(
-              label: Text('3'),
-              child: Icon(Icons.update_outlined),
-            ),
-            selectedIcon: Badge(
-              label: Text('3'),
-              child: Icon(Icons.update),
-            ),
-            // selectedIcon: Icon(Icons.update),
+            icon: appsToUpdate > 0
+                ? Badge(
+                    label: Text(appsToUpdate.toString()),
+                    child: Icon(Icons.update_outlined),
+                  )
+                : Icon(Icons.update_outlined),
+            selectedIcon: appsToUpdate > 0
+                ? Badge(
+                    label: Text(appsToUpdate.toString()),
+                    child: Icon(Icons.update),
+                  )
+                : Icon(Icons.update),
           ),
           NavigationDestination(
             label: 'Settings',
