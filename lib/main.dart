@@ -1,7 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
-import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_data/flutter_data.dart';
 import 'package:flutter_phoenix/flutter_phoenix.dart';
@@ -16,8 +16,8 @@ const kDbVersion = 1;
 
 /// Application entry point.
 ///  - Initializes Riverpod (and Flutter Data local storage)
-///  - Handles errors globally
-///  - Calls router
+///  - Handles application errors
+///  - Triggers routing
 void main() {
   runZonedGuarded(() {
     runApp(
@@ -62,23 +62,24 @@ Directory? _dir;
 
 void errorHandler(Object exception, StackTrace? stack) {
   debounce((exception: exception, stack: stack), (records) async {
-    // TODO Implement reporting
-    final map = records.groupSetsBy((err) => '${err.exception}\n${err.stack}');
-    print(map.length);
-
-    //   final text =
-    //     '${DateTime.now().toIso8601String()}\n${err.exception}\n${err.stack}';
-    // // print('${err.exception}\n${err.stack}');
-
-    // final hash = sha256.convert(utf8.encode('${err.exception}\n${err.stack}'));
-    // print(hash);
-    // print(text);
-    // print('-----');
-
+    if (records.isEmpty) return;
     _dir ??= await getApplicationDocumentsDirectory();
-    // // final file = File('${directory.path}/data.txt');
-    // // await file.writeAsString(newContents);
+    final file = File('${_dir!.path}/errors.json');
 
-    // collect system information
+    final errorMap = await file.exists()
+        ? Map<String, String>.from(jsonDecode(await file.readAsString()))
+        : <String, String>{};
+
+    for (final record in records) {
+      final full =
+          '${record.exception}${record.stack?.toString() ?? ''}${DateTime.now().toIso8601String()}';
+      final key = full.split('\n').take(2).join();
+      // Only keep longest stack of similar errors, prevents duplicates
+      if (full.length > (errorMap[key]?.length ?? 0)) {
+        errorMap[key] = full;
+      }
+    }
+    print(errorMap.length);
+    await file.writeAsString(jsonEncode(errorMap));
   });
 }

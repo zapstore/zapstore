@@ -17,7 +17,8 @@ class MobileScaffold extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // TODO Inefficient, should be able to query for this (we need to store app info in database)
+    // TODO Inefficient, should be able to query for this
+    // (need to store app status in database, local only)
     final appsToUpdate =
         ref.apps.watchAll().model.where((a) => a.canUpdate).length;
     return Scaffold(

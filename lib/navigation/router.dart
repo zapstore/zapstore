@@ -139,7 +139,7 @@ final dataLibrariesInitializer = FutureProvider<void>((ref) async {
   ref
       .read(relayMessageNotifierProvider.notifier)
       .initialize(['wss://relay.zap.store', 'wss://relay.nostr.band']);
-  // TODO Is this best place for this listener?
+
   _lifecycleListener = AppLifecycleListener(
     onStateChange: (state) async {
       if (state == AppLifecycleState.resumed) {
