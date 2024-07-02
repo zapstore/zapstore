@@ -353,9 +353,11 @@ packages:
   flutter_data:
     dependency: "direct main"
     description:
-      path: "../flutter_data"
-      relative: true
-    source: path
+      path: "."
+      ref: d7376cf1eac8e9c563d4c6eed8e567adc877415c
+      resolved-ref: d7376cf1eac8e9c563d4c6eed8e567adc877415c
+      url: "https://github.com/zapstore/flutter_data"
+    source: git
     version: "2.0.0-rc3"
   flutter_hooks:
     dependency: "direct main"
@@ -866,9 +868,11 @@ packages:
   purplebase:
     dependency: "direct main"
     description:
-      path: "../purplebase"
-      relative: true
-    source: path
+      path: "."
+      ref: "0.1.1"
+      resolved-ref: "510bc0b2a92d6f2519e5ee25506afd729e40089a"
+      url: "https://github.com/purplebase/purplebase"
+    source: git
     version: "0.1.1"
   quiver:
     dependency: transitive
