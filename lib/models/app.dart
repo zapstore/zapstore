@@ -21,10 +21,11 @@ import 'package:zapstore/models/release.dart';
 import 'package:zapstore/models/user.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
-import 'package:zapstore/screens/search_screen.dart';
 import 'package:zapstore/utils/system_info.dart';
 
 part 'app.g.dart';
+
+const kAndroidMimeType = 'application/vnd.android.package-archive';
 
 @JsonSerializable()
 @DataAdapter([NostrAdapter, AppAdapter])
@@ -215,16 +216,18 @@ mixin AppAdapter on Adapter<App> {
   }
 
   Future<List<App>> loadAppModels(Map<String, dynamic> params) async {
+    final includes = params.remove('includes') ?? false;
     final apps = await super.findAll(params: params);
     final releases =
         await ref.releases.findAll(params: {'#a': apps.map((app) => app.aTag)});
     final metadataIds = releases.map((r) => r.tagMap['e']!).expand((_) => _);
+
     await ref.fileMetadata.findAll(params: {
       'ids': metadataIds,
       '#m': [kAndroidMimeType]
     });
 
-    if (params.containsKey('includes')) {
+    if (includes) {
       final userIds = {
         for (final app in apps) app.signer.id,
         for (final app in apps) app.developer.id
@@ -251,12 +254,6 @@ mixin AppAdapter on Adapter<App> {
         params['#d'] = map.keys;
         params.remove('installed');
         print('filtering by installed ${params['#d']}');
-
-        // final apps = findAllLocal();
-        // if (apps.isNotEmpty) {
-        //   loadAppModels(params);
-        //   return apps;
-        // }
         return await loadAppModels(params);
       }
     }

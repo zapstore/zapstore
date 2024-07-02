@@ -8,7 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:purplebase/purplebase.dart';
-import 'package:zapstore/screens/settings_screen.dart';
+import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/system_info.dart';
 import 'package:zapstore/utils/theme.dart';
 
@@ -56,6 +56,15 @@ class ErrorContainer extends HookConsumerWidget {
             ),
             textAlign: TextAlign.center,
           ),
+          Gap(12),
+          Text(
+            'Reporting an error will send device information',
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.grey,
+            ),
+            textAlign: TextAlign.center,
+          ),
           Gap(24),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -68,7 +77,7 @@ class ErrorContainer extends HookConsumerWidget {
                   });
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Color.fromARGB(255, 255, 66, 66),
+                  backgroundColor: Color.fromARGB(255, 251, 89, 89),
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),

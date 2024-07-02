@@ -142,5 +142,3 @@ class SettingsScreen extends HookConsumerWidget {
     );
   }
 }
-
-const kI = "e593c54f840b32054dcad0fac15d57e4ac6523e31fe26b3087de6b07a2e9af58";

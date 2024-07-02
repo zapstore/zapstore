@@ -6,7 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
-import 'package:zapstore/screens/app_detail_screen.dart';
+import 'package:zapstore/widgets/versioned_app_header.dart';
 
 class UpdatesScreen extends HookConsumerWidget {
   const UpdatesScreen({super.key});
