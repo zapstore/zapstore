@@ -303,7 +303,7 @@ mixin AppAdapter on Adapter<App> {
 
     final newState = {
       for (final info in installedPackageInfos)
-        info.packageName!: (info.versionName!, info.versionCode!)
+        info.packageName!: (info.versionName??'?', info.versionCode!)
     };
 
     // Providers can't set other providers state
