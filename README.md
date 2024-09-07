@@ -15,6 +15,10 @@ Unless it's a minor fix, please reach out to us first before working on any cont
 
 We will have a clearer process to contribute once we are out of beta.
 
+## Testing
+
+This project is tested with [BrowserStack](https://www.browserstack.com/).
+
 ## License
 
 MIT
