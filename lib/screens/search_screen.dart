@@ -35,7 +35,7 @@ class SearchScreen extends HookConsumerWidget {
               child: SearchBar(
                 controller: controller,
                 focusNode: focusNode,
-                shape: MaterialStateProperty.all(
+                shape: WidgetStateProperty.all(
                   RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(28),
                   ),
@@ -72,9 +72,9 @@ class SearchScreen extends HookConsumerWidget {
                     ),
                 ],
                 hintText: 'Search for apps',
-                hintStyle: MaterialStateProperty.all(
-                    TextStyle(color: Colors.grey[600])),
-                elevation: MaterialStateProperty.all(2.2),
+                hintStyle:
+                    WidgetStateProperty.all(TextStyle(color: Colors.grey[600])),
+                elevation: WidgetStateProperty.all(2.2),
                 onSubmitted: (query) async {
                   ref.read(searchQueryProvider.notifier).state = query;
                   scrollController.animateTo(
