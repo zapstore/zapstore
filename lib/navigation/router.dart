@@ -136,9 +136,9 @@ AppLifecycleListener? _lifecycleListener;
 final dataLibrariesInitializer = FutureProvider<void>((ref) async {
   await ref.read(initializeFlutterData(adapterProvidersMap).future);
   appLinks.uriLinkStream.listen((uri) async {
-    if (uri.scheme=="zapstore") {
+    if (uri.scheme == "zapstore") {
       final adapter = ref.apps.appAdapter;
-      App? app = await adapter.findOne(uri.host);
+      final App? app = await adapter.findOne(uri.host);
       if (app!=null) {
         appRouter.go('/updates/details', extra: app);
       }
