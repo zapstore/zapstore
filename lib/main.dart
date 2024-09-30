@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_data/flutter_data.dart';
 import 'package:flutter_phoenix/flutter_phoenix.dart';
@@ -13,6 +14,7 @@ import 'package:zapstore/utils/theme.dart';
 import 'package:zapstore/widgets/error_container.dart';
 
 const kDbVersion = 1;
+final appLinks = AppLinks();
 
 /// Application entry point.
 ///  - Initializes Riverpod (and Flutter Data local storage)
@@ -72,7 +74,8 @@ void errorHandler(Object exception, StackTrace? stack) {
 
     for (final record in records) {
       final full =
-          '${record.exception}${record.stack?.toString() ?? ''}${DateTime.now().toIso8601String()}';
+          '${record.exception}${record.stack?.toString() ?? ''}${DateTime.now()
+          .toIso8601String()}';
       final key = full.split('\n').take(2).join();
       // Only keep longest stack of similar errors, prevents duplicates
       if (full.length > (errorMap[key]?.length ?? 0)) {
