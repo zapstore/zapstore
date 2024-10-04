@@ -91,7 +91,18 @@ class AppDetailScreen extends HookConsumerWidget {
                         padding: const EdgeInsets.only(right: 14),
                         child: SignerAndDeveloperRow(app: app),
                       ),
-                      Gap(30),
+                      Gap(20),
+                      if (app.repository == null)
+                        Container(
+                          padding: EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.red[400],
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text('This app is not open source',
+                              style: TextStyle(fontWeight: FontWeight.bold)),
+                        ),
+                      Gap(10),
                       Container(
                         padding: EdgeInsets.all(10),
                         decoration: BoxDecoration(
@@ -100,29 +111,30 @@ class AppDetailScreen extends HookConsumerWidget {
                         ),
                         child: Column(
                           children: [
-                            Padding(
-                              padding: const EdgeInsets.all(8),
-                              child: Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  SizedBox(child: Text('Source ')),
-                                  Flexible(
-                                    child: GestureDetector(
-                                      onTap: () {
-                                        launchUrl(Uri.parse(app.repository!));
-                                      },
-                                      child: AutoSizeText(
-                                        app.repository!,
-                                        minFontSize: 11,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
+                            if (app.repository != null)
+                              Padding(
+                                padding: const EdgeInsets.all(8),
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    SizedBox(child: Text('Source ')),
+                                    Flexible(
+                                      child: GestureDetector(
+                                        onTap: () {
+                                          launchUrl(Uri.parse(app.repository!));
+                                        },
+                                        child: AutoSizeText(
+                                          app.repository!,
+                                          minFontSize: 11,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
-                            ),
                             if (app.githubStars != null)
                               Padding(
                                 padding: const EdgeInsets.all(8),
@@ -158,6 +170,17 @@ class AppDetailScreen extends HookConsumerWidget {
                                           app.license == 'NOASSERTION')
                                       ? 'Unknown'
                                       : app.license!)
+                                ],
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.all(8),
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text('App ID'),
+                                  Text(app.identifier)
                                 ],
                               ),
                             ),
