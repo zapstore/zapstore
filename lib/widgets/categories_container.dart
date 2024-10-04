@@ -33,7 +33,7 @@ final categoriesAppProvider =
     AsyncNotifierProvider.family<AppCategoriesNotifier, List<App>, AppCategory>(
         AppCategoriesNotifier.new);
 
-final selectedAppCategoryProvider = StateProvider((_) => AppCategory.basics);
+final selectedAppCategoryProvider = StateProvider((_) => AppCategory.nostr);
 
 class CategoriesContainer extends HookConsumerWidget {
   const CategoriesContainer({
@@ -117,9 +117,9 @@ class WrapLayout extends StatelessWidget {
 }
 
 enum AppCategory {
-  basics(label: 'Basics'),
   nostr(label: 'Nostr'),
   bitcoin(label: 'Bitcoin'),
+  basics(label: 'Basics'),
   privacy(label: 'Privacy & Security');
 
   final String label;
