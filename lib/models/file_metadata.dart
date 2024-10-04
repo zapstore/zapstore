@@ -33,6 +33,10 @@ mixin FileMetadataAdapter on Adapter<FileMetadata> {
     for (final e in list) {
       final map = e as Map<String, dynamic>;
       map['author'] = map['pubkey'];
+      // Ensure tags are strings
+      for (var t in map['tags']) {
+        t[1] = t[1].toString();
+      }
     }
     return super.deserialize(data);
   }
