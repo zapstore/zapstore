@@ -84,7 +84,7 @@ class App extends BaseApp with DataModelMixin<App> {
       comp = latestMetadata!.versionCode!.compareTo(installedVersionCode!);
     }
 
-    if (comp==0) {
+    if (comp == 0) {
       comp = latestMetadata!.version!.compareTo(installedVersion!);
     }
 
@@ -222,7 +222,8 @@ mixin AppAdapter on Adapter<App> {
     final apps = await super.findAll(params: params);
     final releases =
         await ref.releases.findAll(params: {'#a': apps.map((app) => app.aTag)});
-    final metadataIds = releases.map((r) => r.tagMap['e']!).expand((_) => _);
+    final metadataIds =
+        releases.map((r) => r.tagMap['e']).nonNulls.expand((_) => _);
 
     await ref.fileMetadata.findAll(params: {
       'ids': metadataIds,
@@ -305,7 +306,7 @@ mixin AppAdapter on Adapter<App> {
 
     final newState = {
       for (final info in installedPackageInfos)
-        info.packageName!: (info.versionName??'?', info.versionCode!)
+        info.packageName!: (info.versionName ?? '?', info.versionCode!)
     };
 
     // Providers can't set other providers state

@@ -74,8 +74,7 @@ void errorHandler(Object exception, StackTrace? stack) {
 
     for (final record in records) {
       final full =
-          '${record.exception}${record.stack?.toString() ?? ''}${DateTime.now()
-          .toIso8601String()}';
+          '${record.exception}${record.stack?.toString() ?? ''}${DateTime.now().toIso8601String()}';
       final key = full.split('\n').take(2).join();
       // Only keep longest stack of similar errors, prevents duplicates
       if (full.length > (errorMap[key]?.length ?? 0)) {
