@@ -9,9 +9,7 @@ import 'package:zapstore/models/app.dart';
 import 'package:zapstore/widgets/app_card.dart';
 
 class LatestReleasesContainer extends HookConsumerWidget {
-  const LatestReleasesContainer({
-    super.key,
-  });
+  const LatestReleasesContainer({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -46,7 +44,7 @@ class LatestReleasesAppNotifier extends AutoDisposeAsyncNotifier<List<App>> {
   List<App> localFetch() {
     return ref.releases
         .findAllLocal()
-        .sorted((a, b) => b.createdAt.compareTo(a.createdAt))
+        .sorted((a, b) => b.createdAt!.compareTo(a.createdAt!))
         .take(10)
         .map((r) => r.app.value)
         .nonNulls

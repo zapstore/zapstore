@@ -38,12 +38,12 @@ mixin _$FileMetadataAdapter on Adapter<FileMetadata> {
   @override
   FileMetadata deserializeLocal(map, {String? key}) {
     map = transformDeserialize(map);
-    return internalWrapStopInit(() => _$FileMetadataFromJson(map), key: key);
+    return internalWrapStopInit(() => FileMetadata.fromJson(map), key: key);
   }
 
   @override
   Map<String, dynamic> serializeLocal(model, {bool withRelationships = true}) {
-    final map = _$FileMetadataToJson(model);
+    final map = model.toJson();
     return transformSerialize(map, withRelationships: withRelationships);
   }
 }
@@ -86,39 +86,3 @@ extension FileMetadataRelationshipGraphNodeX
         parent: this is RelationshipMeta ? this as RelationshipMeta : null);
   }
 }
-
-// **************************************************************************
-// JsonSerializableGenerator
-// **************************************************************************
-
-FileMetadata _$FileMetadataFromJson(Map<String, dynamic> json) => FileMetadata(
-      id: json['id'],
-      pubkey: json['pubkey'] as String?,
-      createdAt: json['createdAt'] == null
-          ? null
-          : DateTime.parse(json['createdAt'] as String),
-      content: json['content'] as String? ?? '',
-      tags: (json['tags'] as List<dynamic>?)
-              ?.map(
-                  (e) => (e as List<dynamic>).map((e) => e as String).toList())
-              .toList() ??
-          const [],
-      signature: json['signature'] as String?,
-      author: BelongsTo<User>.fromJson(json['author'] as Map<String, dynamic>),
-      release:
-          BelongsTo<Release>.fromJson(json['release'] as Map<String, dynamic>),
-      signer: BelongsTo<User>.fromJson(json['signer'] as Map<String, dynamic>),
-    );
-
-Map<String, dynamic> _$FileMetadataToJson(FileMetadata instance) =>
-    <String, dynamic>{
-      'id': instance.id,
-      'pubkey': instance.pubkey,
-      'createdAt': instance.createdAt.toIso8601String(),
-      'content': instance.content,
-      'tags': instance.tags,
-      'signature': instance.signature,
-      'author': instance.author,
-      'release': instance.release,
-      'signer': instance.signer,
-    };

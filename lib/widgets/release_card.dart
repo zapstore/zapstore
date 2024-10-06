@@ -54,7 +54,7 @@ class ReleaseCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text('Date'),
-                  Text(formatter.format(release.createdAt)),
+                  Text(formatter.format(release.createdAt!)),
                 ],
               ),
             ),

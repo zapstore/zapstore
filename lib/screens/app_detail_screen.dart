@@ -30,9 +30,12 @@ class AppDetailScreen extends HookConsumerWidget {
     final state = ref.apps.watchOne(model.id!,
         alsoWatch: (_) =>
             {_.releases, _.releases.artifacts, _.signer, _.developer});
+
+    // TODO: Why this? and not remote just above?
     useFuture(useMemoized(() =>
         ref.apps.findOne(model.id!, remote: true, params: {'includes': true})));
-    // TODO fix - hack to refresh on install changes
+
+    // TODO: Hack to refresh on install changes
     final _ = ref.watch(installedAppProvider);
 
     final app = state.model ?? model;
@@ -135,30 +138,30 @@ class AppDetailScreen extends HookConsumerWidget {
                                   ],
                                 ),
                               ),
-                            if (app.githubStars != null)
-                              Padding(
-                                padding: const EdgeInsets.all(8),
-                                child: Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text('Github stars'),
-                                    Text(app.githubStars!)
-                                  ],
-                                ),
-                              ),
-                            if (app.githubForks != null)
-                              Padding(
-                                padding: const EdgeInsets.all(8),
-                                child: Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text('Github forks'),
-                                    Text(app.githubForks!)
-                                  ],
-                                ),
-                              ),
+                            // if (app.githubStars != null)
+                            //   Padding(
+                            //     padding: const EdgeInsets.all(8),
+                            //     child: Row(
+                            //       mainAxisAlignment:
+                            //           MainAxisAlignment.spaceBetween,
+                            //       children: [
+                            //         Text('Github stars'),
+                            //         Text(app.githubStars!)
+                            //       ],
+                            //     ),
+                            //   ),
+                            // if (app.githubForks != null)
+                            //   Padding(
+                            //     padding: const EdgeInsets.all(8),
+                            //     child: Row(
+                            //       mainAxisAlignment:
+                            //           MainAxisAlignment.spaceBetween,
+                            //       children: [
+                            //         Text('Github forks'),
+                            //         Text(app.githubForks!)
+                            //       ],
+                            //     ),
+                            //   ),
                             Padding(
                               padding: const EdgeInsets.all(8),
                               child: Row(
@@ -180,7 +183,7 @@ class AppDetailScreen extends HookConsumerWidget {
                                     MainAxisAlignment.spaceBetween,
                                 children: [
                                   Text('App ID'),
-                                  Text(app.identifier)
+                                  Text(app.identifier!)
                                 ],
                               ),
                             ),

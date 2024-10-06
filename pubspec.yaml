@@ -49,14 +49,15 @@ dependencies:
 
 dependency_overrides:
   purplebase:
-    git:
-      url: https://github.com/purplebase/purplebase
-      ref: 0.1.1
+    path: ../purplebase
+    # git:
+    #   url: https://github.com/purplebase/purplebase
+    #   ref: 0.1.1
   flutter_data:
     git:
       url: https://github.com/zapstore/flutter_data
       ref: d7376cf1eac8e9c563d4c6eed8e567adc877415c
-  win32: 5.5.4
+  win32: ^5.5.4
 
 dev_dependencies:
   flutter_test:

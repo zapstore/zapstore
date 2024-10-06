@@ -1,6 +1,5 @@
 import 'package:collection/collection.dart';
 import 'package:flutter_data/flutter_data.dart';
-import 'package:json_annotation/json_annotation.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/file_metadata.dart';
@@ -9,7 +8,6 @@ import 'package:zapstore/models/user.dart';
 
 part 'release.g.dart';
 
-@JsonSerializable()
 @DataAdapter([NostrAdapter, ReleaseAdapter])
 class Release extends BaseRelease with DataModelMixin<Release> {
   final HasMany<FileMetadata> artifacts;
@@ -17,15 +15,22 @@ class Release extends BaseRelease with DataModelMixin<Release> {
   final BelongsTo<User> signer;
 
   Release(
-      {super.id,
-      super.pubkey,
-      super.createdAt,
+      {super.createdAt,
       super.content,
       super.tags,
-      super.signature,
       required this.artifacts,
       required this.app,
       required this.signer});
+
+  Release.fromJson(super.map)
+      : app = BelongsTo<App>.fromJson(map['app'] as Map<String, dynamic>),
+        artifacts = HasMany<FileMetadata>.fromJson(
+            map['artifacts'] as Map<String, dynamic>),
+        signer =
+            BelongsTo<User>.fromJson(map['signer'] as Map<String, dynamic>),
+        super.fromJson();
+
+  Map<String, dynamic> toJson() => super.toMap();
 }
 
 mixin ReleaseAdapter on Adapter<Release> {
@@ -48,5 +53,5 @@ mixin ReleaseAdapter on Adapter<Release> {
 
 extension HasManyReleaseX on HasMany<Release> {
   List<Release> get ordered =>
-      toList().sorted((a, b) => b.createdAt.compareTo(a.createdAt));
+      toList().sorted((a, b) => b.createdAt!.compareTo(a.createdAt!));
 }

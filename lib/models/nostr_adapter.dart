@@ -2,8 +2,9 @@ import 'package:flutter_data/flutter_data.dart';
 import 'package:purplebase/purplebase.dart';
 
 mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
-  late final RelayMessageNotifier notifier =
-      ref.read(relayMessageNotifierProvider.notifier);
+  // NOTE: it is very important to use const in the argument to preserve equality
+  RelayMessageNotifier get relay => ref.read(
+      relayMessageNotifierProvider(const ['wss://relay.zap.store']).notifier);
 
   int get kind {
     return BaseEvent.kindForType(internalType)!;
@@ -11,7 +12,6 @@ mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
 
   @override
   DeserializedData<T> deserialize(Object? data, {String? key}) {
-    // throw 'a';
     final list = data is Iterable ? data : [data as Map];
     final models = <T>[];
     final included = <DataModelMixin>[];
@@ -32,7 +32,7 @@ mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
       }
 
       // Collect models for current kind and included for others
-      final eventType = BaseEvent.kinds[kind]!;
+      final eventType = BaseEvent.typeForKind(kind)!;
       if (eventType == internalType) {
         final newData = super.deserialize(map);
         models.addAll(newData.models as Iterable<T>);
@@ -64,8 +64,7 @@ mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
       tags: params ?? {},
     );
 
-    final result =
-        await notifier.query(req, relayUrls: ['wss://relay.zap.store']);
+    final result = await relay.queryRaw(req);
     final deserialized = await deserializeAsync(result, save: true);
     return deserialized.models;
   }

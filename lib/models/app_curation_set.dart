@@ -1,25 +1,22 @@
 import 'package:flutter_data/flutter_data.dart';
-import 'package:json_annotation/json_annotation.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/nostr_adapter.dart';
 
 part 'app_curation_set.g.dart';
 
-@JsonSerializable()
 @DataAdapter([NostrAdapter, AppCurationSetAdapter])
 class AppCurationSet extends BaseAppCurationSet
     with DataModelMixin<AppCurationSet> {
   final HasMany<App> apps;
 
-  AppCurationSet(
-      {super.id,
-      super.pubkey,
-      super.createdAt,
-      super.content,
-      super.tags,
-      super.signature,
-      required this.apps});
+  AppCurationSet({required this.apps});
+
+  AppCurationSet.fromJson(super.map)
+      : apps = HasMany<App>.fromJson(map['app'] as Map<String, dynamic>),
+        super.fromJson();
+
+  Map<String, dynamic> toJson() => super.toMap();
 }
 
 mixin AppCurationSetAdapter on Adapter<AppCurationSet> {

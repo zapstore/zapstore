@@ -26,7 +26,7 @@ class InstallButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final progress = ref.watch(installationProgressProvider(app.identifier));
+    final progress = ref.watch(installationProgressProvider(app.identifier!));
 
     return GestureDetector(
       onTap: switch (app.status) {

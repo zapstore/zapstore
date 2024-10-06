@@ -10,7 +10,6 @@ import 'package:convert/convert.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_data/flutter_data.dart';
 import 'package:install_plugin/install_plugin.dart';
-import 'package:json_annotation/json_annotation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:purplebase/purplebase.dart';
@@ -27,7 +26,6 @@ part 'app.g.dart';
 
 const kAndroidMimeType = 'application/vnd.android.package-archive';
 
-@JsonSerializable()
 @DataAdapter([NostrAdapter, AppAdapter])
 class App extends BaseApp with DataModelMixin<App> {
   final HasMany<Release> releases;
@@ -35,15 +33,23 @@ class App extends BaseApp with DataModelMixin<App> {
   final BelongsTo<User> developer;
 
   App(
-      {super.id,
-      super.pubkey,
-      super.createdAt,
+      {super.createdAt,
       super.content,
       super.tags,
-      super.signature,
       required this.developer,
       required this.releases,
       required this.signer});
+
+  App.fromJson(super.map)
+      : developer =
+            BelongsTo<User>.fromJson(map['developer'] as Map<String, dynamic>),
+        releases =
+            HasMany<Release>.fromJson(map['releases'] as Map<String, dynamic>),
+        signer =
+            BelongsTo<User>.fromJson(map['signer'] as Map<String, dynamic>),
+        super.fromJson();
+
+  Map<String, dynamic> toJson() => super.toMap();
 
   String? get installedVersion => DataModel.adapterFor(this)
       .ref
@@ -59,7 +65,7 @@ class App extends BaseApp with DataModelMixin<App> {
     return releases.ordered.firstOrNull?.artifacts
         .where((a) =>
             a.mimeType == 'application/vnd.android.package-archive' &&
-            a.architectures.contains('arm64-v8a'))
+            a.platforms.contains('android-arm64-v8a'))
         .firstOrNull;
   }
 
@@ -220,8 +226,9 @@ mixin AppAdapter on Adapter<App> {
   Future<List<App>> loadAppModels(Map<String, dynamic> params) async {
     final includes = params.remove('includes') ?? false;
     final apps = await super.findAll(params: params);
-    final releases =
-        await ref.releases.findAll(params: {'#a': apps.map((app) => app.aTag)});
+    final releases = await ref.releases.findAll(params: {
+      '#a': apps.map((app) => app.getReplaceableEventLink().formatted)
+    });
     final metadataIds =
         releases.map((r) => r.tagMap['e']).nonNulls.expand((_) => _);
 
@@ -250,18 +257,25 @@ mixin AppAdapter on Adapter<App> {
       OnSuccessAll<App>? onSuccess,
       OnErrorAll<App>? onError,
       DataRequestLabel? label}) async {
+    final m1 = DateTime.now().millisecondsSinceEpoch;
+    print('enters findall');
     final map = await getInstalledAppsMap(defer: true);
+    final m2 = DateTime.now().millisecondsSinceEpoch;
 
     if (params!.containsKey('installed')) {
       if (map.keys.isNotEmpty) {
         params['#d'] = map.keys;
         params.remove('installed');
         print('filtering by installed ${params['#d']}');
-        return await loadAppModels(params);
+        final z = await loadAppModels(params);
+        final m3 = DateTime.now().millisecondsSinceEpoch;
+        print('finish ${m3 - m1} ${m2 - m1}');
+        return z;
       }
     }
-
-    return await loadAppModels(params);
+    print('calling bottom loadappmodels');
+    final loadedAppModels = await loadAppModels(params);
+    return loadedAppModels;
   }
 
   @override
@@ -333,6 +347,13 @@ mixin AppAdapter on Adapter<App> {
       }
     }
     return super.deserialize(data);
+  }
+
+  @override
+  App deserializeLocal(map, {String? key}) {
+    return App.fromJson(map);
+    // map = transformDeserialize(map);
+    // return internalWrapStopInit(() => _$AppFromJson(map), key: key);
   }
 }
 

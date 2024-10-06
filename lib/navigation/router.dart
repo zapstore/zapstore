@@ -135,19 +135,13 @@ AppLifecycleListener? _lifecycleListener;
 
 final dataLibrariesInitializer = FutureProvider<void>((ref) async {
   await ref.read(initializeFlutterData(adapterProvidersMap).future);
-  appLinks.uriLinkStream.listen((uri) async {
-    if (uri.scheme == "zapstore") {
-      final adapter = ref.apps.appAdapter;
-      final App? app = await adapter.findOne(uri.host);
-      if (app!=null) {
-        appRouter.go('/updates/details', extra: app);
-      }
-    }
-  });
 
-  ref
-      .read(relayMessageNotifierProvider.notifier)
-      .initialize(['wss://relay.zap.store', 'wss://relay.nostr.band']);
+  // NOTE: it is very important to use const in the argument to preserve equality
+  final relay = ref.read(
+      relayMessageNotifierProvider(const ['wss://relay.zap.store']).notifier);
+  await relay.initialize();
+
+  // TODO: , 'wss://relay.nostr.band'
 
   _lifecycleListener = AppLifecycleListener(
     onStateChange: (state) async {
@@ -159,8 +153,20 @@ final dataLibrariesInitializer = FutureProvider<void>((ref) async {
     },
   );
 
+  // Handle deep links
+  final appLinksSub = appLinks.uriLinkStream.listen((uri) async {
+    if (uri.scheme == "zapstore") {
+      final adapter = ref.apps.appAdapter;
+      final App? app = await adapter.findOne(uri.host);
+      if (app != null) {
+        appRouter.go('/updates/details', extra: app);
+      }
+    }
+  });
+
   ref.onDispose(() {
     _lifecycleListener?.dispose();
+    appLinksSub.cancel();
   });
 });
 

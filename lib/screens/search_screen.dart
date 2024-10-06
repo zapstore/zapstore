@@ -110,9 +110,9 @@ class SearchScreen extends HookConsumerWidget {
                 if (searchResultState.value?.isNotEmpty ?? false)
                   for (final app in searchResultState.value!) AppCard(app: app),
                 Gap(20),
-                CategoriesContainer(),
+                // const CategoriesContainer(),
                 Gap(20),
-                LatestReleasesContainer(),
+                const LatestReleasesContainer(),
                 Gap(10),
               ],
             ),

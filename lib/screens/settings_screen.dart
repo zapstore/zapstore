@@ -8,9 +8,9 @@ import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
+import 'package:zapstore/models/feedback.dart';
 import 'package:zapstore/models/settings.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/system_info.dart';
@@ -60,9 +60,8 @@ class SettingsScreen extends HookConsumerWidget {
                 if (controller.text.trim().isNotEmpty) {
                   final text =
                       '${controller.text.trim()} [from ${user.npub} on ${DateFormat('MMMM d, y').format(DateTime.now())}]';
-                  final event = BaseEvent(kind: 1011, content: text).sign(kI);
-                  await ref.apps.nostrAdapter.notifier
-                      .publish(event, relayUrls: ['wss://relay.zap.store']);
+                  final event = AppFeedback(content: text).sign(kI);
+                  await ref.apps.nostrAdapter.relay.publish(event);
                   controller.clear();
                 }
               },

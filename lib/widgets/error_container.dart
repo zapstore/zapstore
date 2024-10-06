@@ -7,7 +7,7 @@ import 'package:gap/gap.dart';
 import 'package:http/http.dart' as http;
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:purplebase/purplebase.dart';
+import 'package:zapstore/models/feedback.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/system_info.dart';
 import 'package:zapstore/utils/theme.dart';
@@ -146,7 +146,7 @@ Future<void> _sendErrorReport(
   };
 
   final client = http.Client();
-  final event = BaseEvent(kind: 1011, content: jsonEncode(map)).sign(kI);
+  final event = AppFeedback(content: jsonEncode(map)).sign(kI);
   await client.post(Uri.parse('https://relay.zap.store/'),
       body: jsonEncode(event.toMap()),
       headers: {'Content-Type': 'application/json'});

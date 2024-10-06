@@ -37,12 +37,12 @@ mixin _$AppAdapter on Adapter<App> {
   @override
   App deserializeLocal(map, {String? key}) {
     map = transformDeserialize(map);
-    return internalWrapStopInit(() => _$AppFromJson(map), key: key);
+    return internalWrapStopInit(() => App.fromJson(map), key: key);
   }
 
   @override
   Map<String, dynamic> serializeLocal(model, {bool withRelationships = true}) {
-    final map = _$AppToJson(model);
+    final map = model.toJson();
     return transformSerialize(map, withRelationships: withRelationships);
   }
 }
@@ -82,39 +82,3 @@ extension AppRelationshipGraphNodeX on RelationshipGraphNode<App> {
         parent: this is RelationshipMeta ? this as RelationshipMeta : null);
   }
 }
-
-// **************************************************************************
-// JsonSerializableGenerator
-// **************************************************************************
-
-App _$AppFromJson(Map<String, dynamic> json) => App(
-      id: json['id'],
-      pubkey: json['pubkey'] as String?,
-      createdAt: json['createdAt'] == null
-          ? null
-          : DateTime.parse(json['createdAt'] as String),
-      content: json['content'] as String? ?? '',
-      tags: (json['tags'] as List<dynamic>?)
-              ?.map(
-                  (e) => (e as List<dynamic>).map((e) => e as String).toList())
-              .toList() ??
-          const [],
-      signature: json['signature'] as String?,
-      developer:
-          BelongsTo<User>.fromJson(json['developer'] as Map<String, dynamic>),
-      releases:
-          HasMany<Release>.fromJson(json['releases'] as Map<String, dynamic>),
-      signer: BelongsTo<User>.fromJson(json['signer'] as Map<String, dynamic>),
-    );
-
-Map<String, dynamic> _$AppToJson(App instance) => <String, dynamic>{
-      'id': instance.id,
-      'pubkey': instance.pubkey,
-      'createdAt': instance.createdAt.toIso8601String(),
-      'content': instance.content,
-      'tags': instance.tags,
-      'signature': instance.signature,
-      'releases': instance.releases,
-      'signer': instance.signer,
-      'developer': instance.developer,
-    };

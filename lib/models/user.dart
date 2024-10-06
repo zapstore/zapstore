@@ -2,24 +2,27 @@ import 'dart:convert';
 
 import 'package:collection/collection.dart';
 import 'package:flutter_data/flutter_data.dart';
-import 'package:json_annotation/json_annotation.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/models/nostr_adapter.dart';
 
 part 'user.g.dart';
 
-@JsonSerializable()
 @DataAdapter([NostrAdapter, UserAdapter])
 class User extends BaseUser with DataModelMixin<User> {
   User(
-      {super.id,
-      super.pubkey,
-      super.createdAt,
-      super.content,
+      {super.createdAt,
       super.tags,
-      super.signature,
       required this.followers,
       required this.following});
+
+  User.fromJson(super.map)
+      : followers =
+            HasMany<User>.fromJson(map['followers'] as Map<String, dynamic>),
+        following =
+            HasMany<User>.fromJson(map['following'] as Map<String, dynamic>),
+        super.fromJson();
+
+  Map<String, dynamic> toJson() => super.toMap();
 
   @DataRelationship(inverse: 'followers')
   final HasMany<User> following;
@@ -105,13 +108,12 @@ mixin UserAdapter on NostrAdapter<User> {
     if (authors.isEmpty) {
       return [];
     }
-    final req = RelayRequest(
-      authors: Set<String>.from(authors),
-      kinds: {kind, if (params['contacts'] != null) 3},
-    );
 
-    final result =
-        await notifier.query(req, relayUrls: ['wss://relay.nostr.band']);
+    // TODO: was: kinds: {kind, if (params['contacts'] != null) 3},
+    final result = await relay.query<BaseUser>(
+        authors: Set<String>.from(authors),
+        relayUrls: ['wss://relay.nostr.band']);
+
     if (onSuccess != null) {
       return await onSuccess.call(DataResponse(statusCode: 200, body: result),
           label ?? DataRequestLabel('findAll', type: type), this);
@@ -163,18 +165,16 @@ mixin UserAdapter on NostrAdapter<User> {
       );
     }
 
-    final req = RelayRequest(
-      authors: {publicKey},
-      kinds: {kind, if (params?['contacts'] != null) 3},
-      tags: params ?? {},
-    );
-
     // trigger trust service indexing in the background
     // sendRequest<dynamic>(
     //     Uri.parse('https://zap.store/api/trust/${publicKey.npub}/r'));
 
-    final result =
-        await notifier.query(req, relayUrls: ['wss://relay.nostr.band']);
+    // TODO: was: kinds: {kind, if (params?['contacts'] != null) 3},
+    final result = await relay.query<BaseUser>(
+        authors: {publicKey},
+        tags: params ?? {},
+        relayUrls: ['wss://relay.nostr.band']);
+
     final data = await deserializeAsync(result, save: true);
     return data.models.firstWhere((e) {
       return e.id == publicKey;

@@ -26,12 +26,12 @@ mixin _$AppCurationSetAdapter on Adapter<AppCurationSet> {
   @override
   AppCurationSet deserializeLocal(map, {String? key}) {
     map = transformDeserialize(map);
-    return internalWrapStopInit(() => _$AppCurationSetFromJson(map), key: key);
+    return internalWrapStopInit(() => AppCurationSet.fromJson(map), key: key);
   }
 
   @override
   Map<String, dynamic> serializeLocal(model, {bool withRelationships = true}) {
-    final map = _$AppCurationSetToJson(model);
+    final map = model.toJson();
     return transformSerialize(map, withRelationships: withRelationships);
   }
 }
@@ -64,35 +64,3 @@ extension AppCurationSetRelationshipGraphNodeX
         parent: this is RelationshipMeta ? this as RelationshipMeta : null);
   }
 }
-
-// **************************************************************************
-// JsonSerializableGenerator
-// **************************************************************************
-
-AppCurationSet _$AppCurationSetFromJson(Map<String, dynamic> json) =>
-    AppCurationSet(
-      id: json['id'],
-      pubkey: json['pubkey'] as String?,
-      createdAt: json['createdAt'] == null
-          ? null
-          : DateTime.parse(json['createdAt'] as String),
-      content: json['content'] as String? ?? '',
-      tags: (json['tags'] as List<dynamic>?)
-              ?.map(
-                  (e) => (e as List<dynamic>).map((e) => e as String).toList())
-              .toList() ??
-          const [],
-      signature: json['signature'] as String?,
-      apps: HasMany<App>.fromJson(json['apps'] as Map<String, dynamic>),
-    );
-
-Map<String, dynamic> _$AppCurationSetToJson(AppCurationSet instance) =>
-    <String, dynamic>{
-      'id': instance.id,
-      'pubkey': instance.pubkey,
-      'createdAt': instance.createdAt.toIso8601String(),
-      'content': instance.content,
-      'tags': instance.tags,
-      'signature': instance.signature,
-      'apps': instance.apps,
-    };
