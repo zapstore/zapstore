@@ -14,7 +14,7 @@ class AppCurationSet extends BaseAppCurationSet
   AppCurationSet({required this.apps});
 
   AppCurationSet.fromJson(super.map)
-      : apps = hasMany(map['app']),
+      : apps = hasMany(map['apps']),
         super.fromJson();
 
   Map<String, dynamic> toJson() => super.toMap();
