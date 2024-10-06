@@ -68,9 +68,14 @@ void errorHandler(Object exception, StackTrace? stack) {
     _dir ??= await getApplicationDocumentsDirectory();
     final file = File('${_dir!.path}/errors.json');
 
-    final errorMap = await file.exists()
-        ? Map<String, String>.from(jsonDecode(await file.readAsString()))
-        : <String, String>{};
+    late final Map<String, dynamic> errorMap;
+    if (await file.exists()) {
+      final contents = await file.readAsString();
+      errorMap =
+          contents.isNotEmpty ? jsonDecode(await file.readAsString()) : {};
+    } else {
+      errorMap = {};
+    }
 
     for (final record in records) {
       final full =
@@ -81,7 +86,6 @@ void errorHandler(Object exception, StackTrace? stack) {
         errorMap[key] = full;
       }
     }
-    print(errorMap.length);
     await file.writeAsString(jsonEncode(errorMap));
   });
 }
