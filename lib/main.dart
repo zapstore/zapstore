@@ -88,4 +88,5 @@ void errorHandler(Object exception, StackTrace? stack) {
     }
     await file.writeAsString(jsonEncode(errorMap));
   });
+  throw exception;
 }

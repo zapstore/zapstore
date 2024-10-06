@@ -5,6 +5,7 @@ import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/file_metadata.dart';
 import 'package:zapstore/models/nostr_adapter.dart';
 import 'package:zapstore/models/user.dart';
+import 'package:zapstore/utils/extensions.dart';
 
 part 'release.g.dart';
 
@@ -23,11 +24,9 @@ class Release extends BaseRelease with DataModelMixin<Release> {
       required this.signer});
 
   Release.fromJson(super.map)
-      : app = BelongsTo<App>.fromJson(map['app'] as Map<String, dynamic>),
-        artifacts = HasMany<FileMetadata>.fromJson(
-            map['artifacts'] as Map<String, dynamic>),
-        signer =
-            BelongsTo<User>.fromJson(map['signer'] as Map<String, dynamic>),
+      : app = belongsTo(map['app']),
+        artifacts = hasMany(map['artifacts']),
+        signer = belongsTo(map['signer']),
         super.fromJson();
 
   Map<String, dynamic> toJson() => super.toMap();

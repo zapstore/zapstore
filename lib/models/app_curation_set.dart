@@ -2,6 +2,7 @@ import 'package:flutter_data/flutter_data.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/nostr_adapter.dart';
+import 'package:zapstore/utils/extensions.dart';
 
 part 'app_curation_set.g.dart';
 
@@ -13,7 +14,7 @@ class AppCurationSet extends BaseAppCurationSet
   AppCurationSet({required this.apps});
 
   AppCurationSet.fromJson(super.map)
-      : apps = HasMany<App>.fromJson(map['app'] as Map<String, dynamic>),
+      : apps = hasMany(map['app']),
         super.fromJson();
 
   Map<String, dynamic> toJson() => super.toMap();

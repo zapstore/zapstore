@@ -14,6 +14,9 @@ class LatestReleasesContainer extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(latestReleasesAppProvider);
+    if (state.hasError) {
+      return Text(state.error.toString());
+    }
     final apps = state.value ?? [];
 
     return Column(
@@ -38,6 +41,10 @@ class LatestReleasesAppNotifier extends AutoDisposeAsyncNotifier<List<App>> {
     final timer = Timer.periodic(Duration(hours: 4), (_) => fetch());
     ref.onDispose(timer.cancel);
     fetch();
+    // .catchError((e) {
+    //   print('caught here');
+    //   throw e;
+    // });
     return localFetch();
   }
 

@@ -4,6 +4,7 @@ import 'package:collection/collection.dart';
 import 'package:flutter_data/flutter_data.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/models/nostr_adapter.dart';
+import 'package:zapstore/utils/extensions.dart';
 
 part 'user.g.dart';
 
@@ -16,10 +17,8 @@ class User extends BaseUser with DataModelMixin<User> {
       required this.following});
 
   User.fromJson(super.map)
-      : followers =
-            HasMany<User>.fromJson(map['followers'] as Map<String, dynamic>),
-        following =
-            HasMany<User>.fromJson(map['following'] as Map<String, dynamic>),
+      : followers = hasMany(map['followers']),
+        following = hasMany(map['following']),
         super.fromJson();
 
   Map<String, dynamic> toJson() => super.toMap();

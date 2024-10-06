@@ -20,6 +20,7 @@ import 'package:zapstore/models/release.dart';
 import 'package:zapstore/models/user.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
+import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/system_info.dart';
 
 part 'app.g.dart';
@@ -41,12 +42,9 @@ class App extends BaseApp with DataModelMixin<App> {
       required this.signer});
 
   App.fromJson(super.map)
-      : developer =
-            BelongsTo<User>.fromJson(map['developer'] as Map<String, dynamic>),
-        releases =
-            HasMany<Release>.fromJson(map['releases'] as Map<String, dynamic>),
-        signer =
-            BelongsTo<User>.fromJson(map['signer'] as Map<String, dynamic>),
+      : developer = belongsTo(map['developer']),
+        releases = hasMany(map['releases']),
+        signer = belongsTo(map['signer']),
         super.fromJson();
 
   Map<String, dynamic> toJson() => super.toMap();
@@ -273,9 +271,7 @@ mixin AppAdapter on Adapter<App> {
         return z;
       }
     }
-    print('calling bottom loadappmodels');
-    final loadedAppModels = await loadAppModels(params);
-    return loadedAppModels;
+    return await loadAppModels(params);
   }
 
   @override
@@ -347,13 +343,6 @@ mixin AppAdapter on Adapter<App> {
       }
     }
     return super.deserialize(data);
-  }
-
-  @override
-  App deserializeLocal(map, {String? key}) {
-    return App.fromJson(map);
-    // map = transformDeserialize(map);
-    // return internalWrapStopInit(() => _$AppFromJson(map), key: key);
   }
 }
 

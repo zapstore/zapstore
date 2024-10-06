@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_data/flutter_data.dart';
 import 'package:toastification/toastification.dart';
 
 extension ContextX on BuildContext {
@@ -35,6 +36,14 @@ extension ContextX on BuildContext {
       alignment: Alignment.lerp(Alignment.bottomCenter, Alignment.center, 0.25),
     );
   }
+}
+
+BelongsTo<T> belongsTo<T extends DataModelMixin<T>>(Map<String, dynamic> map) {
+  return BelongsTo<T>.fromJson(map);
+}
+
+HasMany<T> hasMany<T extends DataModelMixin<T>>(Map<String, dynamic> map) {
+  return HasMany<T>.fromJson(map);
 }
 
 const kI = "e593c54f840b32054dcad0fac15d57e4ac6523e31fe26b3087de6b07a2e9af58";

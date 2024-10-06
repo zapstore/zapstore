@@ -3,6 +3,7 @@ import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/models/nostr_adapter.dart';
 import 'package:zapstore/models/release.dart';
 import 'package:zapstore/models/user.dart';
+import 'package:zapstore/utils/extensions.dart';
 
 part 'file_metadata.g.dart';
 
@@ -21,12 +22,9 @@ class FileMetadata extends BaseFileMetadata with DataModelMixin<FileMetadata> {
       required this.signer});
 
   FileMetadata.fromJson(super.map)
-      : author =
-            BelongsTo<User>.fromJson(map['author'] as Map<String, dynamic>),
-        release =
-            BelongsTo<Release>.fromJson(map['release'] as Map<String, dynamic>),
-        signer =
-            BelongsTo<User>.fromJson(map['signer'] as Map<String, dynamic>),
+      : author = belongsTo(map['author']),
+        release = belongsTo(map['release']),
+        signer = belongsTo(map['signer']),
         super.fromJson();
 
   Map<String, dynamic> toJson() => super.toMap();
