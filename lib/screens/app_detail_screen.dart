@@ -138,30 +138,6 @@ class AppDetailScreen extends HookConsumerWidget {
                                   ],
                                 ),
                               ),
-                            // if (app.githubStars != null)
-                            //   Padding(
-                            //     padding: const EdgeInsets.all(8),
-                            //     child: Row(
-                            //       mainAxisAlignment:
-                            //           MainAxisAlignment.spaceBetween,
-                            //       children: [
-                            //         Text('Github stars'),
-                            //         Text(app.githubStars!)
-                            //       ],
-                            //     ),
-                            //   ),
-                            // if (app.githubForks != null)
-                            //   Padding(
-                            //     padding: const EdgeInsets.all(8),
-                            //     child: Row(
-                            //       mainAxisAlignment:
-                            //           MainAxisAlignment.spaceBetween,
-                            //       children: [
-                            //         Text('Github forks'),
-                            //         Text(app.githubForks!)
-                            //       ],
-                            //     ),
-                            //   ),
                             Padding(
                               padding: const EdgeInsets.all(8),
                               child: Row(

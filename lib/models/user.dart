@@ -103,15 +103,15 @@ mixin UserAdapter on NostrAdapter<User> {
       OnSuccessAll<User>? onSuccess,
       OnErrorAll<User>? onError,
       DataRequestLabel? label}) async {
-    final authors = params!['authors'];
+    final authors = params!['authors'] as Iterable;
     if (authors.isEmpty) {
       return [];
     }
 
-    // TODO: was: kinds: {kind, if (params['contacts'] != null) 3},
-    final result = await relay.query<BaseUser>(
-        authors: Set<String>.from(authors),
-        relayUrls: ['wss://relay.nostr.band']);
+    final result = await socialRelays.queryRaw(RelayRequest(
+      kinds: {0, 3},
+      authors: {...authors},
+    ));
 
     if (onSuccess != null) {
       return await onSuccess.call(DataResponse(statusCode: 200, body: result),
@@ -164,15 +164,11 @@ mixin UserAdapter on NostrAdapter<User> {
       );
     }
 
-    // trigger trust service indexing in the background
-    // sendRequest<dynamic>(
-    //     Uri.parse('https://zap.store/api/trust/${publicKey.npub}/r'));
-
-    // TODO: was: kinds: {kind, if (params?['contacts'] != null) 3},
-    final result = await relay.query<BaseUser>(
-        authors: {publicKey},
-        tags: params ?? {},
-        relayUrls: ['wss://relay.nostr.band']);
+    final result = await socialRelays.queryRaw(RelayRequest(
+      kinds: {0, 3},
+      tags: params ?? {},
+      authors: {publicKey},
+    ));
 
     final data = await deserializeAsync(result, save: true);
     return data.models.firstWhere((e) {

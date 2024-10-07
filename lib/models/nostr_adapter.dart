@@ -1,10 +1,15 @@
 import 'package:flutter_data/flutter_data.dart';
 import 'package:purplebase/purplebase.dart';
 
+// NOTE: Very important to use const in relay args to preserve equality in Riverpod families
+const kAppRelays = ['wss://relay.zap.store'];
+const kSocialRelays = ['wss://relay.primal.net', 'wss://relay.nostr.band'];
+
 mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
-  // NOTE: it is very important to use const in the argument to preserve equality
-  RelayMessageNotifier get relay => ref.read(
-      relayMessageNotifierProvider(const ['wss://relay.zap.store']).notifier);
+  RelayMessageNotifier get relay =>
+      ref.read(relayMessageNotifierProvider(kAppRelays).notifier);
+  RelayMessageNotifier get socialRelays =>
+      ref.read(relayMessageNotifierProvider(kSocialRelays).notifier);
 
   int get kind {
     return BaseEvent.kindForType(internalType)!;

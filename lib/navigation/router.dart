@@ -6,6 +6,7 @@ import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/main.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
+import 'package:zapstore/models/nostr_adapter.dart';
 import 'package:zapstore/navigation/desktop_scaffold.dart';
 import 'package:zapstore/navigation/mobile_scaffold.dart';
 import 'package:zapstore/screens/app_detail_screen.dart';
@@ -134,15 +135,16 @@ class ScaffoldWithNestedNavigation extends HookConsumerWidget {
 AppLifecycleListener? _lifecycleListener;
 
 final dataLibrariesInitializer = FutureProvider<void>((ref) async {
+  // Initialize Flutter Data
   await ref.read(initializeFlutterData(adapterProvidersMap).future);
 
-  // NOTE: it is very important to use const in the argument to preserve equality
-  final relay = ref.read(
-      relayMessageNotifierProvider(const ['wss://relay.zap.store']).notifier);
-  await relay.initialize();
+  // Initialize relays
+  final relay = ref.read(relayMessageNotifierProvider(kAppRelays).notifier);
+  final socialRelays =
+      ref.read(relayMessageNotifierProvider(kSocialRelays).notifier);
+  await Future.wait([relay.initialize(), socialRelays.initialize()]);
 
-  // TODO: , 'wss://relay.nostr.band'
-
+  // Listen to app lifecycle changes
   _lifecycleListener = AppLifecycleListener(
     onStateChange: (state) async {
       if (state == AppLifecycleState.resumed) {
