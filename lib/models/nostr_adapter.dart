@@ -24,14 +24,9 @@ mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
     for (final e in list) {
       final map = e as Map<String, dynamic>;
 
-      // Convert nostr-specific timestamp into a DateTime
-      map['createdAt'] =
-          DateTime.fromMillisecondsSinceEpoch(map['created_at'] * 1000)
-              .toIso8601String();
-      final kind = map['kind'] as int;
-
       // ID should be the identifier in PREs
       final dTags = (map['tags'] as Iterable).where((t) => t[0] == 'd');
+      // TODO: This eventually should become $pubkey-$appid (just like zapstore-cli)
       if (dTags.length == 1) {
         map['id'] = (dTags.first as List)[1];
       }

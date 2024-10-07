@@ -22,10 +22,7 @@ class AppCategoriesNotifier
     }
 
     final curationSet = ref.appCurationSets.findOneLocalById(arg.name)!;
-    return ref.apps
-        .findAllLocal()
-        .where((a) => curationSet.appIds.contains(a.id))
-        .toList();
+    return ref.apps.appAdapter.findWhereIdInLocal(curationSet.appIds);
   }
 }
 

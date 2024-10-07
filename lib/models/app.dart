@@ -255,23 +255,24 @@ mixin AppAdapter on Adapter<App> {
       OnSuccessAll<App>? onSuccess,
       OnErrorAll<App>? onError,
       DataRequestLabel? label}) async {
-    final m1 = DateTime.now().millisecondsSinceEpoch;
-    print('enters findall');
     final map = await getInstalledAppsMap(defer: true);
-    final m2 = DateTime.now().millisecondsSinceEpoch;
 
     if (params!.containsKey('installed')) {
       if (map.keys.isNotEmpty) {
         params['#d'] = map.keys;
         params.remove('installed');
         print('filtering by installed ${params['#d']}');
-        final z = await loadAppModels(params);
-        final m3 = DateTime.now().millisecondsSinceEpoch;
-        print('finish ${m3 - m1} ${m2 - m1}');
-        return z;
+        return await loadAppModels(params);
       }
     }
     return await loadAppModels(params);
+  }
+
+  Future<List<App>> findWhereIdInLocal(Iterable<String> appIds) async {
+    final result = db.select(
+        'SELECT key, data, json_extract(data, \'\$.id\') AS id from apps where id in (${appIds.map((_) => '?').join(', ')})',
+        appIds.toList());
+    return deserializeFromResult(result);
   }
 
   @override
@@ -344,6 +345,13 @@ mixin AppAdapter on Adapter<App> {
     }
     return super.deserialize(data);
   }
+
+  // @override
+  // App deserializeLocal(map, {String? key}) {
+  //   map = transformDeserialize(map);
+  //   print('deserializing local with key $key');
+  //   return internalWrapStopInit(() => App.fromJson(map), key: key);
+  // }
 }
 
 Future<bool> _isHashMismatch(String path, String hash) async {
