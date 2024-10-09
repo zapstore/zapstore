@@ -54,9 +54,7 @@ class App extends BaseApp with DataModelMixin<App> {
     return releases.ordered.firstOrNull?.artifacts
         .where((a) =>
             a.mimeType == kAndroidMimeType &&
-            (a.platforms.contains('android-arm64-v8a') ||
-                // TODO: arch tag deprecated, remove in future release
-                (a.tagMap['arch'] ?? {}).contains('arm64-v8a')))
+            a.platforms.contains('android-arm64-v8a'))
         .firstOrNull;
   }
 
@@ -183,7 +181,7 @@ mixin AppAdapter on Adapter<App> {
     await ref.fileMetadata.findAll(params: {
       'ids': metadataIds,
       '#m': [kAndroidMimeType],
-      // TODO: '#f': ['android-arm64-v8a'],
+      '#f': ['android-arm64-v8a'],
     });
 
     if (includes) {
