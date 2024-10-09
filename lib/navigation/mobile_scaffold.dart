@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:zapstore/models/app.dart';
 import 'package:zapstore/utils/theme.dart';
 import 'package:zapstore/widgets/drawer_container.dart';
 
@@ -16,9 +17,7 @@ class MobileScaffold extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // TODO Inefficient, should be able to query for this
-    // (need to store app status in database, local only)
-    const appsToUpdate = 0;
+    final appsToUpdate = ref.watch(appsToUpdateProvider);
 
     return Scaffold(
       key: scaffoldKey,

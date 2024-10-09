@@ -144,13 +144,12 @@ final dataLibrariesInitializer = FutureProvider<void>((ref) async {
       ref.read(relayMessageNotifierProvider(kSocialRelays).notifier);
   await Future.wait([relay.initialize(), socialRelays.initialize()]);
 
-  // Listen to app lifecycle changes
+  // Trigger app install status calculations
+  await ref.apps.appAdapter.updateInstallStatus();
   _lifecycleListener = AppLifecycleListener(
     onStateChange: (state) async {
       if (state == AppLifecycleState.resumed) {
-        final adapter = ref.apps.appAdapter;
-        await adapter.getInstalledAppsMap();
-        adapter.triggerNotify();
+        await ref.apps.appAdapter.updateInstallStatus();
       }
     },
   );

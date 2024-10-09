@@ -31,12 +31,10 @@ class AppDetailScreen extends HookConsumerWidget {
         alsoWatch: (_) =>
             {_.releases, _.releases.artifacts, _.signer, _.developer});
 
-    // TODO: Why this? and not remote just above?
+    // TODO: Workaround for bug in watchAll (when remote=true)
+    // TODO: Just fetch the signer, no need to refetch again??
     useFuture(useMemoized(() =>
         ref.apps.findOne(model.id!, remote: true, params: {'includes': true})));
-
-    // TODO: Hack to refresh on install changes
-    final _ = ref.watch(installedAppProvider);
 
     final app = state.model ?? model;
 

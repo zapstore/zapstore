@@ -33,14 +33,6 @@ class App extends BaseApp with DataModelMixin<App> {
   final BelongsTo<User> signer;
   final BelongsTo<User> developer;
 
-  App(
-      {super.createdAt,
-      super.content,
-      super.tags,
-      required this.developer,
-      required this.releases,
-      required this.signer});
-
   App.fromJson(super.map)
       : developer = belongsTo(map['developer']),
         releases = hasMany(map['releases']),
@@ -49,54 +41,28 @@ class App extends BaseApp with DataModelMixin<App> {
 
   Map<String, dynamic> toJson() => super.toMap();
 
-  String? get installedVersion => DataModel.adapterFor(this)
-      .ref
-      .read(installedAppProvider)[id!.toString()]
-      ?.$1;
-
-  int? get installedVersionCode => DataModel.adapterFor(this)
-      .ref
-      .read(installedAppProvider)[id!.toString()]
-      ?.$2;
+  String? get installedVersion => tagMap['installedVersion']?.firstOrNull;
+  int? get installedVersionCode =>
+      int.tryParse(tagMap['installedVersionCode']?.firstOrNull ?? '');
+  AppInstallStatus? get status {
+    final _status = tagMap['status']?.firstOrNull;
+    if (_status == null) return null;
+    return AppInstallStatus.values.firstWhereOrNull((e) => e.name == _status);
+  }
 
   FileMetadata? get latestMetadata {
     return releases.ordered.firstOrNull?.artifacts
         .where((a) =>
-            a.mimeType == 'application/vnd.android.package-archive' &&
-            a.platforms.contains('android-arm64-v8a'))
+            a.mimeType == kAndroidMimeType &&
+            (a.platforms.contains('android-arm64-v8a') ||
+                // TODO: arch tag deprecated, remove in future release
+                (a.tagMap['arch'] ?? {}).contains('arm64-v8a')))
         .firstOrNull;
   }
 
   bool get canInstall => status == AppInstallStatus.installable;
   bool get canUpdate => status == AppInstallStatus.updatable;
   bool get isUpdated => status == AppInstallStatus.updated;
-
-  AppInstallStatus get status {
-    if (releases.isEmpty) {
-      return AppInstallStatus.loading;
-    }
-    if (releases.isNotEmpty && latestMetadata == null) {
-      return AppInstallStatus.differentArchitecture;
-    }
-    if (installedVersion == null) {
-      return AppInstallStatus.installable;
-    }
-    var comp = 0;
-    if (latestMetadata!.versionCode != null && id != 'store.zap.app') {
-      // Note: need to exclude zap.store because development versions always
-      // carry a lower version code (e.g. 12) than published ones (e.g. 2012)
-      comp = latestMetadata!.versionCode!.compareTo(installedVersionCode!);
-    }
-
-    if (comp == 0) {
-      comp = latestMetadata!.version!.compareTo(installedVersion!);
-    }
-
-    if (comp == 1) return AppInstallStatus.updatable;
-    if (comp == 0) return AppInstallStatus.updated;
-    // else it's a downgrade, which is not installable
-    return AppInstallStatus.downgrade;
-  }
 
   Future<void> install() async {
     if (!canInstall && !canUpdate) {
@@ -143,10 +109,12 @@ class App extends BaseApp with DataModelMixin<App> {
       final result = await InstallPlugin.install(file.path);
       if (result['isSuccess']) {
         await file.delete();
-        await adapter.getInstalledAppsMap();
-        saveLocal();
+        await adapter.updateInstallStatus(app: this);
+        notifier.state = IdleInstallProgress();
+      } else {
+        const msg = 'Android rejected installation';
+        notifier.state = ErrorInstallProgress(Exception(msg));
       }
-      notifier.state = IdleInstallProgress();
     }
 
     if (await file.exists()) {
@@ -203,24 +171,6 @@ class App extends BaseApp with DataModelMixin<App> {
 }
 
 mixin AppAdapter on Adapter<App> {
-  ProviderSubscription? _sub;
-
-  @override
-  Future<void> onInitialized() async {
-    if (!inIsolate) {
-      _sub = ref.listen(installedAppProvider, (_, __) {
-        triggerNotify();
-      });
-    }
-    super.onInitialized();
-  }
-
-  @override
-  void dispose() {
-    _sub?.close();
-    super.dispose();
-  }
-
   Future<List<App>> loadAppModels(Map<String, dynamic> params) async {
     final includes = params.remove('includes') ?? false;
     final apps = await super.findAll(params: params);
@@ -232,7 +182,8 @@ mixin AppAdapter on Adapter<App> {
 
     await ref.fileMetadata.findAll(params: {
       'ids': metadataIds,
-      '#m': [kAndroidMimeType]
+      '#m': [kAndroidMimeType],
+      // TODO: '#f': ['android-arm64-v8a'],
     });
 
     if (includes) {
@@ -255,20 +206,20 @@ mixin AppAdapter on Adapter<App> {
       OnSuccessAll<App>? onSuccess,
       OnErrorAll<App>? onError,
       DataRequestLabel? label}) async {
-    final map = await getInstalledAppsMap(defer: true);
-
     if (params!.containsKey('installed')) {
-      if (map.keys.isNotEmpty) {
-        params['#d'] = map.keys;
+      final appIds = await _installedIdentifiers();
+      if (appIds.isNotEmpty) {
+        params['#d'] = appIds;
         params.remove('installed');
-        print('filtering by installed ${params['#d']}');
-        return await loadAppModels(params);
+        await loadAppModels(params);
+        // Once apps are loaded, check for installed status
+        return await updateInstallStatus();
       }
     }
     return await loadAppModels(params);
   }
 
-  Future<List<App>> findWhereIdInLocal(Iterable<String> appIds) async {
+  List<App> findWhereIdInLocal(Iterable<String> appIds) {
     final result = db.select(
         'SELECT key, data, json_extract(data, \'\$.id\') AS id from apps where id in (${appIds.map((_) => '?').join(', ')})',
         appIds.toList());
@@ -296,15 +247,36 @@ mixin AppAdapter on Adapter<App> {
     return apps.first;
   }
 
-  // TODO Make this async on writes / sync on reads (and return a class)
-  Future<Map<String, (String, int)>> getInstalledAppsMap(
-      {bool defer = false}) async {
-    late List<PackageInfo>? infos;
-    if (Platform.isAndroid) {
-      infos = await packageManager.getInstalledPackages();
-    } else {
-      infos = [];
+  Future<Set<String>> _installedIdentifiers() async {
+    if (!Platform.isAndroid) {
+      return {};
     }
+    final infos = await packageManager.getInstalledPackages();
+    return {
+      for (final i in infos!)
+        if (i.packageName != null &&
+            ![
+              'android',
+              'com.android',
+              'com.google',
+              'org.chromium.webview_shell',
+              'app.grapheneos',
+              'app.vanadium'
+            ].any((e) => i.packageName!.startsWith(e)))
+          i.packageName!,
+    };
+  }
+
+  Future<List<App>> updateInstallStatus({App? app}) async {
+    if (!Platform.isAndroid) {
+      return [];
+    }
+
+    final updatedApps = <App>[];
+    final infos = app != null
+        ? [await packageManager.getPackageInfo(packageName: app.id.toString())]
+            .nonNulls
+        : await packageManager.getInstalledPackages();
 
     final installedPackageInfos = infos!.where((i) => ![
           'android',
@@ -315,43 +287,100 @@ mixin AppAdapter on Adapter<App> {
           'app.vanadium'
         ].any((e) => i.packageName!.startsWith(e)));
 
-    final newState = {
-      for (final info in installedPackageInfos)
-        info.packageName!: (info.versionName ?? '?', info.versionCode!)
-    };
+    final apps = findManyLocalByIds(
+        installedPackageInfos.map((i) => i.packageName).nonNulls);
 
-    // Providers can't set other providers state
-    // while initializing, so defer setting state
-    if (defer) {
-      Future.microtask(() {
-        ref.read(installedAppProvider.notifier).state = newState;
-      });
-      return newState;
+    for (final i in installedPackageInfos) {
+      var app = apps.firstWhereOrNull((app) => i.packageName == app.id);
+      final installedVersion = i.versionName;
+      final installedVersionCode = i.versionCode;
+
+      if (app == null) continue;
+
+      final AppInstallStatus status =
+          _determineInstallStatus(app, installedVersion, installedVersionCode);
+
+      if (app.installedVersionCode != installedVersionCode) {
+        app.addTags({
+          ('installedVersion', installedVersion),
+          ('installedVersionCode', installedVersionCode),
+          ('status', status.name)
+        }, replace: true);
+        app.saveLocal();
+      }
+
+      updatedApps.add(app);
     }
 
-    return ref.read(installedAppProvider.notifier).state = newState;
+    // Update number of apps
+    final rs = db.select(
+        'SELECT count(*) as c FROM apps, json_each(json_extract(apps.data, \'\$.tags\')) WHERE json_extract(value, \'\$[0]\') is \'status\' AND json_extract(value, \'\$[1]\') is \'updatable\'');
+    ref.read(appsToUpdateProvider.notifier).state = rs.first['c'];
+
+    return updatedApps;
+  }
+
+  AppInstallStatus _determineInstallStatus(
+      App app, String? installedVersion, int? installedVersionCode) {
+    if (app.releases.isEmpty) {
+      return AppInstallStatus.loading;
+    }
+
+    if (app.releases.isNotEmpty && app.latestMetadata == null) {
+      return AppInstallStatus.differentArchitecture;
+    }
+    if (installedVersion == null) {
+      return AppInstallStatus.installable;
+    }
+    var comp = 0;
+    if (app.latestMetadata!.versionCode != null &&
+        installedVersionCode != null &&
+        app.id != 'store.zap.app') {
+      // Note: need to exclude zap.store because development versions always
+      // carry a lower version code (e.g. 12) than published ones (e.g. 2012)
+      comp = app.latestMetadata!.versionCode!.compareTo(installedVersionCode);
+    }
+
+    if (comp == 0) {
+      comp = app.latestMetadata!.version!.compareTo(installedVersion);
+    }
+
+    if (comp == 1) return AppInstallStatus.updatable;
+    if (comp == 0) return AppInstallStatus.updated;
+    // else it's a downgrade, which is not installable
+    return AppInstallStatus.downgrade;
   }
 
   @override
   DeserializedData<App> deserialize(Object? data, {String? key}) {
     final list = data is Iterable ? data : [data as Map];
     for (final e in list) {
+      e['id'] = (e['tags'] as Iterable).where((t) => t[0] == 'd').first.last;
+    }
+
+    final savedApps = findManyLocalByIds(list.map((e) => e['id']));
+    for (final e in list) {
       final map = e as Map<String, dynamic>;
+      final tags = map['tags'] as Iterable;
       map['signer'] = map['pubkey'];
-      final zapTags = (map['tags'] as Iterable).where((t) => t[0] == 'zap');
+      final zapTags = tags.where((t) => t[0] == 'zap');
       if (zapTags.length == 1) {
         map['developer'] = (zapTags.first as List)[1];
       }
     }
-    return super.deserialize(data);
-  }
 
-  // @override
-  // App deserializeLocal(map, {String? key}) {
-  //   map = transformDeserialize(map);
-  //   print('deserializing local with key $key');
-  //   return internalWrapStopInit(() => App.fromJson(map), key: key);
-  // }
+    final deserialized = super.deserialize(data);
+    // Preserve installation data
+    for (final app in deserialized.models) {
+      final savedApp = savedApps.firstWhereOrNull((s) => s.id == app.id);
+      app.addTags({
+        ('installedVersion', savedApp?.installedVersion),
+        ('installedVersionCode', savedApp?.installedVersionCode),
+        ('status', savedApp?.status?.name)
+      }, replace: true);
+    }
+    return deserialized;
+  }
 }
 
 Future<bool> _isHashMismatch(String path, String hash) async {
@@ -412,9 +441,8 @@ class ErrorInstallProgress extends AppInstallProgress {
   ErrorInstallProgress(this.e);
 }
 
-final installedAppProvider =
-    StateProvider<Map<String, (String, int)>>((_) => {});
-
 final installationProgressProvider =
     StateProvider.family<AppInstallProgress, String>(
         (_, arg) => IdleInstallProgress());
+
+final appsToUpdateProvider = StateProvider((_) => 0);

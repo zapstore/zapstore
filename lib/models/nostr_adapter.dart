@@ -26,7 +26,6 @@ mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
 
       // ID should be the identifier in PREs
       final dTags = (map['tags'] as Iterable).where((t) => t[0] == 'd');
-      // TODO: This eventually should become $pubkey-$appid (just like zapstore-cli)
       if (dTags.length == 1) {
         map['id'] = (dTags.first as List)[1];
       }
