@@ -2,7 +2,8 @@ import 'package:flutter_data/flutter_data.dart';
 import 'package:purplebase/purplebase.dart';
 
 // NOTE: Very important to use const in relay args to preserve equality in Riverpod families
-const kAppRelays = ['ws://10.0.2.2:3000'];
+// const kAppRelays = ['ws://10.0.2.2:3000'];
+const kAppRelays = ['wss://relay.zap.store'];
 const kSocialRelays = ['wss://relay.primal.net', 'wss://relay.nostr.band'];
 
 mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
@@ -35,6 +36,9 @@ mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
         ).formatted;
       }
 
+      // Remove signature as it's already been verified
+      map.remove('sig');
+
       // Collect models for current kind and included for others
       final eventType = BaseEvent.typeForKind(kind)!;
       if (eventType == internalType) {
@@ -46,6 +50,12 @@ mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
       }
     }
     return DeserializedData<T>(models, included: included);
+  }
+
+  @override
+  bool existsId(Object id) {
+    final r = db.select('SELECT 1 FROM _keys WHERE id = ?', [id]);
+    return r.isNotEmpty;
   }
 
   @override

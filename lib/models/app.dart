@@ -285,12 +285,9 @@ mixin AppAdapter on Adapter<App> {
 
     for (final Map<String, dynamic> map in list) {
       final tagMap = tagsToMap(map['tags']);
-      final appId = tagMap['d']!.first;
-      map['id'] =
-          (map['kind'] as int, map['pubkey'].toString(), appId).formatted;
       map['signer'] = map['pubkey'];
       map['developer'] = tagMap['zap']?.firstOrNull;
-      map['localApp'] = appId;
+      map['localApp'] = tagMap['d']!.first;
     }
 
     return super.deserialize(data);

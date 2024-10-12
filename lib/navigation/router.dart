@@ -1,3 +1,4 @@
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_data/flutter_data.dart';
 import 'package:go_router/go_router.dart';
@@ -143,7 +144,23 @@ final dataLibrariesInitializer = FutureProvider<void>((ref) async {
   final relay = ref.read(relayMessageNotifierProvider(kAppRelays).notifier);
   final socialRelays =
       ref.read(relayMessageNotifierProvider(kSocialRelays).notifier);
-  await Future.wait([relay.initialize(), socialRelays.initialize()]);
+  await Future.wait([
+    relay.initialize(
+      isEventVerified: (Map<String, dynamic> map) {
+        // If replaceable, we check for that ID
+        final identifier = (map['tags'] as Iterable)
+            .firstWhereOrNull((t) => t[0] == 'd')?[1]
+            ?.toString();
+        final id = identifier != null
+            ? (map['kind'] as int, map['pubkey'].toString(), identifier)
+                .formatted
+            : map['id'];
+        return ref.apps.nostrAdapter.existsId(id);
+      },
+    ),
+    socialRelays.initialize(
+        isEventVerified: (map) => ref.apps.nostrAdapter.existsId(map['pubkey']))
+  ]);
 
   // Trigger app install status calculations
   await ref.localApps.localAppAdapter.updateInstallStatus();
