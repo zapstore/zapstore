@@ -173,15 +173,27 @@ mixin AppAdapter on Adapter<App> {
     );
     // Find all appid@version ($3) as we need to pick one tag to query on
     // (filters by kind ($1) and pubkey ($2) done locally)
+    final latestReleaseIdentifiers =
+        apps.map((app) => app.linkedReplaceableEvents.firstOrNull?.$3).nonNulls;
     final releases = await ref.releases.findAll(
+      params: {'#d': latestReleaseIdentifiers},
+    );
+    // TODO: Deprecated
+    // Some developers without access to the latest zapstore-cli
+    // have not published their apps with latest release identifiers
+    // so load as usual
+    final oldApps =
+        apps.where((app) => !latestReleaseIdentifiers.contains(app.identifier));
+    final oldReleases = await ref.releases.findAll(
       params: {
-        '#d': apps
-            .map((app) => app.linkedReplaceableEvents.firstOrNull?.$3)
-            .nonNulls
+        '#a': oldApps.map((app) => app.getReplaceableEventLink().formatted)
       },
     );
-    final metadataIds =
-        releases.map((r) => r.tagMap['e']).nonNulls.expand((_) => _);
+
+    final metadataIds = [...releases, ...oldReleases]
+        .map((r) => r.tagMap['e'])
+        .nonNulls
+        .expand((_) => _);
 
     await ref.fileMetadata.findAll(params: {
       'ids': metadataIds,
@@ -277,7 +289,7 @@ mixin AppAdapter on Adapter<App> {
       map['id'] =
           (map['kind'] as int, map['pubkey'].toString(), appId).formatted;
       map['signer'] = map['pubkey'];
-      map['developer'] = tagMap['zap']?.firstOrNull?[1];
+      map['developer'] = tagMap['zap']?.firstOrNull;
       map['localApp'] = appId;
     }
 

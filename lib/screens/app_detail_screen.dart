@@ -2,7 +2,6 @@ import 'package:auto_size_text/auto_size_text.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -31,17 +30,10 @@ class AppDetailScreen extends HookConsumerWidget {
         alsoWatch: (_) =>
             {_.releases, _.releases.artifacts, _.signer, _.developer});
 
-    // TODO: Workaround for bug in watchAll (when remote=true)
-    // TODO: Just fetch the signer, no need to refetch again??
-    useFuture(useMemoized(() {
-      return ref.apps
-          .findOne(model.identifier!, remote: true, params: {'includes': true});
-    }));
-
     final app = state.model ?? model;
 
     return RefreshIndicator(
-      onRefresh: () => ref.apps.findOne(model.id!),
+      onRefresh: () => ref.apps.findOne(model.identifier!, remote: true),
       child: Column(
         children: [
           Expanded(
