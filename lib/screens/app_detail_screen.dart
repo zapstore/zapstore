@@ -77,7 +77,9 @@ class AppDetailScreen extends HookConsumerWidget {
                           h1: TextStyle(fontWeight: FontWeight.bold),
                           h2: TextStyle(fontWeight: FontWeight.bold),
                           p: TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.w300),
+                            fontSize: 18,
+                            fontWeight: FontWeight.w300,
+                          ),
                         ),
                         selectable: false,
                         data: app.content.parseEmojis(),
@@ -242,6 +244,7 @@ class AppDetailScreen extends HookConsumerWidget {
                         ),
                       ),
                       Gap(10),
+                      if (app.releases.isEmpty) Text('No available releases'),
                       if (app.releases.ordered.isNotEmpty)
                         ReleaseCard(release: app.releases.ordered.first),
                     ],

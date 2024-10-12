@@ -52,13 +52,13 @@ class AppCard extends HookConsumerWidget {
         ),
       );
     }
-    return Card(
-      margin: EdgeInsets.only(top: 6, bottom: 6),
-      elevation: 0,
-      child: GestureDetector(
-        onTap: () {
-          context.go('/details', extra: app);
-        },
+    return GestureDetector(
+      onTap: () {
+        context.go('/details', extra: app);
+      },
+      child: Card(
+        margin: EdgeInsets.only(top: 6, bottom: 6),
+        elevation: 0,
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Row(
