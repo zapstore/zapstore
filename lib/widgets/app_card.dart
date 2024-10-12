@@ -1,8 +1,10 @@
 import 'package:auto_size_text/auto_size_text.dart';
+import 'package:dart_emoji/dart_emoji.dart';
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:remove_markdown/remove_markdown.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/widgets/pill_widget.dart';
@@ -97,7 +99,7 @@ class AppCard extends HookConsumerWidget {
                     ),
                     Gap(6),
                     Text(
-                      app!.content,
+                      app!.content.removeMarkdown().parseEmojis(),
                       style:
                           TextStyle(fontSize: 14, fontWeight: FontWeight.w300),
                       overflow: TextOverflow.ellipsis,
@@ -193,5 +195,14 @@ class TagsContainer extends StatelessWidget {
           ),
       ],
     );
+  }
+}
+
+extension StringWidget on String {
+  static final _emojiParser = EmojiParser();
+  String parseEmojis() {
+    return replaceAllMapped(RegExp(':([a-z]*):'), (m) {
+      return _emojiParser.hasName(m[1]!) ? _emojiParser.get(m[1]!).code : m[0]!;
+    });
   }
 }

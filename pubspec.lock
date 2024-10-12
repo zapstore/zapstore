@@ -289,6 +289,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.8"
+  dart_emoji:
+    dependency: "direct main"
+    description:
+      name: dart_emoji
+      sha256: "88d5e37174751aeabaecdbf153fdca46eb9fa12d6b626d6c70447058d444724e"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.2.0+2"
   dart_style:
     dependency: transitive
     description:
@@ -928,6 +936,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.2.3"
+  remove_markdown:
+    dependency: "direct main"
+    description:
+      name: remove_markdown
+      sha256: "99798c4147609972e923847504e48e685e91473a70af659c3445fbbbeea8c33c"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.0.2"
   riverpod:
     dependency: transitive
     description:

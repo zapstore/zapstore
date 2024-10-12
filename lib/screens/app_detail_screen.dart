@@ -10,6 +10,7 @@ import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/release.dart';
 import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/widgets/app_card.dart';
 import 'package:zapstore/widgets/install_button.dart';
 import 'package:zapstore/widgets/release_card.dart';
 import 'package:zapstore/widgets/signer_and_developer_row.dart';
@@ -79,7 +80,7 @@ class AppDetailScreen extends HookConsumerWidget {
                               fontSize: 18, fontWeight: FontWeight.w300),
                         ),
                         selectable: false,
-                        data: app.content,
+                        data: app.content.parseEmojis(),
                       ),
                       Gap(10),
                       Padding(
