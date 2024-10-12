@@ -24,10 +24,9 @@ mixin AppCurationSetAdapter on Adapter<AppCurationSet> {
   @override
   DeserializedData<AppCurationSet> deserialize(Object? data, {String? key}) {
     final list = data is Iterable ? data : [data as Map];
-    for (final e in list) {
-      final map = e as Map<String, dynamic>;
-      final aValues = (map['tags'] as Iterable).where((t) => t[0] == 'a');
-      map['apps'] = aValues.map((e) => e[1].split(':')[2]);
+    for (final Map<String, dynamic> map in list) {
+      final tagMap = tagsToMap(map['tags']);
+      map['apps'] = tagMap['a'];
     }
     return super.deserialize(data);
   }

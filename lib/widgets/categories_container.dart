@@ -4,6 +4,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:flutter_layout_grid/flutter_layout_grid.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/widgets/app_card.dart';
@@ -21,7 +22,11 @@ class AppCategoriesNotifier
           .findAll(params: {'#d': appSets.map((s) => s.appIds).flattened});
     }
 
-    final curationSet = ref.appCurationSets.findOneLocalById(arg.name)!;
+    final curationSet = ref.appCurationSets.findOneLocalById((
+      30267,
+      '78ce6faa72264387284e647ba6938995735ec8c7d5c5a65737e55130f026307d',
+      arg.name
+    ).formatted)!;
     return ref.apps.appAdapter.findWhereIdInLocal(curationSet.appIds);
   }
 }

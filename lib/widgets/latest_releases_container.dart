@@ -38,7 +38,7 @@ class LatestReleasesContainer extends HookConsumerWidget {
 class LatestReleasesAppNotifier extends AutoDisposeAsyncNotifier<List<App>> {
   @override
   Future<List<App>> build() async {
-    final timer = Timer.periodic(Duration(minutes: 10), (_) => fetch());
+    final timer = Timer.periodic(Duration(minutes: 1), (_) => fetch());
     ref.onDispose(timer.cancel);
     fetch();
     // .catchError((e) {

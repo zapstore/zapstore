@@ -33,8 +33,10 @@ class AppDetailScreen extends HookConsumerWidget {
 
     // TODO: Workaround for bug in watchAll (when remote=true)
     // TODO: Just fetch the signer, no need to refetch again??
-    useFuture(useMemoized(() =>
-        ref.apps.findOne(model.id!, remote: true, params: {'includes': true})));
+    useFuture(useMemoized(() {
+      return ref.apps
+          .findOne(model.identifier!, remote: true, params: {'includes': true});
+    }));
 
     final app = state.model ?? model;
 
