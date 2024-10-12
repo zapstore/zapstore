@@ -24,7 +24,9 @@ class SignerAndDeveloperRow extends StatelessWidget {
               launchUrl(url);
             },
             child: AuthorContainer(
-                user: app.developer.value!, text: 'Built by', oneLine: false),
+                user: app.developer.value!,
+                text: 'Developed by',
+                oneLine: false),
           ),
         if (app.signer.isPresent)
           GestureDetector(

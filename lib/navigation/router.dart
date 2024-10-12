@@ -6,6 +6,7 @@ import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/main.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
+import 'package:zapstore/models/local_app.dart';
 import 'package:zapstore/models/nostr_adapter.dart';
 import 'package:zapstore/navigation/desktop_scaffold.dart';
 import 'package:zapstore/navigation/mobile_scaffold.dart';
@@ -145,11 +146,11 @@ final dataLibrariesInitializer = FutureProvider<void>((ref) async {
   await Future.wait([relay.initialize(), socialRelays.initialize()]);
 
   // Trigger app install status calculations
-  await ref.apps.appAdapter.updateInstallStatus();
+  await ref.localApps.localAppAdapter.updateInstallStatus();
   _lifecycleListener = AppLifecycleListener(
     onStateChange: (state) async {
       if (state == AppLifecycleState.resumed) {
-        await ref.apps.appAdapter.updateInstallStatus();
+        await ref.localApps.localAppAdapter.updateInstallStatus();
       }
     },
   );

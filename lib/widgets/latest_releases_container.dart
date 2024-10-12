@@ -38,7 +38,7 @@ class LatestReleasesContainer extends HookConsumerWidget {
 class LatestReleasesAppNotifier extends AutoDisposeAsyncNotifier<List<App>> {
   @override
   Future<List<App>> build() async {
-    final timer = Timer.periodic(Duration(hours: 4), (_) => fetch());
+    final timer = Timer.periodic(Duration(minutes: 10), (_) => fetch());
     ref.onDispose(timer.cancel);
     fetch();
     // .catchError((e) {
@@ -49,20 +49,15 @@ class LatestReleasesAppNotifier extends AutoDisposeAsyncNotifier<List<App>> {
   }
 
   List<App> localFetch() {
-    return ref.releases
+    return ref.apps
         .findAllLocal()
         .sorted((a, b) => b.createdAt!.compareTo(a.createdAt!))
         .take(10)
-        .map((r) => r.app.value)
-        .nonNulls
-        .toSet()
         .toList();
   }
 
   Future<void> fetch() async {
-    final releases = await ref.releases.findAll(params: {'limit': 10});
-    final appIds = releases.map((r) => r.app.id!.toString()).toSet();
-    await ref.apps.findAll(params: {'#d': appIds});
+    await ref.apps.findAll(params: {'limit': 10});
     update((_) => localFetch());
   }
 }

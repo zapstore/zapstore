@@ -5,6 +5,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:percent_indicator/linear_percent_indicator.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
+import 'package:zapstore/models/local_app.dart';
 import 'package:zapstore/models/settings.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/system_info.dart';
@@ -27,10 +28,10 @@ class InstallButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final progress = ref.watch(installationProgressProvider(app.identifier!));
+    final status = app.localApp.value?.status;
 
     return GestureDetector(
-      onTap: switch (app.status) {
-        AppInstallStatus.differentArchitecture => null,
+      onTap: switch (status) {
         AppInstallStatus.downgrade => null,
         AppInstallStatus.updated => () {
             packageManager.openApp(app.id!.toString());
@@ -68,7 +69,7 @@ class InstallButton extends ConsumerWidget {
         percent: switch (progress) {
           VerifyingHashProgress() => 1,
           DownloadingInstallProgress(:final progress) => progress,
-          _ => switch (app.status) {
+          _ => switch (status) {
               AppInstallStatus.updated => 1,
               _ => 0,
             },
@@ -81,15 +82,9 @@ class InstallButton extends ConsumerWidget {
         barRadius: Radius.circular(20),
         padding: EdgeInsets.all(0),
         animateFromLastPercent: true,
-        center: switch (app.status) {
-          AppInstallStatus.loading =>
-            SizedBox(width: 14, height: 14, child: CircularProgressIndicator()),
-          AppInstallStatus.differentArchitecture => Text(
-              'Sorry, release does not support your device',
-              textAlign: TextAlign.center,
-            ),
+        center: switch (status) {
           AppInstallStatus.downgrade => Text(
-              'Installed version ${app.installedVersion ?? ''} is higher, can\'t downgrade',
+              'Installed version ${app.localApp.value?.installedVersion ?? ''} is higher, can\'t downgrade',
               textAlign: TextAlign.center,
             ),
           AppInstallStatus.updated => Text('Open'),

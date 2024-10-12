@@ -36,15 +36,11 @@ mixin ReleaseAdapter on Adapter<Release> {
   @override
   DeserializedData<Release> deserialize(Object? data, {String? key}) {
     final list = data is Iterable ? data : [data as Map];
-    for (final e in list) {
-      final map = e as Map<String, dynamic>;
-      final eTags = (map['tags'] as Iterable)
-          .where((e) => e.first == 'e')
-          .map((e) => e[1].toString());
-      map['artifacts'] = eTags.toList();
-      final appIdentifier =
-          map['tags'].firstWhere((t) => t.first == 'd')[1].split('@').first;
-      map['app'] = appIdentifier;
+
+    for (final Map<String, dynamic> map in list) {
+      final tagMap = tagsToMap(map['tags']);
+      map['app'] = tagMap['a']?.firstOrNull;
+      map['artifacts'] = tagMap['e']!.toList();
     }
     return super.deserialize(data);
   }

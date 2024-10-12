@@ -28,6 +28,12 @@ mixin _$AppAdapter on Adapter<App> {
       type: 'users',
       kind: 'BelongsTo',
       instance: (_) => (_ as App).developer,
+    ),
+    'localApp': RelationshipMeta<LocalApp>(
+      name: 'localApp',
+      type: 'localApps',
+      kind: 'BelongsTo',
+      instance: (_) => (_ as App).localApp,
     )
   };
 
@@ -78,6 +84,13 @@ extension AppRelationshipGraphNodeX on RelationshipGraphNode<App> {
   RelationshipGraphNode<User> get developer {
     final meta = _$AppAdapter._kAppRelationshipMetas['developer']
         as RelationshipMeta<User>;
+    return meta.clone(
+        parent: this is RelationshipMeta ? this as RelationshipMeta : null);
+  }
+
+  RelationshipGraphNode<LocalApp> get localApp {
+    final meta = _$AppAdapter._kAppRelationshipMetas['localApp']
+        as RelationshipMeta<LocalApp>;
     return meta.clone(
         parent: this is RelationshipMeta ? this as RelationshipMeta : null);
   }

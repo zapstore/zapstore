@@ -13,7 +13,7 @@ dependencies:
   cupertino_icons: ^1.0.2
   flutter_data: ^2.0.0-rc3
   hooks_riverpod: ^2.4.9
-  json_annotation: ^4.8.1
+  json_annotation: ^4.9.0
   flutter_hooks: ^0.20.4
   build_runner: ^2.4.8
   collection: ^1.18.0

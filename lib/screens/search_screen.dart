@@ -134,7 +134,7 @@ class SearchResultNotifier extends AsyncNotifier<List<App>?> {
   Future<List<App>?> build() async {
     final query = ref.watch(searchQueryProvider);
     if (query != null) {
-      return await ref.apps.findAll(params: {'search': query});
+      return await ref.apps.findAll(params: {'search': query, 'limit': 16});
     }
     return null;
   }

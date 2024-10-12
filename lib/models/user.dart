@@ -32,6 +32,7 @@ class User extends BaseUser with DataModelMixin<User> {
 }
 
 mixin UserAdapter on NostrAdapter<User> {
+  // TODO: All this still necessary with purplebase?
   @override
   DeserializedData<User> deserialize(Object? data, {String? key}) {
     final Iterable<Map<String, dynamic>> list =
@@ -54,7 +55,6 @@ mixin UserAdapter on NostrAdapter<User> {
         .toList()
         .groupSetsBy((e) => e['pubkey'] as String);
 
-    // TODO: This still necessary with purplebase?
     // collect contacts and then assign them to user
     final included = <String, List<DataModelMixin>>{};
     for (final _ in k3s.entries) {
