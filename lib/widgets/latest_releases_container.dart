@@ -51,36 +51,37 @@ class LatestReleasesContainer extends HookConsumerWidget {
           children: [
             if (state.hasError) Text('Error fetching: ${state.error}'),
             if (state.isLoading)
-              for (final _ in List.generate(4, (_) => _)) AppCard(app: null),
+              for (final _ in List.generate(3, (_) => _)) AppCard(app: null),
             if (state.hasValue)
               for (final app in state.value!) AppCard(app: app),
-            AsyncButtonBuilder(
-              loadingWidget: SizedBox(
-                width: 14,
-                height: 14,
-                child: CircularProgressIndicator(),
-              ),
-              onPressed: () async {
-                return ref
-                    .read(latestReleasesAppProvider.notifier)
-                    .fetch(next: true);
-              },
-              builder: (context, child, callback, state) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 2),
-                  child: SizedBox(
-                    child: ElevatedButton(
-                      onPressed: callback,
-                      style: ElevatedButton.styleFrom(
-                          disabledBackgroundColor: Colors.transparent,
-                          backgroundColor: Colors.grey[900]),
-                      child: child,
+            if (state.hasValue)
+              AsyncButtonBuilder(
+                loadingWidget: SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(),
+                ),
+                onPressed: () async {
+                  return ref
+                      .read(latestReleasesAppProvider.notifier)
+                      .fetch(next: true);
+                },
+                builder: (context, child, callback, state) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 2),
+                    child: SizedBox(
+                      child: ElevatedButton(
+                        onPressed: callback,
+                        style: ElevatedButton.styleFrom(
+                            disabledBackgroundColor: Colors.transparent,
+                            backgroundColor: Colors.grey[900]),
+                        child: child,
+                      ),
                     ),
-                  ),
-                );
-              },
-              child: Text('Load more'),
-            ),
+                  );
+                },
+                child: Text('Load more'),
+              ),
           ],
         )
       ],
@@ -98,7 +99,7 @@ class LatestReleasesAppNotifier extends AutoDisposeAsyncNotifier<List<App>> {
     final timer = Timer.periodic(Duration(minutes: 1), (_) => fetch());
     ref.onDispose(timer.cancel);
     // Trigger fetch ONLY on the most recent 10 (next=false)
-    fetch();
+    await fetch();
     return localFetch();
   }
 
@@ -108,7 +109,9 @@ class LatestReleasesAppNotifier extends AutoDisposeAsyncNotifier<List<App>> {
         .sorted((a, b) => b.createdAt!.compareTo(a.createdAt!))
         .take(page * 10)
         .toList();
-    oldestTimestamp = apps.last.createdAtMs;
+    if (apps.isNotEmpty) {
+      oldestTimestamp = apps.last.createdAtMs;
+    }
     return apps;
   }
 
