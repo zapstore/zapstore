@@ -1269,14 +1269,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.0.1"
-  web_socket_client:
-    dependency: transitive
-    description:
-      name: web_socket_client
-      sha256: "0ec5230852349191188c013112e4d2be03e3fc83dbe80139ead9bf3a136e53b5"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.1.5"
   win32:
     dependency: "direct overridden"
     description:
@@ -1293,6 +1285,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.1.5"
+  ws:
+    dependency: transitive
+    description:
+      name: ws
+      sha256: bb40a7b9219324ac285133c6b3c11bc16015d9cd5889e6555b76bd3e3a64b3e7
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.0"
   xdg_directories:
     dependency: transitive
     description:

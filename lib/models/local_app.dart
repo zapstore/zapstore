@@ -43,41 +43,36 @@ mixin LocalAppAdapter on Adapter<LocalApp> {
     if (!Platform.isAndroid) {
       return;
     }
-    try {
-      // NOTE: Using packageManager.getPackageInfo(packageName: appId)
-      // throws an uncatchable error every time it queries a non-installed package
-      final infos = await packageManager.getInstalledPackages();
+    // NOTE: Using packageManager.getPackageInfo(packageName: appId)
+    // throws an uncatchable error every time it queries a non-installed package
+    final infos = await packageManager.getInstalledPackages();
 
-      final installedPackageInfos = infos!.where((i) =>
-          !kExcludedAppIdNamespaces.any((e) => i.packageName!.startsWith(e)));
+    final installedPackageInfos = infos!.where((i) =>
+        !kExcludedAppIdNamespaces.any((e) => i.packageName!.startsWith(e)));
 
-      final ids = appId != null
-          ? [appId]
-          : installedPackageInfos.map((i) => i.packageName).nonNulls;
+    final ids = appId != null
+        ? [appId]
+        : installedPackageInfos.map((i) => i.packageName).nonNulls;
 
-      final localApps = findManyLocalByIds(ids);
+    final localApps = findManyLocalByIds(ids);
 
-      for (final i in installedPackageInfos) {
-        final appId = i.packageName!;
-        final localApp = localApps.firstWhereOrNull((app) => appId == app.id) ??
-            LocalApp(id: i.packageName!);
-        final installedVersion = i.versionName;
-        final installedVersionCode = i.versionCode;
+    for (final i in installedPackageInfos) {
+      final appId = i.packageName!;
+      final localApp = localApps.firstWhereOrNull((app) => appId == app.id) ??
+          LocalApp(id: i.packageName!);
+      final installedVersion = i.versionName;
+      final installedVersionCode = i.versionCode;
 
-        final app = ref.apps.appAdapter.findWhereIdInLocal([appId]).firstOrNull;
-        final status =
-            determineInstallStatus(app, installedVersion, installedVersionCode);
+      final app = ref.apps.appAdapter.findWhereIdInLocal([appId]).firstOrNull;
+      final status =
+          determineInstallStatus(app, installedVersion, installedVersionCode);
 
-        localApp
-            .copyWith(
-                installedVersion: installedVersion,
-                installedVersionCode: installedVersionCode,
-                status: status)
-            .saveLocal();
-      }
-    } catch (e) {
-      // TODO DEAL WITH
-      // print(e);
+      localApp
+          .copyWith(
+              installedVersion: installedVersion,
+              installedVersionCode: installedVersionCode,
+              status: status)
+          .saveLocal();
     }
 
     // Update number of apps
