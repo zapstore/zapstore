@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:async_button_builder/async_button_builder.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +11,7 @@ import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/feedback.dart';
@@ -135,6 +139,20 @@ class SettingsScreen extends HookConsumerWidget {
               AsyncData(:final value) => value.toString(),
               _ => '',
             }),
+          ),
+          HookBuilder(
+            builder: (context) {
+              final snapshot = useFuture(useMemoized(() async {
+                final dir = await getApplicationDocumentsDirectory();
+                return jsonDecode(
+                    await File('${dir.path}/errors.json').readAsString());
+              }));
+              if (snapshot.hasData) {
+                return Text(
+                    'Entries in errors.json: ${(snapshot.data as Map).length}');
+              }
+              return Container();
+            },
           ),
         ],
       ),
