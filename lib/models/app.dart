@@ -42,8 +42,12 @@ class App extends BaseApp with DataModelMixin<App> {
 
   Map<String, dynamic> toJson() => super.toMap();
 
+  Release? get latestRelease {
+    return releases.ordered.firstOrNull;
+  }
+
   FileMetadata? get latestMetadata {
-    return releases.ordered.firstOrNull?.artifacts
+    return latestRelease?.artifacts
         .where((a) =>
             a.mimeType == kAndroidMimeType &&
             a.platforms.contains('android-arm64-v8a'))

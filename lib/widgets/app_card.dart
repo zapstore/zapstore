@@ -13,8 +13,9 @@ import 'package:zapstore/widgets/rounded_image.dart';
 
 class AppCard extends HookConsumerWidget {
   final App? app;
+  final bool showDate;
 
-  const AppCard({super.key, required this.app});
+  const AppCard({super.key, required this.app, this.showDate = false});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -115,6 +116,7 @@ class AppCard extends HookConsumerWidget {
                         oneLine: true,
                         size: 12,
                       ),
+                    if (showDate) Text(app!.createdAt!.toIso8601String()),
                   ],
                 ),
               ),

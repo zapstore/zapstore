@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:async_button_builder/async_button_builder.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
@@ -9,26 +10,78 @@ import 'package:zapstore/models/app.dart';
 import 'package:zapstore/widgets/app_card.dart';
 
 class LatestReleasesContainer extends HookConsumerWidget {
-  const LatestReleasesContainer({super.key});
+  final ScrollController scrollController;
+  const LatestReleasesContainer({super.key, required this.scrollController});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(latestReleasesAppProvider);
-    if (state.hasError) {
-      return Text(state.error.toString());
-    }
-    final apps = state.value ?? [];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Latest releases',
-            style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold)),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('Latest releases',
+                style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+            Gap(20),
+            if (state.isLoading || state.isRefreshing || state.isReloading)
+              SizedBox(
+                height: 14,
+                width: 14,
+                child: CircularProgressIndicator(strokeWidth: 4),
+              ),
+            ElevatedButton(
+              onPressed: () {
+                scrollController.animateTo(
+                  scrollController.position.maxScrollExtent,
+                  duration: Duration(milliseconds: 300),
+                  curve: Curves.easeOut,
+                );
+              },
+              style:
+                  ElevatedButton.styleFrom(backgroundColor: Colors.transparent),
+              child: Text('See more'),
+            )
+          ],
+        ),
         Gap(12),
         Column(
-          children: (apps.isEmpty ? [null, null, null] : apps)
-              .map((app) => AppCard(app: app))
-              .toList(),
+          children: [
+            if (state.hasError) Text('Error fetching: ${state.error}'),
+            if (state.isLoading)
+              for (final _ in List.generate(4, (_) => _)) AppCard(app: null),
+            if (state.hasValue)
+              for (final app in state.value!) AppCard(app: app),
+            AsyncButtonBuilder(
+              loadingWidget: SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(),
+              ),
+              onPressed: () async {
+                return ref
+                    .read(latestReleasesAppProvider.notifier)
+                    .fetch(next: true);
+              },
+              builder: (context, child, callback, state) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: SizedBox(
+                    child: ElevatedButton(
+                      onPressed: callback,
+                      style: ElevatedButton.styleFrom(
+                          disabledBackgroundColor: Colors.transparent,
+                          backgroundColor: Colors.grey[900]),
+                      child: child,
+                    ),
+                  ),
+                );
+              },
+              child: Text('Load more'),
+            ),
+          ],
         )
       ],
     );
@@ -36,28 +89,35 @@ class LatestReleasesContainer extends HookConsumerWidget {
 }
 
 class LatestReleasesAppNotifier extends AutoDisposeAsyncNotifier<List<App>> {
+  int? oldestTimestamp;
+  int page = 1;
+
   @override
   Future<List<App>> build() async {
-    final timer = Timer.periodic(Duration(minutes: 5), (_) => fetch());
+    // TODO: Should be ref.watching a pool state change (from purplebase)
+    final timer = Timer.periodic(Duration(minutes: 1), (_) => fetch());
     ref.onDispose(timer.cancel);
+    // Trigger fetch ONLY on the most recent 10 (next=false)
     fetch();
-    // .catchError((e) {
-    //   print('caught here');
-    //   throw e;
-    // });
     return localFetch();
   }
 
   List<App> localFetch() {
-    return ref.apps
+    final apps = ref.apps
         .findAllLocal()
         .sorted((a, b) => b.createdAt!.compareTo(a.createdAt!))
-        .take(10)
+        .take(page * 10)
         .toList();
+    oldestTimestamp = apps.last.createdAtMs;
+    return apps;
   }
 
-  Future<void> fetch() async {
-    await ref.apps.findAll(params: {'limit': 10});
+  Future<void> fetch({bool next = false}) async {
+    if (next) {
+      page++;
+    }
+    await ref.apps
+        .findAll(params: {'limit': 10, 'until': next ? oldestTimestamp : null});
     update((_) => localFetch());
   }
 }
