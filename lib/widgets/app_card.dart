@@ -133,23 +133,20 @@ class TinyAppCard extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Card(
-      elevation: 0,
-      child: GestureDetector(
-        onTap: () {
-          context.go('/details', extra: app);
-        },
+    return GestureDetector(
+      onTap: () {
+        context.go('/details', extra: app);
+      },
+      child: Card(
+        elevation: 0,
         child: Container(
-          constraints: BoxConstraints(
-            maxWidth: 120,
-          ),
-          padding: const EdgeInsets.all(10),
+          padding: const EdgeInsets.all(12),
           child: app == null
               ? Skeletonizer.zone(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.start,
                     children: [
-                      Bone.square(uniRadius: 10, size: 60),
+                      Bone.square(uniRadius: 12, size: 50),
                       Gap(8),
                       Bone.multiText(lines: 2, fontSize: 10),
                     ],
@@ -161,7 +158,7 @@ class TinyAppCard extends HookConsumerWidget {
                   children: [
                     RoundedImage(
                       url: app!.icons.firstOrNull,
-                      size: 58,
+                      size: 46,
                       radius: 12,
                     ),
                     Gap(8),
