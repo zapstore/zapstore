@@ -68,7 +68,7 @@ class LoginContainer extends HookConsumerWidget {
                   isTextFieldEmpty.value = value.isEmpty;
                 },
                 decoration: InputDecoration(
-                  hintText: 'your@nip05',
+                  hintText: 'your@nip05 or npub',
                   suffixIcon: AsyncButtonBuilder(
                     disabled: isTextFieldEmpty.value,
                     loadingWidget: SizedBox(
