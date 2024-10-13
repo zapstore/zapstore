@@ -94,10 +94,11 @@ class AppDetailScreen extends HookConsumerWidget {
                         Container(
                           padding: EdgeInsets.all(10),
                           decoration: BoxDecoration(
-                            color: Colors.red[400],
+                            color: Colors.red[800],
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: Text('This app is not open source',
+                          child: Text(
+                              '⚠️ Source code for this app is not available',
                               style: TextStyle(fontWeight: FontWeight.bold)),
                         ),
                       Gap(10),
