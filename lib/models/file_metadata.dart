@@ -1,6 +1,5 @@
 import 'package:flutter_data/flutter_data.dart';
 import 'package:purplebase/purplebase.dart';
-import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/nostr_adapter.dart';
 import 'package:zapstore/models/release.dart';
 import 'package:zapstore/models/user.dart';
@@ -45,19 +44,5 @@ mixin FileMetadataAdapter on Adapter<FileMetadata> {
       map['author'] = map['pubkey'];
     }
     return super.deserialize(data);
-  }
-
-  Future<List<FileMetadata>> zzz(List<String> appIds) async {
-    final req = RelayRequest(
-      kinds: {1063},
-      tags: {
-        '#m': [kAndroidMimeType],
-        '#f': ['android-arm64-v8a'],
-      },
-    );
-
-    final result = await (this as NostrAdapter).relay.queryRaw(req);
-    final deserialized = await deserializeAsync(result, save: true);
-    return deserialized.models;
   }
 }

@@ -163,7 +163,6 @@ final dataLibrariesInitializer = FutureProvider<void>((ref) async {
   ]);
 
   // Trigger app install status calculations
-  await ref.localApps.localAppAdapter.updateInstallStatus();
   _lifecycleListener = AppLifecycleListener(
     onStateChange: (state) async {
       if (state == AppLifecycleState.resumed) {

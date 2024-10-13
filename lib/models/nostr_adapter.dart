@@ -2,8 +2,8 @@ import 'package:flutter_data/flutter_data.dart';
 import 'package:purplebase/purplebase.dart';
 
 // NOTE: Very important to use const in relay args to preserve equality in Riverpod families
-// const kAppRelays = ['ws://10.0.2.2:3000'];
-const kAppRelays = ['wss://relay.zap.store'];
+const kAppRelays = ['ws://10.0.2.2:3000'];
+// const kAppRelays = ['wss://relay.zap.store'];
 const kSocialRelays = ['wss://relay.primal.net', 'wss://relay.nostr.band'];
 
 mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
@@ -24,6 +24,7 @@ mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
 
     for (final e in list) {
       final map = e as Map<String, dynamic>;
+      map['signer'] = map['pubkey'];
 
       // ID should be the replaceable link/reference so as to make it replaceable in local db too
       final tagMap = tagsToMap(map['tags']);

@@ -162,7 +162,7 @@ class App extends BaseApp with DataModelMixin<App> {
 }
 
 mixin AppAdapter on Adapter<App> {
-  Future<List<App>> loadAppModels(Map<String, dynamic> params) async {
+  Future<List<App>> fetchAppModels(Map<String, dynamic> params) async {
     final apps = await super.findAll(
       params: {
         ...params,
@@ -187,9 +187,11 @@ mixin AppAdapter on Adapter<App> {
         '#a': oldApps.map((app) => app.getReplaceableEventLink().formatted)
       },
     );
+    final oldReleasesLatest =
+        oldReleases.sorted((a, b) => b.createdAt!.compareTo(a.createdAt!));
 
     final metadataIds = [...releases, ...oldReleases]
-        .map((r) => r.tagMap['e'])
+        .map((r) => r.linkedEvents)
         .nonNulls
         .expand((_) => _);
 
@@ -200,15 +202,15 @@ mixin AppAdapter on Adapter<App> {
 
     // Metadata and users probably go to separate relays
     // so query in parallel
-    await Future.wait([
+    final rs = await Future.wait([
       ref.fileMetadata.findAll(params: {
         'ids': metadataIds,
         '#m': [kAndroidMimeType],
         '#f': ['android-arm64-v8a'],
       }),
-      ref.users.findAll(params: {'authors': userIds})
+      ref.users.findAll(params: {'authors': userIds}),
     ]);
-
+    await ref.localApps.localAppAdapter.updateInstallStatus();
     return apps;
   }
 
@@ -227,13 +229,13 @@ mixin AppAdapter on Adapter<App> {
       if (appIds.isNotEmpty) {
         params['#d'] = appIds;
         params.remove('installed');
-        final apps = await loadAppModels(params);
+        final apps = await fetchAppModels(params);
         // Once apps are loaded, check for installed status
         await ref.localApps.localAppAdapter.updateInstallStatus();
         return apps;
       }
     }
-    return await loadAppModels(params);
+    return await fetchAppModels(params);
   }
 
   List<App> findWhereIdInLocal(Iterable<String> appIds) {
@@ -253,7 +255,7 @@ mixin AppAdapter on Adapter<App> {
       OnSuccessOne<App>? onSuccess,
       OnErrorOne<App>? onError,
       DataRequestLabel? label}) async {
-    final apps = await loadAppModels({
+    final apps = await fetchAppModels({
       ...params!,
       '#d': [id]
     });
@@ -286,7 +288,6 @@ mixin AppAdapter on Adapter<App> {
 
     for (final Map<String, dynamic> map in list) {
       final tagMap = tagsToMap(map['tags']);
-      map['signer'] = map['pubkey'];
       map['developer'] = tagMap['zap']?.firstOrNull;
       map['localApp'] = tagMap['d']!.first;
     }
