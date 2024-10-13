@@ -7,12 +7,14 @@ class AuthorContainer extends StatelessWidget {
   final User user;
   final String text;
   final bool oneLine;
+  final double size;
 
   const AuthorContainer({
     super.key,
     required this.user,
     this.text = 'Signed by',
     this.oneLine = true,
+    this.size = 14,
   });
 
   @override
@@ -21,7 +23,7 @@ class AuthorContainer extends StatelessWidget {
       padding: EdgeInsets.only(top: 4, bottom: 4),
       child: Row(
         children: [
-          RoundedImage(url: user.avatarUrl, size: oneLine ? 22 : 46),
+          RoundedImage(url: user.avatarUrl, size: oneLine ? (size * 1.5) : 46),
           Gap(10),
           if (oneLine)
             Expanded(
@@ -29,6 +31,7 @@ class AuthorContainer extends StatelessWidget {
                 '$text ${user.nameOrNpub}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: size),
               ),
             ),
           if (!oneLine)

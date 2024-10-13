@@ -7,6 +7,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:remove_markdown/remove_markdown.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 import 'package:zapstore/models/app.dart';
+import 'package:zapstore/widgets/author_container.dart';
 import 'package:zapstore/widgets/pill_widget.dart';
 import 'package:zapstore/widgets/rounded_image.dart';
 
@@ -103,9 +104,17 @@ class AppCard extends HookConsumerWidget {
                       style:
                           TextStyle(fontSize: 14, fontWeight: FontWeight.w300),
                       overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
+                      maxLines: 3,
                       softWrap: true,
                     ),
+                    Gap(6),
+                    if (app!.signer.isPresent)
+                      AuthorContainer(
+                        user: app!.signer.value!,
+                        text: 'Signed by',
+                        oneLine: true,
+                        size: 12,
+                      ),
                   ],
                 ),
               ),

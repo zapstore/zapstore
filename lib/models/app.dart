@@ -163,8 +163,6 @@ class App extends BaseApp with DataModelMixin<App> {
 
 mixin AppAdapter on Adapter<App> {
   Future<List<App>> loadAppModels(Map<String, dynamic> params) async {
-    final includes = params.remove('includes') ?? false;
-
     final apps = await super.findAll(
       params: {
         ...params,
@@ -178,7 +176,7 @@ mixin AppAdapter on Adapter<App> {
     final releases = await ref.releases.findAll(
       params: {'#d': latestReleaseIdentifiers},
     );
-    // TODO: Deprecated
+    // TODO: Deprecated, will be removed
     // Some developers without access to the latest zapstore-cli
     // have not published their apps with latest release identifiers
     // so load as usual
@@ -195,19 +193,22 @@ mixin AppAdapter on Adapter<App> {
         .nonNulls
         .expand((_) => _);
 
-    await ref.fileMetadata.findAll(params: {
-      'ids': metadataIds,
-      '#m': [kAndroidMimeType],
-      '#f': ['android-arm64-v8a'],
-    });
+    final userIds = {
+      for (final app in apps) app.signer.id,
+      for (final app in apps) app.developer.id
+    }.nonNulls;
 
-    if (includes) {
-      final userIds = {
-        for (final app in apps) app.signer.id,
-        for (final app in apps) app.developer.id
-      }.nonNulls;
-      await ref.users.findAll(params: {'authors': userIds});
-    }
+    // Metadata and users probably go to separate relays
+    // so query in parallel
+    await Future.wait([
+      ref.fileMetadata.findAll(params: {
+        'ids': metadataIds,
+        '#m': [kAndroidMimeType],
+        '#f': ['android-arm64-v8a'],
+      }),
+      ref.users.findAll(params: {'authors': userIds})
+    ]);
+
     return apps;
   }
 
