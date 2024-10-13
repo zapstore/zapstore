@@ -83,13 +83,8 @@ class App extends BaseApp with DataModelMixin<App> {
       notifier.state = VerifyingHashProgress();
 
       if (await _isHashMismatch(file.path, hash)) {
-        var e = 'Hash mismatch, ';
-        if (size == await file.length()) {
-          e += 'likely a malicious file.';
-        } else {
-          e += 'bad data ($size is not ${await file.length()}).';
-        }
-        e += ' Please try again.';
+        const e =
+            'Hash mismatch, possibly a malicious file. Aborting installation.';
         await file.delete();
         notifier.state = ErrorInstallProgress(Exception(e));
         return;
@@ -108,9 +103,14 @@ class App extends BaseApp with DataModelMixin<App> {
       }
     }
 
-    if (await file.exists()) {
+    final fileExists = await file.exists();
+    if (fileExists && await file.length() == size) {
       await installOnDevice();
     } else {
+      if (fileExists) {
+        await file.delete();
+      }
+
       StreamSubscription? sub;
       final client = http.Client();
       final sink = file.openWrite();
