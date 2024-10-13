@@ -43,7 +43,7 @@ class AppCard extends HookConsumerWidget {
                       Bone.text(fontSize: 20),
                       Padding(
                         padding: const EdgeInsets.only(top: 4),
-                        child: Bone.multiText(lines: 2),
+                        child: Bone.multiText(lines: 4),
                       ),
                     ],
                   ),
@@ -140,17 +140,18 @@ class TinyAppCard extends HookConsumerWidget {
         context.go('/details', extra: app);
       },
       child: Card(
+        margin: EdgeInsets.all(0),
         elevation: 0,
-        child: Container(
-          padding: const EdgeInsets.all(12),
+        child: Padding(
+          padding: const EdgeInsets.all(9),
           child: app == null
               ? Skeletonizer.zone(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.start,
                     children: [
-                      Bone.square(uniRadius: 12, size: 50),
+                      Bone.square(uniRadius: 12, size: 46),
                       Gap(8),
-                      Bone.multiText(lines: 2, fontSize: 10),
+                      Bone.multiText(lines: 2, fontSize: 8),
                     ],
                   ),
                 )

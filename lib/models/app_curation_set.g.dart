@@ -16,6 +16,12 @@ mixin _$AppCurationSetAdapter on Adapter<AppCurationSet> {
       type: 'apps',
       kind: 'HasMany',
       instance: (_) => (_ as AppCurationSet).apps,
+    ),
+    'signer': RelationshipMeta<User>(
+      name: 'signer',
+      type: 'users',
+      kind: 'BelongsTo',
+      instance: (_) => (_ as AppCurationSet).signer,
     )
   };
 
@@ -60,6 +66,13 @@ extension AppCurationSetRelationshipGraphNodeX
   RelationshipGraphNode<App> get apps {
     final meta = _$AppCurationSetAdapter
         ._kAppCurationSetRelationshipMetas['apps'] as RelationshipMeta<App>;
+    return meta.clone(
+        parent: this is RelationshipMeta ? this as RelationshipMeta : null);
+  }
+
+  RelationshipGraphNode<User> get signer {
+    final meta = _$AppCurationSetAdapter
+        ._kAppCurationSetRelationshipMetas['signer'] as RelationshipMeta<User>;
     return meta.clone(
         parent: this is RelationshipMeta ? this as RelationshipMeta : null);
   }

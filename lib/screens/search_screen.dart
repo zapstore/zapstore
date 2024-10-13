@@ -7,7 +7,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/widgets/app_card.dart';
-import 'package:zapstore/widgets/categories_container.dart';
+import 'package:zapstore/widgets/app_curation_container.dart';
 import 'package:zapstore/widgets/latest_releases_container.dart';
 import 'package:zapstore/widgets/user_avatar.dart';
 
@@ -110,9 +110,9 @@ class SearchScreen extends HookConsumerWidget {
                 if (searchResultState.value?.isNotEmpty ?? false)
                   for (final app in searchResultState.value!) AppCard(app: app),
                 Gap(20),
-                const CategoriesContainer(),
+                const AppCurationContainer(),
                 Gap(20),
-                const LatestReleasesContainer(),
+                LatestReleasesContainer(scrollController: scrollController),
                 Gap(10),
               ],
             ),

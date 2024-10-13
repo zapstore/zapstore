@@ -171,13 +171,16 @@ final dataLibrariesInitializer = FutureProvider<void>((ref) async {
     },
   );
 
+  // In this initial phase, load there more or less fixed curation sets here
+  await ref.appCurationSets.findAll();
+
   // Handle deep links
   final appLinksSub = appLinks.uriLinkStream.listen((uri) async {
     if (uri.scheme == "zapstore") {
       final adapter = ref.apps.appAdapter;
       final App? app = await adapter.findOne(uri.host);
       if (app != null) {
-        appRouter.go('/updates/details', extra: app);
+        appRouter.go('/details', extra: app);
       }
     }
   });
