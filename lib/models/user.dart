@@ -150,3 +150,6 @@ mixin UserAdapter on NostrAdapter<User> {
 
 const kZapstorePubkey =
     '78ce6faa72264387284e647ba6938995735ec8c7d5c5a65737e55130f026307d';
+
+const kFranzapNpub =
+    'npub1wf4pufsucer5va8g9p0rj5dnhvfeh6d8w0g6eayaep5dhps6rsgs43dgh9';
