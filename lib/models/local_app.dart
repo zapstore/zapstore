@@ -39,7 +39,7 @@ class LocalApp extends DataModel<LocalApp> {
 }
 
 mixin LocalAppAdapter on Adapter<LocalApp> {
-  Future<void> updateInstallStatus({String? appId}) async {
+  Future<void> refreshUpdateStatus({String? appId}) async {
     if (!Platform.isAndroid) {
       return;
     }
@@ -55,18 +55,24 @@ mixin LocalAppAdapter on Adapter<LocalApp> {
         : installedPackageInfos.map((i) => i.packageName).nonNulls;
 
     final localApps = findManyLocalByIds(ids);
+    final apps = ref.apps.appAdapter.findWhereIdInLocal(ids);
 
     for (final i in installedPackageInfos) {
       final appId = i.packageName!;
-      final localApp = localApps.firstWhereOrNull((app) => appId == app.id) ??
-          LocalApp(id: i.packageName!);
+      final app = apps.firstWhereOrNull((a) => a.identifier == appId);
+
       final installedVersion = i.versionName;
       final installedVersionCode = i.versionCode;
 
-      final app = ref.apps.appAdapter.findWhereIdInLocal([appId]).firstOrNull;
       final status =
-          determineInstallStatus(app, installedVersion, installedVersionCode);
+          determineUpdateStatus(app, installedVersion, installedVersionCode);
 
+      if (status == null) {
+        continue;
+      }
+
+      final localApp = localApps.firstWhereOrNull((app) => appId == app.id) ??
+          LocalApp(id: i.packageName!);
       localApp
           .copyWith(
               installedVersion: installedVersion,
@@ -81,18 +87,16 @@ mixin LocalAppAdapter on Adapter<LocalApp> {
     ref.read(appsToUpdateProvider.notifier).state = rs.first['c'];
   }
 
-  AppInstallStatus? determineInstallStatus(
+  AppInstallStatus? determineUpdateStatus(
       App? app, String? installedVersion, int? installedVersionCode) {
     if (app == null || app.releases.isEmpty || app.latestMetadata == null) {
       return null;
     }
-    if (installedVersion == null) {
-      return AppInstallStatus.installable;
+    if (installedVersion == null || installedVersionCode == null) {
+      return null;
     }
     var comp = 0;
-    if (app.latestMetadata!.versionCode != null &&
-        installedVersionCode != null &&
-        app.id != 'store.zap.app') {
+    if (app.latestMetadata!.versionCode != null && app.id != 'store.zap.app') {
       // Note: need to exclude zap.store because development versions always
       // carry a lower version code (e.g. 12) than published ones (e.g. 2012)
       comp = app.latestMetadata!.versionCode!.compareTo(installedVersionCode);
@@ -107,24 +111,10 @@ mixin LocalAppAdapter on Adapter<LocalApp> {
     // else it's a downgrade, which is not installable
     return AppInstallStatus.downgrade;
   }
-
-  @override
-  LocalApp deserializeLocal(Map<String, dynamic> map, {String? key}) {
-    // TODO: implement deserializeLocal
-    return super.deserializeLocal(map, key: key);
-  }
-
-  @override
-  Map<String, dynamic> serializeLocal(LocalApp model,
-      {bool withRelationships = true}) {
-    final z = super.serializeLocal(model, withRelationships: withRelationships);
-    return z;
-  }
 }
 
 enum AppInstallStatus {
   updated,
   updatable,
-  installable,
   downgrade,
 }

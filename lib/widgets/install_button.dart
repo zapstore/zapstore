@@ -27,14 +27,14 @@ class InstallButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final progress = ref.watch(installationProgressProvider(app.identifier!));
+    final progress = ref.watch(installationProgressProvider(app.id!));
     final status = app.localApp.value?.status;
 
     return GestureDetector(
       onTap: switch (status) {
         AppInstallStatus.downgrade => null,
         AppInstallStatus.updated => () {
-            packageManager.openApp(app.id!.toString());
+            packageManager.openApp(app.identifier!);
           },
         _ => switch (progress) {
             IdleInstallProgress() => () {
@@ -56,10 +56,8 @@ class InstallButton extends ConsumerWidget {
             ErrorInstallProgress(:final e) => () {
                 // show error and reset state to idle
                 context.showError((e as dynamic).message);
-                ref
-                    .read(installationProgressProvider(app.id!.toString())
-                        .notifier)
-                    .state = IdleInstallProgress();
+                ref.read(installationProgressProvider(app.id!).notifier).state =
+                    IdleInstallProgress();
               },
             _ => null,
           }

@@ -54,7 +54,7 @@ class App extends BaseApp with DataModelMixin<App> {
         .firstOrNull;
   }
 
-  bool get canInstall => localApp.value?.status == AppInstallStatus.installable;
+  bool get canInstall => localApp.value?.status == null;
   bool get canUpdate => localApp.value?.status == AppInstallStatus.updatable;
   bool get isUpdated => localApp.value?.status == AppInstallStatus.updated;
 
@@ -65,7 +65,7 @@ class App extends BaseApp with DataModelMixin<App> {
 
     final adapter = DataModel.adapterFor(this) as AppAdapter;
     final notifier =
-        adapter.ref.read(installationProgressProvider(id!.toString()).notifier);
+        adapter.ref.read(installationProgressProvider(id!).notifier);
 
     final installPermission = await Permission.requestInstallPackages.status;
     if (!installPermission.isGranted) {
@@ -99,7 +99,7 @@ class App extends BaseApp with DataModelMixin<App> {
       if (result['isSuccess']) {
         await file.delete();
         await adapter.ref.localApps.localAppAdapter
-            .updateInstallStatus(appId: id?.toString());
+            .refreshUpdateStatus(appId: identifier);
         notifier.state = IdleInstallProgress();
       } else {
         const msg = 'Android rejected installation';
@@ -112,6 +112,7 @@ class App extends BaseApp with DataModelMixin<App> {
       await installOnDevice();
     } else {
       if (fileExists) {
+        // If file exists download was probably partial, remove
         await file.delete();
       }
 
@@ -180,24 +181,31 @@ mixin AppAdapter on Adapter<App> {
     final releases = await ref.releases.findAll(
       params: {'#d': latestReleaseIdentifiers},
     );
+
     // TODO: Deprecated, will be removed
     // Some developers without access to the latest zapstore-cli
     // have not published their apps with latest release identifiers
     // so load as usual
-    final oldApps =
-        apps.where((app) => !latestReleaseIdentifiers.contains(app.identifier));
-    final oldReleases = await ref.releases.findAll(
+    final deprecatedApps =
+        apps.where((app) => app.linkedReplaceableEvents.isEmpty);
+    final deprecatedReleases = await ref.releases.findAll(
       params: {
-        '#a': oldApps.map((app) => app.getReplaceableEventLink().formatted)
+        '#a':
+            deprecatedApps.map((app) => app.getReplaceableEventLink().formatted)
       },
     );
-    final oldReleasesLatest =
-        oldReleases.sorted((a, b) => b.createdAt!.compareTo(a.createdAt!));
 
-    final metadataIds = [...releases, ...oldReleases]
-        .map((r) => r.linkedEvents)
-        .nonNulls
-        .expand((_) => _);
+    final groupedDeprecatedReleases =
+        deprecatedReleases.groupListsBy((r) => r.app.value!);
+    for (final e in groupedDeprecatedReleases.entries) {
+      final mostRecentRelease =
+          e.value.sorted((a, b) => b.createdAt!.compareTo(a.createdAt!)).first;
+      releases.add(mostRecentRelease);
+    }
+    // End deprecated
+
+    final metadataIds =
+        releases.map((r) => r.linkedEvents).nonNulls.expand((_) => _);
 
     final userIds = {
       for (final app in apps) app.signer.id,
@@ -206,7 +214,7 @@ mixin AppAdapter on Adapter<App> {
 
     // Metadata and users probably go to separate relays
     // so query in parallel
-    final rs = await Future.wait([
+    await Future.wait([
       ref.fileMetadata.findAll(params: {
         'ids': metadataIds,
         '#m': [kAndroidMimeType],
@@ -214,7 +222,7 @@ mixin AppAdapter on Adapter<App> {
       }),
       ref.users.findAll(params: {'authors': userIds}),
     ]);
-    await ref.localApps.localAppAdapter.updateInstallStatus();
+    await ref.localApps.localAppAdapter.refreshUpdateStatus();
     return apps;
   }
 
@@ -235,7 +243,7 @@ mixin AppAdapter on Adapter<App> {
         params.remove('installed');
         final apps = await fetchAppModels(params);
         // Once apps are loaded, check for installed status
-        await ref.localApps.localAppAdapter.updateInstallStatus();
+        await ref.localApps.localAppAdapter.refreshUpdateStatus();
         return apps;
       }
     }
@@ -269,7 +277,7 @@ mixin AppAdapter on Adapter<App> {
       return null;
     }
     await ref.localApps.localAppAdapter
-        .updateInstallStatus(appId: id.toString());
+        .refreshUpdateStatus(appId: id.toString());
     return apps.first;
   }
 
@@ -348,7 +356,7 @@ class ErrorInstallProgress extends AppInstallProgress {
 }
 
 final installationProgressProvider =
-    StateProvider.family<AppInstallProgress, String>(
+    StateProvider.family<AppInstallProgress, Object>(
         (_, arg) => IdleInstallProgress());
 
 final appsToUpdateProvider = StateProvider((_) => 0);

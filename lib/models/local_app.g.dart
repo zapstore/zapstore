@@ -63,6 +63,5 @@ Map<String, dynamic> _$LocalAppToJson(LocalApp instance) => <String, dynamic>{
 const _$AppInstallStatusEnumMap = {
   AppInstallStatus.updated: 'updated',
   AppInstallStatus.updatable: 'updatable',
-  AppInstallStatus.installable: 'installable',
   AppInstallStatus.downgrade: 'downgrade',
 };
