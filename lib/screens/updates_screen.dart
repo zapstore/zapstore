@@ -2,11 +2,9 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gap/gap.dart';
-import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:zapstore/main.data.dart';
-import 'package:zapstore/models/app.dart';
-import 'package:zapstore/widgets/versioned_app_header.dart';
+import 'package:zapstore/widgets/app_card.dart';
 
 class UpdatesScreen extends HookConsumerWidget {
   const UpdatesScreen({super.key});
@@ -17,11 +15,13 @@ class UpdatesScreen extends HookConsumerWidget {
     final snapshot = useFuture(useMemoized(
         () => ref.apps.findAll(remote: true, params: {'installed': true})));
     final state = ref.apps.watchAll();
+    ref.localApps.watchAll();
 
     final updatableApps = state.model
         .where((app) => app.canUpdate)
         .toList()
         .sorted((a, b) => (a.name ?? '').compareTo(b.name ?? ''));
+
     final updatedApps = state.model
         .where((app) => app.isUpdated)
         .toList()
@@ -60,7 +60,8 @@ class UpdatesScreen extends HookConsumerWidget {
                 ),
                 //
                 Gap(10),
-                for (final app in updatableApps) UpdatesAppCard(app: app),
+                for (final app in updatableApps)
+                  AppCard(app: app, showUpdate: true),
               ],
             ),
           Gap(20),
@@ -74,32 +75,8 @@ class UpdatesScreen extends HookConsumerWidget {
               ),
             ),
           Gap(10),
-          for (final app in updatedApps) UpdatesAppCard(app: app),
+          for (final app in updatedApps) AppCard(app: app),
         ],
-      ),
-    );
-  }
-}
-
-class UpdatesAppCard extends StatelessWidget {
-  const UpdatesAppCard({
-    super.key,
-    required this.app,
-  });
-
-  final App app;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => context.go('/updates/details', extra: app),
-      child: Card(
-        margin: EdgeInsets.only(top: 8, bottom: 8),
-        elevation: 0,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: VersionedAppHeader(app: app, showUpdate: true),
-        ),
       ),
     );
   }

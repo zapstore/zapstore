@@ -9,14 +9,20 @@ import 'package:skeletonizer/skeletonizer.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/local_app.dart';
 import 'package:zapstore/widgets/author_container.dart';
+import 'package:zapstore/widgets/install_button.dart';
 import 'package:zapstore/widgets/pill_widget.dart';
 import 'package:zapstore/widgets/rounded_image.dart';
 
 class AppCard extends HookConsumerWidget {
   final App? app;
   final bool showDate;
+  final bool showUpdate;
 
-  const AppCard({super.key, required this.app, this.showDate = false});
+  const AppCard(
+      {super.key,
+      required this.app,
+      this.showUpdate = false,
+      this.showDate = false});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -55,9 +61,10 @@ class AppCard extends HookConsumerWidget {
         ),
       );
     }
+    final isUpdate = app!.canUpdate && showUpdate;
     return GestureDetector(
       onTap: () {
-        context.go('/details', extra: app);
+        context.go('${isUpdate ? '/updates' : ''}/details', extra: app);
       },
       child: Card(
         margin: EdgeInsets.only(top: 6, bottom: 6),
@@ -70,7 +77,7 @@ class AppCard extends HookConsumerWidget {
             children: [
               RoundedImage(
                 url: app!.icons.firstOrNull,
-                size: 60,
+                size: 64,
                 radius: 15,
               ),
               Gap(16),
@@ -92,7 +99,16 @@ class AppCard extends HookConsumerWidget {
                             maxLines: 1,
                           ),
                         ),
-                        if (app!.latestMetadata?.version != null)
+                        if (isUpdate)
+                          SizedBox(
+                            width: 90,
+                            height: 40,
+                            child: InstallButton(
+                              app: app!,
+                              compact: true,
+                            ),
+                          ),
+                        if (!isUpdate && app!.latestMetadata?.version != null)
                           PillWidget(
                             text: WidgetSpan(
                               alignment: PlaceholderAlignment.middle,
@@ -102,26 +118,49 @@ class AppCard extends HookConsumerWidget {
                                   Text(
                                     app!.latestMetadata!.version!,
                                     style: TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.bold),
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
                                   ),
                                   if (app!.localApp.value?.status ==
                                       AppInstallStatus.updatable)
-                                    Row(children: [
-                                      Gap(5),
-                                      Icon(Icons.update_outlined, size: 15)
-                                    ]),
+                                    Row(
+                                      children: [
+                                        Gap(5),
+                                        Icon(Icons.update_outlined, size: 15),
+                                      ],
+                                    ),
                                 ],
                               ),
                             ),
                             size: 10,
                             color: app!.localApp.value?.status ==
                                     AppInstallStatus.updatable
-                                ? Color.fromARGB(255, 101, 104, 89)
-                                : Colors.grey[700]!,
+                                ? kUpdateColor
+                                : Colors.grey[800]!,
                           ),
                       ],
                     ),
+                    if (isUpdate) Gap(6),
+                    if (isUpdate)
+                      Row(
+                        children: [
+                          PillWidget(
+                            text: TextSpan(
+                                text: app!.localApp.value!.installedVersion!),
+                            color: Colors.grey[800]!,
+                            size: 9,
+                          ),
+                          Icon(Icons.arrow_right),
+                          if (app!.latestMetadata != null)
+                            PillWidget(
+                              text:
+                                  TextSpan(text: app!.latestMetadata!.version!),
+                              color: Colors.grey[800]!,
+                              size: 9,
+                            ),
+                        ],
+                      ),
                     Gap(6),
                     Text(
                       app!.content.removeMarkdown().parseEmojis(),
@@ -239,3 +278,5 @@ extension StringWidget on String {
     });
   }
 }
+
+const kUpdateColor = Color.fromARGB(255, 98, 115, 15);
