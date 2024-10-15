@@ -75,11 +75,11 @@ class AppCurationContainer extends HookConsumerWidget {
           builder: (context, ref, _) {
             final state =
                 ref.watch(appCurationSetProvider(selectedAppCurationSet));
-            return switch (state) {
-              AsyncData(value: final set) =>
-                HorizontalGrid(apps: set.apps.toList()),
-              _ => HorizontalGrid(apps: []),
-            };
+            return state.when(
+              data: (set) => HorizontalGrid(apps: set.apps.toList()),
+              error: (e, _) => Text('Error: $e'),
+              loading: () => HorizontalGrid(apps: []),
+            );
           },
         ),
       ],
@@ -131,4 +131,4 @@ final appCurationSetProvider = AsyncNotifierProvider.family<
     ReplaceableEventLink>(AppCurationSetNotifier.new);
 
 final _selectedIdProvider = StateProvider<ReplaceableEventLink>(
-    (_) => (30267, kZapstorePubkey, 'privacy'));
+    (_) => (30267, kZapstorePubkey, 'basics'));
