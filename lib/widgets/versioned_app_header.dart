@@ -47,13 +47,14 @@ class VersionedAppHeader extends StatelessWidget {
                 children: [
                   if (isUpdate)
                     PillWidget(
-                      text: app.localApp.value!.installedVersion!,
+                      text:
+                          TextSpan(text: app.localApp.value!.installedVersion!),
                       color: Colors.grey[800]!,
                     ),
                   if (isUpdate) Icon(Icons.arrow_right),
                   if (app.latestMetadata != null)
                     PillWidget(
-                      text: app.latestMetadata!.version!,
+                      text: TextSpan(text: app.latestMetadata!.version!),
                       color: Colors.grey[800]!,
                     ),
                 ],

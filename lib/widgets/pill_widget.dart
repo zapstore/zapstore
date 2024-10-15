@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class PillWidget extends StatelessWidget {
-  final String text;
+  final InlineSpan text;
   final Color color;
   final double size;
   const PillWidget(
@@ -18,16 +18,19 @@ class PillWidget extends StatelessWidget {
         color: color,
         borderRadius: BorderRadius.circular(size * 1.1),
       ),
-      child: Text(
-        text,
+      child: RichText(
+        text: TextSpan(
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: size * 1.2,
+            fontWeight: FontWeight.bold,
+            fontFamily: 'Inter',
+          ),
+          children: [text],
+        ),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         textAlign: TextAlign.center,
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: size,
-          fontWeight: FontWeight.bold,
-        ),
       ),
     );
   }

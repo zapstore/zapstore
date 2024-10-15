@@ -7,6 +7,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:remove_markdown/remove_markdown.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 import 'package:zapstore/models/app.dart';
+import 'package:zapstore/models/local_app.dart';
 import 'package:zapstore/widgets/author_container.dart';
 import 'package:zapstore/widgets/pill_widget.dart';
 import 'package:zapstore/widgets/rounded_image.dart';
@@ -93,9 +94,31 @@ class AppCard extends HookConsumerWidget {
                         ),
                         if (app!.latestMetadata?.version != null)
                           PillWidget(
-                            text: app!.latestMetadata!.version!,
+                            text: WidgetSpan(
+                              alignment: PlaceholderAlignment.middle,
+                              child: Wrap(
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  Text(
+                                    app!.latestMetadata!.version!,
+                                    style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold),
+                                  ),
+                                  if (app!.localApp.value?.status ==
+                                      AppInstallStatus.updatable)
+                                    Row(children: [
+                                      Gap(5),
+                                      Icon(Icons.update_outlined, size: 15)
+                                    ]),
+                                ],
+                              ),
+                            ),
                             size: 10,
-                            color: Colors.grey[800]!,
+                            color: app!.localApp.value?.status ==
+                                    AppInstallStatus.updatable
+                                ? Color.fromARGB(255, 101, 104, 89)
+                                : Colors.grey[700]!,
                           ),
                       ],
                     ),
@@ -116,7 +139,8 @@ class AppCard extends HookConsumerWidget {
                         oneLine: true,
                         size: 12,
                       ),
-                    if (showDate) Text(app!.createdAt!.toIso8601String()),
+                    if (showDate)
+                      Text(app!.latestRelease!.createdAt!.toIso8601String()),
                   ],
                 ),
               ),
@@ -200,7 +224,7 @@ class TagsContainer extends StatelessWidget {
         for (final tag in tags)
           Padding(
             padding: const EdgeInsets.only(right: 6),
-            child: PillWidget(text: tag),
+            child: PillWidget(text: TextSpan(text: tag)),
           ),
       ],
     );

@@ -117,7 +117,8 @@ class AppDetailScreen extends HookConsumerWidget {
                                   mainAxisAlignment:
                                       MainAxisAlignment.spaceBetween,
                                   children: [
-                                    SizedBox(child: Text('Source ')),
+                                    Text('Source'),
+                                    Gap(10),
                                     Flexible(
                                       child: GestureDetector(
                                         onTap: () {
@@ -125,7 +126,7 @@ class AppDetailScreen extends HookConsumerWidget {
                                         },
                                         child: AutoSizeText(
                                           app.repository!,
-                                          minFontSize: 11,
+                                          minFontSize: 12,
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                         ),
@@ -155,7 +156,15 @@ class AppDetailScreen extends HookConsumerWidget {
                                     MainAxisAlignment.spaceBetween,
                                 children: [
                                   Text('App ID'),
-                                  Text(app.identifier!)
+                                  Gap(10),
+                                  Flexible(
+                                    child: AutoSizeText(
+                                      app.identifier!,
+                                      minFontSize: 12,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  )
                                 ],
                               ),
                             ),
@@ -246,8 +255,10 @@ class AppDetailScreen extends HookConsumerWidget {
                       ),
                       Gap(10),
                       if (app.releases.isEmpty) Text('No available releases'),
-                      if (app.releases.ordered.isNotEmpty)
-                        ReleaseCard(release: app.releases.ordered.first),
+                      if (app.releases.isNotEmpty)
+                        ReleaseCard(
+                            release:
+                                app.releases.toList().sortedByLatest.first),
                     ],
                   ),
                 ),

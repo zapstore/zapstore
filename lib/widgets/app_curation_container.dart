@@ -9,8 +9,8 @@ import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/app_curation_set.dart';
 import 'package:zapstore/models/user.dart';
 import 'package:zapstore/widgets/app_card.dart';
-import 'package:zapstore/widgets/author_container.dart';
 import 'package:zapstore/widgets/pill_widget.dart';
+import 'package:zapstore/widgets/rounded_image.dart';
 
 class AppCurationContainer extends HookConsumerWidget {
   const AppCurationContainer({super.key});
@@ -36,7 +36,30 @@ class AppCurationContainer extends HookConsumerWidget {
                     onTap: () => ref.read(_selectedIdProvider.notifier).state =
                         appCurationSet.getReplaceableEventLink(),
                     child: PillWidget(
-                      text: appCurationSet.name,
+                      text: WidgetSpan(
+                        alignment: PlaceholderAlignment.middle,
+                        child: Wrap(
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Text(
+                              appCurationSet.name,
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            if (appCurationSet.signer.isPresent)
+                              Row(
+                                children: [
+                                  Text(
+                                      ' by ${appCurationSet.signer.value!.name}'),
+                                  Gap(5),
+                                  RoundedImage(
+                                      url: appCurationSet
+                                          .signer.value!.avatarUrl,
+                                      size: 16),
+                                ],
+                              ),
+                          ],
+                        ),
+                      ),
                       color: appCurationSet.getReplaceableEventLink() ==
                               selectedAppCurationSet
                           ? Colors.blue[700]!
@@ -53,19 +76,8 @@ class AppCurationContainer extends HookConsumerWidget {
             final state =
                 ref.watch(appCurationSetProvider(selectedAppCurationSet));
             return switch (state) {
-              AsyncData(value: final set) => Column(
-                  children: [
-                    if (set.signer.isPresent)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 6, bottom: 10),
-                        child: AuthorContainer(
-                            user: set.signer.value!,
-                            text:
-                                '${set.name} (${set.apps.length} apps) curated by'),
-                      ),
-                    HorizontalGrid(apps: set.apps.toList()),
-                  ],
-                ),
+              AsyncData(value: final set) =>
+                HorizontalGrid(apps: set.apps.toList()),
               _ => HorizontalGrid(apps: []),
             };
           },
@@ -119,4 +131,4 @@ final appCurationSetProvider = AsyncNotifierProvider.family<
     ReplaceableEventLink>(AppCurationSetNotifier.new);
 
 final _selectedIdProvider = StateProvider<ReplaceableEventLink>(
-    (_) => (30267, kZapstorePubkey, 'nostr'));
+    (_) => (30267, kZapstorePubkey, 'privacy'));
