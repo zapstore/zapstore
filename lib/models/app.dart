@@ -48,6 +48,8 @@ class App extends BaseApp with DataModelMixin<App> {
 
   FileMetadata? get latestMetadata {
     return latestRelease?.artifacts
+        // All artifacts *should* be APKs for the
+        // current architecture, but double check
         .where((a) =>
             a.mimeType == kAndroidMimeType &&
             a.platforms.contains('android-arm64-v8a'))
@@ -235,12 +237,15 @@ mixin AppAdapter on Adapter<App> {
     // Metadata and users probably go to separate relays
     // so query in parallel
     await Future.wait([
-      ref.fileMetadata.findAll(params: {
-        'ids': metadataIds,
-        '#m': [kAndroidMimeType],
-        '#f': ['android-arm64-v8a'],
-      }),
-      ref.users.findAll(params: {'authors': userIds}),
+      if (metadataIds.isNotEmpty)
+        ref.fileMetadata.findAll(
+          params: {
+            'ids': metadataIds,
+            '#m': [kAndroidMimeType],
+            '#f': ['android-arm64-v8a'],
+          },
+        ),
+      if (userIds.isNotEmpty) ref.users.findAll(params: {'authors': userIds}),
     ]);
     await ref.localApps.localAppAdapter.refreshUpdateStatus();
     return apps;
@@ -320,10 +325,10 @@ mixin AppAdapter on Adapter<App> {
 
     for (final Map<String, dynamic> map in list) {
       final tagMap = tagsToMap(map['tags']);
-      map['developer'] = tagMap['zap']?.firstOrNull;
+      map['developer'] = tagMap['zap']?.firstOrNull ??
+          (map['pubkey'] != kZapstorePubkey ? map['pubkey'] : null);
       map['localApp'] = tagMap['d']!.first;
     }
-
     return super.deserialize(data);
   }
 }
@@ -385,6 +390,8 @@ final installationProgressProvider =
         (_, arg) => IdleInstallProgress());
 
 final appsToUpdateProvider = StateProvider((_) => 0);
+
+final sinceProvider = StateProvider((_) => <String, int>{});
 
 // Constants
 
