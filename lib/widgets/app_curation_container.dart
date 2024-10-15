@@ -21,6 +21,16 @@ class AppCurationContainer extends HookConsumerWidget {
     final selectedAppCurationSet = ref.watch(_selectedIdProvider);
     final appCurationSets = ref.appCurationSets.findAllLocal();
 
+    // Custom curation set to place nostr set first (as its preloaded)
+    final nostrCurationSet = appCurationSets
+        .firstWhere((s) => s.getReplaceableEventLink() == kNostrCurationSet);
+    final customAppCurationSets = [
+      nostrCurationSet,
+      ...appCurationSets
+        ..remove(nostrCurationSet)
+        ..shuffle()
+    ];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -29,7 +39,7 @@ class AppCurationContainer extends HookConsumerWidget {
           controller: scrollController,
           child: Row(
             children: [
-              for (final appCurationSet in appCurationSets)
+              for (final appCurationSet in customAppCurationSets)
                 Padding(
                   padding: const EdgeInsets.only(right: 12),
                   child: GestureDetector(
@@ -118,9 +128,7 @@ class AppCurationSetNotifier
   @override
   Future<AppCurationSet> build(ReplaceableEventLink arg) async {
     final appCurationSet = ref.appCurationSets.findOneLocalById(arg.formatted)!;
-    await ref.apps
-        .findAll(params: {'#d': appCurationSet.appIds}); // TODO: since
-    // await appCurationSet.signer.load();
+    await ref.apps.findAll(params: {'#d': appCurationSet.appIds});
     return appCurationSet;
   }
 }
@@ -130,5 +138,7 @@ final appCurationSetProvider = AsyncNotifierProvider.family<
     AppCurationSet,
     ReplaceableEventLink>(AppCurationSetNotifier.new);
 
-final _selectedIdProvider = StateProvider<ReplaceableEventLink>(
-    (_) => (30267, kZapstorePubkey, 'basics'));
+final _selectedIdProvider =
+    StateProvider<ReplaceableEventLink>((_) => kNostrCurationSet);
+
+const kNostrCurationSet = (30267, kZapstorePubkey, 'nostr');

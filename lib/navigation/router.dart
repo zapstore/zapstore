@@ -1,14 +1,9 @@
-import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_data/flutter_data.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/main.dart';
-import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
-import 'package:zapstore/models/local_app.dart';
-import 'package:zapstore/models/nostr_adapter.dart';
+import 'package:zapstore/navigation/app_initializer.dart';
 import 'package:zapstore/navigation/desktop_scaffold.dart';
 import 'package:zapstore/navigation/mobile_scaffold.dart';
 import 'package:zapstore/screens/app_detail_screen.dart';
@@ -103,7 +98,7 @@ class ScaffoldWithNestedNavigation extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final initializer = ref.watch(dataLibrariesInitializer);
+    final initializer = ref.watch(appInitializer);
     return SafeArea(
       child: initializer.when(
         data: (_) => LayoutBuilder(
@@ -132,73 +127,6 @@ class ScaffoldWithNestedNavigation extends HookConsumerWidget {
     );
   }
 }
-
-// Data
-
-AppLifecycleListener? _lifecycleListener;
-
-final dataLibrariesInitializer = FutureProvider<void>((ref) async {
-  // Initialize Flutter Data
-  await ref.read(initializeFlutterData(adapterProvidersMap).future);
-
-  // Initialize relays
-  final relay = ref.read(relayMessageNotifierProvider(kAppRelays).notifier);
-  final socialRelays =
-      ref.read(relayMessageNotifierProvider(kSocialRelays).notifier);
-  await Future.wait([
-    relay.initialize(
-      isEventVerified: (Map<String, dynamic> map) {
-        // If replaceable, we check for that ID
-        final identifier = (map['tags'] as Iterable)
-            .firstWhereOrNull((t) => t[0] == 'd')?[1]
-            ?.toString();
-        final id = identifier != null
-            ? (map['kind'] as int, map['pubkey'].toString(), identifier)
-                .formatted
-            : map['id'];
-        return ref.apps.nostrAdapter.existsId(id);
-      },
-    ),
-    socialRelays.initialize(
-        isEventVerified: (map) => ref.apps.nostrAdapter.existsId(map['pubkey']))
-  ]);
-
-  // Trigger app install status calculations
-  ref.localApps.localAppAdapter.refreshUpdateStatus(); // do not await
-  _lifecycleListener = AppLifecycleListener(
-    onStateChange: (state) async {
-      if (state == AppLifecycleState.resumed) {
-        await ref.localApps.localAppAdapter.refreshUpdateStatus();
-      }
-    },
-  );
-
-  // In this initial phase, load there more or less fixed curation sets here
-  await ref.appCurationSets.findAll();
-
-  await ref.apps.findAll(
-    params: {
-      'by-release': true,
-      'limit': 10,
-    },
-  );
-
-  // Handle deep links
-  final appLinksSub = appLinks.uriLinkStream.listen((uri) async {
-    if (uri.scheme == "zapstore") {
-      final adapter = ref.apps.appAdapter;
-      final App? app = await adapter.findOne(uri.host);
-      if (app != null) {
-        appRouter.go('/details', extra: app);
-      }
-    }
-  });
-
-  ref.onDispose(() {
-    _lifecycleListener?.dispose();
-    appLinksSub.cancel();
-  });
-});
 
 // Keys
 
