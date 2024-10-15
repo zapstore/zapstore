@@ -73,6 +73,10 @@ flutter:
 
   assets:
     - assets/images/logo.png
+    - assets/images/logo-bg.png
+    - assets/images/logo-fg.png
+    - assets/images/logo-bw.png
+
   fonts:
     - family: Inter
       fonts:
