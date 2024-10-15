@@ -43,7 +43,7 @@ class App extends BaseApp with DataModelMixin<App> {
   Map<String, dynamic> toJson() => super.toMap();
 
   Release? get latestRelease {
-    return releases.ordered.firstOrNull;
+    return releases.toList().sortedByLatest.firstOrNull;
   }
 
   FileMetadata? get latestMetadata {
@@ -168,48 +168,68 @@ class App extends BaseApp with DataModelMixin<App> {
 
 mixin AppAdapter on Adapter<App> {
   Future<List<App>> fetchAppModels(Map<String, dynamic> params) async {
-    final apps = await super.findAll(
-      params: {
-        ...params,
-        '#f': ['android-arm64-v8a'],
-      },
-    );
-    // Find all appid@version ($3) as we need to pick one tag to query on
-    // (filters by kind ($1) and pubkey ($2) done locally)
-    final latestReleaseIdentifiers =
-        apps.map((app) => app.linkedReplaceableEvents.firstOrNull?.$3).nonNulls;
-    final releases = await ref.releases.findAll(
-      params: {'#d': latestReleaseIdentifiers},
-    );
+    final byRelease = params.remove('by-release');
 
-    // TODO: Deprecated, will be removed
-    // Some developers without access to the latest zapstore-cli
-    // have not published their apps with latest release identifiers
-    // so load as usual
-    final deprecatedApps =
-        apps.where((app) => app.linkedReplaceableEvents.isEmpty);
-    final deprecatedReleases = await ref.releases.findAll(
-      params: {
-        '#a':
-            deprecatedApps.map((app) => app.getReplaceableEventLink().formatted)
-      },
-    );
+    late final List<App> apps;
+    late final List<Release> releases;
+    if (byRelease != null) {
+      // This param fetches releases with params and then apps
+      releases = await ref.releases.findAll(params: params);
+      final appIdentifiers =
+          releases.map((r) => r.linkedReplaceableEvents.first.$3).nonNulls;
+      apps = await super.findAll(
+        params: {
+          '#d': appIdentifiers,
+          '#f': ['android-arm64-v8a'],
+        },
+      );
+    } else {
+      apps = await super.findAll(
+        params: {
+          ...params,
+          '#f': ['android-arm64-v8a'],
+        },
+      );
+      // Find all appid@version ($3) as we need to pick one tag to query on
+      // (filters by kind ($1) and pubkey ($2) done locally)
+      final latestReleaseIdentifiers = apps
+          .map((app) => app.linkedReplaceableEvents.firstOrNull?.$3)
+          .nonNulls;
+      releases = await ref.releases.findAll(
+        params: {'#d': latestReleaseIdentifiers},
+      );
 
-    final groupedDeprecatedReleases =
-        deprecatedReleases.groupListsBy((r) => r.app.value!);
-    for (final e in groupedDeprecatedReleases.entries) {
-      final mostRecentRelease =
-          e.value.sorted((a, b) => b.createdAt!.compareTo(a.createdAt!)).first;
-      releases.add(mostRecentRelease);
+      // TODO: Deprecated, will be removed
+      // Some developers without access to the latest zapstore-cli
+      // have not published their apps with latest release identifiers
+      // so load as usual
+      final deprecatedApps =
+          apps.where((app) => app.linkedReplaceableEvents.isEmpty);
+      final deprecatedReleases = await ref.releases.findAll(
+        params: {
+          '#a': deprecatedApps
+              .map((app) => app.getReplaceableEventLink().formatted)
+        },
+      );
+
+      final groupedDeprecatedReleases =
+          deprecatedReleases.groupListsBy((r) => r.app.value!);
+      for (final e in groupedDeprecatedReleases.entries) {
+        final mostRecentRelease = e.value.sortedByLatest.first;
+        releases.add(mostRecentRelease);
+      }
+      // End deprecated
     }
-    // End deprecated
 
     final metadataIds =
         releases.map((r) => r.linkedEvents).nonNulls.expand((_) => _);
 
+    // For now load users only once
     final userIds = {
-      for (final app in apps) app.signer.id,
-      for (final app in apps) app.developer.id
+      for (final app in apps)
+        if (!app.signer.isPresent) app.signer.id,
+      for (final app in apps)
+        if (!app.developer.isPresent) app.developer.id,
     }.nonNulls;
 
     // Metadata and users probably go to separate relays
@@ -333,6 +353,11 @@ Future<bool> _isHashMismatch(String path, String hash) async {
     }
     return digest != hash;
   });
+}
+
+extension AppExt on Iterable<App> {
+  List<App> get sortedByLatest =>
+      sorted((a, b) => b.createdAt!.compareTo(a.createdAt!));
 }
 
 // class

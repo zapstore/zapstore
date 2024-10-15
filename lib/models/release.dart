@@ -46,7 +46,7 @@ mixin ReleaseAdapter on Adapter<Release> {
   }
 }
 
-extension HasManyReleaseX on HasMany<Release> {
-  List<Release> get ordered =>
-      toList().sorted((a, b) => b.createdAt!.compareTo(a.createdAt!));
+extension ReleaseExt on Iterable<Release> {
+  List<Release> get sortedByLatest =>
+      sorted((a, b) => b.createdAt!.compareTo(a.createdAt!));
 }
