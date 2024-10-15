@@ -25,13 +25,6 @@ class LatestReleasesContainer extends HookConsumerWidget {
           children: [
             Text('Latest releases',
                 style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
-            Gap(20),
-            if (state.isLoading || state.isRefreshing || state.isReloading)
-              SizedBox(
-                height: 14,
-                width: 14,
-                child: CircularProgressIndicator(strokeWidth: 4),
-              ),
             ElevatedButton(
               onPressed: () {
                 scrollController.animateTo(
