@@ -16,6 +16,7 @@ import 'package:zapstore/screens/search_screen.dart';
 import 'package:zapstore/screens/settings_screen.dart';
 import 'package:zapstore/screens/updates_screen.dart';
 import 'package:zapstore/widgets/error_container.dart';
+import 'package:zapstore/widgets/spinning_logo.dart';
 
 /// Application navigation.
 ///  - Initializes Go Router, dispatches routes
@@ -126,7 +127,7 @@ class ScaffoldWithNestedNavigation extends HookConsumerWidget {
           errorHandler(e, stack);
           return ErrorContainer(exception: e, stack: stack);
         },
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => Center(child: SpinningLogo()),
       ),
     );
   }
