@@ -182,10 +182,7 @@ mixin AppAdapter on Adapter<App> {
       final appIdentifiers =
           releases.map((r) => r.linkedReplaceableEvents.first.$3).nonNulls;
       apps = await super.findAll(
-        params: {
-          '#d': appIdentifiers,
-          '#f': ['android-arm64-v8a'],
-        },
+        params: {'#d': appIdentifiers},
       );
     } else {
       // If looking up multiple apps via `#d`, use `_queriedAtMap`
@@ -215,7 +212,6 @@ mixin AppAdapter on Adapter<App> {
             params: {
               '#d': cachedIdentifiers,
               'since': earliestQueryAt,
-              '#f': ['android-arm64-v8a'],
             },
           );
         }
@@ -223,22 +219,14 @@ mixin AppAdapter on Adapter<App> {
         // For apps not in cache, query without a since
         if (newIdentifiers.isNotEmpty) {
           newApps = await super.findAll(
-            params: {
-              '#d': newIdentifiers,
-              '#f': ['android-arm64-v8a'],
-            },
+            params: {'#d': newIdentifiers},
           );
         }
 
         apps = [...cachedApps, ...newApps];
       } else {
         // Search (which uses no #d)
-        apps = await super.findAll(
-          params: {
-            ...params,
-            '#f': ['android-arm64-v8a'], // TODO
-          },
-        );
+        apps = await super.findAll(params: params);
       }
 
       // Done with apps, proceed to release loading
@@ -307,7 +295,6 @@ mixin AppAdapter on Adapter<App> {
           params: {
             'ids': metadataIds,
             '#m': [kAndroidMimeType],
-            '#f': ['android-arm64-v8a'],
           },
         ),
       if (userIds.isNotEmpty) ref.users.findAll(params: {'authors': userIds}),

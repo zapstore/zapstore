@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:collection/collection.dart';
 import 'package:flutter_data/flutter_data.dart';
 import 'package:purplebase/purplebase.dart';
+import 'package:zapstore/utils/system_info.dart';
 
 // NOTE: Very important to use const in relay args to preserve equality in Riverpod families
 // const kAppRelays = ['ws://10.0.2.2:3000'];
@@ -77,6 +80,14 @@ mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
     final additionalKinds = params?.remove('kinds');
     final limit = params?.remove('limit');
     final since = params?.remove('since');
+
+    if (['apps', 'fileMetadatas'].contains(internalType)) {
+      if (Platform.isAndroid) {
+        final info = await ref.read(systemInfoProvider.future);
+        params?['#f'] = info.androidInfo.supportedAbis.map((a) => 'android-$a');
+      }
+    }
+
     final req = RelayRequest(
       kinds: {kind, ...?additionalKinds},
       tags: params ?? {},
