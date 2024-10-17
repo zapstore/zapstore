@@ -63,7 +63,7 @@ class InstallButton extends ConsumerWidget {
           }
       },
       child: LinearPercentIndicator(
-        lineHeight: 40,
+        lineHeight: compact ? 30 : 42,
         percent: switch (progress) {
           VerifyingHashProgress() => 1,
           DownloadingInstallProgress(:final progress) => progress,
@@ -74,7 +74,7 @@ class InstallButton extends ConsumerWidget {
         },
         backgroundColor: switch (progress) {
           ErrorInstallProgress() => Colors.red,
-          _ => Colors.blue[700],
+          _ => kUpdateColor,
         },
         progressColor: Colors.blue[800],
         barRadius: Radius.circular(20),
@@ -88,27 +88,26 @@ class InstallButton extends ConsumerWidget {
           AppInstallStatus.updated => Text('Open'),
           _ => switch (progress) {
               IdleInstallProgress() => app.canUpdate
-                  ? AutoSizeText(
-                      'Update${compact ? '' : ' to ${app.latestMetadata!.version!}'}',
-                      maxLines: 1,
+                  ? Padding(
+                      padding: const EdgeInsets.only(left: 8, right: 8),
+                      child: AutoSizeText(
+                        'Update to ${app.latestMetadata!.version!}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: compact ? 10 : 14,
+                            fontWeight: FontWeight.bold),
+                      ),
                     )
                   : Text('Install'),
               DownloadingInstallProgress(:final progress) => Text(
                   '${(progress * 100).floor()}%',
                   style: TextStyle(fontWeight: FontWeight.bold),
                 ),
-              VerifyingHashProgress() => compact
-                  ? SizedBox(
-                      width: 14, height: 14, child: CircularProgressIndicator())
-                  : Text('Verifying file integrity'),
-              HashVerifiedInstallProgress() => compact
-                  ? SizedBox(
-                      width: 14, height: 14, child: CircularProgressIndicator())
-                  : Text(
-                      'Hash verified, requesting ${app.canUpdate ? 'update' : 'installation'}'),
-              ErrorInstallProgress() => compact
-                  ? SizedBox(width: 14, height: 14, child: Icon(Icons.error))
-                  : Text('Error, tap to see message'),
+              VerifyingHashProgress() => Text('Verifying file integrity'),
+              HashVerifiedInstallProgress() => Text(
+                  'Hash verified, requesting ${app.canUpdate ? 'update' : 'installation'}'),
+              ErrorInstallProgress() => Text('Error, tap to see message'),
             }
         },
       ),
@@ -202,3 +201,5 @@ class InstallAlertDialog extends ConsumerWidget {
     );
   }
 }
+
+final kUpdateColor = Colors.blue[700]!;

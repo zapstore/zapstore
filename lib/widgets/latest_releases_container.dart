@@ -45,11 +45,11 @@ class LatestReleasesContainer extends HookConsumerWidget {
           children: [
             if (state.hasError) Text('Error fetching: ${state.error}'),
             if (state.isLoading)
-              for (final _ in List.generate(3, (_) => _)) AppCard(app: null),
+              for (final _ in List.generate(3, (_) => _)) SkeletonAppCard(),
             if (state.hasValue)
               // NOTE: Since we're showing apps but it's really a list of releases
               // apps will appear repeated, to convert to set
-              for (final app in state.value!) AppCard(app: app),
+              for (final app in state.value!) AppCard(model: app),
             if (state.hasValue)
               AsyncButtonBuilder(
                 loadingWidget: SizedBox(
@@ -92,6 +92,7 @@ class LatestReleasesAppNotifier extends AutoDisposeAsyncNotifier<List<App>> {
   @override
   Future<List<App>> build() async {
     // TODO: Should be ref.watching a pool state change (from purplebase)
+    // TODO: Timer resets when rebuilding?
     final timer = Timer.periodic(Duration(minutes: 10), (_) => fetch());
     ref.onDispose(timer.cancel);
     return localFetch();

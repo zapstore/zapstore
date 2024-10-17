@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:remove_markdown/remove_markdown.dart';
 import 'package:skeletonizer/skeletonizer.dart';
+import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/local_app.dart';
 import 'package:zapstore/widgets/author_container.dart';
@@ -14,54 +15,22 @@ import 'package:zapstore/widgets/pill_widget.dart';
 import 'package:zapstore/widgets/rounded_image.dart';
 
 class AppCard extends HookConsumerWidget {
-  final App? app;
+  final App model;
   final bool showDate;
   final bool showUpdate;
 
   const AppCard(
       {super.key,
-      required this.app,
+      required this.model,
       this.showUpdate = false,
       this.showDate = false});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (app == null) {
-      return Skeletonizer.zone(
-        child: Card(
-          margin: EdgeInsets.only(top: 6, bottom: 6),
-          elevation: 0,
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.start,
-              children: [
-                Column(
-                  children: [
-                    Bone.square(uniRadius: 10, size: 70),
-                  ],
-                ),
-                Gap(16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Bone.text(fontSize: 20),
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Bone.multiText(lines: 4),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-    final isUpdate = app!.canUpdate && showUpdate;
+    final state = ref.apps.watchOne(model, alsoWatch: (_) => {_.localApp});
+    final app = state.model!;
+
+    final isUpdate = app.canUpdate && showUpdate;
     return GestureDetector(
       onTap: () {
         context.go('${isUpdate ? '/updates' : ''}/details', extra: app);
@@ -76,7 +45,7 @@ class AppCard extends HookConsumerWidget {
             mainAxisAlignment: MainAxisAlignment.start,
             children: [
               RoundedImage(
-                url: app!.icons.firstOrNull,
+                url: app.icons.firstOrNull,
                 size: 64,
                 radius: 15,
               ),
@@ -91,7 +60,7 @@ class AppCard extends HookConsumerWidget {
                       children: [
                         Expanded(
                           child: AutoSizeText(
-                            app!.name!,
+                            app.name!,
                             minFontSize: 16,
                             style: TextStyle(
                                 fontSize: 19, fontWeight: FontWeight.bold),
@@ -99,16 +68,15 @@ class AppCard extends HookConsumerWidget {
                             maxLines: 1,
                           ),
                         ),
-                        if (isUpdate)
-                          SizedBox(
-                            width: 90,
-                            height: 40,
-                            child: InstallButton(
-                              app: app!,
-                              compact: true,
+                        if (app.latestMetadata?.version != null)
+                          if (isUpdate)
+                            PillWidget(
+                              text: TextSpan(
+                                  text: app.localApp.value!.installedVersion!),
+                              color: Colors.grey[800]!,
+                              size: 11,
                             ),
-                          ),
-                        if (!isUpdate && app!.latestMetadata?.version != null)
+                        if (!isUpdate)
                           PillWidget(
                             text: WidgetSpan(
                               alignment: PlaceholderAlignment.middle,
@@ -116,13 +84,13 @@ class AppCard extends HookConsumerWidget {
                                 crossAxisAlignment: WrapCrossAlignment.center,
                                 children: [
                                   Text(
-                                    app!.latestMetadata!.version!,
+                                    app.latestMetadata!.version!,
                                     style: TextStyle(
                                       fontWeight: FontWeight.bold,
-                                      fontSize: 12,
+                                      fontSize: 11,
                                     ),
                                   ),
-                                  if (app!.localApp.value?.status ==
+                                  if (app.localApp.value?.status ==
                                       AppInstallStatus.updatable)
                                     Row(
                                       children: [
@@ -134,36 +102,16 @@ class AppCard extends HookConsumerWidget {
                               ),
                             ),
                             size: 10,
-                            color: app!.localApp.value?.status ==
+                            color: app.localApp.value?.status ==
                                     AppInstallStatus.updatable
                                 ? kUpdateColor
                                 : Colors.grey[800]!,
                           ),
                       ],
                     ),
-                    if (isUpdate) Gap(6),
-                    if (isUpdate)
-                      Row(
-                        children: [
-                          PillWidget(
-                            text: TextSpan(
-                                text: app!.localApp.value!.installedVersion!),
-                            color: Colors.grey[800]!,
-                            size: 9,
-                          ),
-                          Icon(Icons.arrow_right),
-                          if (app!.latestMetadata != null)
-                            PillWidget(
-                              text:
-                                  TextSpan(text: app!.latestMetadata!.version!),
-                              color: Colors.grey[800]!,
-                              size: 9,
-                            ),
-                        ],
-                      ),
                     Gap(6),
                     Text(
-                      app!.content.removeMarkdown().parseEmojis(),
+                      app.content.removeMarkdown().parseEmojis(),
                       style:
                           TextStyle(fontSize: 14, fontWeight: FontWeight.w300),
                       overflow: TextOverflow.ellipsis,
@@ -171,15 +119,64 @@ class AppCard extends HookConsumerWidget {
                       softWrap: true,
                     ),
                     Gap(6),
-                    if (app!.signer.isPresent)
+                    if (app.signer.isPresent)
                       AuthorContainer(
-                        user: app!.signer.value!,
+                        user: app.signer.value!,
                         text: 'Signed by',
                         oneLine: true,
                         size: 12,
                       ),
                     if (showDate)
-                      Text(app!.latestRelease!.createdAt!.toIso8601String()),
+                      Text(app.latestRelease!.createdAt!.toIso8601String()),
+                    if (isUpdate)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 10, bottom: 10),
+                        child: InstallButton(
+                          app: app,
+                          compact: true,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class SkeletonAppCard extends StatelessWidget {
+  const SkeletonAppCard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Skeletonizer.zone(
+      child: Card(
+        margin: EdgeInsets.only(top: 6, bottom: 6),
+        elevation: 0,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.start,
+            children: [
+              Column(
+                children: [
+                  Bone.square(uniRadius: 10, size: 70),
+                ],
+              ),
+              Gap(16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Bone.text(fontSize: 20),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Bone.multiText(lines: 4),
+                    ),
                   ],
                 ),
               ),
@@ -279,5 +276,3 @@ extension StringWidget on String {
     });
   }
 }
-
-const kUpdateColor = Color.fromARGB(255, 98, 115, 15);

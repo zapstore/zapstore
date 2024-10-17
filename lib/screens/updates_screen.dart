@@ -69,7 +69,7 @@ class UpdatesScreen extends HookConsumerWidget {
                   //
                   Gap(10),
                   for (final app in updatableApps)
-                    AppCard(app: app, showUpdate: true),
+                    AppCard(model: app, showUpdate: true),
                 ],
               ),
             Gap(20),
@@ -83,7 +83,7 @@ class UpdatesScreen extends HookConsumerWidget {
                 ),
               ),
             Gap(10),
-            for (final app in updatedApps) AppCard(app: app),
+            for (final app in updatedApps) AppCard(model: app),
           ],
         ),
       ),

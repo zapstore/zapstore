@@ -40,10 +40,23 @@ class VersionedAppHeader extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
               ),
               Gap(10),
-              PillWidget(
-                text: TextSpan(text: app.latestMetadata!.version!),
-                color: Colors.grey[800]!,
-                size: 11,
+              Row(
+                children: [
+                  if (app.localApp.value?.installedVersion != null)
+                    PillWidget(
+                      text:
+                          TextSpan(text: app.localApp.value!.installedVersion!),
+                      color: Colors.grey[800]!,
+                      size: 11,
+                    ),
+                  Icon(Icons.arrow_right),
+                  if (app.canUpdate)
+                    PillWidget(
+                      text: TextSpan(text: app.latestMetadata!.version!),
+                      color: Colors.blue[700]!,
+                      size: 11,
+                    ),
+                ],
               ),
             ],
           ),
