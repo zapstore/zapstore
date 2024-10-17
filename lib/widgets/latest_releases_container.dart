@@ -4,6 +4,7 @@ import 'package:async_button_builder/async_button_builder.dart';
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/release.dart';
@@ -107,7 +108,7 @@ class LatestReleasesAppNotifier extends AutoDisposeAsyncNotifier<List<App>> {
         .sortedByLatest;
     // Set timestamp of oldest, to prepare for next query
     if (releases.isNotEmpty) {
-      oldestTimestamp = releases.last.createdAtMs;
+      oldestTimestamp = releases.last.createdAt!.toInt();
     }
     // Return only (first 10 * page) releases that have an associated app
     // (it should be the case, but keep as we migrate

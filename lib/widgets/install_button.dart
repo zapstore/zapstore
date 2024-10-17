@@ -34,7 +34,7 @@ class InstallButton extends ConsumerWidget {
       onTap: switch (status) {
         AppInstallStatus.downgrade => null,
         AppInstallStatus.updated => () {
-            packageManager.openApp(app.identifier!);
+            packageManager.openApp(app.identifier);
           },
         _ => switch (progress) {
             IdleInstallProgress() => () {

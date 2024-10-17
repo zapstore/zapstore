@@ -34,7 +34,7 @@ class AppDetailScreen extends HookConsumerWidget {
     final app = state.model ?? model;
 
     return RefreshIndicator(
-      onRefresh: () => ref.apps.findOne(model.identifier!, remote: true),
+      onRefresh: () => ref.apps.findOne(model.identifier, remote: true),
       child: Column(
         children: [
           Expanded(
@@ -159,7 +159,7 @@ class AppDetailScreen extends HookConsumerWidget {
                                   Gap(10),
                                   Flexible(
                                     child: AutoSizeText(
-                                      app.identifier!,
+                                      app.identifier,
                                       minFontSize: 12,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,

@@ -20,7 +20,7 @@ class AppCurationSet extends BaseAppCurationSet
 
   Map<String, dynamic> toJson() => super.toMap();
 
-  String get name => content.isNotEmpty ? content : identifier!;
+  String get name => content.isNotEmpty ? content : identifier;
 }
 
 mixin AppCurationSetAdapter on Adapter<AppCurationSet> {
