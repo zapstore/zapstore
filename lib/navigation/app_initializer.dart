@@ -9,6 +9,7 @@ import 'package:zapstore/models/local_app.dart';
 import 'package:zapstore/models/nostr_adapter.dart';
 import 'package:zapstore/navigation/router.dart';
 import 'package:zapstore/widgets/app_curation_container.dart';
+import 'package:zapstore/widgets/latest_releases_container.dart';
 
 AppLifecycleListener? _lifecycleListener;
 
@@ -48,17 +49,17 @@ final appInitializer = FutureProvider<void>((ref) async {
     },
   );
 
-  // In this initial phase, load there more or less fixed curation sets here
+  // Load curation sets (here for now)
   await ref.appCurationSets.findAll();
+
   // Preload zapstore's nostr curation set
   await ref.read(appCurationSetProvider(kNostrCurationSet).future);
 
-  await ref.apps.findAll(
-    params: {
-      'by-release': true,
-      'limit': 10,
-    },
-  );
+  // Preload latest releases
+  await ref.read(latestReleasesAppProvider.notifier).fetch();
+
+  // Prefetch updates in the background
+  ref.apps.appAdapter.findInstalled();
 
   // Handle deep links
   final appLinksSub = appLinks.uriLinkStream.listen((uri) async {

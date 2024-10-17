@@ -171,6 +171,30 @@ class App extends BaseApp with DataModelMixin<App> {
 mixin AppAdapter on Adapter<App> {
   final _queriedAtMap = <String, DateTime>{};
 
+  @override
+  Future<List<App>> findAll(
+      {bool? remote = true,
+      bool? background,
+      Map<String, dynamic>? params = const {},
+      Map<String, String>? headers,
+      bool? syncLocal,
+      OnSuccessAll<App>? onSuccess,
+      OnErrorAll<App>? onError,
+      DataRequestLabel? label}) async {
+    return await fetchAppModels(params ?? {});
+  }
+
+  Future<List<App>> findInstalled() async {
+    final appIds = await _installedIdentifiers();
+    if (appIds.isNotEmpty) {
+      final apps = await fetchAppModels({'#d': appIds});
+      // Once apps are loaded, check for installed status
+      await ref.localApps.localAppAdapter.refreshUpdateStatus();
+      return apps;
+    }
+    return [];
+  }
+
   Future<List<App>> fetchAppModels(Map<String, dynamic> params) async {
     final byRelease = params.remove('by-release') != null;
 
@@ -214,6 +238,7 @@ mixin AppAdapter on Adapter<App> {
               'since': earliestQueryAt,
             },
           );
+          // print('cached ${cachedApps.length} ($earliestQueryAt)');
         }
 
         // For apps not in cache, query without a since
@@ -305,38 +330,6 @@ mixin AppAdapter on Adapter<App> {
   }
 
   @override
-  Future<List<App>> findAll(
-      {bool? remote = true,
-      bool? background,
-      Map<String, dynamic>? params = const {},
-      Map<String, String>? headers,
-      bool? syncLocal,
-      OnSuccessAll<App>? onSuccess,
-      OnErrorAll<App>? onError,
-      DataRequestLabel? label}) async {
-    if (params!.containsKey('installed')) {
-      final appIds = await _installedIdentifiers();
-      if (appIds.isNotEmpty) {
-        params['#d'] = appIds;
-        params.remove('installed');
-        final apps = await fetchAppModels(params);
-        // Once apps are loaded, check for installed status
-        await ref.localApps.localAppAdapter.refreshUpdateStatus();
-        return apps;
-      }
-    }
-    return await fetchAppModels(params);
-  }
-
-  List<App> findWhereIdInLocal(Iterable<String> appIds) {
-    const len = 5 + 64 + 3; // kind + pubkey + separators length
-    final result = db.select(
-        'SELECT key, data, substr(json_extract(data, \'\$.id\'), $len) AS id from apps where id in (${appIds.map((_) => '?').join(', ')})',
-        appIds.toList());
-    return deserializeFromResult(result);
-  }
-
-  @override
   Future<App?> findOne(Object id,
       {bool remote = true,
       bool background = false,
@@ -357,6 +350,14 @@ mixin AppAdapter on Adapter<App> {
     await ref.localApps.localAppAdapter
         .refreshUpdateStatus(appId: id.toString());
     return apps.first;
+  }
+
+  List<App> findWhereIdInLocal(Iterable<String> appIds) {
+    const len = 5 + 64 + 3; // kind + pubkey + separators length
+    final result = db.select(
+        'SELECT key, data, substr(json_extract(data, \'\$.id\'), $len) AS id from apps where id in (${appIds.map((_) => '?').join(', ')})',
+        appIds.toList());
+    return deserializeFromResult(result);
   }
 
   Future<Set<String>> _installedIdentifiers() async {

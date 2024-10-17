@@ -4,6 +4,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:zapstore/main.data.dart';
+import 'package:zapstore/models/app.dart';
 import 'package:zapstore/widgets/app_card.dart';
 
 class UpdatesScreen extends HookConsumerWidget {
@@ -12,8 +13,8 @@ class UpdatesScreen extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // TODO: Workaround for bug in watchAll (when remote=true)
-    final snapshot = useFuture(useMemoized(
-        () => ref.apps.findAll(remote: true, params: {'installed': true})));
+    final snapshot =
+        useFuture(useMemoized(() => ref.apps.appAdapter.findInstalled()));
     final state = ref.apps.watchAll();
     ref.localApps.watchAll();
 
@@ -29,7 +30,7 @@ class UpdatesScreen extends HookConsumerWidget {
 
     return RefreshIndicator(
       onRefresh: () {
-        return ref.apps.findAll(remote: true, params: {'installed': true});
+        return ref.apps.appAdapter.findInstalled();
       },
       child: SingleChildScrollView(
         physics: AlwaysScrollableScrollPhysics(),

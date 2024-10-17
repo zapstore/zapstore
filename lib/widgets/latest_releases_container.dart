@@ -94,9 +94,6 @@ class LatestReleasesAppNotifier extends AutoDisposeAsyncNotifier<List<App>> {
     // TODO: Should be ref.watching a pool state change (from purplebase)
     final timer = Timer.periodic(Duration(minutes: 10), (_) => fetch());
     ref.onDispose(timer.cancel);
-
-    // Do not fetch here as first 10 are preloaded
-    // await fetch();
     return localFetch();
   }
 
