@@ -13,7 +13,7 @@ import 'package:zapstore/utils/debounce.dart';
 import 'package:zapstore/utils/theme.dart';
 import 'package:zapstore/widgets/error_container.dart';
 
-const kDbVersion = 1;
+const kDbVersion = 2;
 final appLinks = AppLinks();
 
 /// Application entry point.

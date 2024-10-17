@@ -169,7 +169,7 @@ class App extends BaseApp with DataModelMixin<App> {
 }
 
 mixin AppAdapter on Adapter<App> {
-  final _queriedAtMap = <String, DateTime>{};
+  final queriedAtMap = <String, DateTime>{};
 
   @override
   Future<List<App>> findAll(
@@ -217,9 +217,9 @@ mixin AppAdapter on Adapter<App> {
         final identifiers = <String>{...params['#d']};
 
         final cachedIdentifiers =
-            identifiers.where((i) => _queriedAtMap.containsKey(i));
+            identifiers.where((i) => queriedAtMap.containsKey(i));
         final newIdentifiers =
-            identifiers.where((i) => !_queriedAtMap.containsKey(i));
+            identifiers.where((i) => !queriedAtMap.containsKey(i));
 
         var cachedApps = <App>[];
         var newApps = <App>[];
@@ -227,9 +227,9 @@ mixin AppAdapter on Adapter<App> {
         // For apps already in cache, find earliest date of the set
         // (as we cannot have one `since` per app)
         if (cachedIdentifiers.isNotEmpty) {
-          earliestQueryAt = cachedIdentifiers.fold<DateTime>(
-              _queriedAtMap[cachedIdentifiers.first]!, (acc, e) {
-            return acc.isBefore(_queriedAtMap[e]!) ? acc : _queriedAtMap[e]!;
+          earliestQueryAt = cachedIdentifiers
+              .fold<DateTime>(queriedAtMap[cachedIdentifiers.first]!, (acc, e) {
+            return acc.isBefore(queriedAtMap[e]!) ? acc : queriedAtMap[e]!;
           });
 
           cachedApps = await super.findAll(
@@ -297,7 +297,7 @@ mixin AppAdapter on Adapter<App> {
 
     if (m != null) {
       for (final app in apps) {
-        _queriedAtMap[app.identifier] = m;
+        queriedAtMap[app.identifier] = m;
       }
     }
 

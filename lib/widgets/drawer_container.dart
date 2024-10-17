@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:zapstore/main.dart';
+import 'package:zapstore/main.data.dart';
+import 'package:zapstore/models/app.dart';
 import 'package:zapstore/utils/system_info.dart';
 import 'package:zapstore/widgets/app_drawer.dart';
 
@@ -23,7 +25,7 @@ class DrawerContainer extends StatelessWidget {
                 final state = ref.watch(systemInfoProvider);
                 return switch (state) {
                   AsyncData(:final value) => Text(
-                      'Version: ${value.zsInfo.versionName} (${value.zsInfo.versionCode}, $kDbVersion)',
+                      'Version: ${value.zsInfo.versionName} (${value.zsInfo.versionCode}, $kDbVersion) -- ${ref.apps.appAdapter.queriedAtMap.length}',
                       style: TextStyle(fontSize: 16),
                     ),
                   _ => Container(),

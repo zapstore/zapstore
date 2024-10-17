@@ -17,6 +17,12 @@ final appInitializer = FutureProvider<void>((ref) async {
   // Initialize Flutter Data
   await ref.read(initializeFlutterData(adapterProvidersMap).future);
 
+  // Check DB version
+  final userDbVersion = ref.settings.findOneLocalById('_')!.dbVersion;
+  if (userDbVersion < kDbVersion) {
+    await ref.read(localStorageProvider).destroy();
+  }
+
   // Initialize relays
   final relay = ref.read(relayMessageNotifierProvider(kAppRelays).notifier);
   final socialRelays =
@@ -50,10 +56,12 @@ final appInitializer = FutureProvider<void>((ref) async {
   );
 
   // Load curation sets (here for now)
-  await ref.appCurationSets.findAll();
+  if (ref.appCurationSets.countLocal == 0) {
+    await ref.appCurationSets.findAll();
 
-  // Preload zapstore's nostr curation set
-  await ref.read(appCurationSetProvider(kNostrCurationSet).future);
+    // Preload zapstore's nostr curation set
+    await ref.read(appCurationSetProvider(kNostrCurationSet).future);
+  }
 
   // Preload latest releases
   await ref.read(latestReleasesAppProvider.notifier).fetch();
@@ -65,7 +73,7 @@ final appInitializer = FutureProvider<void>((ref) async {
   final appLinksSub = appLinks.uriLinkStream.listen((uri) async {
     if (uri.scheme == "zapstore") {
       final adapter = ref.apps.appAdapter;
-      final App? app = await adapter.findOne(uri.host);
+      final app = adapter.findWhereIdInLocal({uri.host}).firstOrNull;
       if (app != null) {
         appRouter.go('/details', extra: app);
       }
