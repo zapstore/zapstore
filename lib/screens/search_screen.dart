@@ -62,10 +62,16 @@ class SearchScreen extends HookConsumerWidget {
                       !searchResultState.isLoading)
                     IconButton(
                       hoverColor: Colors.transparent,
-                      onPressed: () {
+                      onPressed: () async {
                         // clear input and results, then return focus
                         controller.clear();
                         ref.read(searchQueryProvider.notifier).state = null;
+
+                        await scrollController.animateTo(
+                          scrollController.position.minScrollExtent,
+                          duration: Duration(milliseconds: 300),
+                          curve: Curves.easeOut,
+                        );
                         focusNode.requestFocus();
                       },
                       icon: Icon(Icons.close),
