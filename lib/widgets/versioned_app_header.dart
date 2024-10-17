@@ -31,6 +31,7 @@ class VersionedAppHeader extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Gap(6),
               AutoSizeText(
                 app.name!,
                 minFontSize: 16,
@@ -38,10 +39,11 @@ class VersionedAppHeader extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
-              Gap(14),
+              Gap(10),
               PillWidget(
                 text: TextSpan(text: app.latestMetadata!.version!),
                 color: Colors.grey[800]!,
+                size: 11,
               ),
             ],
           ),

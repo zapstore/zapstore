@@ -26,9 +26,7 @@ class AppCurationContainer extends HookConsumerWidget {
         .firstWhere((s) => s.getReplaceableEventLink() == kNostrCurationSet);
     final customAppCurationSets = [
       nostrCurationSet,
-      ...appCurationSets
-        ..remove(nostrCurationSet)
-        ..shuffle()
+      ...appCurationSets..remove(nostrCurationSet)
     ];
 
     return Column(
@@ -105,12 +103,12 @@ class HorizontalGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 220,
+      height: 230,
       child: GridView.builder(
         scrollDirection: Axis.horizontal,
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
-          childAspectRatio: 1.2,
+          childAspectRatio: 1.15,
           crossAxisSpacing: 8,
           mainAxisSpacing: 8,
         ),

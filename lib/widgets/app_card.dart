@@ -206,15 +206,16 @@ class TinyAppCard extends HookConsumerWidget {
         margin: EdgeInsets.all(0),
         elevation: 0,
         child: Padding(
-          padding: const EdgeInsets.all(9),
+          padding: const EdgeInsets.only(top: 12, bottom: 8, left: 6, right: 6),
           child: app == null
               ? Skeletonizer.zone(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.start,
                     children: [
                       Bone.square(uniRadius: 12, size: 46),
-                      Gap(8),
-                      Bone.multiText(lines: 2, fontSize: 8),
+                      Gap(10),
+                      Bone.multiText(
+                          lines: 2, fontSize: 8, textAlign: TextAlign.center),
                     ],
                   ),
                 )
@@ -233,8 +234,8 @@ class TinyAppCard extends HookConsumerWidget {
                         child: AutoSizeText(
                           app!.name!,
                           textAlign: TextAlign.center,
-                          minFontSize: 10,
-                          style: TextStyle(fontSize: 11),
+                          minFontSize: 9,
+                          style: TextStyle(fontSize: 11.5),
                           overflow: TextOverflow.clip,
                           maxLines: 2,
                           wrapWords: false,
