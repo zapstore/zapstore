@@ -76,10 +76,12 @@ mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
 
     final additionalKinds = params?.remove('kinds');
     final limit = params?.remove('limit');
+    final since = params?.remove('since');
     final req = RelayRequest(
       kinds: {kind, ...?additionalKinds},
       tags: params ?? {},
       limit: limit,
+      since: since,
     );
 
     final result = await relay.queryRaw(req);

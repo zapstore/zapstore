@@ -169,12 +169,14 @@ class App extends BaseApp with DataModelMixin<App> {
 }
 
 mixin AppAdapter on Adapter<App> {
+  final _queriedAtMap = <String, DateTime>{};
+
   Future<List<App>> fetchAppModels(Map<String, dynamic> params) async {
-    final byRelease = params.remove('by-release');
+    final byRelease = params.remove('by-release') != null;
 
     late final List<App> apps;
     late final List<Release> releases;
-    if (byRelease != null) {
+    if (byRelease) {
       // This param fetches releases with params and then apps
       releases = await ref.releases.findAll(params: params);
       final appIdentifiers =
@@ -186,12 +188,61 @@ mixin AppAdapter on Adapter<App> {
         },
       );
     } else {
-      apps = await super.findAll(
-        params: {
-          ...params,
-          '#f': ['android-arm64-v8a'],
-        },
-      );
+      // If looking up multiple apps via `#d`, use `_queriedAtMap`
+      // to find the earliest queried at Date, to be used in the
+      // next request `since` field
+      if (params.containsKey('#d')) {
+        DateTime? earliestQueryAt;
+        final identifiers = <String>{...params['#d']};
+
+        final cachedIdentifiers =
+            identifiers.where((i) => _queriedAtMap.containsKey(i));
+        final newIdentifiers =
+            identifiers.where((i) => !_queriedAtMap.containsKey(i));
+
+        var cachedApps = <App>[];
+        var newApps = <App>[];
+
+        // For apps already in cache, find earliest date of the set
+        // (as we cannot have one `since` per app)
+        if (cachedIdentifiers.isNotEmpty) {
+          earliestQueryAt = cachedIdentifiers.fold<DateTime>(
+              _queriedAtMap[cachedIdentifiers.first]!, (acc, e) {
+            return acc.isBefore(_queriedAtMap[e]!) ? acc : _queriedAtMap[e]!;
+          });
+
+          cachedApps = await super.findAll(
+            params: {
+              '#d': cachedIdentifiers,
+              'since': earliestQueryAt,
+              '#f': ['android-arm64-v8a'],
+            },
+          );
+        }
+
+        // For apps not in cache, query without a since
+        if (newIdentifiers.isNotEmpty) {
+          newApps = await super.findAll(
+            params: {
+              '#d': newIdentifiers,
+              '#f': ['android-arm64-v8a'],
+            },
+          );
+        }
+
+        apps = [...cachedApps, ...newApps];
+      } else {
+        // Search (which uses no #d)
+        apps = await super.findAll(
+          params: {
+            ...params,
+            '#f': ['android-arm64-v8a'], // TODO
+          },
+        );
+      }
+
+      // Done with apps, proceed to release loading
+
       // Find all appid@version ($3) as we need to pick one tag to query on
       // (filters by kind ($1) and pubkey ($2) done locally)
       final latestReleaseIdentifiers = apps
@@ -223,6 +274,20 @@ mixin AppAdapter on Adapter<App> {
       // End deprecated
     }
 
+    // Find most recent `created_at` from returned apps
+    // and assign it to their queried at value for caching
+    final m = apps.isNotEmpty
+        ? apps.fold(apps.first.createdAt!, (acc, e) {
+            return acc.isAfter(e.createdAt!) ? acc : e.createdAt!;
+          })
+        : null;
+
+    if (m != null) {
+      for (final app in apps) {
+        _queriedAtMap[app.identifier] = m;
+      }
+    }
+
     final metadataIds =
         releases.map((r) => r.linkedEvents).nonNulls.expand((_) => _);
 
@@ -248,6 +313,7 @@ mixin AppAdapter on Adapter<App> {
       if (userIds.isNotEmpty) ref.users.findAll(params: {'authors': userIds}),
     ]);
     await ref.localApps.localAppAdapter.refreshUpdateStatus();
+
     return apps;
   }
 
@@ -329,6 +395,7 @@ mixin AppAdapter on Adapter<App> {
           (map['pubkey'] != kZapstorePubkey ? map['pubkey'] : null);
       map['localApp'] = tagMap['d']!.first;
     }
+
     return super.deserialize(data);
   }
 }
@@ -390,8 +457,6 @@ final installationProgressProvider =
         (_, arg) => IdleInstallProgress());
 
 final appsToUpdateProvider = StateProvider((_) => 0);
-
-final sinceProvider = StateProvider((_) => <String, int>{});
 
 // Constants
 
