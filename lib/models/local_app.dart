@@ -55,7 +55,7 @@ mixin LocalAppAdapter on Adapter<LocalApp> {
         : installedPackageInfos.map((i) => i.packageName).nonNulls;
 
     final localApps = findManyLocalByIds(ids);
-    final apps = ref.apps.appAdapter.findWhereIdInLocal(ids);
+    final apps = ref.apps.appAdapter.findWhereIdentifierInLocal(ids);
 
     for (final i in installedPackageInfos) {
       final appId = i.packageName!;

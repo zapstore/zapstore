@@ -8,7 +8,7 @@ import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/app_curation_set.dart';
 import 'package:zapstore/models/user.dart';
-import 'package:zapstore/widgets/app_card.dart';
+import 'package:zapstore/widgets/horizontal_grid.dart';
 import 'package:zapstore/widgets/pill_widget.dart';
 import 'package:zapstore/widgets/rounded_image.dart';
 
@@ -22,10 +22,10 @@ class AppCurationContainer extends HookConsumerWidget {
     final appCurationSets = ref.appCurationSets.findAllLocal();
 
     // Custom curation set to place nostr set first (as its preloaded)
-    final nostrCurationSet = appCurationSets
-        .firstWhere((s) => s.getReplaceableEventLink() == kNostrCurationSet);
+    final nostrCurationSet = appCurationSets.firstWhereOrNull(
+        (s) => s.getReplaceableEventLink() == kNostrCurationSet);
     final customAppCurationSets = [
-      nostrCurationSet,
+      if (nostrCurationSet != null) nostrCurationSet,
       ...appCurationSets..remove(nostrCurationSet)
     ];
 
@@ -85,36 +85,12 @@ class AppCurationContainer extends HookConsumerWidget {
                 ref.watch(appCurationSetProvider(selectedAppCurationSet));
             return state.when(
               data: (set) => HorizontalGrid(apps: set.apps.toList()),
-              error: (e, _) => Text('Error: $e'),
+              error: (e, _) => Text('Error: $e ; $_'),
               loading: () => HorizontalGrid(apps: []),
             );
           },
         ),
       ],
-    );
-  }
-}
-
-class HorizontalGrid extends StatelessWidget {
-  final List<App> apps;
-
-  HorizontalGrid({super.key, required this.apps});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 230,
-      child: GridView.builder(
-        scrollDirection: Axis.horizontal,
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          childAspectRatio: 1.15,
-          crossAxisSpacing: 8,
-          mainAxisSpacing: 8,
-        ),
-        itemCount: apps.isEmpty ? 8 : apps.length,
-        itemBuilder: (context, i) => TinyAppCard(app: apps.elementAtOrNull(i)),
-      ),
     );
   }
 }
@@ -126,8 +102,28 @@ class AppCurationSetNotifier
   @override
   Future<AppCurationSet> build(ReplaceableEventLink arg) async {
     final appCurationSet = ref.appCurationSets.findOneLocalById(arg.formatted)!;
-    await ref.apps.findAll(params: {'#d': appCurationSet.appIds});
+    fetch();
     return appCurationSet;
+  }
+
+  Future<void> fetch() async {
+    final appCurationSet = await future;
+    final appsLocal =
+        ref.apps.appAdapter.findWhereIdentifierInLocal(appCurationSet.appIds);
+    if (appsLocal.length < appCurationSet.appIds.length) {
+      state = AsyncLoading();
+      state = await AsyncValue.guard(() async {
+        // Only load apps (no releases for now)
+        await ref.apps.findAll(params: {
+          '#d': appCurationSet.appIds,
+          'includes': false,
+        });
+        // Since the set is the same as before (the relationship changed),
+        // manually invalidate the provider
+        ref.invalidateSelf();
+        return appCurationSet;
+      });
+    }
   }
 }
 

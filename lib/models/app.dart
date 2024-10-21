@@ -56,8 +56,14 @@ class App extends BaseApp with DataModelMixin<App> {
         .firstOrNull;
   }
 
-  bool get canInstall => localApp.value?.status == null;
-  bool get canUpdate => localApp.value?.status == AppInstallStatus.updatable;
+  bool get canInstall =>
+      localApp.value?.status == null &&
+      latestMetadata != null &&
+      signer.isPresent;
+  bool get canUpdate =>
+      localApp.value?.status == AppInstallStatus.updatable &&
+      latestMetadata != null &&
+      signer.isPresent;
   bool get isUpdated => localApp.value?.status == AppInstallStatus.updated;
 
   Future<void> install() async {
@@ -181,7 +187,11 @@ mixin AppAdapter on Adapter<App> {
       OnSuccessAll<App>? onSuccess,
       OnErrorAll<App>? onError,
       DataRequestLabel? label}) async {
-    return await fetchAppModels(params ?? {});
+    params ??= {};
+    if (params.remove('includes') ?? false) {
+      return await fetchAppModels(params);
+    }
+    return super.findAll(params: params);
   }
 
   Future<List<App>> findInstalled() async {
@@ -196,134 +206,105 @@ mixin AppAdapter on Adapter<App> {
   }
 
   Future<List<App>> fetchAppModels(Map<String, dynamic> params) async {
-    final byRelease = params.remove('by-release') != null;
-
     late final List<App> apps;
     late final List<Release> releases;
-    if (byRelease) {
-      // This param fetches releases with params and then apps
-      releases = await ref.releases.findAll(params: params);
-      final appIdentifiers =
-          releases.map((r) => r.linkedReplaceableEvents.first.$3).nonNulls;
-      apps = await super.findAll(
-        params: {'#d': appIdentifiers},
-      );
-    } else {
-      // If looking up multiple apps via `#d`, use `_queriedAtMap`
-      // to find the earliest queried at Date, to be used in the
-      // next request `since` field
-      if (params.containsKey('#d')) {
-        DateTime? earliestQueryAt;
-        final identifiers = <String>{...params['#d']};
 
-        final cachedIdentifiers =
-            identifiers.where((i) => queriedAtMap.containsKey(i));
-        final newIdentifiers =
-            identifiers.where((i) => !queriedAtMap.containsKey(i));
+    // If looking up multiple apps via `#d`, use `_queriedAtMap`
+    // to find the earliest queried at Date, to be used in the
+    // next request `since` field
+    if (params.containsKey('#d')) {
+      DateTime? earliestQueryAt;
+      final identifiers = <String>{...params['#d']};
 
-        var cachedApps = <App>[];
-        var newApps = <App>[];
+      final cachedIdentifiers =
+          identifiers.where((i) => queriedAtMap.containsKey(i));
+      final newIdentifiers =
+          identifiers.where((i) => !queriedAtMap.containsKey(i));
 
-        // For apps already in cache, find earliest date of the set
-        // (as we cannot have one `since` per app)
-        if (cachedIdentifiers.isNotEmpty) {
-          earliestQueryAt = cachedIdentifiers
-              .fold<DateTime>(queriedAtMap[cachedIdentifiers.first]!, (acc, e) {
-            return acc.isBefore(queriedAtMap[e]!) ? acc : queriedAtMap[e]!;
-          });
+      var cachedApps = <App>[];
+      var newApps = <App>[];
 
-          cachedApps = await super.findAll(
-            params: {
-              '#d': cachedIdentifiers,
-              'since': earliestQueryAt,
-            },
-          );
-          // print('cached ${cachedApps.length} ($earliestQueryAt)');
-        }
+      // For apps already in cache, find earliest date of the set
+      // (as we cannot have one `since` per app)
+      if (cachedIdentifiers.isNotEmpty) {
+        earliestQueryAt = cachedIdentifiers
+            .fold<DateTime>(queriedAtMap[cachedIdentifiers.first]!, (acc, e) {
+          return acc.isBefore(queriedAtMap[e]!) ? acc : queriedAtMap[e]!;
+        });
 
-        // For apps not in cache, query without a since
-        if (newIdentifiers.isNotEmpty) {
-          newApps = await super.findAll(
-            params: {'#d': newIdentifiers},
-          );
-        }
-
-        apps = [...cachedApps, ...newApps];
-      } else {
-        // Search (which uses no #d)
-        apps = await super.findAll(params: params);
+        cachedApps = await super.findAll(
+          params: {
+            '#d': cachedIdentifiers,
+            'since': earliestQueryAt,
+          },
+        );
+        // print('cached ${cachedApps.length} ($earliestQueryAt)');
       }
 
-      // Done with apps, proceed to release loading
+      // For apps not in cache, query without a since
+      if (newIdentifiers.isNotEmpty) {
+        newApps = await super.findAll(
+          params: {
+            '#d': newIdentifiers,
+          },
+        );
+      }
 
-      // Find all appid@version ($3) as we need to pick one tag to query on
-      // (filters by kind ($1) and pubkey ($2) done locally)
-      final latestReleaseIdentifiers = apps
-          .map((app) => app.linkedReplaceableEvents.firstOrNull?.$3)
-          .nonNulls;
+      apps = [...cachedApps, ...newApps];
+
+      // Find most recent `created_at` from returned apps
+      // and assign it to their queried at value for caching
+      final m = apps.isNotEmpty
+          ? apps.fold(apps.first.createdAt!, (acc, e) {
+              return acc.isAfter(e.createdAt!) ? acc : e.createdAt!;
+            })
+          : null;
+
+      if (m != null) {
+        for (final app in apps) {
+          queriedAtMap[app.identifier] = m;
+        }
+      }
+    } else {
+      // Search (which uses no #d)
+      apps = await super.findAll(params: params);
+    }
+
+    // Find all appid@version ($3) as we need to pick one tag to query on
+    // (filters by kind ($1) and pubkey ($2) done locally)
+    final latestReleaseIdentifiers =
+        apps.map((app) => app.linkedReplaceableEvents.firstOrNull?.$3).nonNulls;
+    if (latestReleaseIdentifiers.isNotEmpty) {
       releases = await ref.releases.findAll(
         params: {'#d': latestReleaseIdentifiers},
       );
+    } else {
+      releases = [];
+    }
 
-      // TODO: Deprecated, will be removed
-      // Some developers without access to the latest zapstore-cli
-      // have not published their apps with latest release identifiers
-      // so load as usual
-      final deprecatedApps =
-          apps.where((app) => app.linkedReplaceableEvents.isEmpty);
+    // TODO: Deprecated, will be removed
+    // Some developers without access to the latest zapstore-cli
+    // have not published their apps with latest release identifiers
+    // so load as usual
+    final deprecatedApps =
+        apps.where((app) => app.linkedReplaceableEvents.isEmpty);
+    if (deprecatedApps.isNotEmpty) {
       final deprecatedReleases = await ref.releases.findAll(
         params: {
           '#a': deprecatedApps
               .map((app) => app.getReplaceableEventLink().formatted)
         },
       );
-
       final groupedDeprecatedReleases =
           deprecatedReleases.groupListsBy((r) => r.app.value!);
       for (final e in groupedDeprecatedReleases.entries) {
         final mostRecentRelease = e.value.sortedByLatest.first;
         releases.add(mostRecentRelease);
       }
-      // End deprecated
     }
+    // End deprecated zone
 
-    // Find most recent `created_at` from returned apps
-    // and assign it to their queried at value for caching
-    final m = apps.isNotEmpty
-        ? apps.fold(apps.first.createdAt!, (acc, e) {
-            return acc.isAfter(e.createdAt!) ? acc : e.createdAt!;
-          })
-        : null;
-
-    if (m != null) {
-      for (final app in apps) {
-        queriedAtMap[app.identifier] = m;
-      }
-    }
-
-    final metadataIds =
-        releases.map((r) => r.linkedEvents).nonNulls.expand((_) => _);
-
-    // For now load users only once
-    final userIds = {
-      for (final app in apps)
-        if (!app.signer.isPresent) app.signer.id,
-      for (final app in apps)
-        if (!app.developer.isPresent) app.developer.id,
-    }.nonNulls;
-
-    // Metadata and users probably go to separate relays
-    // so query in parallel
-    await Future.wait([
-      if (metadataIds.isNotEmpty)
-        ref.fileMetadata.findAll(
-          params: {
-            'ids': metadataIds,
-            '#m': [kAndroidMimeType],
-          },
-        ),
-      if (userIds.isNotEmpty) ref.users.findAll(params: {'authors': userIds}),
-    ]);
+    await nostrAdapter.loadArtifactsAndUsers(releases);
     await ref.localApps.localAppAdapter.refreshUpdateStatus();
 
     return apps;
@@ -339,7 +320,7 @@ mixin AppAdapter on Adapter<App> {
       OnErrorOne<App>? onError,
       DataRequestLabel? label}) async {
     final apps = await fetchAppModels({
-      ...params!,
+      ...params ?? {},
       '#d': [id]
     });
     // If ID not found in relay then clear from local storage
@@ -352,7 +333,7 @@ mixin AppAdapter on Adapter<App> {
     return apps.first;
   }
 
-  List<App> findWhereIdInLocal(Iterable<String> appIds) {
+  List<App> findWhereIdentifierInLocal(Iterable<String> appIds) {
     const len = 5 + 64 + 3; // kind + pubkey + separators length
     final result = db.select(
         'SELECT key, data, substr(json_extract(data, \'\$.id\'), $len) AS id from apps where id in (${appIds.map((_) => '?').join(', ')})',

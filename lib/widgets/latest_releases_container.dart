@@ -4,10 +4,8 @@ import 'package:async_button_builder/async_button_builder.dart';
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
-import 'package:zapstore/models/release.dart';
 import 'package:zapstore/widgets/app_card.dart';
 
 class LatestReleasesContainer extends HookConsumerWidget {
@@ -85,55 +83,63 @@ class LatestReleasesContainer extends HookConsumerWidget {
   }
 }
 
-class LatestReleasesAppNotifier extends AutoDisposeAsyncNotifier<List<App>> {
-  int? oldestTimestamp;
+class LatestReleasesAppNotifier extends StateNotifier<AsyncValue<List<App>>> {
+  DateTime? oldestCreatedAt;
   int page = 1;
+  Ref ref;
 
-  @override
-  Future<List<App>> build() async {
-    // TODO: Should be ref.watching a pool state change (from purplebase)
-    // TODO: Timer resets when rebuilding?
-    final timer = Timer.periodic(Duration(minutes: 10), (_) => fetch());
-    ref.onDispose(timer.cancel);
-    return localFetch();
+  LatestReleasesAppNotifier(this.ref) : super(AsyncLoading()) {
+    fetch();
   }
 
-  List<App> localFetch() {
-    // Find all releases that are the latest of each, and sort chronologically
-    final releases = ref.releases
-        .findAllLocal()
-        .where((r) => r.app.value?.latestMetadata != null)
-        .sortedByLatest;
-    // Set timestamp of oldest, to prepare for next query
-    if (releases.isNotEmpty) {
-      oldestTimestamp = releases.last.createdAt!.toInt();
-    }
-    // Return only (first 10 * page) releases that have an associated app
-    // (it should be the case, but keep as we migrate
-    // from older event format)
-    return releases
-        .map((r) => r.app.value)
-        .nonNulls
-        .toSet()
-        .take(page * 10)
-        .toList();
-  }
+  // @override
+  // Future<List<App>> build() async {
+  //   print('in latestrelease build');
+  //   await fetch();
+  //   return _fetchLocal();
+  // }
 
   Future<void> fetch({bool next = false}) async {
     if (next) {
       page++;
+    } else {
+      final apps = _fetchLocal();
+      if (apps.isNotEmpty) {
+        state = AsyncData(apps);
+        return;
+      }
     }
+
+    // Use ignore return, only saved models is important
+    // TODO: ignoreReturn, and bip340 validate in isolate
     await ref.apps.findAll(
       params: {
-        'by-release': true,
+        'includes': true,
         'limit': 10,
-        'until': next ? oldestTimestamp : null
+        'until': next ? oldestCreatedAt : null
       },
     );
-    update((_) => localFetch());
+
+    state = AsyncData(_fetchLocal());
+  }
+
+  List<App> _fetchLocal() {
+    final model = ref.apps.findAllLocal();
+
+    final apps = model
+        .where((a) => a.latestMetadata != null)
+        .sortedByLatest
+        .take(page * 10)
+        .toList();
+
+    // Set timestamp of oldest, to prepare for next query
+    if (apps.isNotEmpty) {
+      oldestCreatedAt = apps.last.createdAt;
+    }
+    return apps;
   }
 }
 
 final latestReleasesAppProvider =
-    AsyncNotifierProvider.autoDispose<LatestReleasesAppNotifier, List<App>>(
+    StateNotifierProvider<LatestReleasesAppNotifier, AsyncValue<List<App>>>(
         LatestReleasesAppNotifier.new);

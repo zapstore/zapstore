@@ -1,20 +1,24 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:collection/collection.dart';
 import 'package:flutter_data/flutter_data.dart';
 import 'package:purplebase/purplebase.dart';
+import 'package:zapstore/main.data.dart';
+import 'package:zapstore/models/app.dart';
+import 'package:zapstore/models/release.dart';
 import 'package:zapstore/utils/system_info.dart';
 
 // NOTE: Very important to use const in relay args to preserve equality in Riverpod families
-// const kAppRelays = ['ws://10.0.2.2:3000'];
-const kAppRelays = ['wss://relay.zap.store'];
-const kSocialRelays = ['wss://relay.primal.net', 'wss://relay.nostr.band'];
+// const kAppRelays = {'ws://10.0.2.2:3000'};
+const kAppRelays = {'wss://relay.zap.store'};
+const kSocialRelays = {'wss://relay.damus.io', 'wss://relay.nostr.band'};
 
 mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
   RelayMessageNotifier get relay =>
-      ref.read(relayMessageNotifierProvider(kAppRelays).notifier);
+      ref.read(relayProviderFamily(kAppRelays).notifier);
   RelayMessageNotifier get socialRelays =>
-      ref.read(relayMessageNotifierProvider(kSocialRelays).notifier);
+      ref.read(relayProviderFamily(kSocialRelays).notifier);
 
   int get kind {
     return BaseEvent.kindForType(internalType)!;
@@ -73,30 +77,80 @@ mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
       OnSuccessAll<T>? onSuccess,
       OnErrorAll<T>? onError,
       DataRequestLabel? label}) async {
+    params ??= {};
     if (remote == false) {
       return findAllLocal();
     }
 
-    final additionalKinds = params?.remove('kinds');
-    final limit = params?.remove('limit');
-    final since = params?.remove('since');
+    final additionalKinds = params.remove('kinds');
+    final limit = params.remove('limit');
+    final since = params.remove('since');
+    final until = params.remove('until');
 
     if (['apps', 'fileMetadatas'].contains(internalType)) {
       if (Platform.isAndroid) {
         final info = await ref.read(systemInfoProvider.future);
-        params?['#f'] = info.androidInfo.supportedAbis.map((a) => 'android-$a');
+        params['#f'] = info.androidInfo.supportedAbis.map((a) => 'android-$a');
       }
     }
 
     final req = RelayRequest(
       kinds: {kind, ...?additionalKinds},
-      tags: params ?? {},
+      tags: params,
       limit: limit,
       since: since,
+      until: until,
     );
 
     final result = await relay.queryRaw(req);
     final deserialized = await deserializeAsync(result, save: true);
     return deserialized.models;
   }
+
+  Future<void> loadArtifactsAndUsers(Iterable<Release> releases) async {
+    final metadataIds =
+        releases.map((r) => r.linkedEvents).nonNulls.expand((_) => _);
+    final apps = releases.map((r) => r.app.value).nonNulls;
+
+    final userIds = {
+      for (final app in apps) app.signer.id,
+      for (final app in apps) app.developer.id,
+    }.nonNulls;
+
+    // Metadata and users probably go to separate relays
+    // so query in parallel
+    await Future.wait([
+      if (metadataIds.isNotEmpty)
+        ref.fileMetadata.findAll(
+          params: {
+            'ids': metadataIds,
+            '#m': [kAndroidMimeType],
+          },
+        ),
+      if (userIds.isNotEmpty) ref.users.findAll(params: {'authors': userIds}),
+    ]);
+  }
 }
+
+class RelayListenerNotifier extends Notifier<void> {
+  @override
+  void build() {
+    print('Building main listener');
+    // TODO: Every 1 hour
+    fetch();
+    final timer = Timer.periodic(Duration(minutes: 10), (_) => fetch());
+
+    // This will get disposed when clearing and restarting the app
+    ref.onDispose(() {
+      timer.cancel();
+    });
+  }
+
+  Future<void> fetch() async {
+    // ref.apps.appAdapter.findInstalled();
+    // await ref.read(latestReleasesAppProvider.notifier).fetch();
+  }
+}
+
+final relayListenerProvider =
+    NotifierProvider<RelayListenerNotifier, void>(RelayListenerNotifier.new);
