@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_data/flutter_data.dart';
@@ -49,7 +50,7 @@ class ErrorContainer extends HookConsumerWidget {
           ),
           Gap(6),
           Text(
-            '${stack?.toString().substring(0, 80)}',
+            stack?.toString().substringMin(80) ?? '',
             style: TextStyle(
               fontSize: 12,
               color: Colors.grey,

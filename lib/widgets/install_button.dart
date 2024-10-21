@@ -18,10 +18,8 @@ class InstallButton extends ConsumerWidget {
     super.key,
     required this.app,
     this.compact = false,
-    this.disabled = false,
   });
 
-  final bool disabled;
   final bool compact;
   final App app;
 
@@ -38,10 +36,6 @@ class InstallButton extends ConsumerWidget {
           },
         _ => switch (progress) {
             IdleInstallProgress() => () {
-                // show trust dialog only if first install
-                if (disabled) {
-                  context.showError('Missing signer');
-                }
                 if (app.canInstall) {
                   showDialog(
                     context: context,
@@ -51,11 +45,15 @@ class InstallButton extends ConsumerWidget {
                   );
                 } else if (app.canUpdate) {
                   app.install();
+                } else {
+                  context.showError(
+                      title: 'Can\'t install',
+                      description: 'Release or signer are missing.');
                 }
               },
             ErrorInstallProgress(:final e) => () {
                 // show error and reset state to idle
-                context.showError((e as dynamic).message);
+                context.showError(title: (e as dynamic).message);
                 ref.read(installationProgressProvider(app.id!).notifier).state =
                     IdleInstallProgress();
               },
@@ -99,7 +97,9 @@ class InstallButton extends ConsumerWidget {
                             fontWeight: FontWeight.bold),
                       ),
                     )
-                  : Text('Install'),
+                  : (app.canInstall
+                      ? Text('Install')
+                      : Text('Nothing to install')),
               DownloadingInstallProgress(:final progress) => Text(
                   '${(progress * 100).floor()}%',
                   style: TextStyle(fontWeight: FontWeight.bold),

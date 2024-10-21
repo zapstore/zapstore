@@ -10,7 +10,6 @@ import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/release.dart';
 import 'package:zapstore/utils/extensions.dart';
-import 'package:zapstore/widgets/app_card.dart';
 import 'package:zapstore/widgets/install_button.dart';
 import 'package:zapstore/widgets/release_card.dart';
 import 'package:zapstore/widgets/signer_and_developer_row.dart';
@@ -221,7 +220,11 @@ class AppDetailScreen extends HookConsumerWidget {
                                               .then((match) {
                                             if (match != null && !match) {
                                               context.showError(
-                                                  'APK certificate mismatch!\nPlease report');
+                                                title:
+                                                    'APK certificate mismatch!',
+                                                description:
+                                                    'Please let us know',
+                                              );
                                             }
                                           });
                                         },
@@ -268,7 +271,7 @@ class AppDetailScreen extends HookConsumerWidget {
           SizedBox(
             height: 50,
             child: Center(
-              child: InstallButton(app: app, disabled: !app.signer.isPresent),
+              child: InstallButton(app: app),
             ),
           ),
         ],
