@@ -35,6 +35,7 @@ class SearchScreen extends HookConsumerWidget {
               child: SearchBar(
                 controller: controller,
                 focusNode: focusNode,
+                onTapOutside: (_) => focusNode.unfocus(),
                 shape: WidgetStateProperty.all(
                   RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(28),
@@ -82,6 +83,7 @@ class SearchScreen extends HookConsumerWidget {
                     WidgetStateProperty.all(TextStyle(color: Colors.grey[600])),
                 elevation: WidgetStateProperty.all(2.2),
                 onSubmitted: (query) async {
+                  if (query.isEmpty) return;
                   ref.read(searchQueryProvider.notifier).state = query;
                   scrollController.animateTo(
                     scrollController.position.minScrollExtent,
