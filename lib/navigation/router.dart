@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:zapstore/main.dart';
 import 'package:zapstore/models/app.dart';
+import 'package:zapstore/models/nostr_adapter.dart';
 import 'package:zapstore/navigation/app_initializer.dart';
 import 'package:zapstore/navigation/desktop_scaffold.dart';
 import 'package:zapstore/navigation/mobile_scaffold.dart';
@@ -103,6 +104,10 @@ class ScaffoldWithNestedNavigation extends HookConsumerWidget {
       child: initializer.when(
         data: (_) => LayoutBuilder(
           builder: (context, constraints) {
+            // At this point initialization is done
+            // listen to relay
+            ref.watch(relayListenerProvider);
+
             if (constraints.maxWidth < 550) {
               return MobileScaffold(
                 body: navigationShell,

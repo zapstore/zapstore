@@ -52,8 +52,6 @@ class ZapstoreApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    ref.watch(relayListenerProvider);
-
     return MaterialApp.router(
       builder: materialErrorBuilder,
       routerConfig: appRouter,

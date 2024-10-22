@@ -194,7 +194,7 @@ mixin AppAdapter on Adapter<App> {
     return super.findAll(params: params);
   }
 
-  Future<List<App>> findInstalled() async {
+  Future<List<App>> checkForUpdates() async {
     final appIds = await _installedIdentifiers();
     if (appIds.isNotEmpty) {
       final apps = await fetchAppModels({'#d': appIds});

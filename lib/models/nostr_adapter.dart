@@ -8,6 +8,7 @@ import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/release.dart';
 import 'package:zapstore/utils/system_info.dart';
+import 'package:zapstore/widgets/latest_releases_container.dart';
 
 // NOTE: Very important to use const in relay args to preserve equality in Riverpod families
 // const kAppRelays = {'ws://10.0.2.2:3000'};
@@ -136,9 +137,9 @@ class RelayListenerNotifier extends Notifier<void> {
   @override
   void build() {
     print('Building main listener');
-    // TODO: Every 1 hour
     fetch();
-    final timer = Timer.periodic(Duration(minutes: 10), (_) => fetch());
+    // TODO: Every 1 hour
+    final timer = Timer.periodic(Duration(minutes: 2), (_) => fetch());
 
     // This will get disposed when clearing and restarting the app
     ref.onDispose(() {
@@ -147,8 +148,11 @@ class RelayListenerNotifier extends Notifier<void> {
   }
 
   Future<void> fetch() async {
-    // ref.apps.appAdapter.findInstalled();
-    // await ref.read(latestReleasesAppProvider.notifier).fetch();
+    await Future.microtask(() async {
+      print('CALLING ${DateTime.now().toIso8601String()}');
+      await ref.read(latestReleasesAppProvider.notifier).fetch();
+      await ref.apps.appAdapter.checkForUpdates();
+    });
   }
 }
 

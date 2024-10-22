@@ -88,9 +88,7 @@ class LatestReleasesAppNotifier extends StateNotifier<AsyncValue<List<App>>> {
   int page = 1;
   Ref ref;
 
-  LatestReleasesAppNotifier(this.ref) : super(AsyncLoading()) {
-    fetch();
-  }
+  LatestReleasesAppNotifier(this.ref) : super(AsyncLoading());
 
   // @override
   // Future<List<App>> build() async {

@@ -5,6 +5,7 @@ import 'package:zapstore/main.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/local_app.dart';
+import 'package:zapstore/models/nostr_adapter.dart';
 import 'package:zapstore/navigation/router.dart';
 import 'package:zapstore/widgets/app_curation_container.dart';
 
@@ -53,9 +54,6 @@ final appInitializer = FutureProvider<void>((ref) async {
 
   // Preload zapstore's nostr curation set
   await ref.read(appCurationSetProvider(kNostrCurationSet).notifier).fetch();
-
-  // Trigger app install status calculations in the background
-  ref.localApps.localAppAdapter.refreshUpdateStatus();
 
   // Handle deep links
   final appLinksSub = appLinks.uriLinkStream.listen((uri) async {
