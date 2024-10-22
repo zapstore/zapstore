@@ -3,8 +3,8 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:zapstore/models/app.dart';
-import 'package:zapstore/widgets/pill_widget.dart';
 import 'package:zapstore/widgets/rounded_image.dart';
+import 'package:zapstore/widgets/version_pill_widget.dart';
 
 class VersionedAppHeader extends StatelessWidget {
   const VersionedAppHeader({
@@ -40,24 +40,26 @@ class VersionedAppHeader extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
               ),
               Gap(10),
-              Row(
-                children: [
-                  if (app.localApp.value?.installedVersion != null)
-                    PillWidget(
-                      text:
-                          TextSpan(text: app.localApp.value!.installedVersion!),
-                      color: Colors.grey[800]!,
-                      size: 11,
-                    ),
-                  Icon(Icons.arrow_right),
-                  if (app.canUpdate)
-                    PillWidget(
-                      text: TextSpan(text: app.latestMetadata!.version!),
-                      color: Colors.blue[700]!,
-                      size: 11,
-                    ),
-                ],
-              ),
+              VersionPillWidget(app: app),
+              // Row(
+              //   children: [
+              //     if (app.localApp.value?.installedVersion != null)
+              //       PillWidget(
+              //         text:
+              //             TextSpan(text: app.localApp.value!.installedVersion!),
+              //         color: Colors.grey[800]!,
+              //         size: 11,
+              //       ),
+              //     Icon(Icons.arrow_right),
+              //     if (app.canUpdate)
+              //       PillWidget(
+              //         text: TextSpan(text: app.latestMetadata!.version!),
+              //         color: Colors.blue[700]!,
+              //         size: 11,
+              //       ),
+              //     if (app.canInstall) ,
+              //   ],
+              // ),
             ],
           ),
         ),

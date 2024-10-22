@@ -89,7 +89,7 @@ class InstallButton extends ConsumerWidget {
                   ? Padding(
                       padding: const EdgeInsets.only(left: 8, right: 8),
                       child: AutoSizeText(
-                        'Update to ${app.latestMetadata!.version!}',
+                        'Update',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(

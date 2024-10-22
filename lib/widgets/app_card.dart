@@ -7,12 +7,12 @@ import 'package:remove_markdown/remove_markdown.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
-import 'package:zapstore/models/local_app.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/author_container.dart';
 import 'package:zapstore/widgets/install_button.dart';
 import 'package:zapstore/widgets/pill_widget.dart';
 import 'package:zapstore/widgets/rounded_image.dart';
+import 'package:zapstore/widgets/version_pill_widget.dart';
 
 class AppCard extends HookConsumerWidget {
   final App model;
@@ -68,45 +68,7 @@ class AppCard extends HookConsumerWidget {
                             maxLines: 1,
                           ),
                         ),
-                        if (app.latestMetadata?.version != null)
-                          if (isUpdate)
-                            PillWidget(
-                              text: TextSpan(
-                                  text: app.localApp.value!.installedVersion!),
-                              color: Colors.grey[800]!,
-                              size: 11,
-                            ),
-                        if (!isUpdate)
-                          PillWidget(
-                            text: WidgetSpan(
-                              alignment: PlaceholderAlignment.middle,
-                              child: Wrap(
-                                crossAxisAlignment: WrapCrossAlignment.center,
-                                children: [
-                                  Text(
-                                    app.latestMetadata!.version!,
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                                  if (app.localApp.value?.status ==
-                                      AppInstallStatus.updatable)
-                                    Row(
-                                      children: [
-                                        Gap(5),
-                                        Icon(Icons.update_outlined, size: 15),
-                                      ],
-                                    ),
-                                ],
-                              ),
-                            ),
-                            size: 10,
-                            color: app.localApp.value?.status ==
-                                    AppInstallStatus.updatable
-                                ? kUpdateColor
-                                : Colors.grey[800]!,
-                          ),
+                        VersionPillWidget(app: app),
                       ],
                     ),
                     Gap(6),

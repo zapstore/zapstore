@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
 class SpinningLogo extends StatefulWidget {
-  const SpinningLogo({super.key});
+  final double size;
+  const SpinningLogo({super.key, this.size = 200});
 
   @override
   SpinningLogoState createState() => SpinningLogoState();
@@ -40,8 +41,8 @@ class SpinningLogoState extends State<SpinningLogo>
         },
         child: Image.asset(
           'assets/images/logo-fg.png',
-          height: 200,
-          width: 200,
+          height: widget.size,
+          width: widget.size,
         ), // Adjust size as needed
       ),
     );

@@ -5,7 +5,6 @@ import 'package:zapstore/main.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/local_app.dart';
-import 'package:zapstore/models/nostr_adapter.dart';
 import 'package:zapstore/navigation/router.dart';
 import 'package:zapstore/widgets/app_curation_container.dart';
 

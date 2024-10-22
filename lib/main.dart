@@ -8,7 +8,6 @@ import 'package:flutter_data/flutter_data.dart';
 import 'package:flutter_phoenix/flutter_phoenix.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:zapstore/models/nostr_adapter.dart';
 import 'package:zapstore/navigation/router.dart';
 import 'package:zapstore/utils/debounce.dart';
 import 'package:zapstore/utils/theme.dart';
