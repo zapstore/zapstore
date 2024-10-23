@@ -14,8 +14,7 @@ class UpdatesScreen extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(updatesProvider);
 
-    if (!state.hasValue) return Container();
-    final (updatedApps, updatableApps) = state.value!;
+    final (updatedApps, updatableApps) = state.value ?? ([], []);
 
     return SingleChildScrollView(
       physics: AlwaysScrollableScrollPhysics(),
@@ -30,7 +29,8 @@ class UpdatesScreen extends HookConsumerWidget {
                   style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold)),
             ],
           ),
-          if (updatedApps.isEmpty && updatableApps.isEmpty) SpinningLogo(),
+          if (updatedApps.isEmpty && updatableApps.isEmpty)
+            SpinningLogo(size: 80),
           if (updatableApps.isNotEmpty)
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,

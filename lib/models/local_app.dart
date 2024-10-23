@@ -81,7 +81,10 @@ mixin LocalAppAdapter on Adapter<LocalApp> {
           .saveLocal();
     }
 
-    // Update number of apps
+    updateNumberOfApps();
+  }
+
+  void updateNumberOfApps() {
     final rs = db.select(
         'SELECT count(*) as c FROM localApps WHERE json_extract(data, \'\$.status\') is \'updatable\'');
     ref.read(appsToUpdateProvider.notifier).state = rs.first['c'];
