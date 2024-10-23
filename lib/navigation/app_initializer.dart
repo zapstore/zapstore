@@ -1,6 +1,7 @@
 import 'package:collection/collection.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_data/flutter_data.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zapstore/main.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
@@ -11,14 +12,19 @@ import 'package:zapstore/widgets/app_curation_container.dart';
 AppLifecycleListener? _lifecycleListener;
 
 final appInitializer = FutureProvider<void>((ref) async {
+  final prefs = await SharedPreferences.getInstance();
+  final dbVersion = prefs.getInt('dbVersion');
+
+  // Perform migration
+  if (dbVersion == null || dbVersion < kDbVersion) {
+    final storage = ref.read(localStorageProvider);
+    await storage.initialize(inIsolate: true);
+    await storage.destroy();
+    await prefs.setInt('dbVersion', kDbVersion);
+  }
+
   // Initialize Flutter Data
   await ref.read(initializeFlutterData(adapterProvidersMap).future);
-
-  // Check DB version
-  final userDbVersion = ref.settings.findOneLocalById('_')!.dbVersion;
-  if (userDbVersion < kDbVersion) {
-    await ref.read(localStorageProvider).destroy();
-  }
 
   _lifecycleListener = AppLifecycleListener(
     onStateChange: (state) async {

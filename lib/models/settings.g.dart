@@ -60,11 +60,9 @@ extension SettingsRelationshipGraphNodeX on RelationshipGraphNode<Settings> {
 // JsonSerializableGenerator
 // **************************************************************************
 
-Settings _$SettingsFromJson(Map<String, dynamic> json) => Settings()
-  ..isLoggedIn = json['isLoggedIn'] as bool
-  ..dbVersion = (json['dbVersion'] as num?)?.toInt() ?? 1;
+Settings _$SettingsFromJson(Map<String, dynamic> json) =>
+    Settings()..isLoggedIn = json['isLoggedIn'] as bool;
 
 Map<String, dynamic> _$SettingsToJson(Settings instance) => <String, dynamic>{
       'isLoggedIn': instance.isLoggedIn,
-      'dbVersion': instance.dbVersion,
     };

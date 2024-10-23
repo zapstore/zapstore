@@ -1,6 +1,5 @@
 import 'package:flutter_data/flutter_data.dart';
 import 'package:json_annotation/json_annotation.dart';
-import 'package:zapstore/main.dart';
 import 'package:zapstore/models/user.dart';
 
 part 'settings.g.dart';
@@ -12,8 +11,6 @@ class Settings extends DataModel<Settings> {
   String get id => '_';
   final BelongsTo<User> user = BelongsTo();
   bool isLoggedIn = false;
-  @JsonKey(defaultValue: 1)
-  int dbVersion = kDbVersion;
 }
 
 mixin SettingsAdapter on Adapter<Settings> {
