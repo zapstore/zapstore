@@ -112,10 +112,15 @@ class App extends BaseApp with DataModelMixin<App> {
         await adapter.ref.localApps.localAppAdapter
             .refreshUpdateStatus(appId: identifier);
         notifier.state = IdleInstallProgress();
+      } else if (installationStatus == PackageInstallerStatus.failureAborted) {
+        // do nothing
+        notifier.state = IdleInstallProgress();
       } else {
         const msg = 'Android installation failed';
-        notifier.state = ErrorInstallProgress(Exception(msg),
-            info: installationStatus?.name ?? 'Unknown error');
+        notifier.state = ErrorInstallProgress(
+          Exception(msg),
+          info: installationStatus?.name ?? 'Unknown error',
+        );
       }
     }
 
