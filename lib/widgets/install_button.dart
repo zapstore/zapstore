@@ -107,8 +107,8 @@ class InstallButton extends ConsumerWidget {
                   style: TextStyle(fontWeight: FontWeight.bold),
                 ),
               VerifyingHashProgress() => Text('Verifying file integrity'),
-              HashVerifiedInstallProgress() => Text(
-                  'Hash verified, requesting ${app.canUpdate ? 'update' : 'installation'}'),
+              RequestInstallProgress() =>
+                Text('Requesting ${app.canUpdate ? 'update' : 'installation'}'),
               ErrorInstallProgress() => Text('Error, tap to see message'),
             }
         },

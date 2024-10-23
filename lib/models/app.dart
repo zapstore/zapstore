@@ -3,13 +3,13 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
-import 'package:android_package_installer/android_package_installer.dart';
 import 'package:android_package_manager/android_package_manager.dart';
 import 'package:async/async.dart';
 import 'package:collection/collection.dart';
 import 'package:convert/convert.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_data/flutter_data.dart';
+import 'package:install_plugin/install_plugin.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:purplebase/purplebase.dart';
@@ -101,25 +101,20 @@ class App extends BaseApp with DataModelMixin<App> {
         notifier.state = ErrorInstallProgress(Exception(e));
         return;
       }
-      notifier.state = HashVerifiedInstallProgress();
+      notifier.state = RequestInstallProgress();
 
-      final result =
-          await AndroidPackageInstaller.installApk(apkFilePath: file.path);
-      final installationStatus =
-          result != null ? PackageInstallerStatus.byCode(result) : null;
-      if (installationStatus == PackageInstallerStatus.success) {
+      final result = await InstallPlugin.install(file.path);
+
+      if (result['isSuccess']) {
+        notifier.state = IdleInstallProgress();
         await file.delete();
         await adapter.ref.localApps.localAppAdapter
             .refreshUpdateStatus(appId: identifier);
-        notifier.state = IdleInstallProgress();
-      } else if (installationStatus == PackageInstallerStatus.failureAborted) {
-        // do nothing
-        notifier.state = IdleInstallProgress();
       } else {
         const msg = 'Android installation failed';
         notifier.state = ErrorInstallProgress(
           Exception(msg),
-          info: installationStatus?.name ?? 'Unknown error',
+          info: result['errorMessage'],
         );
       }
     }
@@ -423,7 +418,7 @@ class DownloadingInstallProgress extends AppInstallProgress {
 
 class VerifyingHashProgress extends AppInstallProgress {}
 
-class HashVerifiedInstallProgress extends AppInstallProgress {}
+class RequestInstallProgress extends AppInstallProgress {}
 
 class ErrorInstallProgress extends AppInstallProgress {
   final Exception e;
