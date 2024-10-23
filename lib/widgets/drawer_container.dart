@@ -25,7 +25,7 @@ class DrawerContainer extends StatelessWidget {
                 final state = ref.watch(systemInfoProvider);
                 return switch (state) {
                   AsyncData(:final value) => Text(
-                      'Version: ${value.zsInfo.versionName} (${value.zsInfo.versionCode}, $kDbVersion) -- ${ref.apps.appAdapter.queriedAtMap.length}',
+                      'Version: ${value.zsInfo.versionName} (${value.zsInfo.versionCode}, $kDbVersion)',
                       style: TextStyle(fontSize: 16),
                     ),
                   _ => Container(),

@@ -106,7 +106,6 @@ class App extends BaseApp with DataModelMixin<App> {
       final result = await InstallPlugin.install(file.path);
 
       if (result['isSuccess']) {
-        notifier.state = IdleInstallProgress();
         await file.delete();
         await adapter.ref.localApps.localAppAdapter
             .refreshUpdateStatus(appId: identifier);
