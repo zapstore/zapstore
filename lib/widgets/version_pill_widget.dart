@@ -58,6 +58,7 @@ class VersionPillWidget extends StatelessWidget {
                       if (app.canInstall)
                         Icon(Icons.download_rounded, size: 15),
                       if (app.isUpdated) Icon(Icons.check, size: 15),
+                      if (app.isDowngrade) Icon(Icons.do_not_disturb, size: 15),
                     ],
                   ),
                 ],

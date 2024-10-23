@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:collection/collection.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_data/flutter_data.dart';
 import 'package:json_annotation/json_annotation.dart';
 import 'package:zapstore/main.data.dart';
@@ -99,10 +100,13 @@ mixin LocalAppAdapter on Adapter<LocalApp> {
       return null;
     }
     var comp = 0;
-    if (app.latestMetadata!.versionCode != null && app.id != 'store.zap.app') {
-      // Note: need to exclude zap.store because development versions always
-      // carry a lower version code (e.g. 12) than published ones (e.g. 2012)
-      comp = app.latestMetadata!.versionCode!.compareTo(installedVersionCode);
+    if (app.latestMetadata!.versionCode != null) {
+      // NOTE: zap.store development versions always carry a lower version code
+      // (e.g. 12) than published ones (e.g. 2012)
+      final code = app.identifier == 'store.zap.app' && !kReleaseMode
+          ? installedVersionCode + 2000
+          : installedVersionCode;
+      comp = app.latestMetadata!.versionCode!.compareTo(code);
     }
 
     if (comp == 0) {

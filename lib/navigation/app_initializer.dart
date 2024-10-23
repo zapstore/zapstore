@@ -18,7 +18,7 @@ final appInitializer = FutureProvider<void>((ref) async {
   // Perform migration
   if (dbVersion == null || dbVersion < kDbVersion) {
     final storage = ref.read(localStorageProvider);
-    await storage.initialize(inIsolate: true);
+    await storage.initialize();
     await storage.destroy();
     await prefs.setInt('dbVersion', kDbVersion);
   }

@@ -65,6 +65,7 @@ class App extends BaseApp with DataModelMixin<App> {
       latestMetadata != null &&
       signer.isPresent;
   bool get isUpdated => localApp.value?.status == AppInstallStatus.updated;
+  bool get isDowngrade => localApp.value?.status == AppInstallStatus.downgrade;
 
   Future<void> install() async {
     if (!canInstall && !canUpdate) {
