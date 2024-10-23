@@ -3,13 +3,13 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
+import 'package:android_package_installer/android_package_installer.dart';
 import 'package:android_package_manager/android_package_manager.dart';
 import 'package:async/async.dart';
 import 'package:collection/collection.dart';
 import 'package:convert/convert.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_data/flutter_data.dart';
-import 'package:install_plugin/install_plugin.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:purplebase/purplebase.dart';
@@ -103,15 +103,19 @@ class App extends BaseApp with DataModelMixin<App> {
       }
       notifier.state = HashVerifiedInstallProgress();
 
-      final result = await InstallPlugin.install(file.path);
-      if (result['isSuccess']) {
+      final result =
+          await AndroidPackageInstaller.installApk(apkFilePath: file.path);
+      final installationStatus =
+          result != null ? PackageInstallerStatus.byCode(result) : null;
+      if (installationStatus == PackageInstallerStatus.success) {
         await file.delete();
         await adapter.ref.localApps.localAppAdapter
             .refreshUpdateStatus(appId: identifier);
         notifier.state = IdleInstallProgress();
       } else {
-        const msg = 'Android rejected installation';
-        notifier.state = ErrorInstallProgress(Exception(msg));
+        const msg = 'Android installation failed';
+        notifier.state = ErrorInstallProgress(Exception(msg),
+            info: installationStatus?.name ?? 'Unknown error');
       }
     }
 
@@ -418,7 +422,8 @@ class HashVerifiedInstallProgress extends AppInstallProgress {}
 
 class ErrorInstallProgress extends AppInstallProgress {
   final Exception e;
-  ErrorInstallProgress(this.e);
+  final String? info;
+  ErrorInstallProgress(this.e, {this.info});
 }
 
 final installationProgressProvider =

@@ -51,9 +51,10 @@ class InstallButton extends ConsumerWidget {
                       description: 'Release or signer are missing.');
                 }
               },
-            ErrorInstallProgress(:final e) => () {
+            ErrorInstallProgress(:final e, :final info) => () {
                 // show error and reset state to idle
-                context.showError(title: (e as dynamic).message);
+                context.showError(
+                    title: (e as dynamic).message, description: info);
                 ref.read(installationProgressProvider(app.id!).notifier).state =
                     IdleInstallProgress();
               },

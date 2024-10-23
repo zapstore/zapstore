@@ -84,22 +84,15 @@ class LatestReleasesContainer extends HookConsumerWidget {
 }
 
 class LatestReleasesAppNotifier extends StateNotifier<AsyncValue<List<App>>> {
-  DateTime? oldestCreatedAt;
-  int page = 1;
-  Ref ref;
+  DateTime? _oldestCreatedAt;
+  int _page = 1;
+  final Ref ref;
 
   LatestReleasesAppNotifier(this.ref) : super(AsyncLoading());
 
-  // @override
-  // Future<List<App>> build() async {
-  //   print('in latestrelease build');
-  //   await fetch();
-  //   return _fetchLocal();
-  // }
-
   Future<void> fetch({bool next = false}) async {
     if (next) {
-      page++;
+      _page++;
     } else {
       final apps = _fetchLocal();
       if (apps.isNotEmpty) {
@@ -114,7 +107,7 @@ class LatestReleasesAppNotifier extends StateNotifier<AsyncValue<List<App>>> {
       params: {
         'includes': true,
         'limit': 10,
-        'until': next ? oldestCreatedAt : null
+        'until': next ? _oldestCreatedAt : null
       },
     );
 
@@ -127,12 +120,12 @@ class LatestReleasesAppNotifier extends StateNotifier<AsyncValue<List<App>>> {
     final apps = model
         .where((a) => a.latestMetadata != null)
         .sortedByLatest
-        .take(page * 10)
+        .take(_page * 10)
         .toList();
 
     // Set timestamp of oldest, to prepare for next query
     if (apps.isNotEmpty) {
-      oldestCreatedAt = apps.last.createdAt;
+      _oldestCreatedAt = apps.last.createdAt;
     }
     return apps;
   }

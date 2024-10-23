@@ -17,6 +17,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "6.4.1"
+  android_package_installer:
+    dependency: "direct main"
+    description:
+      name: android_package_installer
+      sha256: af2a0d2dfcfb2a82255c4fd37024304941359c2bed7e4813e053a662caaa2952
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.0.2"
   android_package_manager:
     dependency: "direct main"
     description:
@@ -593,14 +601,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.5.3+2"
-  install_plugin:
-    dependency: "direct main"
-    description:
-      name: install_plugin
-      sha256: "6fb67ba0781e75de4f2f2266ed25e835bfd277c5bfc2ed034af52774355857c6"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.1.0"
   intl:
     dependency: "direct main"
     description:
