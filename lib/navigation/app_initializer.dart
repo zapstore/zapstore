@@ -20,24 +20,6 @@ final appInitializer = FutureProvider<void>((ref) async {
     await ref.read(localStorageProvider).destroy();
   }
 
-  // TODO: Restore isEventVerified feature
-  //     isEventVerified: (Map<String, dynamic> map) {
-  //       // If replaceable, we check for that ID
-  //       final identifier = (map['tags'] as Iterable)
-  //           .firstWhereOrNull((t) => t[0] == 'd')?[1]
-  //           ?.toString();
-  //       final id = identifier != null
-  //           ? (map['kind'] as int, map['pubkey'].toString(), identifier)
-  //               .formatted
-  //           : map['id'];
-  //       return ref.apps.nostrAdapter.existsId(id);
-  //     },
-  //   ),
-
-  //   socialRelays.initialize(
-  //       isEventVerified: (map) => ref.apps.nostrAdapter.existsId(map['pubkey']))
-  // ]);
-
   _lifecycleListener = AppLifecycleListener(
     onStateChange: (state) async {
       if (state == AppLifecycleState.resumed) {

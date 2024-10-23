@@ -21,6 +21,30 @@ mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
   RelayMessageNotifier get socialRelays =>
       ref.read(relayProviderFamily(kSocialRelays).notifier);
 
+  @override
+  Future<void> onInitialized() async {
+    await super.onInitialized();
+
+    // Upon adapter initialization, configure relays
+    // with the event verification caching function
+    relay.configure(
+      isEventVerified: (Map<String, dynamic> map) {
+        // If replaceable, we check for that ID
+        final identifier = (map['tags'] as Iterable)
+            .firstWhereOrNull((t) => t[0] == 'd')?[1]
+            ?.toString();
+        final id = identifier != null
+            ? (map['kind'] as int, map['pubkey'].toString(), identifier)
+                .formatted
+            : map['id'];
+        return ref.apps.nostrAdapter.existsId(id);
+      },
+    );
+    socialRelays.configure(
+      isEventVerified: (map) => ref.apps.nostrAdapter.existsId(map['pubkey']),
+    );
+  }
+
   int get kind {
     return BaseEvent.kindForType(internalType)!;
   }
