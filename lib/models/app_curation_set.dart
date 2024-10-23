@@ -37,7 +37,7 @@ mixin AppCurationSetAdapter on Adapter<AppCurationSet> {
       DataRequestLabel? label}) async {
     final sets = await super.findAll(remote: remote!, params: params);
     final userIds = {for (final set in sets) set.signer.id}.nonNulls;
-    await ref.users.findAll(params: {'authors': userIds});
+    await ref.users.findAll(params: {'authors': userIds, 'ignoreReturn': true});
     return sets;
   }
 

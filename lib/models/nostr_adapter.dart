@@ -111,6 +111,7 @@ mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
     final limit = params.remove('limit');
     final since = params.remove('since');
     final until = params.remove('until');
+    final ignoreReturn = params.remove('ignoreReturn');
 
     if (['apps', 'fileMetadatas'].contains(internalType)) {
       if (Platform.isAndroid) {
@@ -128,7 +129,8 @@ mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
     );
 
     final result = await relay.queryRaw(req);
-    final deserialized = await deserializeAsync(result, save: true);
+    final deserialized = await deserializeAsync(result,
+        save: true, ignoreReturn: ignoreReturn == true);
     return deserialized.models;
   }
 
@@ -144,15 +146,23 @@ mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
 
     // Metadata and users probably go to separate relays
     // so query in parallel
+    // Can use ignoreReturn on both as we only care about saved models
     await Future.wait([
       if (metadataIds.isNotEmpty)
         ref.fileMetadata.findAll(
           params: {
             'ids': metadataIds,
             '#m': [kAndroidMimeType],
+            'ignoreReturn': true,
           },
         ),
-      if (userIds.isNotEmpty) ref.users.findAll(params: {'authors': userIds}),
+      if (userIds.isNotEmpty)
+        ref.users.findAll(
+          params: {
+            'authors': userIds,
+            'ignoreReturn': true,
+          },
+        ),
     ]);
   }
 }
@@ -160,10 +170,8 @@ mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
 class RelayListenerNotifier extends Notifier<void> {
   @override
   void build() {
-    print('Building main listener');
     fetch();
-    // TODO: Every 1 hour
-    final timer = Timer.periodic(Duration(minutes: 2), (_) => fetch());
+    final timer = Timer.periodic(Duration(minutes: 30), (_) => fetch());
 
     // This will get disposed when clearing and restarting the app
     ref.onDispose(() {
@@ -173,7 +181,6 @@ class RelayListenerNotifier extends Notifier<void> {
 
   Future<void> fetch() async {
     await Future.microtask(() async {
-      print('CALLING ${DateTime.now().toIso8601String()}');
       await ref.read(latestReleasesAppProvider.notifier).fetch();
       await ref.apps.appAdapter.checkForUpdates();
     });

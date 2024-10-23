@@ -101,13 +101,12 @@ class LatestReleasesAppNotifier extends StateNotifier<AsyncValue<List<App>>> {
       }
     }
 
-    // Use ignore return, only saved models is important
-    // TODO: ignoreReturn, and bip340 validate in isolate
+    // Can't use ignoreReturn, as super.findAll does use the result
     await ref.apps.findAll(
       params: {
         'includes': true,
         'limit': 10,
-        'until': next ? _oldestCreatedAt : null
+        'until': next ? _oldestCreatedAt : null,
       },
     );
 

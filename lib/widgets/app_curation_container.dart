@@ -114,10 +114,14 @@ class AppCurationSetNotifier
       state = AsyncLoading();
       state = await AsyncValue.guard(() async {
         // Only load apps (no releases for now)
-        await ref.apps.findAll(params: {
-          '#d': appCurationSet.appIds,
-          'includes': false,
-        });
+        // We can use ignoreReturn here as we do not care about releases
+        await ref.apps.findAll(
+          params: {
+            '#d': appCurationSet.appIds,
+            'includes': false,
+            'ignoreReturn': true,
+          },
+        );
         // Since the set is the same as before (the relationship changed),
         // manually invalidate the provider
         ref.invalidateSelf();

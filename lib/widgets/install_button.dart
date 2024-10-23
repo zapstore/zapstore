@@ -11,6 +11,7 @@ import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/system_info.dart';
 import 'package:zapstore/widgets/app_drawer.dart';
 import 'package:zapstore/widgets/author_container.dart';
+import 'package:zapstore/widgets/spinning_logo.dart';
 import 'package:zapstore/widgets/wot_container.dart';
 
 class InstallButton extends ConsumerWidget {
@@ -100,7 +101,7 @@ class InstallButton extends ConsumerWidget {
                     )
                   : (app.canInstall
                       ? Text('Install')
-                      : Text('Nothing to install')),
+                      : Center(child: SpinningLogo(size: 40))),
               DownloadingInstallProgress(:final progress) => Text(
                   '${(progress * 100).floor()}%',
                   style: TextStyle(fontWeight: FontWeight.bold),
