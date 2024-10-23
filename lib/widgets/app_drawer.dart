@@ -84,7 +84,7 @@ class LoginContainer extends HookConsumerWidget {
                       }).catchError((e, stack) {
                         context.showError(
                             title: e.message ?? e.toString(),
-                            description: stack?.toString().substringMin(200));
+                            description: stack?.toString().substringMax(200));
                       });
                     },
                     builder: (context, child, callback, buttonState) {

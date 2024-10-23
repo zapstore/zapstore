@@ -231,18 +231,6 @@ class AppDetailScreen extends HookConsumerWidget {
                                                   .apkSignatureHash!));
                                           context.showInfo(
                                               'Copied APK certificate SHA-256 to the clipboard');
-                                          app
-                                              .packageCertificateMatches()
-                                              .then((match) {
-                                            if (match != null && !match) {
-                                              context.showError(
-                                                title:
-                                                    'APK certificate mismatch!',
-                                                description:
-                                                    'Please let us know',
-                                              );
-                                            }
-                                          });
                                         },
                                         child: Row(
                                           mainAxisSize: MainAxisSize.min,

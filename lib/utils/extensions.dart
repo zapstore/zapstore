@@ -58,7 +58,7 @@ extension StringWidget on String {
     });
   }
 
-  String substringMin(int size) {
+  String substringMax(int size) {
     return substring(0, min(length, 80));
   }
 }

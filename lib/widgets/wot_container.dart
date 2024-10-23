@@ -29,6 +29,10 @@ class WebOfTrustContainer extends HookConsumerWidget {
                 trustedUsers.firstWhereOrNull((u) => u.npub == npub) != null;
             final trustedUsersWithoutUser =
                 trustedUsers.where((u) => u.npub != npub).toList();
+            if (trustedUsersWithoutUser.isEmpty) {
+              return Text(
+                  'No trusted users. This may be a service error and you may want to try again later.');
+            }
             return RichText(
               text: TextSpan(
                 children: [

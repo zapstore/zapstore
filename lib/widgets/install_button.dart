@@ -54,8 +54,7 @@ class InstallButton extends ConsumerWidget {
               },
             ErrorInstallProgress(:final e, :final info) => () {
                 // show error and reset state to idle
-                context.showError(
-                    title: (e as dynamic).message, description: info);
+                context.showError(title: e.message, description: info);
                 ref.read(installationProgressProvider(app.id!).notifier).state =
                     IdleInstallProgress();
               },
@@ -109,7 +108,13 @@ class InstallButton extends ConsumerWidget {
               VerifyingHashProgress() => Text('Verifying file integrity'),
               RequestInstallProgress() =>
                 Text('Requesting ${app.canUpdate ? 'update' : 'installation'}'),
-              ErrorInstallProgress() => Text('Error, tap to see message'),
+              ErrorInstallProgress(:final e) => Padding(
+                  padding: const EdgeInsets.only(left: 8, right: 8),
+                  child: Text(
+                    '${e.message.substringMax(64)} (tap for more)',
+                    textAlign: TextAlign.center,
+                  ),
+                ),
             }
         },
       ),
@@ -187,7 +192,7 @@ class InstallAlertDialog extends ConsumerWidget {
             child: user != null
                 ? Text('Install', style: TextStyle(fontWeight: FontWeight.bold))
                 : Text(
-                    'I trust the signer, install anyway',
+                    'I trust the signer, install the app',
                     textAlign: TextAlign.right,
                   ),
           ),

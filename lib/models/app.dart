@@ -75,6 +75,17 @@ class App extends BaseApp with DataModelMixin<App> {
     final notifier =
         adapter.ref.read(installationProgressProvider(id!).notifier);
 
+    if (canUpdate) {
+      final match = await packageCertificateMatches();
+      if (match == false) {
+        notifier.state = ErrorInstallProgress(
+          Exception('APK certificate mismatch'),
+          info: 'Update is not possible',
+        );
+      }
+      return;
+    }
+
     final installPermission = await Permission.requestInstallPackages.status;
     if (!installPermission.isGranted) {
       final newStatus = await Permission.requestInstallPackages.request();
@@ -101,8 +112,8 @@ class App extends BaseApp with DataModelMixin<App> {
         notifier.state = ErrorInstallProgress(Exception(e));
         return;
       }
-      notifier.state = RequestInstallProgress();
 
+      notifier.state = RequestInstallProgress();
       final result = await InstallPlugin.install(file.path);
 
       if (result['isSuccess']) {
@@ -110,7 +121,7 @@ class App extends BaseApp with DataModelMixin<App> {
         await adapter.ref.localApps.localAppAdapter
             .refreshUpdateStatus(appId: identifier);
       } else {
-        const msg = 'Android installation failed';
+        const msg = 'App has not been installed';
         notifier.state = ErrorInstallProgress(
           Exception(msg),
           info: result['errorMessage'],
@@ -162,13 +173,15 @@ class App extends BaseApp with DataModelMixin<App> {
   }
 
   Future<bool?> packageCertificateMatches() async {
+    if (latestMetadata!.apkSignatureHash == null) return null;
+
     final flags = PackageInfoFlags(
       {PMFlag.getPermissions, PMFlag.getSigningCertificates},
     );
 
     final i = await packageManager.getPackageInfo(
-        packageName: id!.toString(), flags: flags);
-    if (i == null || latestMetadata!.apkSignatureHash == null) {
+        packageName: identifier, flags: flags);
+    if (i == null) {
       return null;
     }
     final bytes = i.signingInfo!.signingCertificateHistory!.first;
@@ -423,6 +436,10 @@ class ErrorInstallProgress extends AppInstallProgress {
   final Exception e;
   final String? info;
   ErrorInstallProgress(this.e, {this.info});
+}
+
+extension ExceptionExt on Exception {
+  String get message => (this as dynamic).message ?? toString();
 }
 
 final installationProgressProvider =

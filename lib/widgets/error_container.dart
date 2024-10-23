@@ -49,7 +49,7 @@ class ErrorContainer extends HookConsumerWidget {
           ),
           Gap(6),
           Text(
-            stack?.toString().substringMin(80) ?? '',
+            stack?.toString().substringMax(80) ?? '',
             style: TextStyle(
               fontSize: 12,
               color: Colors.grey,
