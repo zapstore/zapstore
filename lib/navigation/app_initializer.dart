@@ -29,10 +29,11 @@ final appInitializer = FutureProvider<void>((ref) async {
   );
 
   // Preload curation sets
+  // Do not use ignoreReturn here
   if (ref.appCurationSets.countLocal == 0) {
-    await ref.appCurationSets.findAll(params: {'ignoreReturn': true});
+    await ref.appCurationSets.findAll();
   } else {
-    ref.appCurationSets.findAll(params: {'ignoreReturn': true});
+    ref.appCurationSets.findAll();
   }
 
   // Preload zapstore's nostr curation set
