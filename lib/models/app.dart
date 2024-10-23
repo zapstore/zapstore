@@ -79,8 +79,9 @@ class App extends BaseApp with DataModelMixin<App> {
       final match = await packageCertificateMatches();
       if (match == false) {
         notifier.state = ErrorInstallProgress(
-          Exception('APK certificate mismatch'),
-          info: 'Update is not possible',
+          Exception('Update is not possible'),
+          info:
+              'App failed a security check (APK cert mismatch). To fix, remove the app.',
         );
         return;
       }
@@ -106,10 +107,10 @@ class App extends BaseApp with DataModelMixin<App> {
       notifier.state = VerifyingHashProgress();
 
       if (await _isHashMismatch(file.path, hash)) {
-        const e =
-            'Hash mismatch, possibly a malicious file. Aborting installation.';
+        const e = 'Hash mismatch';
         await file.delete();
-        notifier.state = ErrorInstallProgress(Exception(e));
+        notifier.state = ErrorInstallProgress(Exception(e),
+            info: 'Possibly a malicious file. Aborting installation.');
         return;
       }
 
@@ -121,7 +122,7 @@ class App extends BaseApp with DataModelMixin<App> {
         await adapter.ref.localApps.localAppAdapter
             .refreshUpdateStatus(appId: identifier);
       } else {
-        const msg = 'App has not been installed';
+        const msg = 'App not installed';
         notifier.state = ErrorInstallProgress(
           Exception(msg),
           info: result['errorMessage'],
@@ -167,7 +168,13 @@ class App extends BaseApp with DataModelMixin<App> {
         await sub?.cancel();
         await sink.close();
         client.close();
-        await installOnDevice();
+        if (downloadedBytes == totalBytes) {
+          await installOnDevice();
+        } else {
+          notifier.state = ErrorInstallProgress(
+              Exception('App did not fully download.'),
+              info: 'Please try again.');
+        }
       });
     }
   }
