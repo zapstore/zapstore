@@ -82,8 +82,8 @@ class App extends BaseApp with DataModelMixin<App> {
           Exception('APK certificate mismatch'),
           info: 'Update is not possible',
         );
+        return;
       }
-      return;
     }
 
     final installPermission = await Permission.requestInstallPackages.status;
