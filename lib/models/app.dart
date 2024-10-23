@@ -218,7 +218,7 @@ mixin AppAdapter on Adapter<App> {
     late final List<App> apps;
     late final List<Release> releases;
 
-    // If looking up multiple apps via `#d`, use `_queriedAtMap`
+    // If looking up multiple apps via `#d`, use `queriedAtMap`
     // to find the earliest queried at Date, to be used in the
     // next request `since` field
     if (params.containsKey('#d')) {
@@ -244,10 +244,10 @@ mixin AppAdapter on Adapter<App> {
         cachedApps = await super.findAll(
           params: {
             '#d': cachedIdentifiers,
-            'since': earliestQueryAt,
+            // Query since latest + 1
+            'since': earliestQueryAt.add(Duration(seconds: 1)),
           },
         );
-        // print('cached ${cachedApps.length} ($earliestQueryAt)');
       }
 
       // For apps not in cache, query without a since

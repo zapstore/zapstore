@@ -31,16 +31,7 @@ class User extends BaseUser with DataModelMixin<User> {
 }
 
 mixin UserAdapter on NostrAdapter<User> {
-  @override
-  DeserializedData<User> deserialize(Object? data, {String? key}) {
-    final list = data is Iterable ? data : [data as Map];
-
-    for (final Map<String, dynamic> map in list) {
-      map['id'] = map['pubkey'];
-    }
-
-    return super.deserialize(data);
-  }
+  final queriedAtMap = <String, DateTime>{};
 
   @override
   Future<List<User>> findAll(
@@ -57,10 +48,15 @@ mixin UserAdapter on NostrAdapter<User> {
       return [];
     }
 
-    final result = await socialRelays.queryRaw(RelayRequest(
+    final request = RelayRequest(
       kinds: {0}, // 3
       authors: {...authors},
-    ));
+      since: queriedAtMap[authors.join()],
+    );
+
+    final result = await socialRelays.queryRaw(request);
+    // Very rough caching
+    queriedAtMap[authors.join()] = DateTime.now().subtract(Duration(hours: 1));
 
     if (onSuccess != null) {
       return await onSuccess.call(DataResponse(statusCode: 200, body: result),
@@ -123,6 +119,17 @@ mixin UserAdapter on NostrAdapter<User> {
     return data.models.firstWhere((e) {
       return e.id == publicKey;
     });
+  }
+
+  @override
+  DeserializedData<User> deserialize(Object? data, {String? key}) {
+    final list = data is Iterable ? data : [data as Map];
+
+    for (final Map<String, dynamic> map in list) {
+      map['id'] = map['pubkey'];
+    }
+
+    return super.deserialize(data);
   }
 
   Future<List<User>> getTrusted(String npub1, String npub2) async {
