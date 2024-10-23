@@ -90,12 +90,14 @@ class UpdatesNotifier extends AsyncNotifier<(List<App>, List<App>)> {
     final updatableApps = appsState.model
         .where((app) => app.canUpdate)
         .toList()
-        .sorted((a, b) => (a.name ?? '').compareTo(b.name ?? ''));
+        .sorted((a, b) => (a.name?.toLowerCase() ?? '')
+            .compareTo(b.name?.toLowerCase() ?? ''));
 
     final updatedApps = appsState.model
         .where((app) => app.isUpdated || app.isDowngrade)
         .toList()
-        .sorted((a, b) => (a.name ?? '').compareTo(b.name ?? ''));
+        .sorted((a, b) => (a.name?.toLowerCase() ?? '')
+            .compareTo(b.name?.toLowerCase() ?? ''));
 
     return (updatedApps, updatableApps);
   }
