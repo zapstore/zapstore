@@ -79,8 +79,8 @@ class App extends BaseApp with DataModelMixin<App> {
     if (!installPermission.isGranted) {
       final newStatus = await Permission.requestInstallPackages.request();
       if (newStatus.isDenied) {
-        notifier.state =
-            ErrorInstallProgress(Exception('Installation permission denied'));
+        notifier.state = ErrorInstallProgress(Exception('Error'),
+            info: 'Installation permission denied by user');
         return;
       }
     }

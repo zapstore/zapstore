@@ -38,8 +38,13 @@ class AppDetailScreen extends HookConsumerWidget {
       return ref.apps.findOne(model.identifier, remote: true);
     }));
     final state = ref.apps.watchOne(model.id!,
-        alsoWatch: (_) =>
-            {_.releases, _.releases.artifacts, _.signer, _.developer});
+        alsoWatch: (_) => {
+              _.localApp,
+              _.releases,
+              _.releases.artifacts,
+              _.signer,
+              _.developer
+            });
 
     final app = state.model ?? model;
 
