@@ -38,14 +38,14 @@ final appInitializer = FutureProvider<void>((ref) async {
   // Do not use ignoreReturn here
   if (ref.appCurationSets.countLocal == 0) {
     await ref.appCurationSets.findAll();
+    // Take opportunity to preload updates
+    await ref.apps.appAdapter.checkForUpdates();
   } else {
     ref.appCurationSets.findAll();
   }
 
   // Preload zapstore's nostr curation set
   await ref.read(appCurationSetProvider(kNostrCurationSet).notifier).fetch();
-
-  ref.localApps.localAppAdapter.updateNumberOfApps();
 
   // Handle deep links
   final appLinksSub = appLinks.uriLinkStream.listen((uri) async {

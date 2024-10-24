@@ -4,7 +4,6 @@ import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
-import 'package:zapstore/models/local_app.dart';
 import 'package:zapstore/widgets/app_card.dart';
 import 'package:zapstore/widgets/spinning_logo.dart';
 

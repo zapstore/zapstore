@@ -218,15 +218,13 @@ mixin AppAdapter on Adapter<App> {
     return super.findAll(params: params);
   }
 
-  Future<List<App>> checkForUpdates() async {
+  Future<void> checkForUpdates() async {
     final appIds = await _installedIdentifiers();
     if (appIds.isNotEmpty) {
-      final apps = await fetchAppModels({'#d': appIds});
+      await fetchAppModels({'#d': appIds});
       // Once apps are loaded, check for installed status
       await ref.localApps.localAppAdapter.refreshUpdateStatus();
-      return apps;
     }
-    return [];
   }
 
   Future<List<App>> fetchAppModels(Map<String, dynamic> params) async {
