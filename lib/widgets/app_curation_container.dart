@@ -19,7 +19,8 @@ class AppCurationContainer extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scrollController = useScrollController();
     final selectedAppCurationSet = ref.watch(_selectedIdProvider);
-    final appCurationSets = ref.appCurationSets.findAllLocal();
+    final appCurationSets =
+        ref.appCurationSets.findAllLocal().sortedBy((s) => s.createdAt!);
 
     // Custom curation set to place nostr set first (as its preloaded)
     final nostrCurationSet = appCurationSets.firstWhereOrNull(
