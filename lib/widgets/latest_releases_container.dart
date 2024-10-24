@@ -88,17 +88,13 @@ class LatestReleasesAppNotifier extends StateNotifier<AsyncValue<List<App>>> {
   int _page = 1;
   final Ref ref;
 
-  LatestReleasesAppNotifier(this.ref) : super(AsyncLoading());
+  LatestReleasesAppNotifier(this.ref) : super(AsyncLoading()) {
+    fetch();
+  }
 
   Future<void> fetch({bool next = false}) async {
     if (next) {
       _page++;
-    } else {
-      final apps = _fetchLocal();
-      if (apps.isNotEmpty) {
-        state = AsyncData(apps);
-        return;
-      }
     }
 
     // Can't use ignoreReturn, as super.findAll does use the result
@@ -107,6 +103,7 @@ class LatestReleasesAppNotifier extends StateNotifier<AsyncValue<List<App>>> {
         'includes': true,
         'limit': 10,
         'until': next ? _oldestCreatedAt : null,
+        'since': null,
       },
     );
 

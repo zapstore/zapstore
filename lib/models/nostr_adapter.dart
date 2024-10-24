@@ -124,8 +124,9 @@ mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
       kinds: {kind, ...?additionalKinds},
       tags: params,
       limit: limit,
-      since: since,
       until: until,
+      // Disable since when until is present
+      since: until != null ? null : since,
     );
 
     final result = await relay.queryRaw(req);
@@ -170,7 +171,6 @@ mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
 class RelayListenerNotifier extends Notifier<void> {
   @override
   void build() {
-    fetch();
     final timer = Timer.periodic(Duration(minutes: 30), (_) => fetch());
 
     // This will get disposed when clearing and restarting the app
