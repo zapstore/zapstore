@@ -7,6 +7,7 @@ import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/local_app.dart';
 import 'package:zapstore/models/settings.dart';
+import 'package:zapstore/models/user.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/system_info.dart';
 import 'package:zapstore/widgets/app_drawer.dart';
@@ -33,7 +34,7 @@ class InstallButton extends ConsumerWidget {
       onTap: switch (status) {
         AppInstallStatus.downgrade => null,
         AppInstallStatus.updated => () {
-            packageManager.openApp(app.identifier);
+            packageManager.openApp(app.identifier!);
           },
         _ => switch (progress) {
             IdleInstallProgress() => () {
@@ -158,19 +159,30 @@ class InstallAlertDialog extends ConsumerWidget {
             Gap(20),
             if (app.signer.value != null)
               WebOfTrustContainer(
-                  user: user, npub: user?.npub, npub2: app.signer.value!.npub),
-            if (user != null)
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Gap(20),
-                  Text('The app will be downloaded from:\n'),
-                  Text(
-                    app.latestMetadata!.urls.firstOrNull ??
-                        'https://cdn.zap.store/${app.latestMetadata!.hash}',
-                    style: TextStyle(fontWeight: FontWeight.bold),
+                fromNpub: user?.npub ?? kFranzapNpub,
+                toNpub: app.signer.value!.npub,
+              ),
+            if (app.latestMetadata?.urls.isNotEmpty ?? false)
+              Padding(
+                padding: const EdgeInsets.only(top: 16, bottom: 16),
+                child: RichText(
+                  text: WidgetSpan(
+                    child: Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text('This app will be downloaded from '),
+                        Text(
+                          Uri.parse(app.latestMetadata!.urls.first).host,
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            decoration: TextDecoration.underline,
+                          ),
+                        ),
+                        Text(' and verified.'),
+                      ],
+                    ),
                   ),
-                ],
+                ),
               ),
           ],
         ),

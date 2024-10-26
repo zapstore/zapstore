@@ -10,34 +10,34 @@ import 'package:zapstore/widgets/rounded_image.dart';
 class WebOfTrustContainer extends HookConsumerWidget {
   const WebOfTrustContainer({
     super.key,
-    this.user,
-    String? npub,
-    required this.npub2,
+    required this.fromNpub,
+    required this.toNpub,
   });
 
-  final User? user;
-  final String npub2;
-  String get npub => user?.npub ?? kFranzapNpub;
+  final String fromNpub;
+  final String toNpub;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return switch (
-        ref.watch(followsWhoFollowProvider((from: npub, to: npub2)))) {
+        ref.watch(followsWhoFollowProvider((from: fromNpub, to: toNpub)))) {
       AsyncData<List<User>>(value: final trustedUsers) => Builder(
           builder: (context) {
             final hasUser =
-                trustedUsers.firstWhereOrNull((u) => u.npub == npub) != null;
-            final trustedUsersWithoutUser =
-                trustedUsers.where((u) => u.npub != npub).toList();
-            if (trustedUsersWithoutUser.isEmpty) {
+                trustedUsers.firstWhereOrNull((u) => u.npub == fromNpub) !=
+                    null;
+            final trustedUsersWithoutLoggedInUser =
+                trustedUsers.where((u) => u.npub != fromNpub).toList();
+            if (trustedUsersWithoutLoggedInUser.isEmpty) {
               return Text(
-                  'No trusted users. This may be a service error and you may want to try again later.');
+                  'No trusted users between you and the signer. (This may be a service error)');
             }
             return RichText(
               text: TextSpan(
                 children: [
-                  if (hasUser && npub != kFranzapNpub) TextSpan(text: 'You, '),
-                  for (final trustedUser in trustedUsersWithoutUser)
+                  if (hasUser && fromNpub != kFranzapNpub)
+                    TextSpan(text: 'You, '),
+                  for (final trustedUser in trustedUsersWithoutLoggedInUser)
                     TextSpan(
                       style: TextStyle(height: 1.6),
                       children: [
@@ -49,14 +49,15 @@ class WebOfTrustContainer extends HookConsumerWidget {
                               RoundedImage(
                                   url: trustedUser.avatarUrl, size: 20),
                               Text(
-                                ' ${trustedUser.nameOrNpub}${trustedUsersWithoutUser.indexOf(trustedUser) == trustedUsersWithoutUser.length - 1 ? '' : ',  '}',
+                                ' ${trustedUser.nameOrNpub}${trustedUsersWithoutLoggedInUser.indexOf(trustedUser) == trustedUsersWithoutLoggedInUser.length - 1 ? '' : ',  '}',
                                 style: TextStyle(fontWeight: FontWeight.bold),
                               ),
                             ],
                           ),
                         ),
-                        if (trustedUsersWithoutUser.indexOf(trustedUser) ==
-                            trustedUsersWithoutUser.length - 1)
+                        if (trustedUsersWithoutLoggedInUser
+                                .indexOf(trustedUser) ==
+                            trustedUsersWithoutLoggedInUser.length - 1)
                           TextSpan(
                             text: ' and others follow this signer on nostr.',
                           )
