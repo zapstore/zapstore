@@ -916,12 +916,10 @@ packages:
   purplebase:
     dependency: "direct main"
     description:
-      path: "."
-      ref: "0.2.0"
-      resolved-ref: "9cd05ac29caaca742a16dc64608cae9751aa0eb1"
-      url: "https://github.com/purplebase/purplebase"
-    source: git
-    version: "0.1.1"
+      path: "../purplebase"
+      relative: true
+    source: path
+    version: "0.2.0"
   quiver:
     dependency: transitive
     description:

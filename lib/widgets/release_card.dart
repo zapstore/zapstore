@@ -28,7 +28,7 @@ class ReleaseCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(release.version,
+            Text(release.version!,
                 style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
             Gap(10),
             release.content.length < 3000

@@ -188,7 +188,7 @@ class App extends BaseApp with DataModelMixin<App> {
     );
 
     final i = await packageManager.getPackageInfo(
-        packageName: identifier, flags: flags);
+        packageName: identifier!, flags: flags);
     if (i == null) {
       return null;
     }
@@ -284,7 +284,7 @@ mixin AppAdapter on Adapter<App> {
 
       if (m != null) {
         for (final app in apps) {
-          queriedAtMap[app.identifier] = m;
+          queriedAtMap[app.identifier!] = m;
         }
       }
     } else {
