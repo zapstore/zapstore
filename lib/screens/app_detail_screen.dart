@@ -11,6 +11,7 @@ import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/release.dart';
 import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/widgets/author_container.dart';
 import 'package:zapstore/widgets/install_button.dart';
 import 'package:zapstore/widgets/release_card.dart';
 import 'package:zapstore/widgets/signer_and_developer_row.dart';
@@ -31,11 +32,11 @@ class AppDetailScreen extends HookConsumerWidget {
     // TODO: Bug using remote=true in watchOne, use hook for now
     final snapshot = useFuture(useMemoized(() async {
       final storedApps =
-          ref.apps.appAdapter.findWhereIdentifierInLocal({model.identifier});
+          ref.apps.appAdapter.findWhereIdentifierInLocal({model.identifier!});
       if (storedApps.firstOrNull?.latestMetadata != null) {
         return storedApps.first;
       }
-      return ref.apps.findOne(model.identifier, remote: true);
+      return ref.apps.findOne(model.identifier!, remote: true);
     }));
     final state = ref.apps.watchOne(model.id!,
         alsoWatch: (_) => {
@@ -48,8 +49,14 @@ class AppDetailScreen extends HookConsumerWidget {
 
     final app = state.model ?? model;
 
+    final curatedBy = ref.appCurationSets
+        .findAllLocal()
+        .where((s) => s.appIds.contains(app.identifier))
+        .map((s) => s.signer.value)
+        .nonNulls;
+
     return RefreshIndicator(
-      onRefresh: () => ref.apps.findOne(model.identifier, remote: true),
+      onRefresh: () => ref.apps.findOne(model.identifier!, remote: true),
       child: Column(
         children: [
           Expanded(
@@ -87,6 +94,13 @@ class AppDetailScreen extends HookConsumerWidget {
                           ),
                         ),
                       Divider(height: 24),
+                      if (curatedBy.isNotEmpty)
+                        for (final user in curatedBy)
+                          AuthorContainer(
+                            user: user,
+                            text: 'Recommended by',
+                          ),
+                      if (curatedBy.isNotEmpty) Gap(20),
                       MarkdownBody(
                         styleSheet: MarkdownStyleSheet(
                           h1: TextStyle(fontWeight: FontWeight.bold),
@@ -174,7 +188,7 @@ class AppDetailScreen extends HookConsumerWidget {
                                   Gap(10),
                                   Flexible(
                                     child: AutoSizeText(
-                                      app.identifier,
+                                      app.identifier!,
                                       minFontSize: 12,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
