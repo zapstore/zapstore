@@ -72,8 +72,10 @@ class ErrorContainer extends HookConsumerWidget {
               ElevatedButton(
                 onPressed: () {
                   ref.read(localStorageProvider).destroy().then((_) {
-                    Phoenix.rebirth(context);
-                    context.go('/');
+                    if (context.mounted) {
+                      Phoenix.rebirth(context);
+                      context.go('/');
+                    }
                   });
                 },
                 style: ElevatedButton.styleFrom(

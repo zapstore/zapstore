@@ -107,9 +107,11 @@ class SettingsScreen extends HookConsumerWidget {
                         child: Text('Confirm'),
                         onPressed: () {
                           ref.read(localStorageProvider).destroy().then((_) {
-                            Phoenix.rebirth(context);
-                            Navigator.of(context).pop();
-                            context.go('/');
+                            if (context.mounted) {
+                              Phoenix.rebirth(context);
+                              Navigator.of(context).pop();
+                              context.go('/');
+                            }
                           });
                         },
                       ),

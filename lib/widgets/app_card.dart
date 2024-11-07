@@ -159,7 +159,9 @@ class TinyAppCard extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return GestureDetector(
       onTap: () {
-        context.go('/details', extra: app);
+        if (app != null) {
+          context.go('/details', extra: app);
+        }
       },
       child: Card(
         margin: EdgeInsets.all(0),
