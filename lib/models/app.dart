@@ -193,8 +193,11 @@ class App extends BaseApp with DataModelMixin<App> {
       return null;
     }
     final bytes = i.signingInfo!.signingCertificateHistory!.first;
-    return latestMetadata!.apkSignatureHash!.toLowerCase() ==
-        sha256.convert(bytes).toString().toLowerCase();
+    final installedApkSigHash = sha256.convert(bytes).toString().toLowerCase();
+    final metadataSigHashes =
+        latestMetadata?.tagMap['apk_signature_hash'] ?? {};
+    return metadataSigHashes
+        .any((msh) => msh.toLowerCase() == installedApkSigHash);
   }
 }
 
