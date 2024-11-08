@@ -7,6 +7,7 @@ import 'package:remove_markdown/remove_markdown.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
+import 'package:zapstore/models/user.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/author_container.dart';
 import 'package:zapstore/widgets/install_button.dart';
@@ -81,7 +82,8 @@ class AppCard extends HookConsumerWidget {
                       softWrap: true,
                     ),
                     Gap(6),
-                    if (app.signer.isPresent)
+                    if (app.signer.isPresent &&
+                        app.signer.value!.pubkey != kZapstorePubkey)
                       AuthorContainer(
                         user: app.signer.value!,
                         text: 'Signed by',
