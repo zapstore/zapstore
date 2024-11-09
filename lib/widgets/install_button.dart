@@ -1,5 +1,6 @@
 import 'package:auto_size_text/auto_size_text.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:percent_indicator/linear_percent_indicator.dart';
@@ -15,7 +16,7 @@ import 'package:zapstore/widgets/author_container.dart';
 import 'package:zapstore/widgets/spinning_logo.dart';
 import 'package:zapstore/widgets/wot_container.dart';
 
-class InstallButton extends ConsumerWidget {
+class InstallButton extends HookConsumerWidget {
   InstallButton({
     super.key,
     required this.app,
@@ -29,6 +30,16 @@ class InstallButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final progress = ref.watch(installationProgressProvider(app.id!));
     final status = app.localApp.value?.status;
+
+    useMemoized(() {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (progress is IdleInstallProgress && progress.success == true) {
+          context.showInfo('Success',
+              description:
+                  '${app.name ?? app.identifier} was successfully installed');
+        }
+      });
+    }, [app.id, progress]);
 
     return GestureDetector(
       onTap: switch (status) {
@@ -47,15 +58,18 @@ class InstallButton extends ConsumerWidget {
                   );
                 } else if (app.canUpdate) {
                   app.install();
+                } else if (app.isDisabled) {
+                  // nothing
                 } else {
                   context.showError(
-                      title: 'Can\'t install',
+                      title: 'Installation not possible',
                       description: 'Release or signer are missing.');
                 }
               },
-            ErrorInstallProgress(:final e, :final info) => () {
+            ErrorInstallProgress(:final e, :final info, :final actions) => () {
                 // show error and reset state to idle
-                context.showError(title: e.message, description: info);
+                context.showError(
+                    title: e.message, description: info, actions: actions);
                 ref.read(installationProgressProvider(app.id!).notifier).state =
                     IdleInstallProgress();
               },
@@ -74,6 +88,7 @@ class InstallButton extends ConsumerWidget {
         },
         backgroundColor: switch (progress) {
           ErrorInstallProgress() => Colors.red,
+          IdleInstallProgress() => app.isDisabled ? Colors.grey : kUpdateColor,
           _ => kUpdateColor,
         },
         progressColor: Colors.blue[800],
@@ -91,7 +106,7 @@ class InstallButton extends ConsumerWidget {
                   ? Padding(
                       padding: const EdgeInsets.only(left: 8, right: 8),
                       child: AutoSizeText(
-                        'Update',
+                        app.isDisabled ? 'Disabled updates' : 'Update',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -109,10 +124,10 @@ class InstallButton extends ConsumerWidget {
               VerifyingHashProgress() => Text('Verifying file integrity'),
               RequestInstallProgress() =>
                 Text('Requesting ${app.canUpdate ? 'update' : 'installation'}'),
-              ErrorInstallProgress(:final e) => Padding(
+              ErrorInstallProgress() => Padding(
                   padding: const EdgeInsets.only(left: 8, right: 8),
                   child: Text(
-                    '${e.message.substringMax(64)} (tap for more)',
+                    'Error (tap for details)',
                     textAlign: TextAlign.center,
                   ),
                 ),

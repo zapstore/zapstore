@@ -47,7 +47,10 @@ dependencies:
   app_links: ^6.3.2
   dart_emoji: ^0.2.0+2
   remove_markdown: ^0.0.2
-  install_plugin: ^2.1.0
+  android_package_installer:
+    git:
+      url: https://github.com/zapstore/android_package_installer
+      ref: ba2aa7a
   shared_preferences: ^2.3.2
 
 dependency_overrides:

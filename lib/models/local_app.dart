@@ -6,6 +6,7 @@ import 'package:flutter_data/flutter_data.dart';
 import 'package:json_annotation/json_annotation.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
+import 'package:zapstore/navigation/app_initializer.dart';
 import 'package:zapstore/utils/system_info.dart';
 
 part 'local_app.g.dart';
@@ -18,23 +19,26 @@ class LocalApp extends DataModel<LocalApp> {
   final String? installedVersion;
   final int? installedVersionCode;
   final AppInstallStatus? status;
-  // final String? apkSignatureHash;
+  final bool disabled;
 
   LocalApp(
       {required this.id,
       this.installedVersion,
       this.installedVersionCode,
-      this.status});
+      this.status,
+      this.disabled = false});
 
   LocalApp copyWith(
       {String? installedVersion,
       int? installedVersionCode,
-      AppInstallStatus? status}) {
+      AppInstallStatus? status,
+      bool? disabled}) {
     return LocalApp(
       id: id,
       installedVersion: installedVersion ?? this.installedVersion,
       installedVersionCode: installedVersionCode ?? this.installedVersionCode,
       status: status ?? this.status,
+      disabled: disabled ?? this.disabled,
     );
   }
 }
@@ -51,35 +55,74 @@ mixin LocalAppAdapter on Adapter<LocalApp> {
     final installedPackageInfos = infos!.where((i) =>
         !kExcludedAppIdNamespaces.any((e) => i.packageName!.startsWith(e)));
 
-    final ids = appId != null
-        ? [appId]
-        : installedPackageInfos.map((i) => i.packageName).nonNulls;
+    final ids = installedPackageInfos.map((i) => i.packageName).nonNulls;
+    final disabledUpdatesIdentifiers =
+        sharedPreferences!.getStringList(kDisabledUpdatesKey) ?? [];
 
-    final localApps = findManyLocalByIds(ids);
-    final apps = ref.apps.appAdapter.findWhereIdentifierInLocal(ids);
+    // appId == null is the case of all apps
+    if (appId == null) {
+      final localApps = findAllLocal();
+      final apps = ref.apps.appAdapter.findWhereIdentifierInLocal(ids);
 
-    for (final i in installedPackageInfos) {
-      final appId = i.packageName!;
-      final app = apps.firstWhereOrNull((a) => a.identifier == appId);
+      final localAppsToSave = <LocalApp>[];
 
-      final installedVersion = i.versionName;
-      final installedVersionCode = i.versionCode;
+      for (final i in installedPackageInfos) {
+        final appId = i.packageName!;
+        final app = apps.firstWhereOrNull((a) => a.identifier == appId);
+
+        final installedVersion = i.versionName;
+        final installedVersionCode = i.versionCode;
+
+        final status =
+            determineUpdateStatus(app, installedVersion, installedVersionCode);
+
+        if (status == null) {
+          continue;
+        }
+        final localApp = localApps.firstWhereOrNull((app) => appId == app.id) ??
+            LocalApp(id: i.packageName!);
+        localAppsToSave.add(
+          localApp.copyWith(
+            installedVersion: installedVersion,
+            installedVersionCode: installedVersionCode,
+            status: status,
+            disabled: disabledUpdatesIdentifiers.contains(localApp.id),
+          ),
+        );
+      }
+
+      // Save local apps
+      await saveManyLocal(localAppsToSave, async: true);
+
+      // Remove uninstalled apps
+      final uninstalledApps = localApps.where((a) => !ids.contains(a.id));
+      if (uninstalledApps.isNotEmpty) {
+        deleteLocalByKeys(uninstalledApps.map((a) => DataModel.keyFor(a)));
+      }
+    } else {
+      final app =
+          ref.apps.appAdapter.findWhereIdentifierInLocal({appId}).firstOrNull;
+      final i =
+          installedPackageInfos.firstWhereOrNull((i) => i.packageName == appId);
+
+      final installedVersion = i?.versionName;
+      final installedVersionCode = i?.versionCode;
 
       final status =
           determineUpdateStatus(app, installedVersion, installedVersionCode);
 
-      if (status == null) {
-        continue;
-      }
+      if (status != null) {
+        final localApp = app!.localApp.value ?? LocalApp(id: i!.packageName!);
 
-      final localApp = localApps.firstWhereOrNull((app) => appId == app.id) ??
-          LocalApp(id: i.packageName!);
-      localApp
-          .copyWith(
+        localApp
+            .copyWith(
               installedVersion: installedVersion,
               installedVersionCode: installedVersionCode,
-              status: status)
-          .saveLocal();
+              status: status,
+              disabled: disabledUpdatesIdentifiers.contains(localApp.id),
+            )
+            .saveLocal();
+      }
     }
 
     updateNumberOfApps();
@@ -87,7 +130,7 @@ mixin LocalAppAdapter on Adapter<LocalApp> {
 
   void updateNumberOfApps() {
     final rs = db.select(
-        'SELECT count(*) as c FROM localApps WHERE json_extract(data, \'\$.status\') is \'updatable\'');
+        'SELECT count(*) as c FROM localApps WHERE json_extract(data, \'\$.status\') is \'updatable\' AND json_extract(data, \'\$.disabled\') = false');
     ref.read(appsToUpdateProvider.notifier).state = rs.first['c'];
   }
 

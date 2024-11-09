@@ -10,17 +10,18 @@ import 'package:zapstore/navigation/router.dart';
 import 'package:zapstore/widgets/app_curation_container.dart';
 
 AppLifecycleListener? _lifecycleListener;
+SharedPreferences? sharedPreferences;
 
 final appInitializer = FutureProvider<void>((ref) async {
-  final prefs = await SharedPreferences.getInstance();
-  final dbVersion = prefs.getInt('dbVersion');
+  sharedPreferences = await SharedPreferences.getInstance();
+  final dbVersion = sharedPreferences!.getInt('dbVersion');
 
   // Perform migration
   if (dbVersion == null || dbVersion < kDbVersion) {
     final storage = ref.read(localStorageProvider);
     await storage.initialize();
     await storage.destroy();
-    await prefs.setInt('dbVersion', kDbVersion);
+    await sharedPreferences!.setInt('dbVersion', kDbVersion);
   }
 
   // Initialize Flutter Data

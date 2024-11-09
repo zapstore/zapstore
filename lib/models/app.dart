@@ -1,15 +1,15 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
-import 'dart:typed_data';
 
+import 'package:android_package_installer/android_package_installer.dart';
 import 'package:android_package_manager/android_package_manager.dart';
 import 'package:async/async.dart';
 import 'package:collection/collection.dart';
 import 'package:convert/convert.dart';
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_data/flutter_data.dart';
-import 'package:install_plugin/install_plugin.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:purplebase/purplebase.dart';
@@ -21,6 +21,7 @@ import 'package:zapstore/models/release.dart';
 import 'package:zapstore/models/user.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
+import 'package:zapstore/navigation/app_initializer.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/system_info.dart';
 
@@ -66,9 +67,10 @@ class App extends BaseApp with DataModelMixin<App> {
       signer.isPresent;
   bool get isUpdated => localApp.value?.status == AppInstallStatus.updated;
   bool get isDowngrade => localApp.value?.status == AppInstallStatus.downgrade;
+  bool get isDisabled => localApp.value?.disabled == true;
 
   Future<void> install() async {
-    if (!canInstall && !canUpdate) {
+    if (!canInstall && !canUpdate || isDisabled) {
       return;
     }
 
@@ -80,9 +82,20 @@ class App extends BaseApp with DataModelMixin<App> {
       final match = await packageCertificateMatches();
       if (match == false) {
         notifier.state = ErrorInstallProgress(
-          Exception('Update is not possible'),
+          Exception('App failed security check'),
           info:
-              'App failed a security check (APK cert mismatch). To fix, remove the app.',
+              '''There was an APK certificate mismatch for $name ($identifier).
+
+This could mean a malicious developer signed this update.
+
+If you want to update anyway, you need to manually uninstall the app and install it again.
+
+It could also mean the original developer signed with a different key. If you are sure you installed $name through another app store, you can choose to turn off zap.store updates.
+''',
+          actions: [
+            ('Close notice (recommended)', () async {}),
+            ('Disable $name updates', disableUpdates)
+          ],
         );
         return;
       }
@@ -116,18 +129,26 @@ class App extends BaseApp with DataModelMixin<App> {
       }
 
       notifier.state = RequestInstallProgress();
-      final result = await InstallPlugin.install(file.path);
-
-      if (result['isSuccess']) {
-        await file.delete();
-        await adapter.ref.localApps.localAppAdapter
-            .refreshUpdateStatus(appId: identifier);
-      } else {
-        const msg = 'App not installed';
-        notifier.state = ErrorInstallProgress(
-          Exception(msg),
-          info: result['errorMessage'],
-        );
+      final result =
+          await AndroidPackageInstaller.installApk(apkFilePath: file.path);
+      final installationStatus =
+          result != null ? PackageInstallerStatus.byCode(result) : null;
+      switch (installationStatus) {
+        case PackageInstallerStatus.success:
+          notifier.state = IdleInstallProgress(success: true);
+          await file.delete();
+          await adapter.ref.localApps.localAppAdapter
+              .refreshUpdateStatus(appId: identifier);
+          break;
+        case PackageInstallerStatus.failureAborted:
+          // Simply reset state
+          notifier.state = IdleInstallProgress();
+          break;
+        default:
+          notifier.state = ErrorInstallProgress(
+            Exception('Error installing app'),
+            info: installationStatus?.name,
+          );
       }
     }
 
@@ -199,7 +220,20 @@ class App extends BaseApp with DataModelMixin<App> {
     return metadataSigHashes
         .any((msh) => msh.toLowerCase() == installedApkSigHash);
   }
+
+  /// Disables updates to this app by putting the app identifier in local storage (shared prefs)
+  Future<void> disableUpdates() async {
+    final adapter = DataModel.adapterFor(localApp.value!) as LocalAppAdapter;
+    final value = sharedPreferences!.getStringList(kDisabledUpdatesKey) ?? [];
+    if (!value.contains(identifier)) {
+      await sharedPreferences!
+          .setStringList(kDisabledUpdatesKey, [...value, identifier!]);
+    }
+    await adapter.refreshUpdateStatus(appId: identifier!);
+  }
 }
+
+const kDisabledUpdatesKey = 'disabled_updates';
 
 mixin AppAdapter on Adapter<App> {
   final queriedAtMap = <String, DateTime>{};
@@ -430,7 +464,10 @@ extension AppExt on Iterable<App> {
 
 sealed class AppInstallProgress {}
 
-class IdleInstallProgress extends AppInstallProgress {}
+class IdleInstallProgress extends AppInstallProgress {
+  final bool? success;
+  IdleInstallProgress({this.success});
+}
 
 class DownloadingInstallProgress extends AppInstallProgress {
   final double progress;
@@ -444,7 +481,8 @@ class RequestInstallProgress extends AppInstallProgress {}
 class ErrorInstallProgress extends AppInstallProgress {
   final Exception e;
   final String? info;
-  ErrorInstallProgress(this.e, {this.info});
+  final List<(String, Future<void> Function())> actions;
+  ErrorInstallProgress(this.e, {this.info, this.actions = const []});
 }
 
 extension ExceptionExt on Exception {

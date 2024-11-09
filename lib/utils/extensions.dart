@@ -9,37 +9,61 @@ import 'package:zapstore/models/app.dart';
 
 extension ContextX on BuildContext {
   ThemeData get theme => Theme.of(this);
-  void showInfo(String message, {Icon? icon}) {
+  void showInfo(String message, {String? description, Icon? icon}) {
     toastification.show(
       context: this,
       type: ToastificationType.info,
       icon: icon ?? Icon(Icons.info),
       style: ToastificationStyle.fillColored,
+      alignment: Alignment.topCenter,
       title: Text(
         message,
-        style: TextStyle(fontSize: 16),
+        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
       ),
-      autoCloseDuration: const Duration(seconds: 3),
+      description: description != null ? Text(description) : null,
+      autoCloseDuration: const Duration(seconds: 4),
       showProgressBar: false,
       closeOnClick: true,
-      alignment: Alignment.bottomCenter,
     );
   }
 
-  void showError({required String title, String? description, Icon? icon}) {
+  void showError(
+      {required String title,
+      String? description,
+      Icon? icon,
+      List<(String, Future<void> Function())> actions = const []}) {
     toastification.show(
       context: this,
       type: ToastificationType.error,
       style: ToastificationStyle.fillColored,
+      alignment: Alignment.topCenter,
       icon: icon ?? Icon(Icons.error),
       title: Text(
         title,
-        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+        overflow: TextOverflow.ellipsis,
       ),
       showProgressBar: false,
       closeOnClick: true,
-      description: description != null ? Text(description) : null,
-      alignment: Alignment.lerp(Alignment.bottomCenter, Alignment.center, 0.25),
+      description: description != null
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                RichText(text: TextSpan(text: description)),
+                for (final (text, fn) in actions)
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        backgroundColor: Colors.transparent),
+                    onPressed: () async {
+                      await fn.call();
+                      toastification.dismissAll(delayForAnimation: false);
+                    },
+                    child: Text(text),
+                  ),
+              ],
+            )
+          : null,
     );
   }
 
@@ -75,11 +99,12 @@ HasMany<T> hasMany<T extends DataModelMixin<T>>(Map<String, dynamic> map) {
   return HasMany<T>.fromJson(map);
 }
 
+final emojiParser = EmojiParser();
+
 extension StringWidget on String {
-  static final _emojiParser = EmojiParser();
   String parseEmojis() {
     return replaceAllMapped(RegExp(':([a-z]*):'), (m) {
-      return _emojiParser.hasName(m[1]!) ? _emojiParser.get(m[1]!).code : m[0]!;
+      return emojiParser.hasName(m[1]!) ? emojiParser.get(m[1]!).code : m[0]!;
     });
   }
 

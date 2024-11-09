@@ -14,7 +14,8 @@ class UpdatesScreen extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(updatesProvider);
 
-    final (updatedApps, updatableApps) = state.value ?? ([], []);
+    final (updatedApps, updatableApps, updatesDisabledApps) =
+        state.value ?? ([], [], []);
 
     return SingleChildScrollView(
       physics: AlwaysScrollableScrollPhysics(),
@@ -37,7 +38,9 @@ class UpdatesScreen extends HookConsumerWidget {
               children: [
                 Gap(20),
                 Text(
-                  '${updatableApps.length} update${updatableApps.length > 1 ? 's' : ''} available'
+                  (updatableApps.length > 1
+                          ? '${updatableApps.length} updates available'
+                          : 'One update available')
                       .toUpperCase(),
                   style: TextStyle(
                     fontSize: 16,
@@ -45,7 +48,6 @@ class UpdatesScreen extends HookConsumerWidget {
                     fontWeight: FontWeight.w300,
                   ),
                 ),
-                //
                 Gap(10),
                 for (final app in updatableApps)
                   AppCard(model: app, showUpdate: true),
@@ -63,6 +65,19 @@ class UpdatesScreen extends HookConsumerWidget {
             ),
           Gap(10),
           for (final app in updatedApps) AppCard(model: app),
+          Gap(10),
+          if (updatesDisabledApps.isNotEmpty)
+            Text(
+              'Disabled updates apps'.toUpperCase(),
+              style: TextStyle(
+                fontSize: 16,
+                letterSpacing: 3,
+                fontWeight: FontWeight.w300,
+              ),
+            ),
+          Gap(10),
+          for (final app in updatesDisabledApps)
+            AppCard(model: app, showUpdate: true),
         ],
       ),
     );
@@ -71,9 +86,9 @@ class UpdatesScreen extends HookConsumerWidget {
 
 // Provider
 
-class UpdatesNotifier extends AsyncNotifier<(List<App>, List<App>)> {
+class UpdatesNotifier extends AsyncNotifier<(List<App>, List<App>, List<App>)> {
   @override
-  Future<(List<App>, List<App>)> build() async {
+  Future<(List<App>, List<App>, List<App>)> build() async {
     // This provider is quite inefficient, as it watches everything
     // and always triggers as there's no proper equality for the return type
     // There is also no good way to manage state since returning a value
@@ -83,11 +98,11 @@ class UpdatesNotifier extends AsyncNotifier<(List<App>, List<App>)> {
     final localAppsState = ref.localApps.watchAll();
 
     if (!appsState.hasModel || !localAppsState.hasModel) {
-      return (<App>[], <App>[]);
+      return (<App>[], <App>[], <App>[]);
     }
 
     final updatableApps = appsState.model
-        .where((app) => app.canUpdate)
+        .where((app) => app.canUpdate && !app.isDisabled)
         .toList()
         .sorted((a, b) => (a.name?.toLowerCase() ?? '')
             .compareTo(b.name?.toLowerCase() ?? ''));
@@ -98,10 +113,16 @@ class UpdatesNotifier extends AsyncNotifier<(List<App>, List<App>)> {
         .sorted((a, b) => (a.name?.toLowerCase() ?? '')
             .compareTo(b.name?.toLowerCase() ?? ''));
 
-    return (updatedApps, updatableApps);
+    final updateDisabledApps = appsState.model
+        .where((app) => app.canUpdate && app.isDisabled)
+        .toList()
+        .sorted((a, b) => (a.name?.toLowerCase() ?? '')
+            .compareTo(b.name?.toLowerCase() ?? ''));
+
+    return (updatedApps, updatableApps, updateDisabledApps);
   }
 }
 
 final updatesProvider =
-    AsyncNotifierProvider<UpdatesNotifier, (List<App>, List<App>)>(
+    AsyncNotifierProvider<UpdatesNotifier, (List<App>, List<App>, List<App>)>(
         UpdatesNotifier.new);
