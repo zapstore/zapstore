@@ -9,7 +9,7 @@ import app_links
 import device_info_plus
 import path_provider_foundation
 import shared_preferences_foundation
-import sqflite_darwin
+import sqflite
 import sqlite3_flutter_libs
 import url_launcher_macos
 

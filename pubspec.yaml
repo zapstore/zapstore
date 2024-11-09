@@ -26,7 +26,6 @@ dependencies:
   async_button_builder: ^3.0.0+1
   android_package_manager: ^0.7.1
   url_launcher: ^6.2.5
-  device_apps: ^2.2.0
   purplebase: ^0.2.0
   sqlite3_flutter_libs: ^0.5.20
   flutter_markdown: ^0.7.1
@@ -63,7 +62,6 @@ dependency_overrides:
     git:
       url: https://github.com/zapstore/flutter_data
       ref: d7376cf1eac8e9c563d4c6eed8e567adc877415c
-  win32: ^5.5.4
 
 dev_dependencies:
   flutter_test:
