@@ -177,6 +177,11 @@ class InstallAlertDialog extends ConsumerWidget {
                 fromNpub: user?.npub ?? kFranzapNpub,
                 toNpub: app.signer.value!.npub,
               ),
+            if (user == null)
+              LoginContainer(
+                minimal: true,
+                labelText: 'Log in to view your own web of trust',
+              ),
             if (app.latestMetadata?.urls.isNotEmpty ?? false)
               Padding(
                 padding: const EdgeInsets.only(top: 16, bottom: 16),
@@ -203,11 +208,6 @@ class InstallAlertDialog extends ConsumerWidget {
         ),
       ),
       actions: [
-        if (user == null)
-          LoginContainer(
-            minimal: true,
-            labelText: 'Log in to view your own web of trust',
-          ),
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 10),
           child: TextButton(
