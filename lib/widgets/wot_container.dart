@@ -39,6 +39,7 @@ class WebOfTrustContainer extends HookConsumerWidget {
               preSpan: hasUser && fromNpub != kFranzapNpub
                   ? TextSpan(text: 'You, ')
                   : null,
+              trailingText: ' and others follow this signer on nostr.',
               users: trustedUsersWithoutLoggedInUser,
             );
           },
@@ -70,10 +71,12 @@ class UsersRichText extends StatelessWidget {
   const UsersRichText({
     super.key,
     this.preSpan,
+    this.trailingText,
     required this.users,
   });
 
   final TextSpan? preSpan;
+  final String? trailingText;
   final List<User> users;
 
   @override
@@ -100,9 +103,7 @@ class UsersRichText extends StatelessWidget {
                   ),
                 ),
                 if (users.indexOf(user) == users.length - 1)
-                  TextSpan(
-                    text: ' and others follow this signer on nostr.',
-                  )
+                  TextSpan(text: trailingText)
               ],
             ),
         ],

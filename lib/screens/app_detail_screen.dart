@@ -17,6 +17,7 @@ import 'package:zapstore/widgets/release_card.dart';
 import 'package:zapstore/widgets/signer_and_developer_row.dart';
 import 'package:zapstore/widgets/spinning_logo.dart';
 import 'package:zapstore/widgets/versioned_app_header.dart';
+import 'package:zapstore/widgets/wot_container.dart';
 
 class AppDetailScreen extends HookConsumerWidget {
   final App model;
@@ -95,11 +96,10 @@ class AppDetailScreen extends HookConsumerWidget {
                         ),
                       Divider(height: 24),
                       if (curatedBy.isNotEmpty)
-                        for (final user in curatedBy)
-                          AuthorContainer(
-                            user: user,
-                            text: 'Recommended by',
-                          ),
+                        UsersRichText(
+                          trailingText: ' recommended this app',
+                          users: curatedBy.toList(),
+                        ),
                       if (curatedBy.isNotEmpty) Gap(20),
                       MarkdownBody(
                         styleSheet: MarkdownStyleSheet(
@@ -119,18 +119,6 @@ class AppDetailScreen extends HookConsumerWidget {
                         child: SignerAndDeveloperRow(app: app),
                       ),
                       Gap(20),
-                      if (app.repository == null)
-                        Container(
-                          padding: EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: Colors.red[800],
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                              '⚠️ Source code for this app is not available',
-                              style: TextStyle(fontWeight: FontWeight.bold)),
-                        ),
-                      Gap(10),
                       Container(
                         padding: EdgeInsets.all(10),
                         decoration: BoxDecoration(
@@ -139,31 +127,35 @@ class AppDetailScreen extends HookConsumerWidget {
                         ),
                         child: Column(
                           children: [
-                            if (app.repository != null)
-                              Padding(
-                                padding: const EdgeInsets.all(8),
-                                child: Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text('Source'),
-                                    Gap(10),
-                                    Flexible(
-                                      child: GestureDetector(
-                                        onTap: () {
-                                          launchUrl(Uri.parse(app.repository!));
-                                        },
-                                        child: AutoSizeText(
-                                          app.repository!,
-                                          minFontSize: 12,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
+                            Padding(
+                              padding: const EdgeInsets.all(8),
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text('Source'),
+                                  Gap(10),
+                                  Flexible(
+                                    child: GestureDetector(
+                                      onTap: () {
+                                        launchUrl(Uri.parse(app.repository!));
+                                      },
+                                      child: app.repository != null
+                                          ? AutoSizeText(
+                                              app.repository!,
+                                              minFontSize: 12,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            )
+                                          : Text('Source code not available',
+                                              style: TextStyle(
+                                                  color: Colors.red[300],
+                                                  fontWeight: FontWeight.bold)),
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                ],
                               ),
+                            ),
                             Padding(
                               padding: const EdgeInsets.all(8),
                               child: Row(
