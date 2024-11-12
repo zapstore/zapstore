@@ -19,8 +19,10 @@ class WebOfTrustContainer extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return switch (
-        ref.watch(followsWhoFollowProvider((from: fromNpub, to: toNpub)))) {
+    final data =
+        ref.watch(followsWhoFollowProvider((from: fromNpub, to: toNpub)));
+
+    return switch (data) {
       AsyncData<List<User>>(value: final trustedUsers) => Builder(
           builder: (context) {
             final hasUser =
@@ -32,39 +34,12 @@ class WebOfTrustContainer extends HookConsumerWidget {
               return Text(
                   'No trusted users between you and the signer. (This may be a service error)');
             }
-            return RichText(
-              text: TextSpan(
-                children: [
-                  if (hasUser && fromNpub != kFranzapNpub)
-                    TextSpan(text: 'You, '),
-                  for (final trustedUser in trustedUsersWithoutLoggedInUser)
-                    TextSpan(
-                      style: TextStyle(height: 1.6),
-                      children: [
-                        WidgetSpan(
-                          alignment: PlaceholderAlignment.middle,
-                          child: Wrap(
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            children: [
-                              RoundedImage(
-                                  url: trustedUser.avatarUrl, size: 20),
-                              Text(
-                                ' ${trustedUser.nameOrNpub}${trustedUsersWithoutLoggedInUser.indexOf(trustedUser) == trustedUsersWithoutLoggedInUser.length - 1 ? '' : ',  '}',
-                                style: TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                            ],
-                          ),
-                        ),
-                        if (trustedUsersWithoutLoggedInUser
-                                .indexOf(trustedUser) ==
-                            trustedUsersWithoutLoggedInUser.length - 1)
-                          TextSpan(
-                            text: ' and others follow this signer on nostr.',
-                          )
-                      ],
-                    ),
-                ],
-              ),
+
+            return UsersRichText(
+              preSpan: hasUser && fromNpub != kFranzapNpub
+                  ? TextSpan(text: 'You, ')
+                  : null,
+              users: trustedUsersWithoutLoggedInUser,
             );
           },
         ),
@@ -88,6 +63,51 @@ class WebOfTrustContainer extends HookConsumerWidget {
           ),
         )
     };
+  }
+}
+
+class UsersRichText extends StatelessWidget {
+  const UsersRichText({
+    super.key,
+    this.preSpan,
+    required this.users,
+  });
+
+  final TextSpan? preSpan;
+  final List<User> users;
+
+  @override
+  Widget build(BuildContext context) {
+    return RichText(
+      text: TextSpan(
+        children: [
+          if (preSpan != null) preSpan!,
+          for (final user in users)
+            TextSpan(
+              style: TextStyle(height: 1.6),
+              children: [
+                WidgetSpan(
+                  alignment: PlaceholderAlignment.middle,
+                  child: Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      RoundedImage(url: user.avatarUrl, size: 20),
+                      Text(
+                        ' ${user.nameOrNpub}${users.indexOf(user) == users.length - 1 ? '' : ',  '}',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ),
+                if (users.indexOf(user) == users.length - 1)
+                  TextSpan(
+                    text: ' and others follow this signer on nostr.',
+                  )
+              ],
+            ),
+        ],
+      ),
+    );
   }
 }
 

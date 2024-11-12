@@ -133,7 +133,7 @@ mixin UserAdapter on NostrAdapter<User> {
   }
 
   Future<List<User>> getTrusted(String npub1, String npub2) async {
-    final url = 'https://trustgraph.live/api/trust/$npub1/$npub2';
+    final url = 'https://trustgraph.live/api/fwf/$npub1/$npub2';
     final users = await sendRequest(
       Uri.parse(url),
       onSuccess: (response, label) async {
