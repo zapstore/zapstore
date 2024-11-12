@@ -1,21 +1,14 @@
 import 'package:auto_size_text/auto_size_text.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
-import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:percent_indicator/linear_percent_indicator.dart';
-import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/local_app.dart';
-import 'package:zapstore/models/settings.dart';
-import 'package:zapstore/models/user.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/system_info.dart';
-import 'package:zapstore/widgets/app_drawer.dart';
-import 'package:zapstore/widgets/author_container.dart';
 import 'package:zapstore/widgets/install_alert_dialog.dart';
 import 'package:zapstore/widgets/spinning_logo.dart';
-import 'package:zapstore/widgets/wot_container.dart';
 
 class InstallButton extends HookConsumerWidget {
   InstallButton({
