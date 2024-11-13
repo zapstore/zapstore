@@ -44,7 +44,7 @@ class SettingsScreen extends HookConsumerWidget {
           ),
           Gap(10),
           Text(
-            'zap.store is free and open source software',
+            'Zapstore is free and open source software',
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
           ),
           Gap(10),

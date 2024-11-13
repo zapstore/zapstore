@@ -95,10 +95,19 @@ class AppDetailScreen extends HookConsumerWidget {
                         ),
                       Divider(height: 24),
                       if (curatedBy.isNotEmpty)
-                        UsersRichText(
-                          trailingText:
-                              ' recommend${curatedBy.length == 1 ? 's' : ''} this app',
-                          users: curatedBy.toList(),
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.grey[900],
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(8.0),
+                            child: UsersRichText(
+                              trailingText:
+                                  ' recommend${curatedBy.length == 1 ? 's' : ''} this app',
+                              users: curatedBy.toList(),
+                            ),
+                          ),
                         ),
                       if (curatedBy.isNotEmpty) Gap(20),
                       MarkdownBody(

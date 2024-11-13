@@ -149,7 +149,7 @@ Future<void> _sendErrorReport(
 
   final client = http.Client();
   final event = AppFeedback(content: jsonEncode(map)).sign(kI);
-  await client.post(Uri.parse('https://relay.zap.store/'),
+  await client.post(Uri.parse('https://relay.zapstore.dev/'),
       body: jsonEncode(event.toMap()),
       headers: {'Content-Type': 'application/json'});
   client.close();

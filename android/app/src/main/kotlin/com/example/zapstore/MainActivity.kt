@@ -1,4 +1,4 @@
-package store.zap.app
+package dev.zapstore.app
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -25,10 +25,10 @@ class SearchScreen extends HookConsumerWidget {
     // Show toast if this app has updates
     useMemoized(() {
       final app = ref.apps.appAdapter
-          .findWhereIdentifierInLocal({'store.zap.app'}).first;
-      if (app.canUpdate) {
+          .findWhereIdentifierInLocal({kZapstoreAppIdentifier}).firstOrNull;
+      if (app?.canUpdate ?? false) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          context.showZapstoreUpdate(app);
+          context.showZapstoreUpdate(app!);
         });
       }
     });

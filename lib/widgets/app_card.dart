@@ -82,9 +82,10 @@ class AppCard extends HookConsumerWidget {
                       softWrap: true,
                     ),
                     Gap(6),
+                    // Only show Signed by apps' original authors
                     if (app.signer.isPresent &&
                         (app.signer.value!.pubkey != kZapstorePubkey ||
-                            {'store.zap.app'}.contains(app.identifier)))
+                            {kZapstoreAppIdentifier}.contains(app.identifier)))
                       AuthorContainer(
                         user: app.signer.value!,
                         text: 'Signed by',

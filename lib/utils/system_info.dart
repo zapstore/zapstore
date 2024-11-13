@@ -5,13 +5,14 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:system_info2/system_info2.dart';
 import 'package:zapstore/main.dart';
 import 'package:zapstore/main.data.dart';
+import 'package:zapstore/utils/extensions.dart';
 
 final deviceInfoPlugin = DeviceInfoPlugin();
 final packageManager = AndroidPackageManager();
 
 final systemInfoProvider = FutureProvider((ref) async {
   final zsInfo =
-      await packageManager.getPackageInfo(packageName: 'store.zap.app');
+      await packageManager.getPackageInfo(packageName: kZapstoreAppIdentifier);
   final dbInfo = {
     'apps': ref.apps.countLocal,
     'releases': ref.releases.countLocal,

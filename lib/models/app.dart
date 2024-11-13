@@ -86,11 +86,11 @@ class App extends BaseApp with DataModelMixin<App> {
           info:
               '''There was an APK certificate mismatch for $name ($identifier).
 
-This could mean a malicious developer signed this update.
+This could mean a malicious developer signed this update. It could also mean the original developer signed this update with a different key. Please contact them.
+
+If you installed $name through another app store, you can choose to turn off Zapstore updates.
 
 If you want to update anyway, you need to manually uninstall the app and install it again.
-
-It could also mean the original developer signed with a different key. If you are sure you installed $name through another app store, you can choose to turn off zap.store updates.
 ''',
           actions: [
             ('Close notice (recommended)', () async {}),
@@ -165,7 +165,7 @@ It could also mean the original developer signed with a different key. If you ar
       final client = http.Client();
       final sink = file.openWrite();
 
-      final backupUrl = 'https://cdn.zap.store/$hash';
+      final backupUrl = 'https://cdn.zapstore.dev/$hash';
       final url = latestMetadata!.urls.firstOrNull ?? backupUrl;
       var downloadedBytes = 0;
       Uri uri;

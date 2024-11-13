@@ -7,6 +7,7 @@ import 'package:json_annotation/json_annotation.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/navigation/app_initializer.dart';
+import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/system_info.dart';
 
 part 'local_app.g.dart';
@@ -144,9 +145,9 @@ mixin LocalAppAdapter on Adapter<LocalApp> {
     }
     var comp = 0;
     if (app.latestMetadata!.versionCode != null) {
-      // NOTE: zap.store development versions always carry a lower version code
+      // NOTE: Zapstore development versions always carry a lower version code
       // (e.g. 12) than published ones (e.g. 2012)
-      final code = app.identifier == 'store.zap.app' && !kReleaseMode
+      final code = app.identifier == kZapstoreAppIdentifier && !kReleaseMode
           ? installedVersionCode + 2000
           : installedVersionCode;
       comp = app.latestMetadata!.versionCode!.compareTo(code);
