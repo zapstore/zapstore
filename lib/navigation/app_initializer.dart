@@ -50,11 +50,20 @@ final appInitializer = FutureProvider<void>((ref) async {
 
   // Handle deep links
   final appLinksSub = appLinks.uriLinkStream.listen((uri) async {
-    if (uri.scheme == "zapstore") {
+    if (uri.scheme == 'zapstore') {
       final adapter = ref.apps.appAdapter;
-      final app = adapter.findWhereIdentifierInLocal({uri.host}).firstOrNull;
+      final apps = adapter.findWhereIdentifierInLocal({uri.host});
+      // Filter by signer npub, if present, otherwise pick first
+      final appSignerNpub = uri.queryParameters['signer'];
+      var app =
+          apps.firstWhereOrNull((a) => a.signer.value?.npub == appSignerNpub);
+      if (appSignerNpub == null) {
+        app = apps.first;
+      }
       if (app != null) {
         appRouter.go('/details', extra: app);
+      } else {
+        appRouter.go('/');
       }
     }
   });
