@@ -139,6 +139,9 @@ If you want to update anyway, you need to manually uninstall the app and install
           await file.delete();
           await adapter.ref.localApps.localAppAdapter
               .refreshUpdateStatus(appId: identifier);
+          Future.microtask(() {
+            notifier.state = IdleInstallProgress();
+          });
           break;
         case PackageInstallerStatus.failureAborted:
           // Simply reset state
