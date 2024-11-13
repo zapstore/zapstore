@@ -1,6 +1,6 @@
 zapstore:
   android:
     repository: https://github.com/zapstore/zapstore
-    name: zapstore
+    name: Zapstore
     artifacts:
       - zapstore-%v.apk

@@ -2,11 +2,11 @@ name: zapstore
 description: The permissionless app store
 publish_to: 'none'
 
-version: 0.1.4+14
+version: 0.1.5+15
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
-  
+
 dependencies:
   flutter:
     sdk: flutter
@@ -68,7 +68,7 @@ dev_dependencies:
     sdk: flutter
   json_serializable: ^6.7.1
   flutter_lints: ^4.0.0
-  flutter_launcher_icons: "^0.14.1"
+  icons_launcher: ^3.0.0
 
 flutter:
   uses-material-design: true
@@ -90,17 +90,16 @@ flutter:
         - asset: assets/fonts/Inter-Bold.ttf
           weight: 700
 
-flutter_launcher_icons:
+icons_launcher:
   image_path: "assets/images/logo.png"
-  android: "launcher_icon"
-  ios: false
-
-  image_path_android: "assets/images/logo.png"
-  min_sdk_android: 21 # android min sdk min:16, default 21
-  adaptive_icon_background: "assets/images/logo-bg.png"
-  adaptive_icon_foreground: "assets/images/logo-fg.png"
-  adaptive_icon_monochrome: "assets/images/logo-bw.png"
-  
-  macos:
-    generate: true
-    image_path: "assets/images/logo.png"
+  platforms:
+    android:
+      enable: true
+      image_path: "assets/images/logo.png"
+      notification_image: "assets/images/logo.png"
+      adaptive_background_image: "assets/images/logo-bg.png"
+      adaptive_foreground_image: "assets/images/logo-fg.png"
+      adaptive_monochrome_image: "assets/images/logo-bw.png"
+    macos:
+      enable: true
+      image_path: "assets/images/logo.png"
