@@ -53,29 +53,30 @@ class InstallAlertDialog extends ConsumerWidget {
                 minimal: true,
                 labelText: 'Log in to view your own web of trust',
               ),
+            Gap(20),
+            if (app.latestMetadata?.urls.isNotEmpty ?? false)
+              RichText(
+                text: WidgetSpan(
+                  child: Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text('This app will be downloaded from '),
+                      Text(
+                        Uri.parse(app.latestMetadata!.urls.first).host,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                      Text(' and verified.'),
+                    ],
+                  ),
+                ),
+              ),
           ],
         ),
       ),
       actions: [
-        if (app.latestMetadata?.urls.isNotEmpty ?? false)
-          RichText(
-            text: WidgetSpan(
-              child: Wrap(
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  Text('This app will be downloaded from '),
-                  Text(
-                    Uri.parse(app.latestMetadata!.urls.first).host,
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      decoration: TextDecoration.underline,
-                    ),
-                  ),
-                  Text(' and verified.'),
-                ],
-              ),
-            ),
-          ),
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 10),
           child: TextButton(

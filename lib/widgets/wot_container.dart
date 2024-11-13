@@ -96,14 +96,19 @@ class UsersRichText extends StatelessWidget {
                     children: [
                       RoundedImage(url: user.avatarUrl, size: 20),
                       Text(
-                        ' ${user.nameOrNpub}${users.indexOf(user) == users.length - 1 ? '' : ',  '}',
+                        ' ${user.nameOrNpub}',
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
+                      Text(users.indexOf(user) == users.length - 1
+                          ? ''
+                          : (users.indexOf(user) == users.length - 2
+                              ? ' and '
+                              : ', ')),
                     ],
                   ),
                 ),
                 if (users.indexOf(user) == users.length - 1)
-                  TextSpan(text: trailingText)
+                  TextSpan(text: trailingText, style: TextStyle(fontSize: 15))
               ],
             ),
         ],

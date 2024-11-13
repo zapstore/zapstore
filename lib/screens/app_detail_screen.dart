@@ -96,7 +96,8 @@ class AppDetailScreen extends HookConsumerWidget {
                       Divider(height: 24),
                       if (curatedBy.isNotEmpty)
                         UsersRichText(
-                          trailingText: ' recommended this app',
+                          trailingText:
+                              ' recommend${curatedBy.length == 1 ? 's' : ''} this app',
                           users: curatedBy.toList(),
                         ),
                       if (curatedBy.isNotEmpty) Gap(20),
