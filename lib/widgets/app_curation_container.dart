@@ -111,8 +111,8 @@ class AppCurationSetNotifier
     final appCurationSet = await future;
     final appsLocal =
         ref.apps.appAdapter.findWhereIdentifierInLocal(appCurationSet.appIds);
-    // TODO: Rethink this logic, if an app is missing it loops forever
-    if (appsLocal.length < appCurationSet.appIds.length) {
+    // TODO: Rethink this logic (checking on empty)
+    if (appsLocal.isEmpty) {
       state = AsyncLoading();
       state = await AsyncValue.guard(() async {
         // Only load apps (no releases for now)
