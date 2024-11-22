@@ -115,7 +115,8 @@ mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
 
     if (['apps', 'fileMetadatas'].contains(internalType)) {
       if (Platform.isAndroid) {
-        final info = await ref.read(systemInfoProvider.future);
+        final info =
+            await ref.read(systemInfoNotifierProvider.notifier).fetch();
         params['#f'] = info.androidInfo.supportedAbis.map((a) => 'android-$a');
       }
     }

@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:async_button_builder/async_button_builder.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_data/flutter_data.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:flutter_phoenix/flutter_phoenix.dart';
@@ -13,19 +12,20 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:zapstore/main.data.dart';
-import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/feedback.dart';
 import 'package:zapstore/models/settings.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/system_info.dart';
 import 'package:zapstore/widgets/app_drawer.dart';
+import 'package:http/http.dart' as http;
 
 class SettingsScreen extends HookConsumerWidget {
   const SettingsScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final systemInfoState = ref.watch(systemInfoProvider);
+    final systemInfoState = ref.watch(systemInfoNotifierProvider);
+
     final controller = useTextEditingController();
     final user = ref.settings
         .watchOne('_', alsoWatch: (_) => {_.user})
@@ -65,8 +65,22 @@ class SettingsScreen extends HookConsumerWidget {
                   final text =
                       '${controller.text.trim()} [from ${user.npub} on ${DateFormat('MMMM d, y').format(DateTime.now())}]';
                   final event = AppFeedback(content: text).sign(kI);
-                  await ref.apps.nostrAdapter.relay.publish(event);
-                  controller.clear();
+                  try {
+                    await http.post(Uri.parse('https://relay.zapstore.dev/'),
+                        body: jsonEncode(event.toMap()),
+                        headers: {'Content-Type': 'application/json'});
+                    if (context.mounted) {
+                      context.showInfo('Thank you',
+                          description: 'Message sent successfully');
+                    }
+                    controller.clear();
+                  } catch (e, stack) {
+                    if (context.mounted) {
+                      context.showError(
+                          title: (e as dynamic).message ?? e.toString(),
+                          description: stack.toString());
+                    }
+                  }
                 }
               },
               builder: (context, child, callback, state) {
@@ -123,38 +137,59 @@ class SettingsScreen extends HookConsumerWidget {
             child: Text('Delete local cache'),
           ),
           Gap(40),
-          Text(
-            'System information',
-            style: context.theme.textTheme.headlineLarge!
-                .copyWith(fontWeight: FontWeight.bold),
+          Row(
+            children: [
+              Text(
+                'System info',
+                style: context.theme.textTheme.headlineLarge!
+                    .copyWith(fontWeight: FontWeight.bold),
+              ),
+              Gap(20),
+              ElevatedButton(
+                onPressed: () {
+                  ref.read(systemInfoNotifierProvider.notifier).fetch();
+                },
+                child: Text('Refresh'),
+              ),
+            ],
           ),
           Gap(20),
           GestureDetector(
-            onTap: () {
-              if (systemInfoState.hasValue) {
-                Clipboard.setData(
-                    ClipboardData(text: systemInfoState.value!.toString()));
-                context.showInfo('Copied system information');
+            onLongPress: () async {
+              final info =
+                  await ref.read(systemInfoNotifierProvider.notifier).fetch();
+              final dir = await getApplicationDocumentsDirectory();
+              final errors = jsonDecode(
+                  await File('${dir.path}/errors.json').readAsString());
+              errors as Map<String, dynamic>;
+              errors['_'] = info.toString();
+              errors['_user'] =
+                  ref.settings.findOneLocalById('_')!.user.value?.npub;
+              try {
+                await http.post(
+                  Uri.parse('https://cdn.zapstore.dev/upload'),
+                  body: utf8.encode(jsonEncode(errors)),
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'X-Filename': 'errors.json',
+                  },
+                );
+                if (context.mounted) {
+                  context.showInfo('System info sent',
+                      description: 'Thank you');
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  context.showError(
+                      title: 'Unable to send system info',
+                      description: e.toString());
+                }
               }
             },
             child: Text(switch (systemInfoState) {
               AsyncData(:final value) => value.toString(),
               _ => '',
             }),
-          ),
-          HookBuilder(
-            builder: (context) {
-              final snapshot = useFuture(useMemoized(() async {
-                final dir = await getApplicationDocumentsDirectory();
-                return jsonDecode(
-                    await File('${dir.path}/errors.json').readAsString());
-              }));
-              if (snapshot.hasData) {
-                return Text(
-                    'Entries in errors.json: ${(snapshot.data as Map).length}');
-              }
-              return Container();
-            },
           ),
         ],
       ),

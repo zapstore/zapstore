@@ -139,7 +139,8 @@ Widget materialErrorBuilder(BuildContext context, Widget? widget) {
 
 Future<void> _sendErrorReport(
     WidgetRef ref, Object exception, StackTrace? stack) async {
-  final systemInfo = await ref.read(systemInfoProvider.future);
+  final systemInfo =
+      await ref.read(systemInfoNotifierProvider.notifier).fetch();
 
   var map = {
     'e': exception.toString(),
@@ -147,10 +148,8 @@ Future<void> _sendErrorReport(
     'info': systemInfo.androidInfo.toString()
   };
 
-  final client = http.Client();
   final event = AppFeedback(content: jsonEncode(map)).sign(kI);
-  await client.post(Uri.parse('https://relay.zapstore.dev/'),
+  await http.post(Uri.parse('https://relay.zapstore.dev/'),
       body: jsonEncode(event.toMap()),
       headers: {'Content-Type': 'application/json'});
-  client.close();
 }

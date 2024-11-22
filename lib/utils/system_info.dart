@@ -10,28 +10,16 @@ import 'package:zapstore/utils/extensions.dart';
 final deviceInfoPlugin = DeviceInfoPlugin();
 final packageManager = AndroidPackageManager();
 
-final systemInfoProvider = FutureProvider((ref) async {
-  final zsInfo =
-      await packageManager.getPackageInfo(packageName: kZapstoreAppIdentifier);
-  final dbInfo = {
-    'apps': ref.apps.countLocal,
-    'releases': ref.releases.countLocal,
-    'metadata': ref.fileMetadata.countLocal,
-  };
-  return SystemInfo(
-    androidInfo: await deviceInfoPlugin.androidInfo,
-    zsInfo: zsInfo!,
-    dbInfo: dbInfo,
-  );
-});
-
 class SystemInfo {
   final AndroidDeviceInfo androidInfo;
   final PackageInfo zsInfo;
   final Map<String, int> dbInfo;
 
-  SystemInfo(
-      {required this.androidInfo, required this.zsInfo, required this.dbInfo});
+  SystemInfo({
+    required this.androidInfo,
+    required this.zsInfo,
+    required this.dbInfo,
+  });
 
   @override
   String toString() {
@@ -54,3 +42,34 @@ Low RAM device? ${androidInfo.isLowRamDevice}
 ''';
   }
 }
+
+class SystemInfoNotifier extends StateNotifier<AsyncValue<SystemInfo>> {
+  final Ref ref;
+
+  SystemInfoNotifier(this.ref) : super(AsyncLoading()) {
+    fetch();
+  }
+
+  Future<SystemInfo> fetch() async {
+    final zsInfo = await packageManager.getPackageInfo(
+        packageName: kZapstoreAppIdentifier);
+    final dbInfo = {
+      'apps': ref.apps.countLocal,
+      'releases': ref.releases.countLocal,
+      'metadata': ref.fileMetadata.countLocal,
+    };
+
+    final info = SystemInfo(
+      androidInfo: await deviceInfoPlugin.androidInfo,
+      zsInfo: zsInfo!,
+      dbInfo: dbInfo,
+    );
+
+    state = AsyncData(info);
+    return info;
+  }
+}
+
+final systemInfoNotifierProvider =
+    StateNotifierProvider<SystemInfoNotifier, AsyncValue<SystemInfo>>(
+        SystemInfoNotifier.new);

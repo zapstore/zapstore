@@ -20,7 +20,7 @@ class DrawerContainer extends StatelessWidget {
             Expanded(child: LoginContainer()),
             Consumer(
               builder: (context, ref, _) {
-                final state = ref.watch(systemInfoProvider);
+                final state = ref.watch(systemInfoNotifierProvider);
                 return switch (state) {
                   AsyncData(:final value) => Text(
                       'Version: ${value.zsInfo.versionName} (${value.zsInfo.versionCode}, $kDbVersion)',
