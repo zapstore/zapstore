@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
 
-import 'package:android_package_installer/android_package_installer.dart';
 import 'package:android_package_manager/android_package_manager.dart';
 import 'package:async/async.dart';
 import 'package:collection/collection.dart';
@@ -10,6 +9,7 @@ import 'package:convert/convert.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_data/flutter_data.dart';
+import 'package:install_plugin/install_plugin.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:purplebase/purplebase.dart';
@@ -129,30 +129,52 @@ If you want to update anyway, you need to manually uninstall the app and install
       }
 
       notifier.state = RequestInstallProgress();
-      final result =
-          await AndroidPackageInstaller.installApk(apkFilePath: file.path);
-      final installationStatus =
-          result != null ? PackageInstallerStatus.byCode(result) : null;
-      switch (installationStatus) {
-        case PackageInstallerStatus.success:
-          notifier.state = IdleInstallProgress(success: true);
-          await file.delete();
-          await adapter.ref.localApps.localAppAdapter
-              .refreshUpdateStatus(appId: identifier);
-          Future.microtask(() {
-            notifier.state = IdleInstallProgress();
-          });
-          break;
-        case PackageInstallerStatus.failureAborted:
-          // Simply reset state
+
+      // NOTE: Using https://github.com/hui-z/flutter_install_plugin
+      // Tried https://github.com/zapstore/android_package_installer
+      // but it is giving users problems (and for me it's slower)
+      // Probably need to fork hui-z's with support for user-canceled action
+      final result = await InstallPlugin.install(file.path);
+
+      if (result['isSuccess']) {
+        notifier.state = IdleInstallProgress(success: true);
+        await file.delete();
+        await adapter.ref.localApps.localAppAdapter
+            .refreshUpdateStatus(appId: identifier);
+        Future.microtask(() {
           notifier.state = IdleInstallProgress();
-          break;
-        default:
-          notifier.state = ErrorInstallProgress(
-            Exception('Error installing app'),
-            info: installationStatus?.name,
-          );
+        });
+      } else {
+        const msg = 'App not installed';
+        notifier.state = ErrorInstallProgress(
+          Exception(msg),
+          info: 'User canceled or error occured: ${result['errorMessage']}',
+        );
       }
+      // final result =
+      //     await AndroidPackageInstaller.installApk(apkFilePath: file.path);
+      // final installationStatus =
+      //     result != null ? PackageInstallerStatus.byCode(result) : null;
+      // switch (installationStatus) {
+      //   case PackageInstallerStatus.success:
+      //     notifier.state = IdleInstallProgress(success: true);
+      //     await file.delete();
+      //     await adapter.ref.localApps.localAppAdapter
+      //         .refreshUpdateStatus(appId: identifier);
+      //     Future.microtask(() {
+      //       notifier.state = IdleInstallProgress();
+      //     });
+      //     break;
+      //   case PackageInstallerStatus.failureAborted:
+      //     // Simply reset state
+      //     notifier.state = IdleInstallProgress();
+      //     break;
+      //   default:
+      //     notifier.state = ErrorInstallProgress(
+      //       Exception('Error installing app'),
+      //       info: installationStatus?.name,
+      //     );
+      // }
     }
 
     final fileExists = await file.exists();
