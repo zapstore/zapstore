@@ -344,28 +344,6 @@ mixin AppAdapter on Adapter<App> {
       releases = [];
     }
 
-    // TODO: Deprecated, will be removed
-    // Some developers without access to the latest zapstore-cli
-    // have not published their apps with latest release identifiers
-    // so load as usual
-    final deprecatedApps =
-        apps.where((app) => app.linkedReplaceableEvents.isEmpty);
-    if (deprecatedApps.isNotEmpty) {
-      final deprecatedReleases = await ref.releases.findAll(
-        params: {
-          '#a': deprecatedApps
-              .map((app) => app.getReplaceableEventLink().formatted)
-        },
-      );
-      final groupedDeprecatedReleases =
-          deprecatedReleases.groupListsBy((r) => r.app.value!);
-      for (final e in groupedDeprecatedReleases.entries) {
-        final mostRecentRelease = e.value.sortedByLatest.first;
-        releases.add(mostRecentRelease);
-      }
-    }
-    // End deprecated zone
-
     await nostrAdapter.loadArtifactsAndUsers(releases);
     await ref.localApps.localAppAdapter.refreshUpdateStatus();
 
