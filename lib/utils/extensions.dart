@@ -18,9 +18,11 @@ extension ContextX on BuildContext {
       alignment: Alignment.topCenter,
       title: Text(
         message,
-        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
       ),
-      description: description != null ? Text(description) : null,
+      description: description != null
+          ? _ToastDescriptionWidget(description: description)
+          : null,
       autoCloseDuration: const Duration(seconds: 4),
       showProgressBar: false,
       closeOnClick: true,
@@ -46,22 +48,9 @@ extension ContextX on BuildContext {
       showProgressBar: false,
       closeOnClick: true,
       description: description != null
-          ? Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                RichText(text: TextSpan(text: description)),
-                for (final (text, fn) in actions)
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        backgroundColor: Colors.transparent),
-                    onPressed: () async {
-                      await fn.call();
-                      toastification.dismissAll(delayForAnimation: false);
-                    },
-                    child: Text(text),
-                  ),
-              ],
+          ? _ToastDescriptionWidget(
+              description: description,
+              actions: actions,
             )
           : null,
     );
@@ -87,6 +76,34 @@ extension ContextX on BuildContext {
       showProgressBar: false,
       closeButtonShowType: CloseButtonShowType.always,
       alignment: Alignment.topCenter,
+    );
+  }
+}
+
+class _ToastDescriptionWidget extends StatelessWidget {
+  final String? description;
+  final List<(String, Future<void> Function())> actions;
+
+  _ToastDescriptionWidget({this.description, this.actions = const []});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        RichText(text: TextSpan(text: description)),
+        for (final (text, fn) in actions)
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                foregroundColor: Colors.white,
+                backgroundColor: Colors.transparent),
+            onPressed: () async {
+              await fn.call();
+              toastification.dismissAll(delayForAnimation: false);
+            },
+            child: Text(text),
+          ),
+      ],
     );
   }
 }
