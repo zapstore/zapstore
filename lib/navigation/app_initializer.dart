@@ -27,26 +27,31 @@ final appInitializer = FutureProvider<void>((ref) async {
   // Initialize Flutter Data
   await ref.read(initializeFlutterData(adapterProvidersMap).future);
 
-  _lifecycleListener = AppLifecycleListener(
-    onStateChange: (state) async {
-      if (state == AppLifecycleState.resumed) {
-        await ref.localApps.localAppAdapter.refreshUpdateStatus();
-      }
-    },
-  );
-
-  // Preload curation sets
-  // Do not use ignoreReturn here
+  // NOTE: Do not use ignoreReturn here
   if (ref.appCurationSets.countLocal == 0) {
+    // If we are here, local storage is empty
+    // Preload curation sets
     await ref.appCurationSets.findAll();
-    // Take opportunity to preload updates
-    await ref.apps.appAdapter.checkForUpdates();
+    // Preload updates in the background (no await)
+    ref.apps.appAdapter.checkForUpdates();
   } else {
+    // Preload curation sets in the background (no await)
     ref.appCurationSets.findAll();
   }
 
   // Preload zapstore's nostr curation set
-  await ref.read(appCurationSetProvider(kNostrCurationSet).notifier).fetch();
+  ref.read(appCurationSetProvider(kNostrCurationSet).notifier).fetch();
+
+  // App-wide listeners
+
+  // Register app lifecycle listener
+  _lifecycleListener = AppLifecycleListener(
+    onStateChange: (state) {
+      if (state == AppLifecycleState.resumed) {
+        ref.localApps.localAppAdapter.refreshUpdateStatus();
+      }
+    },
+  );
 
   // Handle deep links
   final appLinksSub = appLinks.uriLinkStream.listen((uri) async {
