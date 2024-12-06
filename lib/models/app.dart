@@ -151,30 +151,6 @@ If you want to update anyway, you need to manually uninstall the app and install
           info: 'User canceled or error occured: ${result['errorMessage']}',
         );
       }
-      // final result =
-      //     await AndroidPackageInstaller.installApk(apkFilePath: file.path);
-      // final installationStatus =
-      //     result != null ? PackageInstallerStatus.byCode(result) : null;
-      // switch (installationStatus) {
-      //   case PackageInstallerStatus.success:
-      //     notifier.state = IdleInstallProgress(success: true);
-      //     await file.delete();
-      //     await adapter.ref.localApps.localAppAdapter
-      //         .refreshUpdateStatus(appId: identifier);
-      //     Future.microtask(() {
-      //       notifier.state = IdleInstallProgress();
-      //     });
-      //     break;
-      //   case PackageInstallerStatus.failureAborted:
-      //     // Simply reset state
-      //     notifier.state = IdleInstallProgress();
-      //     break;
-      //   default:
-      //     notifier.state = ErrorInstallProgress(
-      //       Exception('Error installing app'),
-      //       info: installationStatus?.name,
-      //     );
-      // }
     }
 
     final fileExists = await file.exists();
@@ -191,7 +167,12 @@ If you want to update anyway, you need to manually uninstall the app and install
       final sink = file.openWrite();
 
       final backupUrl = 'https://cdn.zapstore.dev/$hash';
-      final url = latestMetadata!.urls.firstOrNull ?? backupUrl;
+      var url = latestMetadata!.urls.firstOrNull ?? backupUrl;
+      // TODO: Remove in 0.2.x
+      if (url.startsWith('https://cdn.zap.store')) {
+        url = url.replaceFirst(
+            'https://cdn.zap.store', 'https://cdn.zapstore.dev');
+      }
       var downloadedBytes = 0;
       Uri uri;
 
