@@ -34,7 +34,7 @@ class AppCard extends HookConsumerWidget {
     final isUpdate = app.canUpdate && showUpdate;
     return GestureDetector(
       onTap: () {
-        context.go('${isUpdate ? '/updates' : ''}/details', extra: app);
+        context.go('${showUpdate ? '/updates' : ''}/details', extra: app);
       },
       child: Card(
         margin: EdgeInsets.only(top: 6, bottom: 6),

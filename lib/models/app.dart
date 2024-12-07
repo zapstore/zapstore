@@ -21,7 +21,6 @@ import 'package:zapstore/models/release.dart';
 import 'package:zapstore/models/user.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
-import 'package:zapstore/navigation/app_initializer.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/system_info.dart';
 
@@ -67,39 +66,17 @@ class App extends BaseApp with DataModelMixin<App> {
       signer.isPresent;
   bool get isUpdated => localApp.value?.status == AppInstallStatus.updated;
   bool get isDowngrade => localApp.value?.status == AppInstallStatus.downgrade;
-  bool get isDisabled => localApp.value?.disabled == true;
+  bool get hasCertificateMismatch =>
+      localApp.value?.status == AppInstallStatus.certificateMismatch;
 
   Future<void> install() async {
-    if (!canInstall && !canUpdate || isDisabled) {
+    if (!canInstall && !canUpdate || hasCertificateMismatch) {
       return;
     }
 
     final adapter = DataModel.adapterFor(this) as AppAdapter;
     final notifier =
         adapter.ref.read(installationProgressProvider(id!).notifier);
-
-    if (canUpdate) {
-      final match = await packageCertificateMatches();
-      if (match == false) {
-        notifier.state = ErrorInstallProgress(
-          Exception('App failed security check'),
-          info:
-              '''There was an APK certificate mismatch for $name ($identifier).
-
-This could mean a malicious developer signed this update. It could also mean the original developer signed this update with a different key. Please contact them.
-
-If you installed $name through another app store, you can choose to turn off Zapstore updates.
-
-If you want to update anyway, you need to manually uninstall the app and install it again.
-''',
-          actions: [
-            ('Close notice (recommended)', () async {}),
-            ('Disable $name updates', disableUpdates)
-          ],
-        );
-        return;
-      }
-    }
 
     final installPermission = await Permission.requestInstallPackages.status;
     if (!installPermission.isGranted) {
@@ -226,20 +203,7 @@ If you want to update anyway, you need to manually uninstall the app and install
     return metadataSigHashes
         .any((msh) => msh.toLowerCase() == installedApkSigHash);
   }
-
-  /// Disables updates to this app by putting the app identifier in local storage (shared prefs)
-  Future<void> disableUpdates() async {
-    final adapter = DataModel.adapterFor(localApp.value!) as LocalAppAdapter;
-    final value = sharedPreferences!.getStringList(kDisabledUpdatesKey) ?? [];
-    if (!value.contains(identifier)) {
-      await sharedPreferences!
-          .setStringList(kDisabledUpdatesKey, [...value, identifier!]);
-    }
-    await adapter.refreshUpdateStatus(appId: identifier!);
-  }
 }
-
-const kDisabledUpdatesKey = 'disabled_updates';
 
 mixin AppAdapter on Adapter<App> {
   final queriedAtMap = <String, DateTime>{};

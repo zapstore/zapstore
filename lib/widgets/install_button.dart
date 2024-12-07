@@ -37,7 +37,9 @@ class InstallButton extends HookConsumerWidget {
 
     return GestureDetector(
       onTap: switch (status) {
-        AppInstallStatus.downgrade => null,
+        AppInstallStatus.downgrade ||
+        AppInstallStatus.certificateMismatch =>
+          null,
         AppInstallStatus.updated => () {
             packageManager.openApp(app.identifier!);
           },
@@ -46,13 +48,11 @@ class InstallButton extends HookConsumerWidget {
                 if (app.canInstall) {
                   showDialog(
                     context: context,
-                    builder: (BuildContext context) {
-                      return InstallAlertDialog(app: app);
-                    },
+                    builder: (context) => InstallAlertDialog(app: app),
                   );
                 } else if (app.canUpdate) {
                   app.install();
-                } else if (app.isDisabled) {
+                } else if (app.hasCertificateMismatch) {
                   // nothing
                 } else {
                   context.showError(
@@ -82,7 +82,8 @@ class InstallButton extends HookConsumerWidget {
         },
         backgroundColor: switch (progress) {
           ErrorInstallProgress() => Colors.red,
-          IdleInstallProgress() => app.isDisabled ? Colors.grey : kUpdateColor,
+          IdleInstallProgress() =>
+            app.hasCertificateMismatch ? Colors.grey : kUpdateColor,
           _ => kUpdateColor,
         },
         progressColor: Colors.blue[800],
@@ -94,18 +95,20 @@ class InstallButton extends HookConsumerWidget {
               'Installed version ${app.localApp.value?.installedVersion ?? ''} is higher, can\'t downgrade',
               textAlign: TextAlign.center,
             ),
+          AppInstallStatus.certificateMismatch => Text(
+              'Not possible to update',
+              textAlign: TextAlign.center,
+            ),
           AppInstallStatus.updated => Text('Open'),
           _ => switch (progress) {
               IdleInstallProgress() => app.canUpdate
                   ? Padding(
                       padding: const EdgeInsets.only(left: 8, right: 8),
                       child: AutoSizeText(
-                        app.isDisabled ? 'Disabled updates' : 'Update',
+                        'Update',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            fontSize: compact ? 10 : 14,
-                            fontWeight: FontWeight.bold),
+                        style: TextStyle(fontSize: compact ? 10 : 14),
                       ),
                     )
                   : (app.canInstall

@@ -14,7 +14,7 @@ class UpdatesScreen extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(updatesProvider);
 
-    final (updatedApps, updatableApps, updatesDisabledApps) =
+    final (updatedApps, updatableApps, unupdatableApps) =
         state.value ?? ([], [], []);
 
     return SingleChildScrollView(
@@ -54,6 +54,19 @@ class UpdatesScreen extends HookConsumerWidget {
               ],
             ),
           Gap(20),
+          if (unupdatableApps.isNotEmpty)
+            Text(
+              'Disabled updates'.toUpperCase(),
+              style: TextStyle(
+                fontSize: 16,
+                letterSpacing: 3,
+                fontWeight: FontWeight.w300,
+              ),
+            ),
+          Gap(10),
+          for (final app in unupdatableApps)
+            AppCard(model: app, showUpdate: true),
+          Gap(20),
           if (updatedApps.isNotEmpty)
             Text(
               'Up to date'.toUpperCase(),
@@ -65,19 +78,6 @@ class UpdatesScreen extends HookConsumerWidget {
             ),
           Gap(10),
           for (final app in updatedApps) AppCard(model: app),
-          Gap(10),
-          if (updatesDisabledApps.isNotEmpty)
-            Text(
-              'Disabled updates apps'.toUpperCase(),
-              style: TextStyle(
-                fontSize: 16,
-                letterSpacing: 3,
-                fontWeight: FontWeight.w300,
-              ),
-            ),
-          Gap(10),
-          for (final app in updatesDisabledApps)
-            AppCard(model: app, showUpdate: true),
         ],
       ),
     );
@@ -102,25 +102,23 @@ class UpdatesNotifier extends AsyncNotifier<(List<App>, List<App>, List<App>)> {
     }
 
     final updatableApps = appsState.model
-        .where((app) => app.canUpdate && !app.isDisabled)
-        .toList()
-        .sorted((a, b) => (a.name?.toLowerCase() ?? '')
-            .compareTo(b.name?.toLowerCase() ?? ''));
+        .where((app) => app.canUpdate && !app.hasCertificateMismatch)
+        .sortByName();
 
     final updatedApps = appsState.model
         .where((app) => app.isUpdated || app.isDowngrade)
-        .toList()
-        .sorted((a, b) => (a.name?.toLowerCase() ?? '')
-            .compareTo(b.name?.toLowerCase() ?? ''));
+        .sortByName();
 
-    final updateDisabledApps = appsState.model
-        .where((app) => app.canUpdate && app.isDisabled)
-        .toList()
-        .sorted((a, b) => (a.name?.toLowerCase() ?? '')
-            .compareTo(b.name?.toLowerCase() ?? ''));
+    final unupdatableApps =
+        appsState.model.where((app) => app.hasCertificateMismatch).sortByName();
 
-    return (updatedApps, updatableApps, updateDisabledApps);
+    return (updatedApps, updatableApps, unupdatableApps);
   }
+}
+
+extension on Iterable<App> {
+  List<App> sortByName() => toList().sorted((a, b) =>
+      (a.name?.toLowerCase() ?? '').compareTo(b.name?.toLowerCase() ?? ''));
 }
 
 final updatesProvider =

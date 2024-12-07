@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:zapstore/models/app.dart';
+import 'package:zapstore/models/local_app.dart';
 import 'package:zapstore/widgets/install_button.dart';
 import 'package:zapstore/widgets/pill_widget.dart';
 
@@ -59,15 +60,20 @@ class VersionPillWidget extends StatelessWidget {
                         Icon(Icons.download_rounded, size: 15),
                       if (app.isUpdated) Icon(Icons.check, size: 15),
                       if (app.isDowngrade) Icon(Icons.do_not_disturb, size: 15),
+                      if (app.hasCertificateMismatch)
+                        Icon(Icons.do_not_disturb, size: 15),
                     ],
                   ),
                 ],
               ),
             ),
             size: 10,
-            color: app.canUpdate
-                ? kUpdateColor
-                : (app.canInstall ? Colors.grey[800]! : kUpdateColor),
+            color: switch (app.localApp.value?.status) {
+              AppInstallStatus.downgrade ||
+              AppInstallStatus.certificateMismatch =>
+                Colors.grey[800]!,
+              _ => kUpdateColor,
+            },
           ),
       ],
     );

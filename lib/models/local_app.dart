@@ -1,12 +1,13 @@
 import 'dart:io';
 
+import 'package:android_package_manager/android_package_manager.dart';
 import 'package:collection/collection.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_data/flutter_data.dart';
 import 'package:json_annotation/json_annotation.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
-import 'package:zapstore/navigation/app_initializer.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/system_info.dart';
 
@@ -20,26 +21,22 @@ class LocalApp extends DataModel<LocalApp> {
   final String? installedVersion;
   final int? installedVersionCode;
   final AppInstallStatus? status;
-  final bool disabled;
 
   LocalApp(
       {required this.id,
       this.installedVersion,
       this.installedVersionCode,
-      this.status,
-      this.disabled = false});
+      this.status});
 
   LocalApp copyWith(
       {String? installedVersion,
       int? installedVersionCode,
-      AppInstallStatus? status,
-      bool? disabled}) {
+      AppInstallStatus? status}) {
     return LocalApp(
       id: id,
       installedVersion: installedVersion ?? this.installedVersion,
       installedVersionCode: installedVersionCode ?? this.installedVersionCode,
       status: status ?? this.status,
-      disabled: disabled ?? this.disabled,
     );
   }
 }
@@ -51,14 +48,15 @@ mixin LocalAppAdapter on Adapter<LocalApp> {
     }
     // NOTE: Using packageManager.getPackageInfo(packageName: appId)
     // throws an uncatchable error every time it queries a non-installed package
-    final infos = await packageManager.getInstalledPackages();
+    final infos = await packageManager.getInstalledPackages(
+        flags: PackageInfoFlags(
+      {PMFlag.getPermissions, PMFlag.getSigningCertificates},
+    ));
 
     final installedPackageInfos = infos!.where((i) =>
         !kExcludedAppIdNamespaces.any((e) => i.packageName!.startsWith(e)));
 
     final ids = installedPackageInfos.map((i) => i.packageName).nonNulls;
-    final disabledUpdatesIdentifiers =
-        sharedPreferences!.getStringList(kDisabledUpdatesKey) ?? [];
 
     // appId == null is the case of all apps
     if (appId == null) {
@@ -73,9 +71,11 @@ mixin LocalAppAdapter on Adapter<LocalApp> {
 
         final installedVersion = i.versionName;
         final installedVersionCode = i.versionCode;
+        final signingCertificateBytes =
+            i.signingInfo?.signingCertificateHistory?.firstOrNull;
 
-        final status =
-            determineUpdateStatus(app, installedVersion, installedVersionCode);
+        final status = determineUpdateStatus(app, installedVersion,
+            installedVersionCode, signingCertificateBytes);
 
         if (status == null) {
           continue;
@@ -87,7 +87,6 @@ mixin LocalAppAdapter on Adapter<LocalApp> {
             installedVersion: installedVersion,
             installedVersionCode: installedVersionCode,
             status: status,
-            disabled: disabledUpdatesIdentifiers.contains(localApp.id),
           ),
         );
       }
@@ -108,9 +107,11 @@ mixin LocalAppAdapter on Adapter<LocalApp> {
 
       final installedVersion = i?.versionName;
       final installedVersionCode = i?.versionCode;
+      final signingCertificateBytes =
+          i?.signingInfo?.signingCertificateHistory?.firstOrNull;
 
-      final status =
-          determineUpdateStatus(app, installedVersion, installedVersionCode);
+      final status = determineUpdateStatus(
+          app, installedVersion, installedVersionCode, signingCertificateBytes);
 
       if (status != null) {
         final localApp = app!.localApp.value ?? LocalApp(id: i!.packageName!);
@@ -120,7 +121,6 @@ mixin LocalAppAdapter on Adapter<LocalApp> {
               installedVersion: installedVersion,
               installedVersionCode: installedVersionCode,
               status: status,
-              disabled: disabledUpdatesIdentifiers.contains(localApp.id),
             )
             .saveLocal();
       }
@@ -131,18 +131,31 @@ mixin LocalAppAdapter on Adapter<LocalApp> {
 
   void updateNumberOfApps() {
     final rs = db.select(
-        'SELECT count(*) as c FROM localApps WHERE json_extract(data, \'\$.status\') is \'updatable\' AND json_extract(data, \'\$.disabled\') = false');
+        'SELECT count(*) as c FROM localApps WHERE json_extract(data, \'\$.status\') is \'updatable\'');
     ref.read(appsToUpdateProvider.notifier).state = rs.first['c'];
   }
 
-  AppInstallStatus? determineUpdateStatus(
-      App? app, String? installedVersion, int? installedVersionCode) {
+  AppInstallStatus? determineUpdateStatus(App? app, String? installedVersion,
+      int? installedVersionCode, List<int>? signingCertificateBytes) {
     if (app == null || app.releases.isEmpty || app.latestMetadata == null) {
       return null;
     }
+    if (signingCertificateBytes != null) {
+      final installedApkSigHash =
+          sha256.convert(signingCertificateBytes).toString().toLowerCase();
+      final metadataSigHashes =
+          app.latestMetadata?.tagMap['apk_signature_hash'] ?? {};
+      final matches = metadataSigHashes
+          .any((msh) => msh.toLowerCase() == installedApkSigHash);
+      if (!matches) {
+        return AppInstallStatus.certificateMismatch;
+      }
+    }
+
     if (installedVersion == null || installedVersionCode == null) {
       return null;
     }
+
     var comp = 0;
     if (app.latestMetadata!.versionCode != null) {
       // NOTE: Zapstore development versions always carry a lower version code
@@ -168,4 +181,5 @@ enum AppInstallStatus {
   updated,
   updatable,
   downgrade,
+  certificateMismatch,
 }

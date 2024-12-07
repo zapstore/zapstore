@@ -51,7 +51,6 @@ LocalApp _$LocalAppFromJson(Map<String, dynamic> json) => LocalApp(
       installedVersion: json['installedVersion'] as String?,
       installedVersionCode: (json['installedVersionCode'] as num?)?.toInt(),
       status: $enumDecodeNullable(_$AppInstallStatusEnumMap, json['status']),
-      disabled: json['disabled'] as bool? ?? false,
     );
 
 Map<String, dynamic> _$LocalAppToJson(LocalApp instance) => <String, dynamic>{
@@ -59,11 +58,11 @@ Map<String, dynamic> _$LocalAppToJson(LocalApp instance) => <String, dynamic>{
       'installedVersion': instance.installedVersion,
       'installedVersionCode': instance.installedVersionCode,
       'status': _$AppInstallStatusEnumMap[instance.status],
-      'disabled': instance.disabled,
     };
 
 const _$AppInstallStatusEnumMap = {
   AppInstallStatus.updated: 'updated',
   AppInstallStatus.updatable: 'updatable',
   AppInstallStatus.downgrade: 'downgrade',
+  AppInstallStatus.certificateMismatch: 'certificateMismatch',
 };

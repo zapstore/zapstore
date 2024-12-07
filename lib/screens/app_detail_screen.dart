@@ -67,6 +67,20 @@ class AppDetailScreen extends HookConsumerWidget {
                     [
                       VersionedAppHeader(app: app),
                       Gap(16),
+                      if (app.hasCertificateMismatch)
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.orange[900],
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(10),
+                            child: Text(
+                              'This update has a different certificate than the app installed on your device.\n\nHave you used another app store to install this app? If so, you can choose to remove it and re-install it using Zapstore.\n\nIt otherwise could be a malicious update, contact the developer for details.\n\nUpdate certificate hash: ${app.latestMetadata!.apkSignatureHash}',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ),
                       if (app.images.isNotEmpty)
                         Scrollbar(
                           controller: scrollController,
@@ -101,7 +115,7 @@ class AppDetailScreen extends HookConsumerWidget {
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Padding(
-                            padding: const EdgeInsets.all(8.0),
+                            padding: const EdgeInsets.all(10),
                             child: UsersRichText(
                               trailingText:
                                   ' recommend${curatedBy.length == 1 ? 's' : ''} this app',
