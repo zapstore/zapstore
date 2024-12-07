@@ -48,6 +48,8 @@ dependencies:
   remove_markdown: ^0.0.2
   install_plugin: ^2.1.0
   shared_preferences: ^2.3.2
+  background_downloader: ^8.8.0
+  mutex: ^3.1.0
 
 dependency_overrides:
   purplebase:

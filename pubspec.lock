@@ -102,6 +102,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.0.0"
+  background_downloader:
+    dependency: "direct main"
+    description:
+      name: background_downloader
+      sha256: "7c65a999544b40668000aac6379854b890f0ef367b9fbd29d959fd1e242dda14"
+      url: "https://pub.dev"
+    source: hosted
+    version: "8.8.0"
   badges:
     dependency: "direct main"
     description:
@@ -718,6 +726,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.0.0"
+  mutex:
+    dependency: "direct main"
+    description:
+      name: mutex
+      sha256: "8827da25de792088eb33e572115a5eb0d61d61a3c01acbc8bcbe76ed78f1a1f2"
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.1.0"
   octo_image:
     dependency: transitive
     description:

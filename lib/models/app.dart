@@ -4,12 +4,13 @@ import 'dart:isolate';
 
 import 'package:android_package_manager/android_package_manager.dart';
 import 'package:async/async.dart';
+import 'package:background_downloader/background_downloader.dart';
 import 'package:collection/collection.dart';
 import 'package:convert/convert.dart';
 import 'package:crypto/crypto.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_data/flutter_data.dart';
 import 'package:install_plugin/install_plugin.dart';
+import 'package:mutex/mutex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:purplebase/purplebase.dart';
@@ -19,12 +20,13 @@ import 'package:zapstore/models/local_app.dart';
 import 'package:zapstore/models/nostr_adapter.dart';
 import 'package:zapstore/models/release.dart';
 import 'package:zapstore/models/user.dart';
-import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/system_info.dart';
 
 part 'app.g.dart';
+
+final m = Mutex();
 
 @DataAdapter([NostrAdapter, AppAdapter])
 class App extends BaseApp with DataModelMixin<App> {
@@ -96,8 +98,6 @@ class App extends BaseApp with DataModelMixin<App> {
     }
 
     final hash = latestMetadata!.hash!;
-    final size = latestMetadata!.size ?? 0;
-
     final dir = await getApplicationSupportDirectory();
     final file = File(path.join(dir.path, hash));
 
@@ -118,7 +118,10 @@ class App extends BaseApp with DataModelMixin<App> {
       // Tried https://github.com/zapstore/android_package_installer
       // but it is giving users problems (and for me it's slower)
       // Probably need to fork hui-z's with support for user-canceled action
-      final result = await InstallPlugin.install(file.path);
+      // NOTE: Must use mutex: https://github.com/hui-z/flutter_install_plugin/issues/68
+      final result = await m.protect(() async {
+        return InstallPlugin.install(file.path);
+      });
 
       if (result['isSuccess']) {
         notifier.state = IdleInstallProgress(success: true);
@@ -138,7 +141,7 @@ class App extends BaseApp with DataModelMixin<App> {
     }
 
     final fileExists = await file.exists();
-    if (fileExists && await file.length() == size) {
+    if (fileExists) {
       await installOnDevice();
     } else {
       if (fileExists) {
@@ -146,48 +149,40 @@ class App extends BaseApp with DataModelMixin<App> {
         await file.delete();
       }
 
-      StreamSubscription? sub;
-      final client = http.Client();
-      final sink = file.openWrite();
-
-      final backupUrl = 'https://cdn.zapstore.dev/$hash';
-      var url = latestMetadata!.urls.firstOrNull ?? backupUrl;
+      var url = latestMetadata!.urls.first;
       // TODO: Remove in 0.2.x
       if (url.startsWith('https://cdn.zap.store')) {
         url = url.replaceFirst(
             'https://cdn.zap.store', 'https://cdn.zapstore.dev');
       }
-      var downloadedBytes = 0;
-      Uri uri;
 
-      var response =
-          await client.send(http.Request('GET', uri = Uri.parse(url)));
-      if (response.statusCode != 200) {
-        uri = Uri.parse(backupUrl);
-        response = await client.send(http.Request('GET', uri));
-      }
-      final totalBytes = response.contentLength ?? size;
+      final (baseDirectory, directory, filename) =
+          await Task.split(filePath: file.path);
 
-      sub = response.stream.listen((chunk) {
-        final data = Uint8List.fromList(chunk);
-        sink.add(data);
-        downloadedBytes += data.length;
-        notifier.state =
-            DownloadingInstallProgress(downloadedBytes / totalBytes);
-      }, onError: (e) {
-        throw e;
-      }, onDone: () async {
-        await sub?.cancel();
-        await sink.close();
-        client.close();
-        if (downloadedBytes == totalBytes) {
-          await installOnDevice();
-        } else {
+      final task = DownloadTask(
+        url: url,
+        baseDirectory: baseDirectory,
+        directory: directory,
+        filename: filename,
+        updates: Updates.progress,
+      );
+
+      final result = await FileDownloader().download(
+        task,
+        onProgress: (progress) {
+          notifier.state = DownloadingInstallProgress(progress);
+        },
+      );
+
+      switch (result.status) {
+        case TaskStatus.complete:
+          return await installOnDevice();
+        default:
           notifier.state = ErrorInstallProgress(
               Exception('App did not fully download.'),
               info: 'Please try again.');
-        }
-      });
+          await file.delete();
+      }
     }
   }
 
@@ -393,8 +388,8 @@ Future<bool> _isHashMismatch(String path, String hash) async {
     String? digest;
     try {
       while (true) {
-        // Chunk size determined from approximate cpu/memory profiling
-        final chunk = await reader.readChunk(2048);
+        // Chunk size determined from rough CPU/memory profiling
+        final chunk = await reader.readChunk(3072);
         if (chunk.isEmpty) {
           break; // EOF
         }
