@@ -76,7 +76,7 @@ class AppDetailScreen extends HookConsumerWidget {
                           child: Padding(
                             padding: const EdgeInsets.all(10),
                             child: Text(
-                              'This update has a different certificate than the app installed on your device.\n\nHave you used another app store to install this app? If so, you can choose to remove it and re-install it using Zapstore.\n\nIt otherwise could be a malicious update, contact the developer for details.\n\nUpdate certificate hash: ${app.latestMetadata!.apkSignatureHash}',
+                              '${app.name} ${app.latestMetadata!.version} has a different Android certificate than version ${app.localApp.value!.installedVersion} installed on your device.\n\nHave you used another app store to install ${app.name}? If so, you can choose to remove it and re-install coming back to this screen.\n\nIt otherwise could be a malicious update, contact the developer for details.\n\nNew certificate hash: ${app.latestMetadata!.apkSignatureHash}',
                               style: TextStyle(fontWeight: FontWeight.bold),
                             ),
                           ),

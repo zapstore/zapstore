@@ -10,6 +10,7 @@
 analyzer:
   errors:
     no_leading_underscores_for_local_identifiers: ignore
+    must_be_immutable: ignore
 include: package:flutter_lints/flutter.yaml
 
 linter:

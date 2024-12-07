@@ -88,7 +88,7 @@ class AppCard extends HookConsumerWidget {
                             {kZapstoreAppIdentifier}.contains(app.identifier)))
                       AuthorContainer(
                         user: app.signer.value!,
-                        text: 'Signed by',
+                        beforeText: 'Signed by',
                         oneLine: true,
                         size: 12,
                       ),

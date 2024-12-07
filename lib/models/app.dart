@@ -69,7 +69,7 @@ class App extends BaseApp with DataModelMixin<App> {
   bool get hasCertificateMismatch =>
       localApp.value?.status == AppInstallStatus.certificateMismatch;
 
-  Future<void> install() async {
+  Future<void> install({bool alwaysTrustSigner = false}) async {
     if (!canInstall && !canUpdate || hasCertificateMismatch) {
       return;
     }
@@ -77,6 +77,13 @@ class App extends BaseApp with DataModelMixin<App> {
     final adapter = DataModel.adapterFor(this) as AppAdapter;
     final notifier =
         adapter.ref.read(installationProgressProvider(id!).notifier);
+
+    // Persist trusted preference
+    if (alwaysTrustSigner) {
+      final settings = adapter.ref.settings.findOneLocalById('_')!;
+      settings.trustedUsers.add(signer.value!);
+      settings.saveLocal();
+    }
 
     final installPermission = await Permission.requestInstallPackages.status;
     if (!installPermission.isGranted) {

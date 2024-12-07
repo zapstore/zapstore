@@ -126,7 +126,7 @@ extension StringWidget on String {
   }
 
   String substringMax(int size) {
-    return substring(0, min(length, 80));
+    return substring(0, min(length, size));
   }
 }
 

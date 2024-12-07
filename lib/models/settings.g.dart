@@ -15,6 +15,12 @@ mixin _$SettingsAdapter on Adapter<Settings> {
       type: 'users',
       kind: 'BelongsTo',
       instance: (_) => (_ as Settings).user,
+    ),
+    'trustedUsers': RelationshipMeta<User>(
+      name: 'trustedUsers',
+      type: 'users',
+      kind: 'HasMany',
+      instance: (_) => (_ as Settings).trustedUsers,
     )
   };
 
@@ -54,15 +60,19 @@ extension SettingsRelationshipGraphNodeX on RelationshipGraphNode<Settings> {
     return meta.clone(
         parent: this is RelationshipMeta ? this as RelationshipMeta : null);
   }
+
+  RelationshipGraphNode<User> get trustedUsers {
+    final meta = _$SettingsAdapter._kSettingsRelationshipMetas['trustedUsers']
+        as RelationshipMeta<User>;
+    return meta.clone(
+        parent: this is RelationshipMeta ? this as RelationshipMeta : null);
+  }
 }
 
 // **************************************************************************
 // JsonSerializableGenerator
 // **************************************************************************
 
-Settings _$SettingsFromJson(Map<String, dynamic> json) =>
-    Settings()..isLoggedIn = json['isLoggedIn'] as bool;
+Settings _$SettingsFromJson(Map<String, dynamic> json) => Settings();
 
-Map<String, dynamic> _$SettingsToJson(Settings instance) => <String, dynamic>{
-      'isLoggedIn': instance.isLoggedIn,
-    };
+Map<String, dynamic> _$SettingsToJson(Settings instance) => <String, dynamic>{};

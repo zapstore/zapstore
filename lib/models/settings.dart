@@ -10,7 +10,7 @@ class Settings extends DataModel<Settings> {
   @override
   String get id => '_';
   final BelongsTo<User> user = BelongsTo();
-  bool isLoggedIn = false;
+  final HasMany<User> trustedUsers = HasMany();
 }
 
 mixin SettingsAdapter on Adapter<Settings> {
