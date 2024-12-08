@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/local_app.dart';
+import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/install_button.dart';
 import 'package:zapstore/widgets/pill_widget.dart';
 
@@ -25,7 +26,7 @@ class VersionPillWidget extends StatelessWidget {
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   Text(
-                    app.localApp.value!.installedVersion!,
+                    app.localApp.value!.installedVersion!.removeParenthesis(),
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 11,
@@ -46,7 +47,7 @@ class VersionPillWidget extends StatelessWidget {
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   Text(
-                    app.latestMetadata!.version!,
+                    app.latestMetadata!.version!.removeParenthesis(),
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 11,
