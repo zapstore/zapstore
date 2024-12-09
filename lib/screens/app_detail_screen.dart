@@ -98,7 +98,8 @@ class AppDetailScreen extends HookConsumerWidget {
                                     GestureDetector(
                                       onTap: () {
                                         final imageProvider =
-                                            CachedNetworkImageProvider(i);
+                                            CachedNetworkImageProvider(i,
+                                                scale: 0.6);
                                         showImageViewer(
                                           context,
                                           imageProvider,
