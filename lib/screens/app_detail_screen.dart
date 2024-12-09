@@ -131,8 +131,7 @@ class AppDetailScreen extends HookConsumerWidget {
                           child: Padding(
                             padding: const EdgeInsets.all(10),
                             child: UsersRichText(
-                              trailingText:
-                                  ' recommend${curatedBy.length == 1 ? 's' : ''} this app',
+                              trailingText: ' picked this app',
                               users: curatedBy.toList(),
                             ),
                           ),

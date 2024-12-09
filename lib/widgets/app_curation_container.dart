@@ -5,7 +5,6 @@ import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/main.data.dart';
-import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/app_curation_set.dart';
 import 'package:zapstore/models/user.dart';
 import 'package:zapstore/widgets/horizontal_grid.dart';
@@ -24,11 +23,11 @@ class AppCurationContainer extends HookConsumerWidget {
 
     // Custom curation set to place nostr set first (as its preloaded)
     final nostrCurationSet = appCurationSets.firstWhereOrNull(
-        (s) => s.getReplaceableEventLink() == kNostrCurationSet);
-    final customAppCurationSets = [
-      if (nostrCurationSet != null) nostrCurationSet,
-      ...appCurationSets..remove(nostrCurationSet)
-    ];
+        (s) => s.getReplaceableEventLink() == kNostrCurationSetLink);
+    if (nostrCurationSet != null) {
+      appCurationSets.remove(nostrCurationSet);
+      appCurationSets.insert(0, nostrCurationSet);
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -38,7 +37,7 @@ class AppCurationContainer extends HookConsumerWidget {
           controller: scrollController,
           child: Row(
             children: [
-              for (final appCurationSet in customAppCurationSets)
+              for (final appCurationSet in appCurationSets)
                 Padding(
                   padding: const EdgeInsets.only(right: 12),
                   child: GestureDetector(
@@ -109,27 +108,19 @@ class AppCurationSetNotifier
 
   Future<void> fetch() async {
     final appCurationSet = await future;
-    final appsLocal =
-        ref.apps.appAdapter.findWhereIdentifierInLocal(appCurationSet.appIds);
-    // TODO: Rethink this logic (checking on empty)
-    if (appsLocal.isEmpty) {
-      state = AsyncLoading();
-      state = await AsyncValue.guard(() async {
-        // Only load apps (no releases for now)
-        // We can use ignoreReturn here as we do not care about releases
-        await ref.apps.findAll(
-          params: {
-            '#d': appCurationSet.appIds,
-            'includes': false,
-            'ignoreReturn': true,
-          },
-        );
-        // Since the set is the same as before (the relationship changed),
-        // manually invalidate the provider
-        ref.invalidateSelf();
-        return appCurationSet;
-      });
-    }
+    state = AsyncLoading();
+    state = await AsyncValue.guard(() async {
+      // Only load apps (no releases for now)
+      // We can use ignoreReturn here as we do not care about releases
+      await ref.apps.findAll(
+        params: {
+          '#d': appCurationSet.appIds,
+          'includes': false,
+          'ignoreReturn': true,
+        },
+      );
+      return appCurationSet;
+    });
   }
 }
 
@@ -139,6 +130,6 @@ final appCurationSetProvider = AsyncNotifierProvider.family<
     ReplaceableEventLink>(AppCurationSetNotifier.new);
 
 final _selectedIdProvider =
-    StateProvider<ReplaceableEventLink>((_) => kNostrCurationSet);
+    StateProvider<ReplaceableEventLink>((_) => kNostrCurationSetLink);
 
-const kNostrCurationSet = (30267, kZapstorePubkey, 'nostr');
+const kNostrCurationSetLink = (30267, kFranzapPubkey, 'nostr');

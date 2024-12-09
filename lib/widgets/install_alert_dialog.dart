@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/settings.dart';
@@ -49,7 +50,7 @@ class InstallAlertDialog extends HookConsumerWidget {
             Gap(20),
             if (app.signer.value != null)
               WebOfTrustContainer(
-                fromNpub: user?.npub ?? kFranzapNpub,
+                fromNpub: user?.npub ?? kFranzapPubkey.npub,
                 toNpub: app.signer.value!.npub,
               ),
             if (user == null)

@@ -40,7 +40,7 @@ final appInitializer = FutureProvider<void>((ref) async {
   }
 
   // Preload zapstore's nostr curation set
-  ref.read(appCurationSetProvider(kNostrCurationSet).notifier).fetch();
+  ref.read(appCurationSetProvider(kNostrCurationSetLink).notifier).fetch();
 
   // App-wide listeners
 
