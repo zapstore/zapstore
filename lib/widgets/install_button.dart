@@ -61,13 +61,15 @@ class InstallButton extends HookConsumerWidget {
                       builder: (context) => InstallAlertDialog(app: app),
                     );
                   }
-                } else {
+                } else if (app.canUpdate) {
                   app.install().catchError((e) {
                     if (context.mounted) {
                       context.showError(
                           title: 'Could not install', description: e.message);
                     }
                   });
+                } else {
+                  // no action
                 }
               },
             ErrorInstallProgress(:final e, :final info, :final actions) => () {
@@ -93,7 +95,9 @@ class InstallButton extends HookConsumerWidget {
         backgroundColor: switch (progress) {
           ErrorInstallProgress() => Colors.red,
           IdleInstallProgress() =>
-            app.hasCertificateMismatch ? Colors.grey : kUpdateColor,
+            (!app.canInstall && !app.canUpdate || app.hasCertificateMismatch)
+                ? Colors.grey
+                : kUpdateColor,
           _ => kUpdateColor,
         },
         progressColor: Colors.blue[800],
