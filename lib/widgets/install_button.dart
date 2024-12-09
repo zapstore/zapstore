@@ -49,19 +49,25 @@ class InstallButton extends HookConsumerWidget {
                 if (app.canInstall) {
                   final settings = ref.settings.findOneLocalById('_')!;
                   if (settings.trustedUsers.contains(app.signer.value!)) {
-                    app.install();
+                    app.install().catchError((e) {
+                      if (context.mounted) {
+                        context.showError(
+                            title: 'Could not install', description: e.message);
+                      }
+                    });
                   } else {
                     showDialog(
                       context: context,
                       builder: (context) => InstallAlertDialog(app: app),
                     );
                   }
-                } else if (app.canUpdate) {
-                  app.install();
                 } else {
-                  context.showError(
-                      title: 'Installation not possible',
-                      description: 'Release or signer are missing.');
+                  app.install().catchError((e) {
+                    if (context.mounted) {
+                      context.showError(
+                          title: 'Could not install', description: e.message);
+                    }
+                  });
                 }
               },
             ErrorInstallProgress(:final e, :final info, :final actions) => () {

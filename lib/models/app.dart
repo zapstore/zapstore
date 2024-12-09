@@ -26,7 +26,7 @@ import 'package:zapstore/utils/system_info.dart';
 
 part 'app.g.dart';
 
-final m = Mutex();
+final mutex = Mutex();
 
 @DataAdapter([NostrAdapter, AppAdapter])
 class App extends BaseApp with DataModelMixin<App> {
@@ -73,7 +73,8 @@ class App extends BaseApp with DataModelMixin<App> {
 
   Future<void> install({bool alwaysTrustSigner = false}) async {
     if (!canInstall && !canUpdate || hasCertificateMismatch) {
-      return;
+      throw Exception(
+          'Local status: ${localApp.value?.status}, signer: ${signer.value?.npub}, certificate mismatch: $hasCertificateMismatch');
     }
 
     final adapter = DataModel.adapterFor(this) as AppAdapter;
@@ -119,7 +120,7 @@ class App extends BaseApp with DataModelMixin<App> {
       // but it is giving users problems (and for me it's slower)
       // Probably need to fork hui-z's with support for user-canceled action
       // NOTE: Must use mutex: https://github.com/hui-z/flutter_install_plugin/issues/68
-      final result = await m.protect(() async {
+      final result = await mutex.protect(() async {
         return InstallPlugin.install(file.path);
       });
 
