@@ -1,3 +1,13 @@
+# 0.1.7
+
+  - Performance: Faster, background downloads (#172)
+  - Feature: Full screen app images (#181)
+  - Feature: Remember trusted signers (#141)
+  - Feature: Show certificate mismatch before installing (#179)
+  - Bugfix: Swipe left should not close the app in nested screens (#175)
+  - Bugfix: App curation set related issues
+  - Bugfix: Prevent install in bad state: better UI and error toast
+
 # 0.1.6
   
   - Performance: Background loading, remove deprecated
