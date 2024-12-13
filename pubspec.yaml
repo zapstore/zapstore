@@ -51,6 +51,7 @@ dependencies:
   background_downloader: ^8.8.0
   mutex: ^3.1.0
   easy_image_viewer: ^1.5.1
+  amberflutter: ^0.0.9
 
 dependency_overrides:
   purplebase:
