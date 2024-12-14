@@ -18,6 +18,7 @@ const kSocialRelays = {'wss://relay.damus.io', 'wss://relay.nostr.band'};
 mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
   RelayMessageNotifier get relay =>
       ref.read(relayProviderFamily(kAppRelays).notifier);
+
   RelayMessageNotifier get socialRelays =>
       ref.read(relayProviderFamily(kSocialRelays).notifier);
 
@@ -25,24 +26,29 @@ mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
   Future<void> onInitialized() async {
     await super.onInitialized();
 
-    // Upon adapter initialization, configure relays
-    // with the event verification caching function
-    relay.configure(
-      isEventVerified: (Map<String, dynamic> map) {
-        // If replaceable, we check for that ID
-        final identifier = (map['tags'] as Iterable)
-            .firstWhereOrNull((t) => t[0] == 'd')?[1]
-            ?.toString();
-        final id = identifier != null
-            ? (map['kind'] as int, map['pubkey'].toString(), identifier)
-                .formatted
-            : map['id'];
-        return ref.apps.nostrAdapter.existsId(id);
-      },
-    );
-    socialRelays.configure(
-      isEventVerified: (map) => ref.apps.nostrAdapter.existsId(map['pubkey']),
-    );
+    // DO NOT run on isolates, the mere fact of calling the
+    // relay getter will trigger its initialization
+    // as providers are obviously not cached across isolates
+    if (!inIsolate) {
+      // Upon adapter initialization, configure relays
+      // with the event verification caching function
+      relay.configure(
+        isEventVerified: (Map<String, dynamic> map) {
+          // If replaceable, we check for that ID
+          final identifier = (map['tags'] as Iterable)
+              .firstWhereOrNull((t) => t[0] == 'd')?[1]
+              ?.toString();
+          final id = identifier != null
+              ? (map['kind'] as int, map['pubkey'].toString(), identifier)
+                  .formatted
+              : map['id'];
+          return ref.apps.nostrAdapter.existsId(id);
+        },
+      );
+      socialRelays.configure(
+        isEventVerified: (map) => ref.apps.nostrAdapter.existsId(map['pubkey']),
+      );
+    }
   }
 
   int get kind {
