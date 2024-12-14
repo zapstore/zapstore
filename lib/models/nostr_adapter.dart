@@ -188,7 +188,7 @@ class RelayListenerNotifier extends Notifier<void> {
 
   Future<void> fetch() async {
     await Future.microtask(() async {
-      await ref.read(latestReleasesAppProvider.notifier).fetch();
+      await ref.read(latestReleasesAppProvider.notifier).fetchRemote();
       await ref.apps.appAdapter.checkForUpdates();
     });
   }
