@@ -1,3 +1,9 @@
+# 0.1.8
+
+  - Bugfix: Prevent unnecessary relay initialization
+  - Bugfix: [purplebase] Block until enough relay EOSEs
+  - Bugfix: Fix regression, offline-first models
+
 # 0.1.7
 
   - Performance: Faster, background downloads (#172)
