@@ -1,8 +1,12 @@
+import 'dart:io';
+
+import 'package:amberflutter/amberflutter.dart';
 import 'package:async_button_builder/async_button_builder.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/settings.dart';
 import 'package:zapstore/utils/extensions.dart';
@@ -11,6 +15,8 @@ import 'package:zapstore/widgets/rounded_image.dart';
 class LoginContainer extends HookConsumerWidget {
   final String labelText;
   final bool minimal;
+  final amber = Amberflutter();
+
   LoginContainer(
       {super.key,
       this.minimal = false,
@@ -77,17 +83,7 @@ class LoginContainer extends HookConsumerWidget {
                       child: CircularProgressIndicator(),
                     ),
                     onPressed: () async {
-                      return ref.users
-                          .findOne(controller.text.trim())
-                          .then((user) {
-                        ref.settings.findOneLocalById('_')!.user.value = user;
-                      }).catchError((e, stack) {
-                        if (context.mounted) {
-                          context.showError(
-                              title: e.message ?? e.toString(),
-                              description: stack?.toString().substringMax(200));
-                        }
-                      });
+                      return doLogin(ref, controller.text.trim(), context);
                     },
                     builder: (context, child, callback, buttonState) {
                       return Padding(
@@ -107,6 +103,43 @@ class LoginContainer extends HookConsumerWidget {
                   ),
                 ),
               ),
+              Gap(10),
+              isAndroid()
+                  ? AsyncButtonBuilder(
+                      loadingWidget: SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(),
+                      ),
+                      onPressed: () async {
+                        if (await amber.isAppInstalled()) {
+                          final npub = await getExternalSignerPublicKey().catchError((e, stack) {
+                            print("error");
+                          });
+                          return doLogin(ref, npub, context);
+                        } else {
+                          var url =
+                              Uri.parse("https://github.com/greenart7c3/Amber");
+                          launchUrl(url, mode: LaunchMode.externalApplication);
+                        }
+                      },
+                      builder: (context, child, callback, buttonState) {
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 2),
+                          child: SizedBox(
+                            child: ElevatedButton(
+                              onPressed: callback,
+                              style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.orange,
+                                  foregroundColor: Colors.white),
+                              child: child,
+                            ),
+                          ),
+                        );
+                      },
+                      child: Text('Login with external signer'),
+                    )
+                  : Container()
             ],
           ),
         Gap(5),
@@ -120,5 +153,32 @@ class LoginContainer extends HookConsumerWidget {
           ),
       ],
     );
+  }
+
+  Future<void> doLogin(WidgetRef ref, String pubKey, BuildContext context) {
+    return ref.users.findOne(pubKey).then((user) {
+      ref.settings.findOneLocalById('_')!.user.value =
+          user;
+    }).catchError((e, stack) {
+      if (context.mounted) {
+        context.showError(
+            title: e.message ?? e.toString(),
+            description:
+                stack?.toString().substringMax(200));
+      }
+    });
+  }
+
+  static bool isAndroid() {
+    try {
+      return Platform.isAndroid;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<String> getExternalSignerPublicKey() async {
+    final key = await amber.getPublicKey();
+    return key['signature'];
   }
 }
