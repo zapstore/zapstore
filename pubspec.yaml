@@ -2,7 +2,7 @@ name: zapstore
 description: The permissionless app store
 publish_to: 'none'
 
-version: 0.1.7+17
+version: 0.1.8+18
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -59,7 +59,7 @@ dependency_overrides:
     path: ../purplebase
 #    git:
 #      url: https://github.com/purplebase/purplebase
-#      ref: cbe8342031adf908c8243125e176f52739d400d8
+#      ref: 7f0eefd1fd1bcbc947123dc377183dbae58ea97a
   flutter_data:
     git:
       url: https://github.com/zapstore/flutter_data

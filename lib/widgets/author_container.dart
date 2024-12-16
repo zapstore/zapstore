@@ -7,7 +7,7 @@ import 'package:zapstore/widgets/rounded_image.dart';
 class AuthorContainer extends StatelessWidget {
   final User user;
   final String beforeText;
-  final String afterText;
+  final String? afterText;
   final bool oneLine;
   final double size;
 
@@ -15,7 +15,7 @@ class AuthorContainer extends StatelessWidget {
     super.key,
     required this.user,
     this.beforeText = 'Signed by',
-    this.afterText = '',
+    this.afterText,
     this.oneLine = true,
     this.size = 14,
   });
@@ -49,7 +49,11 @@ class AuthorContainer extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                Text(afterText),
+                if (afterText != null)
+                  Text(
+                    afterText!,
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
               ],
             )
         ],

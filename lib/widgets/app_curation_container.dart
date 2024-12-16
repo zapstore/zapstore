@@ -18,8 +18,11 @@ class AppCurationContainer extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scrollController = useScrollController();
     final selectedAppCurationSet = ref.watch(_selectedIdProvider);
-    final appCurationSets =
-        ref.appCurationSets.findAllLocal().sortedBy((s) => s.createdAt!);
+    final appCurationSets = ref.appCurationSets
+        .findAllLocal()
+        .sortedBy((s) => s.createdAt!)
+        .reversed
+        .toList();
 
     // Custom curation set to place nostr set first (as its preloaded)
     final nostrCurationSet = appCurationSets.firstWhereOrNull(
@@ -108,9 +111,12 @@ class AppCurationSetNotifier
 
   Future<void> fetch() async {
     final appCurationSet = await future;
-    state = AsyncLoading();
+
+    if (appCurationSet.apps.isEmpty) {
+      state = AsyncLoading();
+    }
     state = await AsyncValue.guard(() async {
-      // Only load apps (no releases for now)
+      // Only load apps (no releases for now, includes=false)
       // We can use ignoreReturn here as we do not care about releases
       await ref.apps.findAll(
         params: {
