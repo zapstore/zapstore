@@ -55,7 +55,7 @@ class ZapButton extends HookConsumerWidget {
               _ => 0,
             },
         },
-        backgroundColor: nwcSecret!=null && nwcSecret!=''? kUpdateColor : Colors.grey,
+        backgroundColor: nwcSecret!=null && nwcSecret!='' && app.developer.value!=null? kUpdateColor : Colors.grey,
         progressColor: Colors.blue[800],
         barRadius: Radius.circular(20),
         padding: EdgeInsets.all(0),
