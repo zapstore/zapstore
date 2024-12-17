@@ -12,6 +12,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:ndk/domain_layer/usecases/nwc/consts/nwc_method.dart';
 import 'package:ndk/domain_layer/usecases/nwc/nwc_connection.dart';
+import 'package:ndk/domain_layer/usecases/nwc/responses/get_balance_response.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/feedback.dart';
@@ -148,6 +149,11 @@ class SettingsScreen extends HookConsumerWidget {
                             await ref
                                 .read(nwcSecretProvider.notifier)
                                 .updateNwcSecret(nwcUri);
+                            context.showInfo("Wallet connected!");
+                            if (connection.permissions.contains(NwcMethod.GET_BALANCE.name)) {
+                              GetBalanceResponse balance = await ndk.nwc.getBalance(connection);
+                              context.showInfo("${balance.balanceSats} sats in wallet");
+                            }
                           } else {
                             context.showError(
                                 title: 'Wallet missing pay_invoice permission',

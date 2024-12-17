@@ -18,6 +18,7 @@ import 'package:zapstore/widgets/signer_and_developer_row.dart';
 import 'package:zapstore/widgets/spinning_logo.dart';
 import 'package:zapstore/widgets/versioned_app_header.dart';
 import 'package:zapstore/widgets/wot_container.dart';
+import 'package:zapstore/widgets/zap_button.dart';
 
 class AppDetailScreen extends HookConsumerWidget {
   final App model;
@@ -39,6 +40,8 @@ class AppDetailScreen extends HookConsumerWidget {
       }
       return ref.apps.findOne(model.identifier!, remote: true);
     }));
+    final nwcSecret = ref.watch(nwcSecretProvider);
+
     final state = ref.apps.watchOne(model.id!,
         alsoWatch: (_) => {
               _.localApp,
@@ -315,6 +318,12 @@ class AppDetailScreen extends HookConsumerWidget {
                   ),
                 ),
               ],
+            ),
+          ),
+          SizedBox(
+            height: 50,
+            child: Center(
+              child: ZapButton(app: app),
             ),
           ),
           SizedBox(
