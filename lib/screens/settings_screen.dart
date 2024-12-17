@@ -10,6 +10,8 @@ import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:ndk/domain_layer/usecases/nwc/consts/nwc_method.dart';
+import 'package:ndk/domain_layer/usecases/nwc/nwc_connection.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/feedback.dart';
@@ -26,12 +28,16 @@ class SettingsScreen extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final systemInfoState = ref.watch(systemInfoNotifierProvider);
 
-    final controller = useTextEditingController();
+    final feedbackController = useTextEditingController();
+    final nwcController = useTextEditingController();
     final user = ref.settings
         .watchOne('_', alsoWatch: (_) => {_.user})
         .model!
         .user
         .value;
+    final isTextFieldEmpty = useState(true);
+
+    final nwcSecret = ref.watch(nwcSecretProvider);
 
     return SingleChildScrollView(
       child: Column(
@@ -51,7 +57,7 @@ class SettingsScreen extends HookConsumerWidget {
           Text('Comments, suggestions and error reports welcome here.'),
           Gap(20),
           TextField(
-            controller: controller,
+            controller: feedbackController,
             maxLines: 10,
           ),
           Gap(20),
@@ -61,9 +67,9 @@ class SettingsScreen extends HookConsumerWidget {
               loadingWidget: SizedBox(
                   width: 14, height: 14, child: CircularProgressIndicator()),
               onPressed: () async {
-                if (controller.text.trim().isNotEmpty) {
+                if (feedbackController.text.trim().isNotEmpty) {
                   final text =
-                      '${controller.text.trim()} [from ${user.npub} on ${DateFormat('MMMM d, y').format(DateTime.now())}]';
+                      '${feedbackController.text.trim()} [from ${user.npub} on ${DateFormat('MMMM d, y').format(DateTime.now())}]';
                   final event = AppFeedback(content: text).sign(kI);
                   try {
                     await http.post(Uri.parse('https://relay.zapstore.dev/'),
@@ -73,7 +79,7 @@ class SettingsScreen extends HookConsumerWidget {
                       context.showInfo('Thank you',
                           description: 'Message sent successfully');
                     }
-                    controller.clear();
+                    feedbackController.clear();
                   } catch (e, stack) {
                     if (context.mounted) {
                       context.showError(
@@ -92,6 +98,81 @@ class SettingsScreen extends HookConsumerWidget {
                 };
               },
               child: Text('Send as ${user.nameOrNpub}'),
+            ),
+          Gap(40),
+          Divider(),
+          Gap(40),
+          if (user != null)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Gap(20),
+                Text(
+                    "Nostr Wallet Connect ${nwcSecret != null ? 'connected' : 'URI'}"),
+                if (nwcSecret != null && nwcSecret != '')
+                  ElevatedButton(
+                    onPressed: () async {
+                      await ref
+                          .read(nwcSecretProvider.notifier)
+                          .updateNwcSecret(null);
+                    },
+                    style: ElevatedButton.styleFrom(
+                        disabledBackgroundColor: Colors.transparent,
+                        backgroundColor: Colors.transparent),
+                    child: Text('Disconnect'),
+                  ),
+                if (nwcSecret == null || nwcSecret == '')
+                  TextField(
+                    autocorrect: false,
+                    controller: nwcController,
+                    onChanged: (value) {
+                      isTextFieldEmpty.value = value.isEmpty;
+                    },
+                    decoration: InputDecoration(
+                      hintText: 'nostr+walletconnect://...',
+                      suffixIcon: AsyncButtonBuilder(
+                        disabled: isTextFieldEmpty.value,
+                        loadingWidget: SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(),
+                        ),
+                        onPressed: () async {
+                          final nwcUri = nwcController.text.trim();
+                          NwcConnection connection = await ndk.nwc.connect(nwcUri, doGetInfoMethod: true, onError: (error) {
+                            context.showError(
+                                title: 'Unable to connect',
+                                description: error);
+                          });
+                          if (connection.info!=null && connection.permissions.contains(NwcMethod.PAY_INVOICE.name)) {
+                            await ref
+                                .read(nwcSecretProvider.notifier)
+                                .updateNwcSecret(nwcUri);
+                          } else {
+                            context.showError(
+                                title: 'Wallet missing pay_invoice permission',
+                                description: '');
+                          }
+                        },
+                        builder: (context, child, callback, buttonState) {
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 2),
+                            child: SizedBox(
+                              child: ElevatedButton(
+                                onPressed: callback,
+                                style: ElevatedButton.styleFrom(
+                                    disabledBackgroundColor: Colors.transparent,
+                                    backgroundColor: Colors.transparent),
+                                child: child,
+                              ),
+                            ),
+                          );
+                        },
+                        child: Text('Connect'),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           Gap(40),
           Divider(),
