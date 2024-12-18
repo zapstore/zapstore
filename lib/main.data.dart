@@ -3,16 +3,13 @@
 
 import 'package:flutter_data/flutter_data.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:ndk/ndk.dart';
-
-import 'package:zapstore/models/app_curation_set.dart';
 import 'package:zapstore/models/app.dart';
+import 'package:zapstore/models/app_curation_set.dart';
 import 'package:zapstore/models/file_metadata.dart';
 import 'package:zapstore/models/local_app.dart';
 import 'package:zapstore/models/release.dart';
 import 'package:zapstore/models/settings.dart';
 import 'package:zapstore/models/user.dart';
-import 'package:zapstore/utils/nwc_notifier.dart';
 
 final adapterProvidersMap = <String, Provider<Adapter<DataModelMixin>>>{
   'appCurationSets': appCurationSetsAdapterProvider,
@@ -54,11 +51,4 @@ extension AdapterRefX on Ref {
   Adapter<User> get users => watch(usersAdapterProvider)..internalWatch = watch;
 
 }
-
-final nwcSecretProvider =
-    StateNotifierProvider<NwcSecretNotifier, String?>((ref) {
-  return NwcSecretNotifier();
-});
-
-final ndk = Ndk.emptyBootstrapRelaysConfig();
 

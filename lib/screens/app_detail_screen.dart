@@ -12,6 +12,7 @@ import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/release.dart';
 import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/utils/nwc.dart';
 import 'package:zapstore/widgets/install_button.dart';
 import 'package:zapstore/widgets/release_card.dart';
 import 'package:zapstore/widgets/signer_and_developer_row.dart';
@@ -157,6 +158,8 @@ class AppDetailScreen extends HookConsumerWidget {
                         padding: const EdgeInsets.only(right: 14),
                         child: SignerAndDeveloperRow(app: app),
                       ),
+                      Gap(20),
+                      ZapButton(app: app),
                       Gap(20),
                       Container(
                         padding: EdgeInsets.all(10),
@@ -318,12 +321,6 @@ class AppDetailScreen extends HookConsumerWidget {
                   ),
                 ),
               ],
-            ),
-          ),
-          SizedBox(
-            height: 50,
-            child: Center(
-              child: ZapButton(app: app),
             ),
           ),
           SizedBox(

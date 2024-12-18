@@ -53,17 +53,18 @@ dependencies:
   easy_image_viewer: ^1.5.1
   flutter_secure_storage: ^9.2.2
   ndk: ^0.2.0-dev005
+  ndk_amber: ^0.2.0-dev002
 
 dependency_overrides:
   ndk:
     git:
       url: https://github.com/relaystr/ndk
       path: packages/ndk
-      ref: c279076973ff7b017697f4fbd172738535756c50
+      ref: lnurl-zaps
   purplebase:
     git:
       url: https://github.com/purplebase/purplebase
-      ref: 44f6388ab42fe706df61e30531d9361b19c1a19a
+      ref: upgrade-bip340
   flutter_data:
     git:
       url: https://github.com/zapstore/flutter_data

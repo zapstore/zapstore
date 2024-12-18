@@ -9,18 +9,16 @@ import 'package:flutter_phoenix/flutter_phoenix.dart';
 import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
-import 'package:ndk/domain_layer/usecases/nwc/consts/nwc_method.dart';
-import 'package:ndk/domain_layer/usecases/nwc/nwc_connection.dart';
-import 'package:ndk/domain_layer/usecases/nwc/responses/get_balance_response.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/feedback.dart';
 import 'package:zapstore/models/settings.dart';
 import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/utils/nwc.dart';
 import 'package:zapstore/utils/system_info.dart';
 import 'package:zapstore/widgets/app_drawer.dart';
-import 'package:http/http.dart' as http;
 
 class SettingsScreen extends HookConsumerWidget {
   const SettingsScreen({super.key});
@@ -38,7 +36,7 @@ class SettingsScreen extends HookConsumerWidget {
         .value;
     final isTextFieldEmpty = useState(true);
 
-    final nwcSecret = ref.watch(nwcSecretProvider);
+    final nwcConnection = ref.watch(nwcConnectionProvider);
 
     return SingleChildScrollView(
       child: Column(
@@ -109,20 +107,23 @@ class SettingsScreen extends HookConsumerWidget {
               children: [
                 Gap(20),
                 Text(
-                    "Nostr Wallet Connect ${nwcSecret != null ? 'connected' : 'URI'}"),
-                if (nwcSecret != null && nwcSecret != '')
+                    "Nostr Wallet Connect ${nwcConnection != null ? 'connected' : 'URI'}"),
+                if (nwcConnection != null && nwcConnection != '')
                   ElevatedButton(
                     onPressed: () async {
                       await ref
                           .read(nwcSecretProvider.notifier)
                           .updateNwcSecret(null);
+                      await ref
+                          .read(nwcConnectionProvider.notifier)
+                          .setConnection(null);
                     },
                     style: ElevatedButton.styleFrom(
                         disabledBackgroundColor: Colors.transparent,
                         backgroundColor: Colors.transparent),
                     child: Text('Disconnect'),
                   ),
-                if (nwcSecret == null || nwcSecret == '')
+                if (nwcConnection == null)
                   TextField(
                     autocorrect: false,
                     controller: nwcController,
@@ -140,25 +141,12 @@ class SettingsScreen extends HookConsumerWidget {
                         ),
                         onPressed: () async {
                           final nwcUri = nwcController.text.trim();
-                          NwcConnection connection = await ndk.nwc.connect(nwcUri, doGetInfoMethod: true, onError: (error) {
-                            context.showError(
-                                title: 'Unable to connect',
-                                description: error);
-                          });
-                          if (connection.info!=null && connection.permissions.contains(NwcMethod.PAY_INVOICE.name)) {
-                            await ref
-                                .read(nwcSecretProvider.notifier)
-                                .updateNwcSecret(nwcUri);
-                            context.showInfo("Wallet connected!");
-                            if (connection.permissions.contains(NwcMethod.GET_BALANCE.name)) {
-                              GetBalanceResponse balance = await ndk.nwc.getBalance(connection);
-                              context.showInfo("${balance.balanceSats} sats in wallet");
-                            }
-                          } else {
-                            context.showError(
-                                title: 'Wallet missing pay_invoice permission',
-                                description: '');
-                          }
+                          await ref
+                              .read(nwcSecretProvider.notifier)
+                              .updateNwcSecret(nwcUri);
+                          await ref
+                              .read(nwcConnectionProvider.notifier)
+                              .ensureConnected(nwcUri);
                         },
                         builder: (context, child, callback, buttonState) {
                           return Padding(
