@@ -3,8 +3,12 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:ndk/domain_layer/usecases/nwc/consts/nwc_method.dart';
 import 'package:ndk/ndk.dart';
 
+AndroidOptions _getAndroidOptions() => const AndroidOptions(
+  encryptedSharedPreferences: true,
+);
+
 class NwcSecretNotifier extends StateNotifier<String?> {
-  final _storage = const FlutterSecureStorage();
+  final _storage = FlutterSecureStorage(aOptions: _getAndroidOptions());
 
   NwcSecretNotifier() : super(null) {
     _loadNwcSecret();
