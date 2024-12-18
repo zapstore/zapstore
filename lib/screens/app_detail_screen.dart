@@ -41,8 +41,6 @@ class AppDetailScreen extends HookConsumerWidget {
       }
       return ref.apps.findOne(model.identifier!, remote: true);
     }));
-    final nwcSecret = ref.watch(nwcSecretProvider);
-
     final state = ref.apps.watchOne(model.id!,
         alsoWatch: (_) => {
               _.localApp,
