@@ -55,18 +55,24 @@ final appInitializer = FutureProvider<void>((ref) async {
 
   // Handle deep links
   final appLinksSub = appLinks.uriLinkStream.listen((uri) async {
-    if (uri.scheme == 'zapstore') {
+    String? appId;
+    if (uri.scheme == 'https' && uri.hasFragment) {
+      appId = uri.fragment;
+    } else if (uri.scheme == 'zapstore') {
+      appId = uri.host;
+    }
+    if (appId != null) {
       final adapter = ref.apps.appAdapter;
-      final apps = adapter.findWhereIdentifierInLocal({uri.host});
+      final apps = adapter.findWhereIdentifierInLocal({appId});
       // Filter by signer npub, if present, otherwise pick first
       final appSignerNpub = uri.queryParameters['signer'];
-      var app =
+      var goToApp =
           apps.firstWhereOrNull((a) => a.signer.value?.npub == appSignerNpub);
       if (appSignerNpub == null) {
-        app = apps.first;
+        goToApp = apps.first;
       }
-      if (app != null) {
-        appRouter.go('/details', extra: app);
+      if (goToApp != null) {
+        appRouter.go('/details', extra: goToApp);
       } else {
         appRouter.go('/');
       }
