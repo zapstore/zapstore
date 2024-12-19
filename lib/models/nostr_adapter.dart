@@ -13,7 +13,7 @@ import 'package:zapstore/widgets/latest_releases_container.dart';
 // NOTE: Very important to use const in relay args to preserve equality in Riverpod families
 // const kAppRelays = {'ws://10.0.2.2:3000'};
 const kAppRelays = {'wss://relay.zapstore.dev'};
-const kSocialRelays = {'wss://relay.damus.io', 'wss://relay.primal.net'};
+const kSocialRelays = {'wss://relay.damus.io', 'wss://relay.primal.net', 'ndk'};
 
 mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
   RelayMessageNotifier get relay =>

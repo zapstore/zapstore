@@ -9,14 +9,15 @@ import 'package:flutter_phoenix/flutter_phoenix.dart';
 import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/main.data.dart';
-import 'package:zapstore/models/feedback.dart';
 import 'package:zapstore/models/settings.dart';
+import 'package:zapstore/models/user.dart';
+import 'package:zapstore/navigation/app_initializer.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/system_info.dart';
-import 'package:zapstore/widgets/app_drawer.dart';
+import 'package:zapstore/widgets/sign_in_container.dart';
 import 'package:http/http.dart' as http;
 
 class SettingsScreen extends HookConsumerWidget {
@@ -55,20 +56,35 @@ class SettingsScreen extends HookConsumerWidget {
             maxLines: 10,
           ),
           Gap(20),
-          if (user == null) LoginContainer(minimal: true),
-          if (user != null)
+          if (user == null) SignInButton(minimal: true),
+          if (user != null &&
+                  user.settings.value!.signInMethod != SignInMethod.nip55 ||
+              !amberSigner.isAvailable)
+            Text(
+                'To share feedback, you must be signed in with Amber. You can also message us on nostr!',
+                style: TextStyle(
+                    color: Colors.red[300], fontWeight: FontWeight.bold)),
+          if (user != null &&
+              user.settings.value!.signInMethod == SignInMethod.nip55 &&
+              amberSigner.isAvailable)
             AsyncButtonBuilder(
               loadingWidget: SizedBox(
                   width: 14, height: 14, child: CircularProgressIndicator()),
               onPressed: () async {
                 if (controller.text.trim().isNotEmpty) {
-                  final text =
-                      '${controller.text.trim()} [from ${user.npub} on ${DateFormat('MMMM d, y').format(DateTime.now())}]';
-                  final event = AppFeedback(content: text).sign(kI);
+                  final signedDirectMessage = await amberSigner.sign(
+                      BaseDirectMessage(
+                          content: controller.text.trim(),
+                          receiver: kZapstorePubkey.npub),
+                      asUser: user.pubkey);
                   try {
-                    await http.post(Uri.parse('https://relay.zapstore.dev/'),
-                        body: jsonEncode(event.toMap()),
+                    final response = await http.post(
+                        Uri.parse('https://relay.zapstore.dev/'),
+                        body: jsonEncode(signedDirectMessage.toMap()),
                         headers: {'Content-Type': 'application/json'});
+                    if (response.statusCode >= 400) {
+                      throw Exception(response.body);
+                    }
                     if (context.mounted) {
                       context.showInfo('Thank you',
                           description: 'Message sent successfully');
@@ -77,8 +93,7 @@ class SettingsScreen extends HookConsumerWidget {
                   } catch (e, stack) {
                     if (context.mounted) {
                       context.showError(
-                          title: (e as dynamic).message ?? e.toString(),
-                          description: stack.toString());
+                          title: e.toString(), description: stack.toString());
                     }
                   }
                 }

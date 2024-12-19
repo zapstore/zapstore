@@ -44,6 +44,7 @@ extension ContextX on BuildContext {
         title,
         style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
         overflow: TextOverflow.ellipsis,
+        maxLines: 4,
       ),
       showProgressBar: false,
       closeOnClick: true,
@@ -108,12 +109,12 @@ class _ToastDescriptionWidget extends StatelessWidget {
   }
 }
 
-BelongsTo<T> belongsTo<T extends DataModelMixin<T>>(Map<String, dynamic> map) {
-  return BelongsTo<T>.fromJson(map);
+BelongsTo<T> belongsTo<T extends DataModelMixin<T>>(Map<String, dynamic>? map) {
+  return map != null ? BelongsTo<T>.fromJson(map) : BelongsTo<T>();
 }
 
-HasMany<T> hasMany<T extends DataModelMixin<T>>(Map<String, dynamic> map) {
-  return HasMany<T>.fromJson(map);
+HasMany<T> hasMany<T extends DataModelMixin<T>>(Map<String, dynamic>? map) {
+  return map != null ? HasMany<T>.fromJson(map) : HasMany<T>();
 }
 
 final emojiParser = EmojiParser();
@@ -126,14 +127,12 @@ extension StringWidget on String {
   }
 
   String substringMax(int size) {
-    return substring(0, min(length, size));
+    return substring(0, min(length, size)) + (size < length ? '...' : '');
   }
 
   String removeParenthesis() {
     return replaceAll(RegExp(r'\([^()]*\)'), '');
   }
 }
-
-const kI = "e593c54f840b32054dcad0fac15d57e4ac6523e31fe26b3087de6b07a2e9af58";
 
 const kZapstoreAppIdentifier = 'dev.zapstore.app';

@@ -130,10 +130,10 @@ packages:
     dependency: transitive
     description:
       name: bip340
-      sha256: "2a92f6ed68959f75d67c9a304c17928b9c9449587d4f75ee68f34152f7f69e87"
+      sha256: b7bcd70a860e605046006adaa72bc4f7453f4d31d7ba74a4ad9d5de387a0fc0b
       url: "https://pub.dev"
     source: hosted
-    version: "0.2.0"
+    version: "0.3.0"
   boolean_selector:
     dependency: transitive
     description:
@@ -526,6 +526,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.0"
+  hex:
+    dependency: transitive
+    description:
+      name: hex
+      sha256: "4e7cd54e4b59ba026432a6be2dd9d96e4c5205725194997193bf871703b82c4a"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.2.0"
   hooks_riverpod:
     dependency: "direct main"
     description:
@@ -622,14 +630,22 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.4"
+  isar:
+    dependency: transitive
+    description:
+      name: isar
+      sha256: ebf74d87c400bd9f7da14acb31932b50c2407edbbd40930da3a6c2a8143f85a8
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.0.0-dev.14"
   js:
     dependency: transitive
     description:
       name: js
-      sha256: c1b2e9b5ea78c45e1a0788d29606ba27dc5f71f019f32ca5140f61ef071838cf
+      sha256: f2c445dce49627136094980615a031419f7f3eb393237e4ecd97ac15dea343f3
       url: "https://pub.dev"
     source: hosted
-    version: "0.7.1"
+    version: "0.6.7"
   json_annotation:
     dependency: "direct main"
     description:
@@ -678,6 +694,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.0.0"
+  logger:
+    dependency: transitive
+    description:
+      name: logger
+      sha256: be4b23575aac7ebf01f225a241eb7f6b5641eeaf43c6a8613510fc2f8cf187d1
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.5.0"
   logging:
     dependency: transitive
     description:
@@ -742,6 +766,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.1.0"
+  ndk:
+    dependency: transitive
+    description:
+      name: ndk
+      sha256: "5a3b1c2f7c915be55b63a33c44c1bd71ade465bf0661e45f2ba9eb4ac5faf679"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.2.0-dev005"
   octo_image:
     dependency: transitive
     description:
@@ -938,8 +970,8 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: "7f0eefd1fd1bcbc947123dc377183dbae58ea97a"
-      resolved-ref: "7f0eefd1fd1bcbc947123dc377183dbae58ea97a"
+      ref: "807305296f93518435c8eb8b4f7cf66690b1d5e6"
+      resolved-ref: "807305296f93518435c8eb8b4f7cf66690b1d5e6"
       url: "https://github.com/purplebase/purplebase"
     source: git
     version: "0.2.0"
@@ -1055,6 +1087,15 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.0.1"
+  signer_plugin:
+    dependency: "direct main"
+    description:
+      path: "."
+      ref: baa5b2fcf7ba8db606a76794582348a1403438b0
+      resolved-ref: baa5b2fcf7ba8db606a76794582348a1403438b0
+      url: "https://github.com/chebizarro/flutter-signer-plugin"
+    source: git
+    version: "0.0.1"
   skeletonizer:
     dependency: "direct main"
     description:

@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:zapstore/models/feedback.dart';
 import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/utils/signers.dart';
 import 'package:zapstore/utils/system_info.dart';
 import 'package:zapstore/utils/theme.dart';
 
@@ -148,7 +149,7 @@ Future<void> _sendErrorReport(
     'info': systemInfo.androidInfo.toString()
   };
 
-  final event = AppFeedback(content: jsonEncode(map)).sign(kI);
+  final event = await pkSigner.sign(AppFeedback(content: jsonEncode(map)));
   await http.post(Uri.parse('https://relay.zapstore.dev/'),
       body: jsonEncode(event.toMap()),
       headers: {'Content-Type': 'application/json'});

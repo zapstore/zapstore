@@ -1,8 +1,10 @@
 import 'dart:convert';
 
+import 'package:collection/collection.dart';
 import 'package:flutter_data/flutter_data.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/models/nostr_adapter.dart';
+import 'package:zapstore/models/settings.dart';
 import 'package:zapstore/utils/extensions.dart';
 
 part 'user.g.dart';
@@ -10,14 +12,20 @@ part 'user.g.dart';
 @DataAdapter([NostrAdapter, UserAdapter])
 class User extends BaseUser with DataModelMixin<User> {
   User(
-      {super.createdAt,
+      {super.name,
+      super.createdAt,
       super.tags,
-      required this.followers,
-      required this.following});
+      HasMany<User>? followers,
+      HasMany<User>? following,
+      BelongsTo<Settings>? settings})
+      : followers = followers ?? HasMany(),
+        following = following ?? HasMany(),
+        settings = settings ?? BelongsTo();
 
   User.fromJson(super.map)
       : followers = hasMany(map['followers']),
         following = hasMany(map['following']),
+        settings = belongsTo(map['settings']),
         super.fromJson();
 
   Map<String, dynamic> toJson() => super.toMap();
@@ -26,8 +34,10 @@ class User extends BaseUser with DataModelMixin<User> {
   final HasMany<User> following;
   @DataRelationship(inverse: 'following')
   final HasMany<User> followers;
+  @DataRelationship(inverse: 'user')
+  final BelongsTo<Settings> settings;
 
-  String get nameOrNpub => name ?? '${npub.substring(0, 10)}...';
+  String get nameOrNpub => name ?? npub.substringMax(18);
 }
 
 mixin UserAdapter on NostrAdapter<User> {
@@ -116,7 +126,7 @@ mixin UserAdapter on NostrAdapter<User> {
     ));
 
     final data = await deserializeAsync(result, save: true);
-    return data.models.firstWhere((e) {
+    return data.models.firstWhereOrNull((e) {
       return e.id == publicKey;
     });
   }

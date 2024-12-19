@@ -7,7 +7,7 @@ import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/settings.dart';
 import 'package:zapstore/models/user.dart';
-import 'package:zapstore/widgets/app_drawer.dart';
+import 'package:zapstore/widgets/sign_in_container.dart';
 import 'package:zapstore/widgets/author_container.dart';
 import 'package:zapstore/widgets/wot_container.dart';
 
@@ -54,9 +54,9 @@ class InstallAlertDialog extends HookConsumerWidget {
                 toNpub: app.signer.value!.npub,
               ),
             if (user == null)
-              LoginContainer(
+              SignInButton(
+                label: 'Sign in to view your web of trust',
                 minimal: true,
-                labelText: 'Log in to view your own web of trust',
               ),
             Gap(16),
             Row(

@@ -12,12 +12,14 @@ mixin _$SettingsAdapter on Adapter<Settings> {
   static final Map<String, RelationshipMeta> _kSettingsRelationshipMetas = {
     'user': RelationshipMeta<User>(
       name: 'user',
+      inverseName: 'settings',
       type: 'users',
       kind: 'BelongsTo',
       instance: (_) => (_ as Settings).user,
     ),
     'trustedUsers': RelationshipMeta<User>(
       name: 'trustedUsers',
+      inverseName: 'settings',
       type: 'users',
       kind: 'HasMany',
       instance: (_) => (_ as Settings).trustedUsers,
@@ -73,6 +75,15 @@ extension SettingsRelationshipGraphNodeX on RelationshipGraphNode<Settings> {
 // JsonSerializableGenerator
 // **************************************************************************
 
-Settings _$SettingsFromJson(Map<String, dynamic> json) => Settings();
+Settings _$SettingsFromJson(Map<String, dynamic> json) => Settings()
+  ..signInMethod =
+      $enumDecodeNullable(_$SignInMethodEnumMap, json['signInMethod']);
 
-Map<String, dynamic> _$SettingsToJson(Settings instance) => <String, dynamic>{};
+Map<String, dynamic> _$SettingsToJson(Settings instance) => <String, dynamic>{
+      'signInMethod': _$SignInMethodEnumMap[instance.signInMethod],
+    };
+
+const _$SignInMethodEnumMap = {
+  SignInMethod.pubkey: 'pubkey',
+  SignInMethod.nip55: 'nip55',
+};

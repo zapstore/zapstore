@@ -35,6 +35,7 @@ dependencies:
   intl: ^0.18.1
   device_info_plus: ^10.1.0
   flutter_layout_grid: ^2.0.6
+  signer_plugin: ^1.0.0
   skeletonizer: ^1.1.2+1
   flutter_phoenix: ^1.1.1
   percent_indicator: ^4.2.3
@@ -57,11 +58,15 @@ dependency_overrides:
     # path: ../purplebase
     git:
       url: https://github.com/purplebase/purplebase
-      ref: 7f0eefd1fd1bcbc947123dc377183dbae58ea97a
+      ref: 807305296f93518435c8eb8b4f7cf66690b1d5e6
   flutter_data:
     git:
       url: https://github.com/zapstore/flutter_data
       ref: d7376cf1eac8e9c563d4c6eed8e567adc877415c
+  signer_plugin:
+    git:
+      url: https://github.com/chebizarro/flutter-signer-plugin
+      ref: baa5b2fcf7ba8db606a76794582348a1403438b0
 
 dev_dependencies:
   flutter_test:

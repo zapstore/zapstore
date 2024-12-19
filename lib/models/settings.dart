@@ -11,6 +11,12 @@ class Settings extends DataModel<Settings> {
   String get id => '_';
   final BelongsTo<User> user = BelongsTo();
   final HasMany<User> trustedUsers = HasMany();
+  SignInMethod? signInMethod;
+}
+
+enum SignInMethod {
+  pubkey,
+  nip55,
 }
 
 mixin SettingsAdapter on Adapter<Settings> {
