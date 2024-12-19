@@ -6,6 +6,7 @@ import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
+import 'package:zapstore/utils/notifier.dart';
 import 'package:zapstore/widgets/app_card.dart';
 
 class LatestReleasesContainer extends HookConsumerWidget {
@@ -58,7 +59,7 @@ class LatestReleasesContainer extends HookConsumerWidget {
                 onPressed: () async {
                   return ref
                       .read(latestReleasesAppProvider.notifier)
-                      .fetch(next: true);
+                      .fetchRemote(next: true);
                 },
                 builder: (context, child, callback, state) {
                   return Padding(
@@ -83,16 +84,14 @@ class LatestReleasesContainer extends HookConsumerWidget {
   }
 }
 
-class LatestReleasesAppNotifier extends StateNotifier<AsyncValue<List<App>>> {
+class LatestReleasesAppNotifier extends PreloadingStateNotifier<List<App>> {
   DateTime? _oldestCreatedAt;
   int _page = 1;
-  final Ref ref;
 
-  LatestReleasesAppNotifier(this.ref) : super(AsyncLoading()) {
-    fetch();
-  }
+  LatestReleasesAppNotifier(super.ref);
 
-  Future<void> fetch({bool next = false}) async {
+  @override
+  Future<void> fetchRemote({bool next = false}) async {
     if (next) {
       _page++;
     }
@@ -107,11 +106,16 @@ class LatestReleasesAppNotifier extends StateNotifier<AsyncValue<List<App>>> {
       },
     );
 
-    state = AsyncData(_fetchLocal());
+    state = fetchLocal();
   }
 
-  List<App> _fetchLocal() {
+  @override
+  AsyncValue<List<App>> fetchLocal() {
     final model = ref.apps.findAllLocal();
+
+    if (model.isEmpty) {
+      return AsyncLoading();
+    }
 
     final apps = model
         .where((a) => a.latestMetadata != null)
@@ -123,7 +127,7 @@ class LatestReleasesAppNotifier extends StateNotifier<AsyncValue<List<App>>> {
     if (apps.isNotEmpty) {
       _oldestCreatedAt = apps.last.createdAt;
     }
-    return apps;
+    return AsyncData(apps);
   }
 }
 

@@ -49,7 +49,7 @@ class SignerAndDeveloperRow extends ConsumerWidget {
                           settingsState.model!.trustedUsers
                               .contains(app.signer.value!)
                       ? '(trusted)'
-                      : '',
+                      : null,
                 ),
               ],
             ),

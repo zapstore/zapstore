@@ -31,12 +31,12 @@ final appInitializer = FutureProvider<void>((ref) async {
   if (ref.appCurationSets.countLocal == 0) {
     // If we are here, local storage is empty
     // Preload curation sets
-    await ref.appCurationSets.findAll();
+    await ref.appCurationSets.findAll(syncLocal: true);
     // Preload updates in the background (no await)
     ref.apps.appAdapter.checkForUpdates();
   } else {
     // Preload curation sets in the background (no await)
-    ref.appCurationSets.findAll();
+    ref.appCurationSets.findAll(syncLocal: true, background: true);
   }
 
   // Preload zapstore's nostr curation set
