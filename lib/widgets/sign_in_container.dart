@@ -136,15 +136,15 @@ class SignInContainer extends HookConsumerWidget {
                       }
 
                       var user = await ref.users.findOne(signedInNpub);
-                      if (user == null) {
-                        // TODO: Should be able to sign User()
-                        final newBaseUser = await amberSigner.sign(BaseUser(),
-                            asUser: signedInNpub.hexKey);
-                        // NOTE: Converting to User via serialization
-                        user = User.fromJson(newBaseUser.toMap())
-                            .init()
-                            .saveLocal();
-                      }
+
+                      user ??= User.fromJson({
+                        'id': signedInNpub.hexKey,
+                        'pubkey': signedInNpub.hexKey,
+                        'created_at':
+                            DateTime.now().millisecondsSinceEpoch ~/ 1000,
+                        'content': '{}',
+                        'tags': [],
+                      }).init().saveLocal();
 
                       final settings = ref.settings.findOneLocalById('_')!;
                       settings.signInMethod = SignInMethod.nip55;
