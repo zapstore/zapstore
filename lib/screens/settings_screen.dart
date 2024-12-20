@@ -10,7 +10,6 @@ import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:http/http.dart' as http;
-import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/main.data.dart';
@@ -20,7 +19,7 @@ import 'package:zapstore/navigation/app_initializer.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/nwc.dart';
 import 'package:zapstore/utils/system_info.dart';
-import 'package:zapstore/widgets/app_drawer.dart';
+import 'package:zapstore/widgets/sign_in_container.dart';
 
 class SettingsScreen extends HookConsumerWidget {
   const SettingsScreen({super.key});
@@ -78,9 +77,15 @@ class SettingsScreen extends HookConsumerWidget {
                   width: 14, height: 14, child: CircularProgressIndicator()),
               onPressed: () async {
                 if (feedbackController.text.trim().isNotEmpty) {
-                  final text =
-                      '${feedbackController.text.trim()} [from ${user.npub} on ${DateFormat('MMMM d, y').format(DateTime.now())}]';
-                  final event = AppFeedback(content: text).sign(kI);
+                  final signedDirectMessage = await amberSigner.sign(
+                      BaseDirectMessage(
+                          content: feedbackController.text.trim(),
+                          receiver: kZapstorePubkey.npub),
+                      asUser: user.pubkey);
+
+                  // final text =
+                  //     '${feedbackController.text.trim()} [from ${user.npub} on ${DateFormat('MMMM d, y').format(DateTime.now())}]';
+                  // final event = AppFeedback(content: text).sign(kI);
                   try {
                     final response = await http.post(
                         Uri.parse('https://relay.zapstore.dev/'),

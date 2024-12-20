@@ -1035,8 +1035,8 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: upgrade-bip340
-      resolved-ref: "0fdc08652bfcc56c579cf2093f53b1a1aa03bf79"
+      ref: a6a4dbf97faa23f827dbe8158cb110e961827ddc
+      resolved-ref: a6a4dbf97faa23f827dbe8158cb110e961827ddc
       url: "https://github.com/purplebase/purplebase"
     source: git
     version: "0.2.0"
@@ -1152,6 +1152,15 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.0.1"
+  signer_plugin:
+    dependency: "direct main"
+    description:
+      path: "."
+      ref: baa5b2fcf7ba8db606a76794582348a1403438b0
+      resolved-ref: baa5b2fcf7ba8db606a76794582348a1403438b0
+      url: "https://github.com/chebizarro/flutter-signer-plugin"
+    source: git
+    version: "0.0.1"
   skeletonizer:
     dependency: "direct main"
     description:
