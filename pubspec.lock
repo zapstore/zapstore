@@ -827,7 +827,7 @@ packages:
     description:
       path: "packages/ndk"
       ref: lnurl-zaps
-      resolved-ref: b68c1f1ef0d790dbecc98792f91816527dbde5f8
+      resolved-ref: e643d3b87d6764afdf6bccb76704aec12cba07a1
       url: "https://github.com/relaystr/ndk"
     source: git
     version: "0.2.0-dev005"
@@ -1035,7 +1035,7 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: a6a4dbf97faa23f827dbe8158cb110e961827ddc
+      ref: master
       resolved-ref: a6a4dbf97faa23f827dbe8158cb110e961827ddc
       url: "https://github.com/purplebase/purplebase"
     source: git
