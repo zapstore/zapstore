@@ -113,7 +113,7 @@ class ZapButton extends HookConsumerWidget {
                             child: Text('Zap'),
                             onPressed: () {
                               Navigator.of(context).pop(
-                                  int.tryParse(amountController.text) ?? '');
+                                  int.tryParse(amountController.text) ?? 0);
                             },
                           ),
                         ],
