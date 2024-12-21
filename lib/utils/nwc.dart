@@ -35,10 +35,6 @@ class NwcConnectionNotifier extends StateNotifier<NwcConnection?> {
     ensureConnected(ref.watch(nwcSecretProvider));
   }
 
-  setConnection(NwcConnection? c) {
-    state = c;
-  }
-
   Future<void> ensureConnected(String? nwcSecret) async {
     if (nwcSecret != null && nwcSecret.isNotEmpty && state==null) {
       NwcConnection connection = await ndkForNwc.nwc.connect(
@@ -47,10 +43,10 @@ class NwcConnectionNotifier extends StateNotifier<NwcConnection?> {
       });
       if (
           connection.permissions.contains(NwcMethod.PAY_INVOICE.name)) {
-        setConnection(connection);
+        state = connection;
       }
     } else {
-      setConnection(null);
+      state = null;
     }
   }
 }

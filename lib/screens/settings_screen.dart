@@ -82,10 +82,6 @@ class SettingsScreen extends HookConsumerWidget {
                           content: feedbackController.text.trim(),
                           receiver: kZapstorePubkey.npub),
                       asUser: user.pubkey);
-
-                  // final text =
-                  //     '${feedbackController.text.trim()} [from ${user.npub} on ${DateFormat('MMMM d, y').format(DateTime.now())}]';
-                  // final event = AppFeedback(content: text).sign(kI);
                   try {
                     final response = await http.post(
                         Uri.parse('https://relay.zapstore.dev/'),
