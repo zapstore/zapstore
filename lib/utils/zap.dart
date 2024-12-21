@@ -1,8 +1,7 @@
-import 'package:amberflutter/amberflutter.dart';
 import 'package:flutter_data/flutter_data.dart';
 import 'package:ndk/domain_layer/usecases/lnurl/lnurl.dart';
 import 'package:ndk/ndk.dart';
-import 'package:ndk_amber/ndk_amber.dart';
+import 'package:ndk_amber/data_layer/repositories/signers/nip55_event_signer.dart';
 import 'package:zapstore/models/nostr_adapter.dart';
 import 'package:zapstore/utils/nwc.dart';
 
@@ -20,25 +19,22 @@ class ZapNotifier extends StateNotifier<String?> {
       required String pubKey}) async {
     state = "zapping";
     String? lud16Link = Lnurl.getLud16LinkFromLud16(lnurl);
-    final signer = AmberEventSigner(
-        publicKey: user.pubkey, amberFlutterDS: AmberFlutterDS(Amberflutter()));
+    final signer = Nip55EventSigner(publicKey: user.pubkey);
     String? invoice = await Lnurl.getInvoiceCode(
         lud16Link: lud16Link!,
         sats: amount,
         recipientPubkey: pubKey,
         eventId: eventId,
         signer: signer,
-        relays: ndkForSocial.config.bootstrapRelays);
+        relays: kSocialRelays.where((e) => e != 'ndk'));
     if (invoice == null) {
-      // TODO how show error?
-      // context.showError(
-      //     title: "could not get invoice from ${lnurl}");
+      // TODO: how show error?
       state = null;
       return;
     }
     PayInvoiceResponse response =
         await ndkForNwc.nwc.payInvoice(nwcConnection, invoice: invoice);
-    if (response.preimage != '') {
+    if (response.preimage.isNotEmpty) {
       state = "zapped";
       Future.delayed(Duration(seconds: 3)).then((_) {
         state = null;
@@ -48,11 +44,6 @@ class ZapNotifier extends StateNotifier<String?> {
     }
   }
 }
-
-final ndkForSocial = Ndk(NdkConfig(
-    eventVerifier: Bip340EventVerifier(),
-    cache: MemCacheManager(),
-    bootstrapRelays: kSocialRelays.toList()));
 
 final zapProvider = StateNotifierProvider<ZapNotifier, String?>((ref) {
   return ZapNotifier();

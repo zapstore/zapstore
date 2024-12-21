@@ -29,7 +29,7 @@ class ZapButton extends HookConsumerWidget {
         .user
         .value;
 
-    final TextEditingController amountController = TextEditingController();
+    final amountController = TextEditingController();
 
     var text = 'Zap the dev ⚡';
     switch (zapStatus) {

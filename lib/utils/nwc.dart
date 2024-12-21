@@ -40,16 +40,12 @@ class NwcConnectionNotifier extends StateNotifier<NwcConnection?> {
   }
 
   Future<void> ensureConnected(String? nwcSecret) async {
-    if (nwcSecret != null && nwcSecret != '' && state==null) {
+    if (nwcSecret != null && nwcSecret.isNotEmpty && state==null) {
       NwcConnection connection = await ndkForNwc.nwc.connect(
           nwcSecret, doGetInfoMethod: false, onError: (error) {
-            // TODO
-        // context.showError(
-        //     title: 'Unable to connect',
-        //     description: error);
+            // TODO: how to handle errors?
       });
       if (
-      // connection.info != null &&
           connection.permissions.contains(NwcMethod.PAY_INVOICE.name)) {
         setConnection(connection);
       }

@@ -127,7 +127,7 @@ class SettingsScreen extends HookConsumerWidget {
                 Gap(20),
                 Text(
                     "Nostr Wallet Connect ${nwcConnection != null ? 'connected' : 'URI'}"),
-                if (nwcConnection != null && nwcConnection != '')
+                if (nwcConnection != null)
                   ElevatedButton(
                     onPressed: () async {
                       await ref

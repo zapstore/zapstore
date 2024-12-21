@@ -834,10 +834,11 @@ packages:
   ndk_amber:
     dependency: "direct main"
     description:
-      name: ndk_amber
-      sha256: "2f364d54b71df8883219b699bca3c9b0e878341c8f25024d511f0585103b5278"
-      url: "https://pub.dev"
-    source: hosted
+      path: "packages/amber"
+      ref: lnurl-zaps
+      resolved-ref: e3be4c7e880d145ccfca3356aa1aa3a0c399d807
+      url: "https://github.com/relaystr/ndk"
+    source: git
     version: "0.2.0-dev002"
   octo_image:
     dependency: transitive
