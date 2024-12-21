@@ -3,9 +3,8 @@
 
 import 'package:flutter_data/flutter_data.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
-import 'package:zapstore/models/app_curation_set.dart';
 import 'package:zapstore/models/app.dart';
+import 'package:zapstore/models/app_curation_set.dart';
 import 'package:zapstore/models/file_metadata.dart';
 import 'package:zapstore/models/local_app.dart';
 import 'package:zapstore/models/release.dart';
@@ -50,4 +49,6 @@ extension AdapterRefX on Ref {
   Adapter<Settings> get settings =>
       watch(settingsAdapterProvider)..internalWatch = watch;
   Adapter<User> get users => watch(usersAdapterProvider)..internalWatch = watch;
+
 }
+
