@@ -121,14 +121,17 @@ class ZapButton extends HookConsumerWidget {
                     },
                   ) ??
                   0;
-              final lnurl = developer.lud16!;
-              await ref.read(zapProvider.notifier).zap(
-                  nwcConnection: nwcConnection,
-                  user: user,
-                  lnurl: lnurl,
-                  eventId: app.latestMetadata!=null? app.latestMetadata!.id.toString(): app.latestRelease!.id.toString(),
-                  amount: amount,
-                  pubKey: developer.pubkey);
+              if (amount > 0) {
+                final lnurl = developer.lud16!;
+                await ref.read(zapProvider.notifier).zap(
+                    nwcConnection: nwcConnection,
+                    user: user,
+                    lnurl: lnurl,
+                    eventId: app.latestMetadata != null ? app.latestMetadata!.id
+                        .toString() : app.latestRelease!.id.toString(),
+                    amount: amount,
+                    pubKey: developer.pubkey);
+              }
             },
             child: Text(text))
         : Container();

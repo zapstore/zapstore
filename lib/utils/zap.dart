@@ -33,6 +33,7 @@ class ZapNotifier extends StateNotifier<String?> {
       // TODO how show error?
       // context.showError(
       //     title: "could not get invoice from ${lnurl}");
+      state = null;
       return;
     }
     PayInvoiceResponse response =
@@ -42,6 +43,8 @@ class ZapNotifier extends StateNotifier<String?> {
       Future.delayed(Duration(seconds: 3)).then((_) {
         state = null;
       });
+    } else {
+      state = null;
     }
   }
 }
