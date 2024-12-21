@@ -131,7 +131,7 @@ class SettingsScreen extends HookConsumerWidget {
                           .updateNwcSecret(null);
                       await ref
                           .read(nwcConnectionProvider.notifier)
-                          .setConnection(null);
+                          .disconnect();
                     },
                     style: ElevatedButton.styleFrom(
                         disabledBackgroundColor: Colors.transparent,

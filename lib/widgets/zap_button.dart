@@ -32,11 +32,13 @@ class ZapButton extends HookConsumerWidget {
     final amountController = TextEditingController();
 
     var text = 'Zap the dev ⚡';
-    switch (zapStatus) {
-      case "zapping":
+    if (zapStatus!=null) {
+      if (zapStatus.isLoading) {
         text = 'Zapping... ⚡⚡⚡';
-      case "zapped":
-        text = 'Zapped!';
+      } else if (zapStatus.error != null) {
+        text = "error zapping ${zapStatus.error.toString()}";
+        // TODO: how to do an error toast here? context.showError complaints about being used during widget build
+      }
     }
 
     return app.developer.value != null
@@ -123,8 +125,8 @@ class ZapButton extends HookConsumerWidget {
                   0;
               if (amount > 0) {
                 final lnurl = developer.lud16!;
+                // final lnurl = "fmar@getalby.com";
                 await ref.read(zapProvider.notifier).zap(
-                    nwcConnection: nwcConnection,
                     user: user,
                     lnurl: lnurl,
                     eventId: app.latestMetadata != null ? app.latestMetadata!.id

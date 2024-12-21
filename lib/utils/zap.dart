@@ -7,17 +7,22 @@ import 'package:zapstore/utils/nwc.dart';
 
 import '../models/user.dart';
 
-class ZapNotifier extends StateNotifier<String?> {
-  ZapNotifier() : super(null);
+class ZapNotifier extends StateNotifier<AsyncValue<String>?> {
+  Ref<AsyncValue<NwcConnection>?> ref;
+
+  ZapNotifier(this.ref) : super(null);
 
   Future<void> zap(
-      {required NwcConnection nwcConnection,
-      required User user,
+      {required User user,
       String? eventId,
       required String lnurl,
       required int amount,
       required String pubKey}) async {
-    state = "zapping";
+    final nwcConnection  = ref.read(nwcConnectionProvider.notifier).state;
+    if (nwcConnection==null || !nwcConnection.hasValue) {
+      return;
+    }
+    state = AsyncValue.loading();
     String? lud16Link = Lnurl.getLud16LinkFromLud16(lnurl);
     final signer = Nip55EventSigner(publicKey: user.pubkey);
     String? invoice = await Lnurl.getInvoiceCode(
@@ -28,23 +33,30 @@ class ZapNotifier extends StateNotifier<String?> {
         signer: signer,
         relays: kSocialRelays.where((e) => e != 'ndk'));
     if (invoice == null) {
-      // TODO: how show error?
-      state = null;
+      state = AsyncValue.error("could not generate invoice for $lnurl", StackTrace.current);
       return;
     }
-    PayInvoiceResponse response =
-        await ndkForNwc.nwc.payInvoice(nwcConnection, invoice: invoice);
-    if (response.preimage.isNotEmpty) {
-      state = "zapped";
-      Future.delayed(Duration(seconds: 3)).then((_) {
-        state = null;
-      });
-    } else {
-      state = null;
+    try {
+      PayInvoiceResponse response =
+      await ndkForNwc.nwc.payInvoice(nwcConnection.value!, invoice: invoice);
+      if (response.preimage.isNotEmpty && response.errorCode != null) {
+        state = AsyncValue.data(response.preimage);
+      } else {
+        state = AsyncValue.error(
+            response.errorMessage ?? "couldn't pay, unknown error",
+            StackTrace.current);
+      }
+    } catch (e) {
+      state = AsyncValue.error(
+          e.toString(),
+          StackTrace.current);
     }
+    Future.delayed(Duration(seconds: 5)).then((_) {
+      state = null;
+    });
   }
 }
 
-final zapProvider = StateNotifierProvider<ZapNotifier, String?>((ref) {
-  return ZapNotifier();
+final zapProvider = StateNotifierProvider<ZapNotifier, AsyncValue<String>?>((ref) {
+  return ZapNotifier(ref.read(nwcConnectionProvider.notifier).ref);
 });

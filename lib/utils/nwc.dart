@@ -29,21 +29,26 @@ class NwcSecretNotifier extends StateNotifier<String?> {
   }
 }
 
-class NwcConnectionNotifier extends StateNotifier<NwcConnection?> {
-  Ref<NwcConnection?> ref;
+class NwcConnectionNotifier extends StateNotifier<AsyncValue<NwcConnection>?> {
+  Ref<AsyncValue<NwcConnection>?> ref;
   NwcConnectionNotifier(this.ref) : super(null) {
     ensureConnected(ref.watch(nwcSecretProvider));
   }
 
+  Future<void> disconnect() async {
+    state = null;
+  }
+
   Future<void> ensureConnected(String? nwcSecret) async {
     if (nwcSecret != null && nwcSecret.isNotEmpty && state==null) {
+      state = AsyncValue.loading();
       NwcConnection connection = await ndkForNwc.nwc.connect(
           nwcSecret, doGetInfoMethod: false, onError: (error) {
-            // TODO: how to handle errors?
+            state = AsyncValue.error(error??"couldn't connect", StackTrace.current);
       });
       if (
           connection.permissions.contains(NwcMethod.PAY_INVOICE.name)) {
-        state = connection;
+        state = AsyncValue.data(connection);
       }
     } else {
       state = null;
@@ -57,7 +62,7 @@ StateNotifierProvider<NwcSecretNotifier, String?>((ref) {
 });
 
 final nwcConnectionProvider =
-StateNotifierProvider<NwcConnectionNotifier, NwcConnection?>((ref) {
+StateNotifierProvider<NwcConnectionNotifier, AsyncValue<NwcConnection>?>((ref) {
   return NwcConnectionNotifier(ref);
 });
 
