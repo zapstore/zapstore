@@ -2,6 +2,7 @@ import 'package:flutter_data/flutter_data.dart';
 import 'package:ndk/domain_layer/usecases/lnurl/lnurl.dart';
 import 'package:ndk/ndk.dart';
 import 'package:ndk_amber/data_layer/repositories/signers/nip55_event_signer.dart';
+import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/models/nostr_adapter.dart';
 import 'package:zapstore/utils/nwc.dart';
 
@@ -25,13 +26,15 @@ class ZapNotifier extends StateNotifier<AsyncValue<String>?> {
     state = AsyncValue.loading();
     String? lud16Link = Lnurl.getLud16LinkFromLud16(lnurl);
     final signer = Nip55EventSigner(publicKey: user.pubkey);
+    final socialRelays = ref.read(relayProviderFamily(kSocialRelays).notifier);
     String? invoice = await Lnurl.getInvoiceCode(
         lud16Link: lud16Link!,
         sats: amount,
         recipientPubkey: pubKey,
         eventId: eventId,
         signer: signer,
-        relays: kSocialRelays.where((e) => e != 'ndk'));
+        relays: socialRelays.ndk!=null ? socialRelays.ndk!.config.bootstrapRelays: kSocialRelays.where((r) => r!='ndk')
+    );
     if (invoice == null) {
       state = AsyncValue.error("could not generate invoice for $lnurl", StackTrace.current);
       return;
