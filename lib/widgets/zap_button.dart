@@ -125,7 +125,6 @@ class ZapButton extends HookConsumerWidget {
                   0;
               if (amount > 0) {
                 final lnurl = developer.lud16!;
-                // final lnurl = "fmar@getalby.com";
                 await ref.read(zapProvider.notifier).zap(
                     user: user,
                     lnurl: lnurl,
