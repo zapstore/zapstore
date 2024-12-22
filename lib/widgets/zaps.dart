@@ -99,6 +99,7 @@ class Zaps extends HookConsumerWidget {
 
 final zappersProvider = FutureProvider.autoDispose
     .family<List<User>, ({Iterable<String> zapperIds})>((ref, arg) {
+      // TODO it should load from either local or remote if not cached locally still
   List<User> list = ref.users.findManyLocalByIds(arg.zapperIds);
   return list;
   // return await ref.users.findAll(params: {'authors': arg.zapperIds, 'ignoreReturn': true});
