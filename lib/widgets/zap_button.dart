@@ -38,6 +38,8 @@ class ZapButton extends HookConsumerWidget {
       } else if (zapStatus.error != null) {
         text = "error zapping ${zapStatus.error.toString()}";
         // TODO: how to do an error toast here? context.showError complaints about being used during widget build
+      } else {
+        text = "Zapped!";
       }
     }
 
