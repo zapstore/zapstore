@@ -2,10 +2,10 @@ import 'package:flutter_data/flutter_data.dart';
 import 'package:ndk/domain_layer/usecases/zaps/zap_receipt.dart';
 import 'package:ndk/domain_layer/usecases/zaps/zaps.dart';
 import 'package:ndk/ndk.dart';
-import 'package:ndk_amber/data_layer/repositories/signers/nip55_event_signer.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/models/file_metadata.dart';
 import 'package:zapstore/models/nostr_adapter.dart';
+import 'package:zapstore/utils/nip55_event_signer.dart';
 import 'package:zapstore/utils/nwc.dart';
 
 import '../models/user.dart';
