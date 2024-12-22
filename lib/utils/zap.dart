@@ -1,5 +1,6 @@
 import 'package:flutter_data/flutter_data.dart';
-import 'package:ndk/domain_layer/usecases/lnurl/lnurl.dart';
+import 'package:ndk/domain_layer/usecases/zaps/zap_receipt.dart';
+import 'package:ndk/domain_layer/usecases/zaps/zaps.dart';
 import 'package:ndk/ndk.dart';
 import 'package:ndk_amber/data_layer/repositories/signers/nip55_event_signer.dart';
 import 'package:purplebase/purplebase.dart';
@@ -19,40 +20,42 @@ class ZapNotifier extends StateNotifier<AsyncValue<String>?> {
       required String lnurl,
       required int amount,
       required String pubKey}) async {
-    final nwcConnection  = ref.read(nwcConnectionProvider.notifier).state;
-    if (nwcConnection==null || !nwcConnection.hasValue) {
+    final nwcConnection = ref.read(nwcConnectionProvider.notifier).state;
+    if (nwcConnection == null || !nwcConnection.hasValue) {
       return;
     }
     state = AsyncValue.loading();
-    String? lud16Link = Lnurl.getLud16LinkFromLud16(lnurl);
     final signer = Nip55EventSigner(publicKey: user.pubkey);
     final socialRelays = ref.read(relayProviderFamily(kSocialRelays).notifier);
-    String? invoice = await Lnurl.getInvoiceCode(
-        lud16Link: lud16Link!,
-        sats: amount,
-        recipientPubkey: pubKey,
-        eventId: eventId,
-        signer: signer,
-        relays: socialRelays.ndk!=null ? socialRelays.ndk!.config.bootstrapRelays: kSocialRelays.where((r) => r!='ndk')
-    );
-    if (invoice == null) {
-      state = AsyncValue.error("could not generate invoice for $lnurl", StackTrace.current);
-      return;
-    }
+    final relays = socialRelays.ndk != null
+        ? socialRelays.ndk!.config.bootstrapRelays
+        : kSocialRelays.where((r) => r != 'ndk');
     try {
-      PayInvoiceResponse response =
-      await ndkForNwc.nwc.payInvoice(nwcConnection.value!, invoice: invoice);
-      if (response.preimage.isNotEmpty && response.errorCode != null) {
-        state = AsyncValue.data(response.preimage);
+      ZapResponse zapResponse = await ndkForNwc.zaps.zap(
+        nwcConnection: nwcConnection.value!,
+        lnurl: lnurl,
+        amountSats: amount,
+        fetchZapReceipt: true,
+        signer: signer,
+        relays: relays,
+        pubKey: pubKey,
+        eventId: eventId,
+      );
+      ZapReceipt? zapReceipt = await zapResponse.zapReceipt;
+      if (zapReceipt!=null) {
+        print("ZAP RECEIPT: $zapReceipt");
+      }
+      if (zapResponse.payInvoiceResponse != null &&
+          zapResponse.payInvoiceResponse!.preimage.isNotEmpty) {
+        state = AsyncValue.data(zapResponse.payInvoiceResponse!.preimage);
       } else {
         state = AsyncValue.error(
-            response.errorMessage ?? "couldn't pay, unknown error",
+            zapResponse.payInvoiceResponse?.errorMessage ??
+                "couldn't pay, unknown error",
             StackTrace.current);
       }
     } catch (e) {
-      state = AsyncValue.error(
-          e.toString(),
-          StackTrace.current);
+      state = AsyncValue.error(e.toString(), StackTrace.current);
     }
     Future.delayed(Duration(seconds: 5)).then((_) {
       state = null;
@@ -60,6 +63,7 @@ class ZapNotifier extends StateNotifier<AsyncValue<String>?> {
   }
 }
 
-final zapProvider = StateNotifierProvider<ZapNotifier, AsyncValue<String>?>((ref) {
+final zapProvider =
+    StateNotifierProvider<ZapNotifier, AsyncValue<String>?>((ref) {
   return ZapNotifier(ref.read(nwcConnectionProvider.notifier).ref);
 });

@@ -31,6 +31,7 @@ class NwcSecretNotifier extends StateNotifier<String?> {
 
 class NwcConnectionNotifier extends StateNotifier<AsyncValue<NwcConnection>?> {
   Ref<AsyncValue<NwcConnection>?> ref;
+
   NwcConnectionNotifier(this.ref) : super(null) {
     ensureConnected(ref.watch(nwcSecretProvider));
   }
@@ -40,14 +41,14 @@ class NwcConnectionNotifier extends StateNotifier<AsyncValue<NwcConnection>?> {
   }
 
   Future<void> ensureConnected(String? nwcSecret) async {
-    if (nwcSecret != null && nwcSecret.isNotEmpty && state==null) {
+    if (nwcSecret != null && nwcSecret.isNotEmpty && state == null) {
       state = AsyncValue.loading();
-      NwcConnection connection = await ndkForNwc.nwc.connect(
-          nwcSecret, doGetInfoMethod: false, onError: (error) {
-            state = AsyncValue.error(error??"couldn't connect", StackTrace.current);
+      NwcConnection connection = await ndkForNwc.nwc
+          .connect(nwcSecret, doGetInfoMethod: false, onError: (error) {
+        state =
+            AsyncValue.error(error ?? "couldn't connect", StackTrace.current);
       });
-      if (
-          connection.permissions.contains(NwcMethod.PAY_INVOICE.name)) {
+      if (connection.permissions.contains(NwcMethod.PAY_INVOICE.name)) {
         state = AsyncValue.data(connection);
       }
     } else {
@@ -57,14 +58,20 @@ class NwcConnectionNotifier extends StateNotifier<AsyncValue<NwcConnection>?> {
 }
 
 final nwcSecretProvider =
-StateNotifierProvider<NwcSecretNotifier, String?>((ref) {
+    StateNotifierProvider<NwcSecretNotifier, String?>((ref) {
   return NwcSecretNotifier();
 });
 
 final nwcConnectionProvider =
-StateNotifierProvider<NwcConnectionNotifier, AsyncValue<NwcConnection>?>((ref) {
+    StateNotifierProvider<NwcConnectionNotifier, AsyncValue<NwcConnection>?>(
+        (ref) {
   return NwcConnectionNotifier(ref);
 });
 
-final ndkForNwc = Ndk.emptyBootstrapRelaysConfig();
-
+final ndkForNwc = Ndk(
+  NdkConfig(
+      cache: MemCacheManager(),
+      eventVerifier: Bip340EventVerifier(),
+      bootstrapRelays: [],
+      logLevel: LogLevels().info),
+);
