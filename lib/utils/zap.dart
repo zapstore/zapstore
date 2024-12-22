@@ -21,11 +21,11 @@ class ZapReceiptsNotifier extends StateNotifier<AsyncValue<List<ZapReceipt>>?> {
     if (socialRelays.ndk != null) {
       state = AsyncValue.loading();
 
-      NdkResponse receiptsResponse = socialRelays.ndk!.zaps
-          .subscribeToZapReceipts(
+      Stream<ZapReceipt> receiptsResponse = socialRelays.ndk!.zaps
+          .fetchZappedReceipts(
               pubKey: fileMetadata.pubkey, eventId: fileMetadata.id!.toString());
-      receiptsResponse.stream.listen((event) {
-        addZapReceipt(ZapReceipt.fromEvent(event));
+      receiptsResponse.listen((receipt) {
+        addZapReceipt(receipt);
       });
     }
   }
