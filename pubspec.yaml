@@ -62,11 +62,6 @@ dependency_overrides:
       url: https://github.com/relaystr/ndk
       path: packages/ndk
       ref: lnurl-zaps
-  ndk_amber:
-    git:
-      url: https://github.com/relaystr/ndk
-      path: packages/amber
-      ref: lnurl-zaps
   purplebase:
     # path: ../purplebase
     git:

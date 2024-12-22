@@ -827,18 +827,17 @@ packages:
     description:
       path: "packages/ndk"
       ref: lnurl-zaps
-      resolved-ref: e643d3b87d6764afdf6bccb76704aec12cba07a1
+      resolved-ref: "23e4afbcbc97946b99fec7d3119719e3c2af7215"
       url: "https://github.com/relaystr/ndk"
     source: git
     version: "0.2.0-dev005"
   ndk_amber:
     dependency: "direct main"
     description:
-      path: "packages/amber"
-      ref: lnurl-zaps
-      resolved-ref: e3be4c7e880d145ccfca3356aa1aa3a0c399d807
-      url: "https://github.com/relaystr/ndk"
-    source: git
+      name: ndk_amber
+      sha256: "2f364d54b71df8883219b699bca3c9b0e878341c8f25024d511f0585103b5278"
+      url: "https://pub.dev"
+    source: hosted
     version: "0.2.0-dev002"
   octo_image:
     dependency: transitive
@@ -1036,7 +1035,7 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: master
+      ref: a6a4dbf97faa23f827dbe8158cb110e961827ddc
       resolved-ref: a6a4dbf97faa23f827dbe8158cb110e961827ddc
       url: "https://github.com/purplebase/purplebase"
     source: git
