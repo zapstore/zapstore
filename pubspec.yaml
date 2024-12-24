@@ -54,7 +54,6 @@ dependencies:
   easy_image_viewer: ^1.5.1
   flutter_secure_storage: ^9.2.2
   ndk: ^0.2.0-dev005
-  ndk_amber: ^0.2.0-dev002
 
 dependency_overrides:
   ndk:
