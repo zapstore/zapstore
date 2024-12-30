@@ -9,6 +9,7 @@ import 'package:flutter_phoenix/flutter_phoenix.dart';
 import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/main.data.dart';
@@ -16,9 +17,9 @@ import 'package:zapstore/models/settings.dart';
 import 'package:zapstore/models/user.dart';
 import 'package:zapstore/navigation/app_initializer.dart';
 import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/utils/nwc.dart';
 import 'package:zapstore/utils/system_info.dart';
 import 'package:zapstore/widgets/sign_in_container.dart';
-import 'package:http/http.dart' as http;
 
 class SettingsScreen extends HookConsumerWidget {
   const SettingsScreen({super.key});
@@ -27,12 +28,16 @@ class SettingsScreen extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final systemInfoState = ref.watch(systemInfoNotifierProvider);
 
-    final controller = useTextEditingController();
+    final feedbackController = useTextEditingController();
+    final nwcController = useTextEditingController();
     final user = ref.settings
         .watchOne('_', alsoWatch: (_) => {_.user})
         .model!
         .user
         .value;
+    final isTextFieldEmpty = useState(true);
+
+    final nwcConnection = ref.watch(nwcConnectionProvider);
 
     return SingleChildScrollView(
       child: Column(
@@ -52,7 +57,7 @@ class SettingsScreen extends HookConsumerWidget {
           Text('Comments, suggestions and error reports welcome here.'),
           Gap(20),
           TextField(
-            controller: controller,
+            controller: feedbackController,
             maxLines: 10,
           ),
           Gap(20),
@@ -71,10 +76,10 @@ class SettingsScreen extends HookConsumerWidget {
               loadingWidget: SizedBox(
                   width: 14, height: 14, child: CircularProgressIndicator()),
               onPressed: () async {
-                if (controller.text.trim().isNotEmpty) {
+                if (feedbackController.text.trim().isNotEmpty) {
                   final signedDirectMessage = await amberSigner.sign(
                       BaseDirectMessage(
-                          content: controller.text.trim(),
+                          content: feedbackController.text.trim(),
                           receiver: kZapstorePubkey.npub),
                       asUser: user.pubkey);
                   try {
@@ -89,7 +94,7 @@ class SettingsScreen extends HookConsumerWidget {
                       context.showInfo('Thank you',
                           description: 'Message sent successfully');
                     }
-                    controller.clear();
+                    feedbackController.clear();
                   } catch (e, stack) {
                     if (context.mounted) {
                       context.showError(
@@ -107,6 +112,70 @@ class SettingsScreen extends HookConsumerWidget {
                 };
               },
               child: Text('Send as ${user.nameOrNpub}'),
+            ),
+          Gap(40),
+          Divider(),
+          Gap(40),
+          if (user != null)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Gap(20),
+                Text(
+                    "Nostr Wallet Connect ${nwcConnection.value != null ? 'connected' : 'URI'}"),
+                if (nwcConnection.value != null)
+                  ElevatedButton(
+                    onPressed: () async {
+                      await ref
+                          .read(nwcConnectionProvider.notifier)
+                          .disconnectWallet();
+                    },
+                    style: ElevatedButton.styleFrom(
+                        disabledBackgroundColor: Colors.transparent,
+                        backgroundColor: Colors.transparent),
+                    child: Text('Disconnect'),
+                  ),
+                if (nwcConnection.value == null)
+                  TextField(
+                    autocorrect: false,
+                    controller: nwcController,
+                    onChanged: (value) {
+                      isTextFieldEmpty.value = value.isEmpty;
+                    },
+                    decoration: InputDecoration(
+                      hintText: 'nostr+walletconnect://...',
+                      suffixIcon: AsyncButtonBuilder(
+                        disabled: isTextFieldEmpty.value,
+                        loadingWidget: SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(),
+                        ),
+                        onPressed: () async {
+                          final nwcUri = nwcController.text.trim();
+                          await ref
+                              .read(nwcConnectionProvider.notifier)
+                              .connectWallet(nwcUri);
+                        },
+                        builder: (context, child, callback, buttonState) {
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 2),
+                            child: SizedBox(
+                              child: ElevatedButton(
+                                onPressed: callback,
+                                style: ElevatedButton.styleFrom(
+                                    disabledBackgroundColor: Colors.transparent,
+                                    backgroundColor: Colors.transparent),
+                                child: child,
+                              ),
+                            ),
+                          );
+                        },
+                        child: Text('Connect'),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           Gap(40),
           Divider(),
