@@ -1,7 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter_data/flutter_data.dart';
 import 'package:ndk/domain_layer/usecases/zaps/zap_receipt.dart';
 import 'package:ndk/domain_layer/usecases/zaps/zaps.dart';
-import 'package:ndk/ndk.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/models/file_metadata.dart';
 import 'package:zapstore/models/nostr_adapter.dart';
@@ -11,9 +12,11 @@ import 'package:zapstore/utils/nwc.dart';
 import '../models/user.dart';
 
 class ZapReceiptsNotifier extends StateNotifier<AsyncValue<List<ZapReceipt>>?> {
-  Ref<AsyncValue<NwcConnection>?> ref;
+  Ref ref;
 
   ZapReceiptsNotifier(this.ref) : super(null);
+
+  StreamSubscription<ZapReceipt>? sub;
 
   Future<void> fetchZaps(FileMetadata fileMetadata) async {
     state = null;
@@ -21,30 +24,35 @@ class ZapReceiptsNotifier extends StateNotifier<AsyncValue<List<ZapReceipt>>?> {
     if (socialRelays.ndk != null) {
       state = AsyncValue.loading();
 
-      Stream<ZapReceipt> receiptsResponse = socialRelays.ndk!.zaps
-          .fetchZappedReceipts(
-              pubKey: fileMetadata.pubkey, eventId: fileMetadata.id!.toString());
-      receiptsResponse.listen((receipt) {
+      final receiptsResponse = socialRelays.ndk!.zaps.fetchZappedReceipts(
+          pubKey: fileMetadata.pubkey, eventId: fileMetadata.id!.toString());
+      sub = receiptsResponse.listen((receipt) {
         addZapReceipt(receipt);
       });
     }
   }
 
   void addZapReceipt(ZapReceipt receipt) {
-    if (state==null || state!.value==null) {
+    if (state == null || state!.value == null) {
       state = AsyncValue.data([receipt]);
     } else {
-      List<ZapReceipt> list = state!.value!;
-      list.add(receipt);
-      state = AsyncValue.data(list);
+      final receipts = state!.value!;
+      receipts.add(receipt);
+      state = AsyncValue.data(receipts);
     }
+  }
+
+  @override
+  void dispose() {
+    sub?.cancel();
+    super.dispose();
   }
 }
 
-class ZapNotifier extends StateNotifier<AsyncValue<ZapResponse>?> {
-  Ref<AsyncValue<NwcConnection>?> ref;
+class ZapNotifier extends StateNotifier<AsyncValue<ZapResponse?>> {
+  Ref ref;
 
-  ZapNotifier(this.ref) : super(null);
+  ZapNotifier(this.ref) : super(AsyncData(null));
 
   Future<void> zap(
       {required User user,
@@ -52,8 +60,8 @@ class ZapNotifier extends StateNotifier<AsyncValue<ZapResponse>?> {
       required String lnurl,
       required int amount,
       required String pubKey}) async {
-    final nwcConnection = ref.read(nwcConnectionProvider.notifier).state;
-    if (nwcConnection == null || !nwcConnection.hasValue) {
+    final nwcConnectionState = ref.read(nwcConnectionProvider.notifier).state;
+    if (nwcConnectionState.value == null) {
       return;
     }
     state = AsyncValue.loading();
@@ -63,8 +71,8 @@ class ZapNotifier extends StateNotifier<AsyncValue<ZapResponse>?> {
         ? socialRelays.ndk!.config.bootstrapRelays
         : kSocialRelays.where((r) => r != 'ndk');
     try {
-      ZapResponse zapResponse = await ndkForNwc.zaps.zap(
-        nwcConnection: nwcConnection.value!,
+      final zapResponse = await ndkForNwc.zaps.zap(
+        nwcConnection: nwcConnectionState.value!,
         lnurl: lnurl,
         amountSats: amount,
         fetchZapReceipt: true,
@@ -76,7 +84,7 @@ class ZapNotifier extends StateNotifier<AsyncValue<ZapResponse>?> {
       if (zapResponse.payInvoiceResponse != null &&
           zapResponse.payInvoiceResponse!.preimage.isNotEmpty) {
         state = AsyncValue.data(zapResponse);
-        ZapReceipt? zapReceipt = await zapResponse.zapReceipt;
+        final zapReceipt = await zapResponse.zapReceipt;
         if (zapReceipt != null) {
           ref.read(zapReceiptsNotifier.notifier).addZapReceipt(zapReceipt);
         }
@@ -86,21 +94,16 @@ class ZapNotifier extends StateNotifier<AsyncValue<ZapResponse>?> {
                 "couldn't pay, unknown error",
             StackTrace.current);
       }
-    } catch (e) {
-      state = AsyncValue.error(e.toString(), StackTrace.current);
+    } catch (e, stack) {
+      state = AsyncValue.error(e, stack);
     }
-    Future.delayed(Duration(seconds: 5)).then((_) {
-      state = null;
-    });
   }
 }
 
 final zapProvider =
-    StateNotifierProvider<ZapNotifier, AsyncValue<ZapResponse>?>((ref) {
-  return ZapNotifier(ref.read(nwcConnectionProvider.notifier).ref);
-});
+    StateNotifierProvider<ZapNotifier, AsyncValue<ZapResponse?>>(
+        ZapNotifier.new);
 
 final zapReceiptsNotifier =
-StateNotifierProvider<ZapReceiptsNotifier, AsyncValue<List<ZapReceipt>>?>((ref) {
-  return ZapReceiptsNotifier(ref.read(nwcConnectionProvider.notifier).ref);
-});
+    StateNotifierProvider<ZapReceiptsNotifier, AsyncValue<List<ZapReceipt>>?>(
+        ZapReceiptsNotifier.new);

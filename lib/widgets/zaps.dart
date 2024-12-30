@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:ndk/domain_layer/usecases/zaps/zap_receipt.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/user.dart';
@@ -20,15 +19,13 @@ class Zaps extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final zapReceipts = ref.watch(zapReceiptsNotifier);
 
-    if (app.developer.value != null &&
-        app.developer.value!.lud16 != null &&
-        app.latestMetadata != null) {
+    if (app.developer.value?.lud16 != null && app.latestMetadata != null) {
       if (zapReceipts == null) {
         Future(() {
           ref.read(zapReceiptsNotifier.notifier).fetchZaps(app.latestMetadata!);
         });
       } else {
-        List<ZapReceipt>? receipts = zapReceipts.value;
+        final receipts = zapReceipts.value;
         if (receipts != null) {
           receipts
               .sort((a, b) => (b.amountSats ?? 0).compareTo(a.amountSats ?? 0));
@@ -37,10 +34,11 @@ class Zaps extends HookConsumerWidget {
           for (var receipt in receipts) {
             eventSum += receipt.amountSats ?? 0;
           }
-          Set<String> senderIds =
+          final senderIds =
               receipts.map((receipt) => receipt.sender).nonNulls.toSet();
 
-          final senders = ref.watch(zappersProvider((zapperIds: senderIds.take(10))));
+          final senders =
+              ref.watch(zappersProvider((zapperIds: senderIds.take(10))));
 
           Widget zapperAvatars = switch (senders) {
             AsyncData<List<User>>(value: final users) => Builder(
@@ -83,23 +81,23 @@ class Zaps extends HookConsumerWidget {
                 ),
               )
           };
-          return Row(children: [
-            Text("⚡ $eventSum sats (${receipts.length} zaps)"),
-            Gap(5),
-            zapperAvatars
-          ]);
+          return Row(
+            children: [
+              Text("⚡ $eventSum sats (${receipts.length} zaps)"),
+              Gap(5),
+              zapperAvatars
+            ],
+          );
         }
       }
     }
     return Container();
   }
-
-
 }
 
 final zappersProvider = FutureProvider.autoDispose
     .family<List<User>, ({Iterable<String> zapperIds})>((ref, arg) {
-      // TODO it should load from either local or remote if not cached locally still
+  // TODO it should load from either local or remote if not cached locally still
   List<User> list = ref.users.findManyLocalByIds(arg.zapperIds);
   return list;
   // return await ref.users.findAll(params: {'authors': arg.zapperIds, 'ignoreReturn': true});

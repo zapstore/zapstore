@@ -122,23 +122,20 @@ class SettingsScreen extends HookConsumerWidget {
               children: [
                 Gap(20),
                 Text(
-                    "Nostr Wallet Connect ${nwcConnection != null ? 'connected' : 'URI'}"),
-                if (nwcConnection != null)
+                    "Nostr Wallet Connect ${nwcConnection.value != null ? 'connected' : 'URI'}"),
+                if (nwcConnection.value != null)
                   ElevatedButton(
                     onPressed: () async {
                       await ref
-                          .read(nwcSecretProvider.notifier)
-                          .updateNwcSecret(null);
-                      await ref
                           .read(nwcConnectionProvider.notifier)
-                          .disconnect();
+                          .disconnectWallet();
                     },
                     style: ElevatedButton.styleFrom(
                         disabledBackgroundColor: Colors.transparent,
                         backgroundColor: Colors.transparent),
                     child: Text('Disconnect'),
                   ),
-                if (nwcConnection == null)
+                if (nwcConnection.value == null)
                   TextField(
                     autocorrect: false,
                     controller: nwcController,
@@ -157,11 +154,8 @@ class SettingsScreen extends HookConsumerWidget {
                         onPressed: () async {
                           final nwcUri = nwcController.text.trim();
                           await ref
-                              .read(nwcSecretProvider.notifier)
-                              .updateNwcSecret(nwcUri);
-                          await ref
                               .read(nwcConnectionProvider.notifier)
-                              .ensureConnected(nwcUri);
+                              .connectWallet(nwcUri);
                         },
                         builder: (context, child, callback, buttonState) {
                           return Padding(

@@ -3,70 +3,65 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:ndk/domain_layer/usecases/nwc/consts/nwc_method.dart';
 import 'package:ndk/ndk.dart';
 
-AndroidOptions _getAndroidOptions() => const AndroidOptions(
-  encryptedSharedPreferences: true,
-);
+const kNwcSecretKey = 'nwc_secret';
 
-class NwcSecretNotifier extends StateNotifier<String?> {
-  final _storage = FlutterSecureStorage(aOptions: _getAndroidOptions());
+class NwcConnectionNotifier extends StateNotifier<AsyncValue<NwcConnection?>> {
+  final _storage = FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+  );
 
-  NwcSecretNotifier() : super(null) {
-    _loadNwcSecret();
+  NwcConnectionNotifier() : super(AsyncData(null)) {
+    // Attempt to load from local storage on initialization
+    _storage
+        .read(key: kNwcSecretKey)
+        .then(connectWallet)
+        .catchError((e, stack) {
+      state = AsyncError(e, stack);
+    });
   }
 
-  Future<void> _loadNwcSecret() async {
-    final secret = await _storage.read(key: 'nwc_secret');
-    state = secret;
-  }
-
-  Future<void> updateNwcSecret(String? newSecret) async {
-    if (newSecret != null) {
-      await _storage.write(key: 'nwc_secret', value: newSecret);
-    } else {
-      await _storage.delete(key: 'nwc_secret');
+  Future<void> connectWallet([String? nwcSecret]) async {
+    if (nwcSecret == null) {
+      // We get here when storage has no secret, do nothing
+      state = AsyncData(null);
+      return;
     }
-    await _loadNwcSecret();
-  }
-}
 
-class NwcConnectionNotifier extends StateNotifier<AsyncValue<NwcConnection>?> {
-  Ref<AsyncValue<NwcConnection>?> ref;
+    state = AsyncValue.loading();
 
-  NwcConnectionNotifier(this.ref) : super(null) {
-    ensureConnected(ref.watch(nwcSecretProvider));
-  }
+    // If secret is supplied and a connection is still active,
+    // it means it is a new connection string so disconnect NWC
+    if (state.value != null) {
+      await ndkForNwc.nwc.disconnect(state.value!);
+    }
 
-  Future<void> disconnect() async {
-    state = null;
-  }
+    // Write secret to storage and connect
+    await _storage.write(key: kNwcSecretKey, value: nwcSecret);
 
-  Future<void> ensureConnected(String? nwcSecret) async {
-    if (nwcSecret != null && nwcSecret.isNotEmpty && state == null) {
-      state = AsyncValue.loading();
-      NwcConnection connection = await ndkForNwc.nwc
-          .connect(nwcSecret, doGetInfoMethod: false, onError: (error) {
+    final connection = await ndkForNwc.nwc.connect(
+      nwcSecret,
+      doGetInfoMethod: false,
+      onError: (error) {
         state =
-            AsyncValue.error(error ?? "couldn't connect", StackTrace.current);
-      });
-      if (connection.permissions.contains(NwcMethod.PAY_INVOICE.name)) {
-        state = AsyncValue.data(connection);
-      }
+            AsyncValue.error(error ?? 'Could not connect', StackTrace.current);
+      },
+    );
+    if (connection.permissions.contains(NwcMethod.PAY_INVOICE.name)) {
+      state = AsyncValue.data(connection);
     } else {
-      state = null;
+      state = AsyncError('No permission to zap', StackTrace.current);
     }
   }
-}
 
-final nwcSecretProvider =
-    StateNotifierProvider<NwcSecretNotifier, String?>((ref) {
-  return NwcSecretNotifier();
-});
+  Future<void> disconnectWallet() async {
+    await _storage.delete(key: kNwcSecretKey);
+    state = AsyncData(null);
+  }
+}
 
 final nwcConnectionProvider =
-    StateNotifierProvider<NwcConnectionNotifier, AsyncValue<NwcConnection>?>(
-        (ref) {
-  return NwcConnectionNotifier(ref);
-});
+    StateNotifierProvider<NwcConnectionNotifier, AsyncValue<NwcConnection?>>(
+        (ref) => NwcConnectionNotifier());
 
 final ndkForNwc = Ndk(
   NdkConfig(
