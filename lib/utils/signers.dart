@@ -26,35 +26,33 @@ class AmberSigner extends Signer {
   }
 
   @override
-  Future<T> sign<T extends BaseEvent<T>>(T model, {String? asUser}) async {
+  Future<E> sign<E extends Event<E>>(PartialEvent<E> partialEvent,
+      {String? asUser}) async {
     if (!isAvailable) {
       throw Exception("Cannot sign, missing Amber");
     }
 
-    if (model is BaseDirectMessage) {
+    if (partialEvent is DirectMessage) {
       final signedMessage = await _signerPlugin.nip04Encrypt(
-          model.content,
+          partialEvent.event.content,
           "",
-          (asUser ?? model.pubkey).npub,
-          (model as BaseDirectMessage).receiver.hexKey);
+          asUser!.npub,
+          (partialEvent as DirectMessage).receiver.hexKey);
       final encryptedContent = signedMessage['result'];
-      model =
-          (model as BaseDirectMessage).copyWith(content: encryptedContent) as T;
+      partialEvent.event.content = encryptedContent;
     }
 
-    final pubkey = asUser ?? model.pubkey;
     // Remove all null fields (Amber otherwise crashes)
     final map = {
-      for (final e in model.toMap().entries)
+      for (final e in partialEvent.toMap().entries)
         if (e.value != null) e.key: e.value
     };
     final signedMessage =
-        await _signerPlugin.signEvent(jsonEncode(map), "", pubkey);
+        await _signerPlugin.signEvent(jsonEncode(map), "", asUser!);
     final signedEvent = jsonDecode(signedMessage['event']);
-    final fn = BaseEvent.constructorForKind<T>(model.kind)!;
-    return fn.call(signedEvent);
+    return Event.getConstructor<E>()!.call(signedEvent);
   }
 }
 
-final pkSigner = PrivateKeySigner(
+final pkSigner = Bip340PrivateKeySigner(
     'e593c54f840b32054dcad0fac15d57e4ac6523e31fe26b3087de6b07a2e9af58');

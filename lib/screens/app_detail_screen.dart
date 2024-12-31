@@ -35,11 +35,11 @@ class AppDetailScreen extends HookConsumerWidget {
     // TODO: Bug using remote=true in watchOne, use hook for now
     final snapshot = useFuture(useMemoized(() async {
       final storedApps =
-          ref.apps.appAdapter.findWhereIdentifierInLocal({model.identifier!});
+          ref.apps.appAdapter.findWhereIdentifierInLocal({model.identifier});
       if (storedApps.firstOrNull?.latestMetadata != null) {
         return storedApps.first;
       }
-      return ref.apps.findOne(model.identifier!, remote: true);
+      return ref.apps.findOne(model.identifier, remote: true);
     }));
     final state = ref.apps.watchOne(model.id!,
         alsoWatch: (_) => {
@@ -59,7 +59,7 @@ class AppDetailScreen extends HookConsumerWidget {
         .nonNulls;
 
     return RefreshIndicator(
-      onRefresh: () => ref.apps.findOne(model.identifier!, remote: true),
+      onRefresh: () => ref.apps.findOne(model.identifier, remote: true),
       child: Column(
         children: [
           Expanded(
@@ -149,7 +149,7 @@ class AppDetailScreen extends HookConsumerWidget {
                           ),
                         ),
                         selectable: false,
-                        data: app.content.parseEmojis(),
+                        data: app.event.content.parseEmojis(),
                       ),
                       Gap(10),
                       Padding(
@@ -224,7 +224,7 @@ class AppDetailScreen extends HookConsumerWidget {
                                   Gap(10),
                                   Flexible(
                                     child: AutoSizeText(
-                                      app.identifier!,
+                                      app.identifier,
                                       minFontSize: 12,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,

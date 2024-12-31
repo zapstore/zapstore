@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:collection/collection.dart';
 import 'package:flutter_data/flutter_data.dart';
-import 'package:purplebase/purplebase.dart';
+import 'package:purplebase/purplebase.dart' hide Release;
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/release.dart';
@@ -13,7 +13,7 @@ import 'package:zapstore/widgets/latest_releases_container.dart';
 // NOTE: Very important to use const in relay args to preserve equality in Riverpod families
 // const kAppRelays = {'ws://10.0.2.2:3000'};
 const kAppRelays = {'wss://relay.zapstore.dev'};
-const kSocialRelays = {'wss://relay.damus.io', 'wss://relay.primal.net', 'ndk'};
+const kSocialRelays = {'wss://relay.damus.io', 'wss://relay.primal.net'};
 
 mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
   RelayMessageNotifier get relay =>
@@ -52,7 +52,10 @@ mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
   }
 
   int get kind {
-    return BaseEvent.kindForType(internalType)!;
+    var pbType = internalType.singularize().capitalize();
+    pbType =
+        pbType.replaceFirst('datum', 'data'); // handle FileMetadata edge case
+    return Event.types[pbType]!.kind;
   }
 
   @override
@@ -66,13 +69,13 @@ mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
       map['signer'] = map['pubkey'];
 
       // ID should be the replaceable link/reference so as to make it replaceable in local db too
-      final tagMap = tagsToMap(map['tags']);
-      final isReplaceable = tagMap.containsKey('d');
+      final tags = map['tags'];
+      final isReplaceable = BaseUtil.containsTag(tags, 'd');
       if (isReplaceable) {
         map['id'] = (
           map['kind'] as int,
           map['pubkey'].toString(),
-          tagMap['d']?.firstOrNull
+          BaseUtil.getTag(tags, 'd')!,
         ).formatted;
       }
 
@@ -80,7 +83,11 @@ mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
       map.remove('sig');
 
       // Collect models for current kind and included for others
-      final eventType = BaseEvent.typeForKind(kind)!;
+      final eventType = Event.types.entries
+          .firstWhere((e) => e.value.kind == kind)
+          .key
+          .pluralize()
+          .decapitalize();
       if (eventType == internalType) {
         final newData = super.deserialize(map);
         models.addAll(newData.models as Iterable<T>);
@@ -144,7 +151,7 @@ mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
 
   Future<void> loadArtifactsAndUsers(Iterable<Release> releases) async {
     final metadataIds =
-        releases.map((r) => r.linkedEvents).nonNulls.expand((_) => _);
+        releases.map((r) => r.event.linkedEvents).nonNulls.expand((_) => _);
     final apps = releases.map((r) => r.app.value).nonNulls;
 
     final userIds = {

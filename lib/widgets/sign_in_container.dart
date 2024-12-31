@@ -4,7 +4,7 @@ import 'package:flutter_data/flutter_data.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:purplebase/purplebase.dart';
+import 'package:purplebase/purplebase.dart' as base;
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/settings.dart';
 import 'package:zapstore/models/user.dart';
@@ -137,6 +137,8 @@ class SignInContainer extends HookConsumerWidget {
 
                       var user = await ref.users.findOne(signedInNpub);
 
+                      // If user was not found on relays, we create a
+                      // local user to represent this new npub
                       user ??= User.fromJson({
                         'id': signedInNpub.hexKey,
                         'pubkey': signedInNpub.hexKey,

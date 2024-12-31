@@ -144,7 +144,7 @@ mixin LocalAppAdapter on Adapter<LocalApp> {
       final installedApkSigHash =
           sha256.convert(signingCertificateBytes).toString().toLowerCase();
       final metadataSigHashes =
-          app.latestMetadata?.tagMap['apk_signature_hash'] ?? {};
+          app.latestMetadata?.event.getTagSet('apk_signature_hash') ?? {};
       final matches = metadataSigHashes
           .any((msh) => msh.toLowerCase() == installedApkSigHash);
       if (!matches) {

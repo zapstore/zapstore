@@ -62,10 +62,10 @@ dependency_overrides:
       path: packages/ndk
       ref: b864cd2f842b6774dcce3decb9fe75c6c7887172 #lnurl-zaps
   purplebase:
-    # path: ../purplebase
-    git:
-      url: https://github.com/purplebase/purplebase
-      ref: a6a4dbf97faa23f827dbe8158cb110e961827ddc
+    path: ../purplebase
+    # git:
+    #   url: https://github.com/purplebase/purplebase
+    #   ref: a6a4dbf97faa23f827dbe8158cb110e961827ddc
   flutter_data:
     git:
       url: https://github.com/zapstore/flutter_data

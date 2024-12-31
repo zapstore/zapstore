@@ -42,7 +42,7 @@ class InstallButton extends HookConsumerWidget {
         AppInstallStatus.certificateMismatch =>
           null,
         AppInstallStatus.updated => () {
-            packageManager.openApp(app.identifier!);
+            packageManager.openApp(app.identifier);
           },
         _ => switch (progress) {
             IdleInstallProgress() => () {

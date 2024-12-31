@@ -149,7 +149,8 @@ Future<void> _sendErrorReport(
     'info': systemInfo.androidInfo.toString()
   };
 
-  final event = await pkSigner.sign(AppFeedback(content: jsonEncode(map)));
+  final event =
+      await pkSigner.sign(PartialAppFeedback(content: jsonEncode(map)));
   await http.post(Uri.parse('https://relay.zapstore.dev/'),
       body: jsonEncode(event.toMap()),
       headers: {'Content-Type': 'application/json'});

@@ -74,7 +74,7 @@ class AppCard extends HookConsumerWidget {
                     ),
                     Gap(6),
                     Text(
-                      app.content.removeMarkdown().parseEmojis(),
+                      app.description.removeMarkdown().parseEmojis(),
                       style:
                           TextStyle(fontSize: 14, fontWeight: FontWeight.w300),
                       overflow: TextOverflow.ellipsis,
@@ -93,7 +93,8 @@ class AppCard extends HookConsumerWidget {
                         size: 12,
                       ),
                     if (showDate)
-                      Text(app.latestRelease!.createdAt!.toIso8601String()),
+                      Text(
+                          app.latestRelease!.event.createdAt.toIso8601String()),
                     if (isUpdate)
                       Padding(
                         padding: const EdgeInsets.only(top: 10, bottom: 10),

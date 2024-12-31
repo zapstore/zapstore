@@ -78,7 +78,7 @@ class SettingsScreen extends HookConsumerWidget {
               onPressed: () async {
                 if (feedbackController.text.trim().isNotEmpty) {
                   final signedDirectMessage = await amberSigner.sign(
-                      BaseDirectMessage(
+                      PartialDirectMessage(
                           content: feedbackController.text.trim(),
                           receiver: kZapstorePubkey.npub),
                       asUser: user.pubkey);

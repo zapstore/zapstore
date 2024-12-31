@@ -2,25 +2,100 @@ import 'dart:convert';
 
 import 'package:collection/collection.dart';
 import 'package:flutter_data/flutter_data.dart';
-import 'package:purplebase/purplebase.dart';
+import 'package:purplebase/purplebase.dart' as base;
+import 'package:http/http.dart' as http;
+import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/nostr_adapter.dart';
 import 'package:zapstore/models/settings.dart';
 import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/utils/nwc.dart';
 
 part 'user.g.dart';
 
 @DataAdapter([NostrAdapter, UserAdapter])
-class User extends BaseUser with DataModelMixin<User> {
-  User(
-      {super.name,
-      super.createdAt,
-      super.tags,
-      HasMany<User>? followers,
-      HasMany<User>? following,
-      BelongsTo<Settings>? settings})
-      : followers = followers ?? HasMany(),
-        following = following ?? HasMany(),
-        settings = settings ?? BelongsTo();
+class User extends base.User with DataModelMixin<User> {
+  @override
+  Object? get id => event.id;
+
+  Future<void> zap(int amount,
+      {required base.Event event, String? comment}) async {
+    final adapter = DataModel.adapterFor(this) as NostrAdapter;
+
+    final authorPubkey = event.event.pubkey;
+    final author = adapter.ref.users.findOneLocalById(authorPubkey);
+
+    if (author?.lud16 == null) {
+      throw 'cant zap';
+    }
+
+    final partialZapRequest = base.PartialZapRequest();
+    partialZapRequest
+      ..addLinkedEvent(event)
+      ..addLinkedUser(this)
+      ..amount = amount;
+    final zapRequest = await partialZapRequest
+        .signWith(base.Bip340PrivateKeySigner(kZapstorePubkey));
+    print(zapRequest);
+
+    // Now we fetch the invoice
+    final lnurlResponse = await author!.fetchLnUrl();
+
+    final recipientAllowsNostr = lnurlResponse['allowsNostr'];
+    final recipientPubkey = lnurlResponse['nostrPubkey'];
+    // All amounts are in millisats
+    final recipientMin = lnurlResponse['minSendable'];
+    final recipientMax = lnurlResponse['maxSendable'];
+    final amountInMillisats = amount * 1000;
+
+    if (recipientAllowsNostr != true && recipientPubkey != null) {
+      throw 'cant zap, recipient does not allow nostr';
+    }
+    if ((recipientMin != null && amountInMillisats < recipientMin) ||
+        (recipientMax != null && amountInMillisats > recipientMax)) {
+      throw 'cant zap, amount not between min and max sendable';
+    }
+
+    final commentLength = lnurlResponse['commentAllowed'];
+    comment =
+        commentLength != null ? comment?.substringMax(commentLength) : comment;
+
+    var callbackUri = Uri.parse(lnurlResponse['callback']!);
+    callbackUri = callbackUri.replace(
+      queryParameters: {
+        ...callbackUri.queryParameters,
+        'amount': amountInMillisats.toString(),
+        if (comment != null) 'comment': comment,
+        'nostr': jsonEncode(zapRequest.toMap()),
+      },
+    );
+
+    print(callbackUri);
+
+    final response = await http.get(callbackUri);
+    final invoiceMap = jsonDecode(response.body);
+
+    print(invoiceMap);
+    final invoice = invoiceMap['pr'];
+    if (invoice == null) {
+      throw 'cant zap, no invoice';
+    }
+
+    final nwcConnection = adapter.ref.read(nwcConnectionProvider).asData?.value;
+    if (nwcConnection == null) {
+      throw 'cant zap, no nwc connection';
+    }
+
+    // Pay the invoice via NWC
+    adapter.socialRelays.ndk!.nwc.payInvoice(nwcConnection, invoice: invoice);
+  }
+
+  Future<Map<String, dynamic>> fetchLnUrl() async {
+    final [userName, domainName] = lud16!.split('@');
+    final lnurl = 'https://$domainName/.well-known/lnurlp/$userName';
+    final response = await http.get(Uri.parse(lnurl));
+    final map = jsonDecode(response.body);
+    return map;
+  }
 
   User.fromJson(super.map)
       : followers = hasMany(map['followers']),
@@ -58,7 +133,7 @@ mixin UserAdapter on NostrAdapter<User> {
       return [];
     }
 
-    final request = RelayRequest(
+    final request = base.RelayRequest(
       kinds: {0}, // 3
       authors: {...authors},
       since: queriedAtMap[authors.join()],
@@ -119,7 +194,7 @@ mixin UserAdapter on NostrAdapter<User> {
       );
     }
 
-    final result = await socialRelays.queryRaw(RelayRequest(
+    final result = await socialRelays.queryRaw(base.RelayRequest(
       kinds: {0}, // 3
       tags: params ?? {},
       authors: {publicKey},

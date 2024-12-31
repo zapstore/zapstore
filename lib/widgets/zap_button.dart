@@ -147,15 +147,17 @@ class ZapButton extends HookConsumerWidget {
                   0;
 
               if (amount > 0) {
-                final lnurl = developer.lud16!;
-                await ref.read(zapProvider.notifier).zap(
-                    user: user,
-                    lnurl: lnurl,
-                    eventId: app.latestMetadata != null
-                        ? app.latestMetadata!.id.toString()
-                        : app.latestRelease!.id.toString(),
-                    amount: amount,
-                    pubKey: developer.pubkey);
+                // User should be able to sign any event
+                // Proposed API:
+                await user.zap(amount, event: app.latestMetadata!);
+
+                // final lnurl = developer.lud16!;
+                // await ref.read(zapProvider.notifier).zap(
+                //     user: user,
+                //     lnurl: lnurl,
+                //     eventId: app.latestMetadata!.id.toString(),
+                //     amount: amount,
+                //     pubKey: developer.pubkey);
               }
             },
             builder: (context, child, callback, state) {

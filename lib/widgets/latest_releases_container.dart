@@ -125,7 +125,7 @@ class LatestReleasesAppNotifier extends PreloadingStateNotifier<List<App>> {
 
     // Set timestamp of oldest, to prepare for next query
     if (apps.isNotEmpty) {
-      _oldestCreatedAt = apps.last.createdAt;
+      _oldestCreatedAt = apps.last.event.createdAt;
     }
     return AsyncData(apps);
   }

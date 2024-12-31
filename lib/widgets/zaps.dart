@@ -30,7 +30,7 @@ class Zaps extends HookConsumerWidget {
           receipts
               .sort((a, b) => (b.amountSats ?? 0).compareTo(a.amountSats ?? 0));
 
-          int eventSum = 0;
+          var eventSum = 0;
           for (var receipt in receipts) {
             eventSum += receipt.amountSats ?? 0;
           }
@@ -40,7 +40,7 @@ class Zaps extends HookConsumerWidget {
           final senders =
               ref.watch(zappersProvider((zapperIds: senderIds.take(10))));
 
-          Widget zapperAvatars = switch (senders) {
+          final zapperAvatars = switch (senders) {
             AsyncData<List<User>>(value: final users) => Builder(
                 builder: (context) {
                   return RichText(
@@ -98,7 +98,5 @@ class Zaps extends HookConsumerWidget {
 final zappersProvider = FutureProvider.autoDispose
     .family<List<User>, ({Iterable<String> zapperIds})>((ref, arg) {
   // TODO it should load from either local or remote if not cached locally still
-  List<User> list = ref.users.findManyLocalByIds(arg.zapperIds);
-  return list;
-  // return await ref.users.findAll(params: {'authors': arg.zapperIds, 'ignoreReturn': true});
+  return ref.users.findManyLocalByIds(arg.zapperIds);
 });
