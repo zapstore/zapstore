@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
 
-import 'package:android_package_manager/android_package_manager.dart';
 import 'package:async/async.dart';
 import 'package:background_downloader/background_downloader.dart';
 import 'package:collection/collection.dart';
@@ -188,26 +187,6 @@ class App extends base.App with DataModelMixin<App> {
           await file.delete();
       }
     }
-  }
-
-  Future<bool?> packageCertificateMatches() async {
-    if (latestMetadata!.apkSignatureHash == null) return null;
-
-    final flags = PackageInfoFlags(
-      {PMFlag.getPermissions, PMFlag.getSigningCertificates},
-    );
-
-    final i = await packageManager.getPackageInfo(
-        packageName: identifier, flags: flags);
-    if (i == null) {
-      return null;
-    }
-    final bytes = i.signingInfo!.signingCertificateHistory!.first;
-    final installedApkSigHash = sha256.convert(bytes).toString().toLowerCase();
-    final metadataSigHashes =
-        latestMetadata?.event.getTagSet('apk_signature_hash') ?? {};
-    return metadataSigHashes
-        .any((msh) => msh.toLowerCase() == installedApkSigHash);
   }
 }
 

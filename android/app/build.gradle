@@ -1,6 +1,7 @@
 plugins {
     id "com.android.application"
     id "kotlin-android"
+    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id "dev.flutter.flutter-gradle-plugin"
 }
 
@@ -39,7 +40,7 @@ android {
     }
 
     kotlinOptions {
-        jvmTarget = '21'
+        jvmTarget = JavaVersion.VERSION_1_8
     }
 
     sourceSets {
@@ -69,7 +70,10 @@ android {
             signingConfig signingConfigs.release
             minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+<<<<<<< HEAD
 
+=======
+>>>>>>> master
         }
     }
 }
