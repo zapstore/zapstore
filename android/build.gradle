@@ -18,6 +18,8 @@ subprojects {
     }
 }
 
+// Used for plugins that do not specify their own namespace
+// https://discuss.gradle.org/t/flutter-not-able-to-migrate-to-gradle-8/46937/7
 subprojects {
     afterEvaluate { project ->
         if (project.hasProperty('android')) {
