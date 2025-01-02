@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/nostr_adapter.dart';
 import 'package:zapstore/models/settings.dart';
+import 'package:zapstore/navigation/app_initializer.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/nwc.dart';
 
@@ -17,35 +18,39 @@ class User extends base.User with DataModelMixin<User> {
   @override
   Object? get id => event.id;
 
-  Future<void> zap(int amount,
+  Future<void> zap(int amountInSats,
       {required base.Event event, String? comment}) async {
     final adapter = DataModel.adapterFor(this) as NostrAdapter;
 
     final authorPubkey = event.event.pubkey;
+    print(
+        'bro wants to zap $amountInSats to $authorPubkey for ${event.event.id}');
     final author = adapter.ref.users.findOneLocalById(authorPubkey);
 
     if (author?.lud16 == null) {
       throw 'cant zap';
     }
 
+    final amountInMillisats = amountInSats * 1000;
     final partialZapRequest = base.PartialZapRequest();
     partialZapRequest
       ..addLinkedEvent(event)
-      ..addLinkedUser(this)
-      ..amount = amount;
-    final zapRequest = await partialZapRequest
-        .signWith(base.Bip340PrivateKeySigner(kZapstorePubkey));
-    print(zapRequest);
+      ..addLinkedUser(author!)
+      ..relays = kSocialRelays.where((r) => r != 'ndk')
+      ..amount = amountInMillisats
+      ..comment = comment;
+
+    final zapRequest =
+        await partialZapRequest.signWith(amberSigner, withPubkey: pubkey);
 
     // Now we fetch the invoice
-    final lnurlResponse = await author!.fetchLnUrl();
+    final lnurlResponse = await author.fetchLnUrl();
 
     final recipientAllowsNostr = lnurlResponse['allowsNostr'];
     final recipientPubkey = lnurlResponse['nostrPubkey'];
     // All amounts are in millisats
     final recipientMin = lnurlResponse['minSendable'];
     final recipientMax = lnurlResponse['maxSendable'];
-    final amountInMillisats = amount * 1000;
 
     if (recipientAllowsNostr != true && recipientPubkey != null) {
       throw 'cant zap, recipient does not allow nostr';
@@ -69,12 +74,9 @@ class User extends base.User with DataModelMixin<User> {
       },
     );
 
-    print(callbackUri);
-
     final response = await http.get(callbackUri);
     final invoiceMap = jsonDecode(response.body);
 
-    print(invoiceMap);
     final invoice = invoiceMap['pr'];
     if (invoice == null) {
       throw 'cant zap, no invoice';
@@ -86,7 +88,9 @@ class User extends base.User with DataModelMixin<User> {
     }
 
     // Pay the invoice via NWC
-    adapter.socialRelays.ndk!.nwc.payInvoice(nwcConnection, invoice: invoice);
+    final rw = await adapter.socialRelays.ndk!.nwc.payInvoice(nwcConnection,
+        invoice: invoice, timeout: Duration(seconds: 20));
+    print(rw);
   }
 
   Future<Map<String, dynamic>> fetchLnUrl() async {

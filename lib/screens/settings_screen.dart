@@ -81,7 +81,7 @@ class SettingsScreen extends HookConsumerWidget {
                       PartialDirectMessage(
                           content: feedbackController.text.trim(),
                           receiver: kZapstorePubkey.npub),
-                      asUser: user.pubkey);
+                      withPubkey: user.pubkey);
                   try {
                     final response = await http.post(
                         Uri.parse('https://relay.zapstore.dev/'),

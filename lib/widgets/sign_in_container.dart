@@ -141,6 +141,7 @@ class SignInContainer extends HookConsumerWidget {
                       // local user to represent this new npub
                       user ??= User.fromJson({
                         'id': signedInNpub.hexKey,
+                        'kind': 0,
                         'pubkey': signedInNpub.hexKey,
                         'created_at':
                             DateTime.now().millisecondsSinceEpoch ~/ 1000,

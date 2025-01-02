@@ -27,7 +27,7 @@ class AmberSigner extends Signer {
 
   @override
   Future<E> sign<E extends Event<E>>(PartialEvent<E> partialEvent,
-      {String? asUser}) async {
+      {String? withPubkey}) async {
     if (!isAvailable) {
       throw Exception("Cannot sign, missing Amber");
     }
@@ -36,7 +36,7 @@ class AmberSigner extends Signer {
       final signedMessage = await _signerPlugin.nip04Encrypt(
           partialEvent.event.content,
           "",
-          asUser!.npub,
+          withPubkey!.npub,
           (partialEvent as DirectMessage).receiver.hexKey);
       final encryptedContent = signedMessage['result'];
       partialEvent.event.content = encryptedContent;
@@ -48,7 +48,7 @@ class AmberSigner extends Signer {
         if (e.value != null) e.key: e.value
     };
     final signedMessage =
-        await _signerPlugin.signEvent(jsonEncode(map), "", asUser!);
+        await _signerPlugin.signEvent(jsonEncode(map), "", withPubkey!);
     final signedEvent = jsonDecode(signedMessage['event']);
     return Event.getConstructor<E>()!.call(signedEvent);
   }

@@ -353,10 +353,15 @@ mixin AppAdapter on Adapter<App> {
 
     for (final Map<String, dynamic> map in list) {
       final tags = map['tags'];
-      final pubkey = base.BaseUtil.getTag(tags, 'pubkey');
-      map['developer'] = base.BaseUtil.getTag(tags, 'zap') ??
-          (pubkey != kZapstorePubkey ? pubkey : null);
+      final pubkey = map['pubkey'];
       map['localApp'] = base.BaseUtil.getTag(tags, 'd')!;
+      // Find zap recipient as specified in event or fall back to author's pubkey
+      map['developer'] = base.BaseUtil.getTag(tags, 'zap') ?? pubkey;
+      // If app is signed by Zapstore (except the Zapstore app), remove from being the developer
+      if (pubkey == kZapstorePubkey &&
+          map['localApp'] != kZapstoreAppIdentifier) {
+        map.remove('developer');
+      }
     }
 
     return super.deserialize(data);
