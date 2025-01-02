@@ -1,7 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter_data/flutter_data.dart';
 import 'package:ndk/domain_layer/entities/nip_01_event.dart';
-import 'package:purplebase/purplebase.dart' hide FileMetadata;
 import 'package:zapstore/main.data.dart';
 
 import 'package:flutter/material.dart';
@@ -9,6 +9,7 @@ import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:zapstore/models/file_metadata.dart';
 import 'package:zapstore/models/user.dart';
+import 'package:zapstore/models/zap_receipt.dart';
 import 'package:zapstore/widgets/rounded_image.dart';
 
 class ZapReceipts extends HookConsumerWidget {
@@ -74,12 +75,10 @@ class ZapReceiptsNotifier extends StateNotifier<AsyncValue<Set<ZapReceipt>>> {
   StreamSubscription<Nip01Event>? sub;
 
   ZapReceiptsNotifier(this.ref, this.fileMetadata)
-      : super(AsyncData(ref.zapReceipts
-            // TODO: Perform an actual query
-            .findAllLocal()
-            .where((r) =>
-                r.recipient.id == fileMetadata.author.id &&
-                r.eventId == fileMetadata.id)
+      : super(AsyncData(ref.zapReceipts.zapReceiptAdapter
+            .findByRecipient(
+                pubkey: fileMetadata.author.id!.toString(),
+                eventId: fileMetadata.id!.toString())
             .toSet())) {
     final adapter = ref.users.nostrAdapter;
 
@@ -91,10 +90,8 @@ class ZapReceiptsNotifier extends StateNotifier<AsyncValue<Set<ZapReceipt>>> {
             pubKey: recipient, eventId: fileMetadata.event.id);
 
     sub = receiptsResponse.stream.listen((data) {
-      state = AsyncData({
-        if (state.hasValue) ...state.value!,
-        Event.getConstructor<ZapReceipt>()!.call(data.toJson())
-      });
+      final model = ZapReceipt.fromJson(data.toJson()).init().saveLocal();
+      state = AsyncData({if (state.hasValue) ...state.value!, model});
     });
   }
 

@@ -44,13 +44,14 @@ mixin _$ZapReceiptAdapter on Adapter<ZapReceipt> {
 final _zapReceiptsFinders = <String, dynamic>{};
 
 class $ZapReceiptAdapter = Adapter<ZapReceipt>
-    with _$ZapReceiptAdapter, NostrAdapter<ZapReceipt>;
+    with _$ZapReceiptAdapter, NostrAdapter<ZapReceipt>, ZapReceiptAdapter;
 
 final zapReceiptsAdapterProvider = Provider<Adapter<ZapReceipt>>(
     (ref) => $ZapReceiptAdapter(ref, InternalHolder(_zapReceiptsFinders)));
 
 extension ZapReceiptAdapterX on Adapter<ZapReceipt> {
   NostrAdapter<ZapReceipt> get nostrAdapter => this as NostrAdapter<ZapReceipt>;
+  ZapReceiptAdapter get zapReceiptAdapter => this as ZapReceiptAdapter;
 }
 
 extension ZapReceiptRelationshipGraphNodeX
