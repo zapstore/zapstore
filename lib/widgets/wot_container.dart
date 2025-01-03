@@ -38,9 +38,8 @@ class WebOfTrustContainer extends HookConsumerWidget {
             }
 
             return UsersRichText(
-              preSpan: hasUser && fromNpub != kFranzapPubkey.npub
-                  ? TextSpan(text: 'You, ')
-                  : null,
+              leadingText:
+                  hasUser && fromNpub != kFranzapPubkey.npub ? 'You, ' : null,
               trailingText: ' and others follow this signer on nostr.',
               users: trustedUsersWithoutLoggedInUser,
             );

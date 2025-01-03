@@ -25,6 +25,9 @@ class ZapReceipts extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // NOTE: These watchers will become more efficient
+    ref.users.watchAll();
+
     final fileMetadata = app.latestMetadata;
     if (fileMetadata == null) {
       return Container();
@@ -50,7 +53,7 @@ class ZapReceipts extends HookConsumerWidget {
     return Padding(
       padding: const EdgeInsets.only(top: 10, bottom: 10),
       child: UsersRichText(
-        preSpan: TextSpan(text: '⚡ $totalAmountInSats sats zapped from '),
+        leadingText: '⚡ $totalAmountInSats sats zapped from ',
         users: senders,
       ),
     );
