@@ -10,7 +10,6 @@ import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:http/http.dart' as http;
-import 'package:ndk/domain_layer/usecases/nwc/nwc_connection.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/main.data.dart';
@@ -70,8 +69,7 @@ class SettingsScreen extends HookConsumerWidget {
               user.settings.value!.signInMethod == SignInMethod.nip55 &&
               amberSigner.isAvailable)
             AsyncButtonBuilder(
-              loadingWidget: SizedBox(
-                  width: 14, height: 14, child: CircularProgressIndicator()),
+              loadingWidget: SmallCircularProgressIndicator(),
               onPressed: () async {
                 if (feedbackController.text.trim().isNotEmpty) {
                   final signedDirectMessage = await amberSigner.sign(
@@ -110,13 +108,19 @@ class SettingsScreen extends HookConsumerWidget {
               },
               child: Text('Send as ${user.nameOrNpub}'),
             ),
-          Gap(40),
+          Gap(20),
           Divider(),
-          Gap(40),
-          if (user != null) NostrWalletConnectContainer(),
-          Gap(40),
+          Gap(20),
+          Text(
+            'Wallet',
+            style: context.theme.textTheme.headlineLarge!
+                .copyWith(fontWeight: FontWeight.bold),
+          ),
+          Gap(20),
+          NwcContainer(),
+          Gap(20),
           Divider(),
-          Gap(40),
+          Gap(20),
           Text(
             'Tools',
             style: context.theme.textTheme.headlineLarge!
@@ -218,9 +222,20 @@ class SettingsScreen extends HookConsumerWidget {
   }
 }
 
-class NostrWalletConnectContainer extends HookConsumerWidget {
+class SmallCircularProgressIndicator extends StatelessWidget {
+  const SmallCircularProgressIndicator({
+    super.key,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(width: 14, height: 14, child: CircularProgressIndicator());
+  }
+}
+
+class NwcContainer extends HookConsumerWidget {
   final bool dialogMode;
-  const NostrWalletConnectContainer({
+  const NwcContainer({
     super.key,
     this.dialogMode = false,
   });
@@ -231,14 +246,25 @@ class NostrWalletConnectContainer extends HookConsumerWidget {
     final controller = useTextEditingController(text: '');
     final isTextFieldEmpty = useState(true);
 
+    if (nwcConnection.isLoading) {
+      return Padding(
+        padding: const EdgeInsets.all(5),
+        child: SmallCircularProgressIndicator(),
+      );
+    }
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Gap(20),
-        Text(
-            "Nostr Wallet Connect ${nwcConnection.value != null ? 'connected' : 'URI'}"),
-        if (nwcConnection.value != null && !dialogMode)
+        if (!nwcConnection.hasError)
+          Text(
+              "Nostr Wallet Connect ${nwcConnection.hasValue ? 'connected' : 'URI'}"),
+        if (nwcConnection.hasError)
+          Text('Error connecting: ${nwcConnection.error}'),
+        if (nwcConnection.hasValue &&
+            nwcConnection.value != null &&
+            !dialogMode)
           ElevatedButton(
             onPressed: () async {
               await ref.read(nwcConnectionProvider.notifier).disconnectWallet();
@@ -248,9 +274,11 @@ class NostrWalletConnectContainer extends HookConsumerWidget {
                 backgroundColor: Colors.transparent),
             child: Text('Disconnect'),
           ),
-        if (nwcConnection.value == null)
+        if ((nwcConnection.hasValue && nwcConnection.value == null) ||
+            nwcConnection.hasError)
           TextField(
             autocorrect: false,
+            keyboardType: TextInputType.none,
             controller: controller,
             onChanged: (value) {
               isTextFieldEmpty.value = value.isEmpty;
@@ -259,11 +287,7 @@ class NostrWalletConnectContainer extends HookConsumerWidget {
               hintText: 'nostr+walletconnect://...',
               suffixIcon: AsyncButtonBuilder(
                 disabled: isTextFieldEmpty.value,
-                loadingWidget: SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(),
-                ),
+                loadingWidget: SmallCircularProgressIndicator(),
                 onPressed: () async {
                   final nwcUri = controller.text.trim();
                   await ref

@@ -6,6 +6,7 @@ import 'package:purplebase/purplebase.dart' as base;
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/settings.dart';
 import 'package:zapstore/models/user.dart';
+import 'package:zapstore/screens/settings_screen.dart';
 import 'package:zapstore/widgets/users_rich_text.dart';
 
 class WebOfTrustContainer extends HookConsumerWidget {
@@ -55,11 +56,7 @@ class WebOfTrustContainer extends HookConsumerWidget {
               children: [
                 Text('Loading web of trust...'),
                 Gap(10),
-                SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(),
-                ),
+                SmallCircularProgressIndicator(),
               ],
             ),
           ),

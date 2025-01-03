@@ -9,13 +9,21 @@ import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/settings.dart';
 import 'package:zapstore/models/user.dart';
 import 'package:zapstore/navigation/app_initializer.dart';
+import 'package:zapstore/screens/settings_screen.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/rounded_image.dart';
 
 class SignInButton extends ConsumerWidget {
   final bool minimal;
   final String label;
-  SignInButton({super.key, this.minimal = false, this.label = 'Sign in'});
+  final bool publicKeyAllowed;
+  final String? signedOutText;
+  SignInButton(
+      {super.key,
+      this.minimal = false,
+      this.label = 'Sign in',
+      this.publicKeyAllowed = true,
+      this.signedOutText});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -28,6 +36,7 @@ class SignInButton extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (user == null && signedOutText != null) Text(signedOutText!),
         Row(
           children: [
             if (!minimal) RoundedImage(url: user?.avatarUrl, size: 46),
@@ -67,7 +76,9 @@ class SignInButton extends ConsumerWidget {
                     label,
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
-                  content: SignInDialogBox(),
+                  content: SignInDialogBox(
+                    publicKeyAllowed: publicKeyAllowed,
+                  ),
                 ),
               );
             } else {
@@ -102,11 +113,7 @@ class SignInDialogBox extends HookConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   AsyncButtonBuilder(
-                    loadingWidget: SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(),
-                    ),
+                    loadingWidget: SmallCircularProgressIndicator(),
                     builder: (context, child, callback, buttonState) {
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 2),
@@ -183,11 +190,7 @@ class SignInDialogBox extends HookConsumerWidget {
                   Gap(10),
                   AsyncButtonBuilder(
                     disabled: isTextFieldEmpty.value,
-                    loadingWidget: SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(),
-                    ),
+                    loadingWidget: SmallCircularProgressIndicator(),
                     onPressed: () async {
                       try {
                         final input = controller.text.trim();

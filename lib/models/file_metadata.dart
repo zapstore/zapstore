@@ -16,14 +16,6 @@ class FileMetadata extends base.FileMetadata with DataModelMixin<FileMetadata> {
   @override
   Object? get id => event.id;
 
-  // FileMetadata(
-  //     {super.createdAt,
-  //     super.content,
-  //     super.tags,
-  //     required this.author,
-  //     required this.release,
-  //     required this.signer});
-
   FileMetadata.fromJson(super.map)
       : author = belongsTo(map['author']),
         release = belongsTo(map['release']),

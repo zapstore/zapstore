@@ -156,12 +156,10 @@ class AppDetailScreen extends HookConsumerWidget {
                         padding: const EdgeInsets.only(right: 14),
                         child: SignerAndDeveloperRow(app: app),
                       ),
-                      Gap(20),
-                      if (app.latestMetadata != null)
-                        ZapReceipts(fileMetadata: app.latestMetadata!),
-                      Gap(20),
+                      Gap(10),
                       ZapButton(app: app),
-                      Gap(20),
+                      ZapReceipts(app: app),
+                      Gap(10),
                       Container(
                         padding: EdgeInsets.all(10),
                         decoration: BoxDecoration(

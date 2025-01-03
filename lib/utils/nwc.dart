@@ -44,18 +44,18 @@ class NwcConnectionNotifier extends StateNotifier<AsyncValue<NwcConnection?>> {
     // Write secret to storage and connect
     await _storage.write(key: kNwcSecretKey, value: nwcSecret);
 
-    final connection = await ndk.nwc.connect(
-      nwcSecret,
-      doGetInfoMethod: false,
-      onError: (error) {
-        state =
-            AsyncValue.error(error ?? 'Could not connect', StackTrace.current);
-      },
-    );
-    if (connection.permissions.contains(NwcMethod.PAY_INVOICE.name)) {
-      state = AsyncValue.data(connection);
-    } else {
-      state = AsyncError('No permission to zap', StackTrace.current);
+    try {
+      final connection = await ndk.nwc.connect(
+        nwcSecret,
+        doGetInfoMethod: false,
+      );
+      if (connection.permissions.contains(NwcMethod.PAY_INVOICE.name)) {
+        state = AsyncValue.data(connection);
+      } else {
+        state = AsyncError('No permission to zap', StackTrace.current);
+      }
+    } catch (e, stack) {
+      state = AsyncValue.error(e, stack);
     }
   }
 

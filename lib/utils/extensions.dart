@@ -135,4 +135,10 @@ extension StringWidget on String {
   }
 }
 
+extension TextExt on Text {
+  Widget get bold {
+    return Text(data!, style: TextStyle(fontWeight: FontWeight.bold));
+  }
+}
+
 const kZapstoreAppIdentifier = 'dev.zapstore.app';

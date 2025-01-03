@@ -19,7 +19,7 @@ class User extends base.User with DataModelMixin<User> {
   Object? get id => event.id;
 
   Future<void> zap(int amountInSats,
-      {required base.Event event, String? comment}) async {
+      {required base.Event event, String? comment, base.Signer? signer}) async {
     final adapter = DataModel.adapterFor(this) as NostrAdapter;
 
     // First ensure connection is available
@@ -44,8 +44,8 @@ class User extends base.User with DataModelMixin<User> {
       ..amount = amountInMillisats
       ..comment = comment;
 
-    final zapRequest =
-        await partialZapRequest.signWith(amberSigner, withPubkey: pubkey);
+    final zapRequest = await partialZapRequest.signWith(signer ?? amberSigner,
+        withPubkey: pubkey);
 
     // Now we fetch the invoice
     final lnResponse = await author.fetchLightningAddress();
