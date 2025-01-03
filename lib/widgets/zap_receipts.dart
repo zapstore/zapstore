@@ -50,9 +50,7 @@ class ZapReceipts extends HookConsumerWidget {
     return Padding(
       padding: const EdgeInsets.only(top: 10, bottom: 10),
       child: UsersRichText(
-        preSpan: TextSpan(
-            text: '⚡ $totalAmountInSats sats (${receipts.length} zaps) by'),
-        trailingText: ' and others',
+        preSpan: TextSpan(text: '⚡ $totalAmountInSats sats zapped from '),
         users: senders,
       ),
     );
