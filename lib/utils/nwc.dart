@@ -68,3 +68,9 @@ class NwcConnectionNotifier extends StateNotifier<AsyncValue<NwcConnection?>> {
 final nwcConnectionProvider =
     StateNotifierProvider<NwcConnectionNotifier, AsyncValue<NwcConnection?>>(
         (ref) => NwcConnectionNotifier(ref));
+
+extension NwcExt on AsyncValue<NwcConnection?> {
+  bool get isPresent {
+    return hasValue && value != null && !hasError;
+  }
+}
