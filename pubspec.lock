@@ -810,10 +810,10 @@ packages:
     dependency: "direct main"
     description:
       name: ndk
-      sha256: e17cb3aad2936c62978891e0d3db4dc37f3ded7efbdf89e571c3927158da9135
+      sha256: "07c284a14e7800513743a84c911a546dcfcdc0c0ce2def4895c4e4c2286f159e"
       url: "https://pub.dev"
     source: hosted
-    version: "0.2.2"
+    version: "0.2.4"
   octo_image:
     dependency: transitive
     description:

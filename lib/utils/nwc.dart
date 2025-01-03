@@ -2,15 +2,21 @@ import 'package:flutter_data/flutter_data.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:ndk/domain_layer/usecases/nwc/consts/nwc_method.dart';
 import 'package:ndk/ndk.dart';
+import 'package:zapstore/main.data.dart';
+import 'package:zapstore/models/user.dart';
 
 const kNwcSecretKey = 'nwc_secret';
 
 class NwcConnectionNotifier extends StateNotifier<AsyncValue<NwcConnection?>> {
+  Ref ref;
+  late Ndk ndk;
+
   final _storage = FlutterSecureStorage(
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
   );
 
-  NwcConnectionNotifier() : super(AsyncData(null)) {
+  NwcConnectionNotifier(this.ref) : super(AsyncLoading()) {
+    ndk = ref.users.nostrAdapter.socialRelays.ndk!;
     // Attempt to load from local storage on initialization
     _storage
         .read(key: kNwcSecretKey)
@@ -32,13 +38,13 @@ class NwcConnectionNotifier extends StateNotifier<AsyncValue<NwcConnection?>> {
     // If secret is supplied and a connection is still active,
     // it means it is a new connection string so disconnect NWC
     if (state.value != null) {
-      await ndkForNwc.nwc.disconnect(state.value!);
+      await ndk.nwc.disconnect(state.value!);
     }
 
     // Write secret to storage and connect
     await _storage.write(key: kNwcSecretKey, value: nwcSecret);
 
-    final connection = await ndkForNwc.nwc.connect(
+    final connection = await ndk.nwc.connect(
       nwcSecret,
       doGetInfoMethod: false,
       onError: (error) {
@@ -61,12 +67,4 @@ class NwcConnectionNotifier extends StateNotifier<AsyncValue<NwcConnection?>> {
 
 final nwcConnectionProvider =
     StateNotifierProvider<NwcConnectionNotifier, AsyncValue<NwcConnection?>>(
-        (ref) => NwcConnectionNotifier());
-
-final ndkForNwc = Ndk(
-  NdkConfig(
-      cache: MemCacheManager(),
-      eventVerifier: Bip340EventVerifier(),
-      bootstrapRelays: [],
-      logLevel: LogLevels().info),
-);
+        (ref) => NwcConnectionNotifier(ref));

@@ -22,13 +22,17 @@ class User extends base.User with DataModelMixin<User> {
       {required base.Event event, String? comment}) async {
     final adapter = DataModel.adapterFor(this) as NostrAdapter;
 
+    // First ensure connection is available
+    final nwcConnection = adapter.ref.read(nwcConnectionProvider).asData?.value;
+    if (nwcConnection == null) {
+      throw 'No NWC connection';
+    }
+
     final authorPubkey = event.event.pubkey;
-    print(
-        'bro wants to zap $amountInSats to $authorPubkey for ${event.event.id}');
     final author = adapter.ref.users.findOneLocalById(authorPubkey);
 
     if (author?.lud16 == null) {
-      throw 'cant zap';
+      throw 'Recipient has no Lightning address';
     }
 
     final amountInMillisats = amountInSats * 1000;
@@ -44,27 +48,27 @@ class User extends base.User with DataModelMixin<User> {
         await partialZapRequest.signWith(amberSigner, withPubkey: pubkey);
 
     // Now we fetch the invoice
-    final lnurlResponse = await author.fetchLnUrl();
+    final lnResponse = await author.fetchLightningAddress();
 
-    final recipientAllowsNostr = lnurlResponse['allowsNostr'];
-    final recipientPubkey = lnurlResponse['nostrPubkey'];
+    final recipientAllowsNostr = lnResponse['allowsNostr'];
+    final recipientPubkey = lnResponse['nostrPubkey'];
     // All amounts are in millisats
-    final recipientMin = lnurlResponse['minSendable'];
-    final recipientMax = lnurlResponse['maxSendable'];
+    final recipientMin = lnResponse['minSendable'];
+    final recipientMax = lnResponse['maxSendable'];
 
     if (recipientAllowsNostr != true && recipientPubkey != null) {
-      throw 'cant zap, recipient does not allow nostr';
+      throw 'Recipient does not allow nostr';
     }
     if ((recipientMin != null && amountInMillisats < recipientMin) ||
         (recipientMax != null && amountInMillisats > recipientMax)) {
-      throw 'cant zap, amount not between min and max sendable';
+      throw 'Amount not between min and max sendable';
     }
 
-    final commentLength = lnurlResponse['commentAllowed'];
+    final commentLength = lnResponse['commentAllowed'];
     comment =
         commentLength != null ? comment?.substringMax(commentLength) : comment;
 
-    var callbackUri = Uri.parse(lnurlResponse['callback']!);
+    var callbackUri = Uri.parse(lnResponse['callback']!);
     callbackUri = callbackUri.replace(
       queryParameters: {
         ...callbackUri.queryParameters,
@@ -74,26 +78,20 @@ class User extends base.User with DataModelMixin<User> {
       },
     );
 
-    final response = await http.get(callbackUri);
-    final invoiceMap = jsonDecode(response.body);
+    final invoiceResponse = await http.get(callbackUri);
+    final invoiceMap = jsonDecode(invoiceResponse.body);
 
     final invoice = invoiceMap['pr'];
     if (invoice == null) {
-      throw 'cant zap, no invoice';
+      throw 'No invoice';
     }
 
-    final nwcConnection = adapter.ref.read(nwcConnectionProvider).asData?.value;
-    if (nwcConnection == null) {
-      throw 'cant zap, no nwc connection';
-    }
-
-    // Pay the invoice via NWC
-    final rw = await adapter.socialRelays.ndk!.nwc.payInvoice(nwcConnection,
+    // Pay the invoice via NWC (errors are thrown)
+    await adapter.socialRelays.ndk!.nwc.payInvoice(nwcConnection,
         invoice: invoice, timeout: Duration(seconds: 20));
-    print(rw);
   }
 
-  Future<Map<String, dynamic>> fetchLnUrl() async {
+  Future<Map<String, dynamic>> fetchLightningAddress() async {
     final [userName, domainName] = lud16!.split('@');
     final lnurl = 'https://$domainName/.well-known/lnurlp/$userName';
     final response = await http.get(Uri.parse(lnurl));

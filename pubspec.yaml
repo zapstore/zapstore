@@ -53,7 +53,7 @@ dependencies:
   mutex: ^3.1.0
   easy_image_viewer: ^1.5.1
   flutter_secure_storage: ^9.2.2
-  ndk: ^0.2.2
+  ndk: ^0.2.4
 
 dependency_overrides:
   purplebase:

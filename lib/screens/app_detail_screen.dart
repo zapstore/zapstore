@@ -16,8 +16,8 @@ import 'package:zapstore/widgets/install_button.dart';
 import 'package:zapstore/widgets/release_card.dart';
 import 'package:zapstore/widgets/signer_and_developer_row.dart';
 import 'package:zapstore/widgets/spinning_logo.dart';
+import 'package:zapstore/widgets/users_rich_text.dart';
 import 'package:zapstore/widgets/versioned_app_header.dart';
-import 'package:zapstore/widgets/wot_container.dart';
 import 'package:zapstore/widgets/zap_button.dart';
 import 'package:zapstore/widgets/zap_receipts.dart';
 

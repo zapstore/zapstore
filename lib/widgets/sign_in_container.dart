@@ -67,7 +67,7 @@ class SignInButton extends ConsumerWidget {
                     label,
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
-                  content: SignInContainer(),
+                  content: SignInDialogBox(),
                 ),
               );
             } else {
@@ -81,8 +81,9 @@ class SignInButton extends ConsumerWidget {
   }
 }
 
-class SignInContainer extends HookConsumerWidget {
-  const SignInContainer({super.key});
+class SignInDialogBox extends HookConsumerWidget {
+  final bool publicKeyAllowed;
+  const SignInDialogBox({super.key, this.publicKeyAllowed = true});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -155,73 +156,81 @@ class SignInContainer extends HookConsumerWidget {
                       settings.saveLocal();
 
                       if (context.mounted) {
-                        Navigator.of(context).pop();
+                        Navigator.of(context).pop(user);
                       }
                     },
                     child: Text('Sign in with Amber'),
                   ),
-                  Gap(10),
-                  Text('or'),
-                  Gap(10),
                 ],
               ),
-            Text('Input an npub or nostr address\n(read-only):'),
-            TextField(
-              autocorrect: false,
-              controller: controller,
-              onChanged: (value) {
-                isTextFieldEmpty.value = value.isEmpty;
-              },
-            ),
-            Gap(10),
-            AsyncButtonBuilder(
-              disabled: isTextFieldEmpty.value,
-              loadingWidget: SizedBox(
-                width: 14,
-                height: 14,
-                child: CircularProgressIndicator(),
+            if (amberSigner.isAvailable && publicKeyAllowed)
+              Padding(
+                padding: const EdgeInsets.all(10),
+                child: Text('or'),
               ),
-              onPressed: () async {
-                try {
-                  final input = controller.text.trim();
-                  if (input.startsWith('nsec')) {
-                    controller.clear();
-                    throw Exception('Never give away your nsec!');
-                  }
-                  final user = await ref.users.findOne(input);
-
-                  final settings = ref.settings.findOneLocalById('_')!;
-                  settings.signInMethod = SignInMethod.pubkey;
-                  settings.user.value = user;
-                  settings.saveLocal();
-
-                  if (context.mounted) {
-                    Navigator.pop(context);
-                  }
-                } on Exception catch (e, stack) {
-                  if (context.mounted) {
-                    context.showError(
-                        title: e.toString(),
-                        description: stack.toString().substringMax(200));
-                  }
-                }
-              },
-              builder: (context, child, callback, buttonState) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 2),
-                  child: SizedBox(
-                    child: ElevatedButton(
-                      onPressed: callback,
-                      style: ElevatedButton.styleFrom(
-                          disabledBackgroundColor: Colors.transparent,
-                          backgroundColor: Colors.transparent),
-                      child: child,
-                    ),
+            if (publicKeyAllowed)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Input an npub or nostr address\n(read-only):'),
+                  TextField(
+                    autocorrect: false,
+                    controller: controller,
+                    onChanged: (value) {
+                      isTextFieldEmpty.value = value.isEmpty;
+                    },
                   ),
-                );
-              },
-              child: Text('Sign in with public key'),
-            )
+                  Gap(10),
+                  AsyncButtonBuilder(
+                    disabled: isTextFieldEmpty.value,
+                    loadingWidget: SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(),
+                    ),
+                    onPressed: () async {
+                      try {
+                        final input = controller.text.trim();
+                        if (input.startsWith('nsec')) {
+                          controller.clear();
+                          throw Exception('Never give away your nsec!');
+                        }
+                        final user = await ref.users.findOne(input);
+
+                        final settings = ref.settings.findOneLocalById('_')!;
+                        settings.signInMethod = SignInMethod.pubkey;
+                        settings.user.value = user;
+                        settings.saveLocal();
+
+                        if (context.mounted) {
+                          Navigator.pop(context);
+                        }
+                      } on Exception catch (e, stack) {
+                        if (context.mounted) {
+                          context.showError(
+                              title: e.toString(),
+                              description: stack.toString().substringMax(200));
+                        }
+                      }
+                    },
+                    builder: (context, child, callback, buttonState) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 2),
+                        child: SizedBox(
+                          child: ElevatedButton(
+                            onPressed: callback,
+                            style: ElevatedButton.styleFrom(
+                                disabledBackgroundColor: Colors.transparent,
+                                backgroundColor: Colors.transparent),
+                            child: child,
+                          ),
+                        ),
+                      );
+                    },
+                    child: Text('Sign in with public key'),
+                  ),
+                ],
+              ),
           ],
         ),
       ],

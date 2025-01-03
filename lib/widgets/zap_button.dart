@@ -1,12 +1,12 @@
-import 'package:async_button_builder/async_button_builder.dart';
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/settings.dart';
-import 'package:zapstore/navigation/router.dart';
+import 'package:zapstore/screens/settings_screen.dart';
 import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/widgets/sign_in_container.dart';
 
 import '../utils/nwc.dart';
 
@@ -21,7 +21,6 @@ class ZapButton extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final nwcConnection = ref.watch(nwcConnectionProvider);
-    // final zapStatus = ref.watch(zapProvider);
     final user = ref.settings
         .watchOne('_', alsoWatch: (_) => {_.user})
         .model!
@@ -30,61 +29,45 @@ class ZapButton extends HookConsumerWidget {
 
     final amountController = TextEditingController();
 
-    // We use value as default text, for progress only interested in loading/error substates
-    // final zapButtonText = switch (zapStatus) {
-    //   AsyncLoading() => 'Zapping... ⚡⚡⚡',
-    //   AsyncError() => 'Error zapping!',
-    //   AsyncValue() => 'Zap the dev ⚡',
-    // };
-
-    // Show toast if could not zap
-    // useMemoized(() {
-    //   WidgetsBinding.instance.addPostFrameCallback((_) {
-    //     if (zapStatus.value != null) {
-    //       // final receipt = await zapStatus.value!.zapReceipt;
-    //       // TODO: zapStatus should include the amount of sats without needing async
-    //       // I could read zapReceiptsNotifier's state, but how I know it's this one?
-    //       context.showInfo('Zapped!',
-    //           description: 'You just sent the dev some sats');
-    //     }
-    //     if (zapStatus.hasError) {
-    //       context.showError(
-    //           title: 'Could not zap',
-    //           description: 'Error sending zap: ${zapStatus.error}');
-    //     }
-    //   });
-    // }, [zapStatus.value, zapStatus.error]);
-
-    return app.developer.value != null
-        ? AsyncButtonBuilder(
-            loadingWidget: SizedBox(
-                width: 14, height: 14, child: CircularProgressIndicator()),
+    return app.developer.value?.lud16 != null
+        ? ElevatedButton(
             onPressed: () async {
-              if (user == null) {
-                context.showError(
-                    title: 'Not signed in',
-                    description: 'Please sign in to zap');
+              final loggedInUser = user ??
+                  await showDialog(
+                    context: context,
+                    builder: (_) => AlertDialog(
+                      title: Text(
+                        'Sign in to zap',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      content: SignInDialogBox(publicKeyAllowed: false),
+                    ),
+                  );
+
+              if (loggedInUser == null) {
                 return;
               }
 
               if (nwcConnection.value == null) {
-                context.showError(
-                    title: 'No wallet connected',
-                    description: 'Please connect your NWC wallet');
-                appRouter.go('/settings');
-                return;
+                await showDialog(
+                  // ignore: use_build_context_synchronously
+                  context: context,
+                  builder: (_) => AlertDialog(
+                    title: Text(
+                      'Connect your wallet to zap',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    content: NostrWalletConnectContainer(dialogMode: true),
+                  ),
+                );
               }
 
-              final developer = app.developer.value!;
-              if (developer.lud16 == null) {
-                context.showError(
-                    title: 'Unable to zap',
-                    description:
-                        'The developer (${developer.nameOrNpub}) does not have a Lightning address');
+              if (ref.read(nwcConnectionProvider).value == null) {
                 return;
               }
 
               final amount = await showDialog<int>(
+                    // ignore: use_build_context_synchronously
                     context: context,
                     builder: (context) {
                       return AlertDialog(
@@ -145,22 +128,17 @@ class ZapButton extends HookConsumerWidget {
                   0;
 
               if (amount > 0) {
-                // User should be able to sign any event
-                // Proposed API:
-                await user.zap(amount,
-                    event: app.latestMetadata!, comment: 'From zapstore!');
-
-                // final lnurl = developer.lud16!;
-                // await ref.read(zapProvider.notifier).zap(
-                //     user: user,
-                //     lnurl: lnurl,
-                //     eventId: app.latestMetadata!.id.toString(),
-                //     amount: amount,
-                //     pubKey: developer.pubkey);
+                try {
+                  // ignore: use_build_context_synchronously
+                  context.showInfo('Zap sent!',
+                      description: '$amount sats on their way');
+                  await loggedInUser.zap(amount, event: app.latestMetadata!);
+                } catch (e) {
+                  // ignore: use_build_context_synchronously
+                  context.showError(
+                      title: 'Unable to zap', description: e.toString());
+                }
               }
-            },
-            builder: (context, child, callback, state) {
-              return ElevatedButton(onPressed: callback, child: child);
             },
             child: Text('Zap!'),
           )

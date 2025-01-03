@@ -10,6 +10,7 @@ import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:ndk/domain_layer/usecases/nwc/nwc_connection.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/main.data.dart';
@@ -29,15 +30,11 @@ class SettingsScreen extends HookConsumerWidget {
     final systemInfoState = ref.watch(systemInfoNotifierProvider);
 
     final feedbackController = useTextEditingController();
-    final nwcController = useTextEditingController();
     final user = ref.settings
         .watchOne('_', alsoWatch: (_) => {_.user})
         .model!
         .user
         .value;
-    final isTextFieldEmpty = useState(true);
-
-    final nwcConnection = ref.watch(nwcConnectionProvider);
 
     return SingleChildScrollView(
       child: Column(
@@ -116,67 +113,7 @@ class SettingsScreen extends HookConsumerWidget {
           Gap(40),
           Divider(),
           Gap(40),
-          if (user != null)
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Gap(20),
-                Text(
-                    "Nostr Wallet Connect ${nwcConnection.value != null ? 'connected' : 'URI'}"),
-                if (nwcConnection.value != null)
-                  ElevatedButton(
-                    onPressed: () async {
-                      await ref
-                          .read(nwcConnectionProvider.notifier)
-                          .disconnectWallet();
-                    },
-                    style: ElevatedButton.styleFrom(
-                        disabledBackgroundColor: Colors.transparent,
-                        backgroundColor: Colors.transparent),
-                    child: Text('Disconnect'),
-                  ),
-                if (nwcConnection.value == null)
-                  TextField(
-                    autocorrect: false,
-                    controller: nwcController,
-                    onChanged: (value) {
-                      isTextFieldEmpty.value = value.isEmpty;
-                    },
-                    decoration: InputDecoration(
-                      hintText: 'nostr+walletconnect://...',
-                      suffixIcon: AsyncButtonBuilder(
-                        disabled: isTextFieldEmpty.value,
-                        loadingWidget: SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(),
-                        ),
-                        onPressed: () async {
-                          final nwcUri = nwcController.text.trim();
-                          await ref
-                              .read(nwcConnectionProvider.notifier)
-                              .connectWallet(nwcUri);
-                        },
-                        builder: (context, child, callback, buttonState) {
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 2),
-                            child: SizedBox(
-                              child: ElevatedButton(
-                                onPressed: callback,
-                                style: ElevatedButton.styleFrom(
-                                    disabledBackgroundColor: Colors.transparent,
-                                    backgroundColor: Colors.transparent),
-                                child: child,
-                              ),
-                            ),
-                          );
-                        },
-                        child: Text('Connect'),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+          if (user != null) NostrWalletConnectContainer(),
           Gap(40),
           Divider(),
           Gap(40),
@@ -277,6 +214,84 @@ class SettingsScreen extends HookConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class NostrWalletConnectContainer extends HookConsumerWidget {
+  final bool dialogMode;
+  const NostrWalletConnectContainer({
+    super.key,
+    this.dialogMode = false,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final nwcConnection = ref.watch(nwcConnectionProvider);
+    final controller = useTextEditingController(text: '');
+    final isTextFieldEmpty = useState(true);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Gap(20),
+        Text(
+            "Nostr Wallet Connect ${nwcConnection.value != null ? 'connected' : 'URI'}"),
+        if (nwcConnection.value != null && !dialogMode)
+          ElevatedButton(
+            onPressed: () async {
+              await ref.read(nwcConnectionProvider.notifier).disconnectWallet();
+            },
+            style: ElevatedButton.styleFrom(
+                disabledBackgroundColor: Colors.transparent,
+                backgroundColor: Colors.transparent),
+            child: Text('Disconnect'),
+          ),
+        if (nwcConnection.value == null)
+          TextField(
+            autocorrect: false,
+            controller: controller,
+            onChanged: (value) {
+              isTextFieldEmpty.value = value.isEmpty;
+            },
+            decoration: InputDecoration(
+              hintText: 'nostr+walletconnect://...',
+              suffixIcon: AsyncButtonBuilder(
+                disabled: isTextFieldEmpty.value,
+                loadingWidget: SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(),
+                ),
+                onPressed: () async {
+                  final nwcUri = controller.text.trim();
+                  await ref
+                      .read(nwcConnectionProvider.notifier)
+                      .connectWallet(nwcUri);
+                  if (dialogMode && context.mounted) {
+                    Navigator.of(context).pop();
+                  }
+                },
+                builder: (context, child, callback, buttonState) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 2),
+                    child: SizedBox(
+                      child: ElevatedButton(
+                        onPressed: callback,
+                        style: ElevatedButton.styleFrom(
+                            disabledBackgroundColor: Colors.transparent,
+                            backgroundColor: Colors.transparent),
+                        child: child,
+                      ),
+                    ),
+                  );
+                },
+                child: Text('Connect'),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

@@ -5,12 +5,11 @@ import 'package:ndk/domain_layer/entities/nip_01_event.dart';
 import 'package:zapstore/main.data.dart';
 
 import 'package:flutter/material.dart';
-import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:zapstore/models/file_metadata.dart';
 import 'package:zapstore/models/user.dart';
 import 'package:zapstore/models/zap_receipt.dart';
-import 'package:zapstore/widgets/rounded_image.dart';
+import 'package:zapstore/widgets/users_rich_text.dart';
 
 class ZapReceipts extends HookConsumerWidget {
   ZapReceipts({
@@ -39,32 +38,10 @@ class ZapReceipts extends HookConsumerWidget {
     final senderIds = receipts.map((r) => r.senderPubkey).toSet();
     final senders = ref.users.findManyLocalByIds(senderIds);
 
-    return Row(
-      children: [
-        Text("⚡ $totalAmountInSats sats (${receipts.length} zaps)"),
-        Gap(5),
-        RichText(
-          text: TextSpan(
-            children: [
-              for (final user in senders)
-                TextSpan(
-                  style: TextStyle(height: 1.6),
-                  children: [
-                    WidgetSpan(
-                      alignment: PlaceholderAlignment.middle,
-                      child: Wrap(
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          RoundedImage(url: user.avatarUrl, size: 20),
-                        ],
-                      ),
-                    ),
-                  ],
-                )
-            ],
-          ),
-        )
-      ],
+    return UsersRichText(
+      preSpan: TextSpan(text: '⚡ $totalAmountInSats sats by'),
+      trailingText: ' and others',
+      users: senders,
     );
   }
 }
