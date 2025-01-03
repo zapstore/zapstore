@@ -252,7 +252,7 @@ class AppDetailScreen extends HookConsumerWidget {
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
                                             Text(
-                                              '${app.latestMetadata!.hash!.substring(0, 6)}...${app.latestMetadata!.hash!.substring(58, 64)}',
+                                              app.latestMetadata!.hash!.shorten,
                                               maxLines: 1,
                                             ),
                                             Gap(6),
@@ -285,7 +285,8 @@ class AppDetailScreen extends HookConsumerWidget {
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
                                             Text(
-                                              '${app.latestMetadata!.apkSignatureHash!.substring(0, 6)}...${app.latestMetadata!.apkSignatureHash!.substring(58, 64)}',
+                                              app.latestMetadata!
+                                                  .apkSignatureHash!.shorten,
                                               maxLines: 1,
                                             ),
                                             Gap(6),

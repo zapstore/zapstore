@@ -66,7 +66,7 @@ class User extends base.User with DataModelMixin<User> {
 
     final commentLength = lnResponse['commentAllowed'];
     comment =
-        commentLength != null ? comment?.substringMax(commentLength) : comment;
+        commentLength != null ? comment?.safeSubstring(commentLength) : comment;
 
     var callbackUri = Uri.parse(lnResponse['callback']!);
     callbackUri = callbackUri.replace(
@@ -114,7 +114,7 @@ class User extends base.User with DataModelMixin<User> {
   @DataRelationship(inverse: 'user')
   final BelongsTo<Settings> settings;
 
-  String get nameOrNpub => name ?? npub.substringMax(18);
+  String get nameOrNpub => name ?? npub.shorten;
 }
 
 mixin UserAdapter on NostrAdapter<User> {

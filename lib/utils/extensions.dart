@@ -126,8 +126,16 @@ extension StringWidget on String {
     });
   }
 
-  String substringMax(int size) {
+  String safeSubstring(int size) {
     return substring(0, min(length, size)) + (size < length ? '...' : '');
+  }
+
+  String get shorten {
+    // npub1wf4puf...43dgh9
+    if (length < 18) return this;
+    final leading = substring(0, 9);
+    final trailing = substring(length - 6, length - 1);
+    return '$leading...$trailing';
   }
 
   String removeParenthesis() {

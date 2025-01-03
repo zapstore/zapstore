@@ -212,7 +212,7 @@ class SignInDialogBox extends HookConsumerWidget {
                         if (context.mounted) {
                           context.showError(
                               title: e.toString(),
-                              description: stack.toString().substringMax(200));
+                              description: stack.toString().safeSubstring(200));
                         }
                       }
                     },

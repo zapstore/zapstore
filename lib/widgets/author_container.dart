@@ -44,7 +44,7 @@ class AuthorContainer extends StatelessWidget {
               children: [
                 Text(beforeText),
                 Text(
-                  user.nameOrNpub.substringMax(24),
+                  user.nameOrNpub,
                   style: TextStyle(fontWeight: FontWeight.bold),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
