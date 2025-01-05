@@ -105,6 +105,13 @@ mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
     return r.isNotEmpty;
   }
 
+  Iterable<String> existingIds(Iterable<Object> ids) {
+    final r = db.select(
+        'SELECT id FROM _keys WHERE id in (${ids.map((e) => '?').join(',')})',
+        ids.toList());
+    return r.map((e) => e['id']);
+  }
+
   @override
   Future<List<T>> findAll(
       {bool? remote,

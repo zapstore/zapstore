@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:dart_emoji/dart_emoji.dart';
@@ -150,3 +151,33 @@ extension TextExt on Text {
 }
 
 const kZapstoreAppIdentifier = 'dev.zapstore.app';
+
+// stream utils
+
+Stream<List<T>> bufferByTime<T>(Stream<T> source, Duration duration) {
+  final controller = StreamController<List<T>>();
+
+  final buffer = [];
+
+  Timer? timer;
+
+  // Listen to the source stream
+  source.listen((data) {
+    buffer.add(data);
+
+    // If there's no active timer, start one
+    timer ??= Timer(duration, () {
+      controller.add(List.from(buffer)); // Emit buffered data
+      buffer.clear(); // Clear the buffer
+      timer = null; // Reset the timer
+    });
+  }, onDone: () {
+    // Emit remaining items in the buffer when the source is done
+    if (buffer.isNotEmpty) {
+      controller.add(List.from(buffer));
+    }
+    controller.close(); // Close the controller
+  });
+
+  return controller.stream; // Return the buffered stream
+}

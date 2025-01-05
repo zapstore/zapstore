@@ -63,7 +63,7 @@ class ZapReceipts extends HookConsumerWidget {
 class ZapReceiptsNotifier extends StateNotifier<AsyncValue<Set<ZapReceipt>>> {
   Ref ref;
   final FileMetadata fileMetadata;
-  StreamSubscription<Nip01Event>? sub;
+  StreamSubscription<List<Nip01Event>>? sub;
 
   ZapReceiptsNotifier(this.ref, this.fileMetadata) : super(AsyncLoading()) {
     final adapter = ref.users.nostrAdapter;
@@ -78,15 +78,15 @@ class ZapReceiptsNotifier extends StateNotifier<AsyncValue<Set<ZapReceipt>>> {
       return;
     }
 
-    final localReceipts = ref.zapReceipts.zapReceiptAdapter
+    final localZapReceipts = ref.zapReceipts.zapReceiptAdapter
         .findByRecipient(
             pubkey: developerPubkey, eventId: fileMetadata.id!.toString())
         .toSet();
-    state = AsyncData(localReceipts);
+    _loadZappers(localZapReceipts);
+    state = AsyncData(localZapReceipts);
 
-    print('querying for $developerPubkey and id ${fileMetadata.event.id}');
-
-    final latestReceiptTimestamp = localReceipts
+    // NOTE: ideally this caching stuff should be handled by purplebase
+    final latestReceiptTimestamp = localZapReceipts
         .sortedBy((z) => z.event.createdAt)
         .lastOrNull
         ?.event
@@ -106,10 +106,34 @@ class ZapReceiptsNotifier extends StateNotifier<AsyncValue<Set<ZapReceipt>>> {
       ],
     );
 
-    sub = receiptsResponse.stream.listen((data) {
-      final model = ZapReceipt.fromJson(data.toJson()).init().saveLocal();
-      state = AsyncData({if (state.hasValue) ...state.value!, model});
+    sub = bufferByTime(receiptsResponse.stream, Duration(seconds: 1))
+        .listen((data) async {
+      final zapReceipts =
+          data.map((r) => ZapReceipt.fromJson(r.toJson()).init().saveLocal());
+      await _loadZappers(zapReceipts);
+      state = AsyncData({if (state.hasValue) ...state.value!, ...zapReceipts});
     });
+  }
+
+  // Load senders - this tedious work will be handled by purplebase at some point
+  Future<void> _loadZappers(Iterable<ZapReceipt> receipts) async {
+    // If we do not have the users locally, trigger a remote fetch
+    final receiptsPubkeys = receipts.map((r) => r.senderPubkey).toSet();
+    final existingPubkeysLocally =
+        ref.users.nostrAdapter.existingIds(receiptsPubkeys).toSet();
+    final missingPubkeysLocally =
+        receiptsPubkeys.difference(existingPubkeysLocally);
+    if (missingPubkeysLocally.isNotEmpty) {
+      final fetchedSenders =
+          await ref.users.findAll(params: {'authors': missingPubkeysLocally});
+      final stillMissingPubkeys = missingPubkeysLocally
+          .toSet()
+          .difference(fetchedSenders.map((s) => s.id!.toString()).toSet());
+      for (final pubkey in stillMissingPubkeys) {
+        // If relays do not have it, create a dummy local user
+        User.fromPubkey(pubkey).init().saveLocal();
+      }
+    }
   }
 
   @override
