@@ -105,6 +105,16 @@ class User extends base.User with DataModelMixin<User> {
         settings = belongsTo(map['settings']),
         super.fromJson();
 
+  User.fromPubkey(String pubkey)
+      : this.fromJson({
+          'id': pubkey,
+          'kind': 0,
+          'pubkey': pubkey.hexKey,
+          'created_at': DateTime.now().millisecondsSinceEpoch ~/ 1000,
+          'content': '{}',
+          'tags': [],
+        });
+
   Map<String, dynamic> toJson() => super.toMap();
 
   @DataRelationship(inverse: 'followers')
@@ -173,13 +183,8 @@ mixin UserAdapter on NostrAdapter<User> {
 
     if (publicKey.startsWith('npub')) {
       publicKey = publicKey.hexKey;
-    } else {
-      // If it's not an npub we treat the string as NIP-05
-      if (!publicKey.contains('@')) {
-        // If it does not have a @, we treat the string as a domain name
-        publicKey = '_@$publicKey';
-      }
-
+    } else if (publicKey.contains('@')) {
+      // If it's not an npub and it has a @ instead, we treat the string as NIP-05
       final [username, domain] = publicKey.split('@');
       publicKey = await sendRequest<dynamic>(
         Uri.parse('https://$domain/.well-known/nostr.json?name=$username'),

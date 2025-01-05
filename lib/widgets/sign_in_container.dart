@@ -147,15 +147,9 @@ class SignInDialogBox extends HookConsumerWidget {
 
                       // If user was not found on relays, we create a
                       // local user to represent this new npub
-                      user ??= User.fromJson({
-                        'id': signedInNpub.hexKey,
-                        'kind': 0,
-                        'pubkey': signedInNpub.hexKey,
-                        'created_at':
-                            DateTime.now().millisecondsSinceEpoch ~/ 1000,
-                        'content': '{}',
-                        'tags': [],
-                      }).init().saveLocal();
+                      user ??= User.fromPubkey(signedInNpub.hexKey)
+                          .init()
+                          .saveLocal();
 
                       final settings = ref.settings.findOneLocalById('_')!;
                       settings.signInMethod = SignInMethod.nip55;

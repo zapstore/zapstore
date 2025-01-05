@@ -50,16 +50,10 @@ final appInitializer = FutureProvider<void>((ref) async {
   await amberSigner.initialize();
 
   // Set up anon user (pubkey derives from pkSigner secret key)
-  final anonPubkey =
-      'c86eda2daae768374526bc54903f388d9a866c00740ec8db418d7ef2dca77b5b';
-  anonUser ??= User.fromJson({
-    'id': anonPubkey,
-    'kind': 0,
-    'pubkey': anonPubkey,
-    'created_at': DateTime.now().millisecondsSinceEpoch ~/ 1000,
-    'content': '{}',
-    'tags': [],
-  }).init().saveLocal();
+  anonUser ??= User.fromPubkey(
+          'c86eda2daae768374526bc54903f388d9a866c00740ec8db418d7ef2dca77b5b')
+      .init()
+      .saveLocal();
 
   // App-wide listeners
 
