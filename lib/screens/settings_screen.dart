@@ -29,11 +29,7 @@ class SettingsScreen extends HookConsumerWidget {
     final systemInfoState = ref.watch(systemInfoNotifierProvider);
 
     final feedbackController = useTextEditingController();
-    final user = ref.settings
-        .watchOne('_', alsoWatch: (_) => {_.user})
-        .model!
-        .user
-        .value;
+    final signedInUser = ref.watch(signedInUserProvider);
 
     return SingleChildScrollView(
       child: Column(
@@ -57,16 +53,17 @@ class SettingsScreen extends HookConsumerWidget {
             maxLines: 10,
           ),
           Gap(20),
-          if (user == null) SignInButton(minimal: true),
-          if (user != null &&
-                  user.settings.value!.signInMethod != SignInMethod.nip55 ||
+          if (signedInUser == null) SignInButton(minimal: true),
+          if (signedInUser != null &&
+                  signedInUser.settings.value!.signInMethod !=
+                      SignInMethod.nip55 ||
               !amberSigner.isAvailable)
             Text(
                 'To share feedback, you must be signed in with Amber. You can also message us on nostr!',
                 style: TextStyle(
                     color: Colors.red[300], fontWeight: FontWeight.bold)),
-          if (user != null &&
-              user.settings.value!.signInMethod == SignInMethod.nip55 &&
+          if (signedInUser != null &&
+              signedInUser.settings.value!.signInMethod == SignInMethod.nip55 &&
               amberSigner.isAvailable)
             AsyncButtonBuilder(
               loadingWidget: SmallCircularProgressIndicator(),
@@ -76,7 +73,7 @@ class SettingsScreen extends HookConsumerWidget {
                       PartialDirectMessage(
                           content: feedbackController.text.trim(),
                           receiver: kZapstorePubkey.npub),
-                      withPubkey: user.pubkey);
+                      withPubkey: signedInUser.pubkey);
                   try {
                     final response = await http.post(
                         Uri.parse('https://relay.zapstore.dev/'),
@@ -98,15 +95,9 @@ class SettingsScreen extends HookConsumerWidget {
                   }
                 }
               },
-              builder: (context, child, callback, state) {
-                return switch (state) {
-                  _ => ElevatedButton(
-                      onPressed: callback,
-                      child: child,
-                    ),
-                };
-              },
-              child: Text('Send as ${user.nameOrNpub}'),
+              builder: (context, child, callback, state) =>
+                  ElevatedButton(onPressed: callback, child: child),
+              child: Text('Send as ${signedInUser.nameOrNpub}'),
             ),
           Gap(20),
           Divider(),

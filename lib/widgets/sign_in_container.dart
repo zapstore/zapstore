@@ -26,11 +26,7 @@ class SignInButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.settings
-        .watchOne('_', alsoWatch: (_) => {_.user})
-        .model
-        ?.user
-        .value;
+    final user = ref.watch(signedInUserProvider);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

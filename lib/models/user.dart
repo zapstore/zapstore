@@ -247,6 +247,14 @@ mixin UserAdapter on NostrAdapter<User> {
   }
 }
 
+final signedInUserProvider = Provider<User?>((ref) {
+  return ref.settings
+      .watchOne('_', alsoWatch: (_) => {_.user})
+      .model
+      ?.user
+      .value;
+});
+
 const kZapstorePubkey =
     '78ce6faa72264387284e647ba6938995735ec8c7d5c5a65737e55130f026307d';
 

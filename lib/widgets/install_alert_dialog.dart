@@ -3,9 +3,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:purplebase/purplebase.dart' as base;
-import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
-import 'package:zapstore/models/settings.dart';
 import 'package:zapstore/models/user.dart';
 import 'package:zapstore/widgets/sign_in_container.dart';
 import 'package:zapstore/widgets/author_container.dart';
@@ -22,11 +20,7 @@ class InstallAlertDialog extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final trustedSignerNotifier = useState(false);
-    final user = ref.settings
-        .watchOne('_', alsoWatch: (_) => {_.user})
-        .model!
-        .user
-        .value;
+    final signedInUser = ref.watch(signedInUserProvider);
 
     return AlertDialog(
       elevation: 10,
@@ -50,10 +44,10 @@ class InstallAlertDialog extends HookConsumerWidget {
             Gap(20),
             if (app.signer.value != null)
               WebOfTrustContainer(
-                fromNpub: user?.npub ?? kFranzapPubkey.npub,
+                fromNpub: signedInUser?.npub ?? kFranzapPubkey.npub,
                 toNpub: app.signer.value!.npub,
               ),
-            if (user == null)
+            if (signedInUser == null)
               SignInButton(
                 label: 'Sign in to view your web of trust',
                 minimal: true,

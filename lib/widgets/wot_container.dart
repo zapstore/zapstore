@@ -1,10 +1,7 @@
-import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:purplebase/purplebase.dart' as base;
 import 'package:zapstore/main.data.dart';
-import 'package:zapstore/models/settings.dart';
 import 'package:zapstore/models/user.dart';
 import 'package:zapstore/screens/settings_screen.dart';
 import 'package:zapstore/widgets/users_rich_text.dart';
@@ -23,25 +20,20 @@ class WebOfTrustContainer extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final data =
         ref.watch(followsWhoFollowProvider((from: fromNpub, to: toNpub)));
+    final signedInUser = ref.watch(signedInUserProvider);
 
     return switch (data) {
       AsyncData<List<User>>(value: final trustedUsers) => Builder(
           builder: (context) {
-            final hasUser =
-                trustedUsers.firstWhereOrNull((u) => u.npub == fromNpub) !=
-                    null;
-            final trustedUsersWithoutLoggedInUser =
-                trustedUsers.where((u) => u.npub != fromNpub).toList();
-            if (trustedUsersWithoutLoggedInUser.isEmpty) {
+            if (trustedUsers.isEmpty) {
               return Text(
                   'No trusted users between you and the signer. (This may be a service error)');
             }
 
             return UsersRichText(
-              leadingText:
-                  hasUser && fromNpub != kFranzapPubkey.npub ? 'You, ' : null,
+              users: trustedUsers,
+              signedInUser: signedInUser,
               trailingText: ' and others follow this signer on nostr.',
-              users: trustedUsersWithoutLoggedInUser,
             );
           },
         ),
@@ -66,8 +58,7 @@ class WebOfTrustContainer extends HookConsumerWidget {
 
 final followsWhoFollowProvider = FutureProvider.autoDispose
     .family<List<User>, ({String from, String to})>((ref, arg) async {
-  final _ =
-      ref.settings.watchOne('_', alsoWatch: (_) => {_.user}).model!.user.value;
+  final _ = ref.watch(signedInUserProvider);
   final users = await ref.users.userAdapter.getTrusted(arg.from, arg.to);
   return users.toSet().toList();
 });

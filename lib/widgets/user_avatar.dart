@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:zapstore/main.data.dart';
-import 'package:zapstore/models/settings.dart';
+import 'package:zapstore/models/user.dart';
 import 'package:zapstore/widgets/rounded_image.dart';
 
 class UserAvatar extends HookConsumerWidget {
@@ -9,11 +8,7 @@ class UserAvatar extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.settings
-        .watchOne('_', alsoWatch: (_) => {_.user})
-        .model!
-        .user
-        .value;
-    return RoundedImage(url: user?.avatarUrl, size: 46);
+    final signedInUser = ref.watch(signedInUserProvider);
+    return RoundedImage(url: signedInUser?.avatarUrl, size: 46);
   }
 }

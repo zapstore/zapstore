@@ -1,9 +1,10 @@
+import 'package:async_button_builder/async_button_builder.dart';
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
-import 'package:zapstore/models/settings.dart';
+import 'package:zapstore/models/user.dart';
 import 'package:zapstore/navigation/app_initializer.dart';
 import 'package:zapstore/screens/settings_screen.dart';
 import 'package:zapstore/utils/extensions.dart';
@@ -30,7 +31,16 @@ class ZapButton extends HookConsumerWidget {
       return Container();
     }
 
-    return ElevatedButton(
+    return AsyncButtonBuilder(
+      loadingWidget: Text('⚡️ Zapping...').bold,
+      builder: (context, child, callback, state) => ElevatedButton(
+        onPressed: callback,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color.fromARGB(255, 60, 60, 54),
+          disabledBackgroundColor: Colors.grey[600],
+        ),
+        child: child,
+      ),
       onPressed: nwcConnection.isLoading
           ? null
           : () async {
@@ -59,13 +69,10 @@ class ZapButton extends HookConsumerWidget {
                       children: [
                         Consumer(
                           builder: (context, ref, _) {
-                            final user = ref.settings
-                                .watchOne('_', alsoWatch: (_) => {_.user})
-                                .model!
-                                .user
-                                .value;
+                            final signedInUser =
+                                ref.watch(signedInUserProvider);
 
-                            if (user == null) {
+                            if (signedInUser == null) {
                               return Column(
                                 children: [
                                   Text(
@@ -141,10 +148,10 @@ class ZapButton extends HookConsumerWidget {
               if (amount > 0) {
                 try {
                   // Reload user as we are in a callback and it could have changed
-                  final loggedInUser =
+                  final signedInUser =
                       ref.settings.findOneLocalById('_')!.user.value;
-                  if (loggedInUser != null) {
-                    await loggedInUser.zap(amount,
+                  if (signedInUser != null) {
+                    await signedInUser.zap(amount,
                         event: app.latestMetadata!, comment: comment);
                   } else {
                     await anonUser!.zap(amount,
@@ -161,10 +168,6 @@ class ZapButton extends HookConsumerWidget {
                 }
               }
             },
-      style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.grey[800],
-        disabledBackgroundColor: Colors.grey[500],
-      ),
       child: Text(
         '⚡️ Zap this release',
         style: TextStyle(

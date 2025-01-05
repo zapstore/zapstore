@@ -25,6 +25,8 @@ class ZapReceipts extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final signedInUser = ref.watch(signedInUserProvider);
+
     // NOTE: These watchers will become more efficient
     ref.users.watchAll();
 
@@ -47,14 +49,25 @@ class ZapReceipts extends HookConsumerWidget {
     final receipts = zapReceipts.value!;
     final totalAmountInSats = receipts.fold(0, (acc, e) => acc + e.amount);
 
-    final senderIds = receipts.map((r) => r.senderPubkey).toSet();
-    final senders = ref.users.findManyLocalByIds(senderIds);
+    final zapperIds = receipts.map((r) => r.senderPubkey).toSet();
+    final zappers = ref.users.findManyLocalByIds(zapperIds);
 
     return Padding(
       padding: const EdgeInsets.only(top: 10, bottom: 10),
       child: UsersRichText(
-        leadingText: '⚡ $totalAmountInSats sats zapped from ',
-        users: senders,
+        leadingTextSpan: TextSpan(
+          style: TextStyle(fontSize: 16),
+          children: [
+            TextSpan(text: '⚡'),
+            TextSpan(
+                text: ' $totalAmountInSats sats ',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            TextSpan(text: 'zapped by'),
+          ],
+        ),
+        users: zappers,
+        signedInUser: signedInUser,
+        maxUsersToDisplay: 5,
       ),
     );
   }
