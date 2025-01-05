@@ -35,10 +35,8 @@ mixin ZapReceiptAdapter on Adapter<ZapReceipt> {
 
   List<ZapReceipt> findByRecipient(
       {required String pubkey, required String eventId}) {
-    // NOTE: This query is technically incorrect using IN, but the probability of clashing p/e IDs is extremely low
-    // This will be fixed with the new purplebase
     final result = db.select(
-        "SELECT z.key, data from zapReceipts z, json_each(json_extract(data, '\$.tags')) WHERE json_extract(value, '\$[0]') in ('p', 'e') and json_extract(value, '\$[1]') in (?, ?)",
+        "SELECT z.key, value from zapReceipts z, json_each(json_extract(data, '\$.tags')) WHERE json_extract(value, '\$[0]') = 'p' AND json_extract(value, '\$[1]') = ?AND json_extract(value, '\$[0]') = 'e' AND json_extract(value, '\$[1]') = ?",
         [pubkey, eventId]);
     return deserializeFromResult(result);
   }
