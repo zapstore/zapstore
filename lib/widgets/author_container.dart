@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:zapstore/models/user.dart';
-import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/rounded_image.dart';
 
 class AuthorContainer extends StatelessWidget {

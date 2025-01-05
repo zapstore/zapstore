@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
@@ -29,6 +30,7 @@ class ZapButton extends HookConsumerWidget {
         .value;
 
     final amountController = TextEditingController();
+    final commentController = TextEditingController();
 
     if (app.developer.value?.lud16 == null) {
       return Container();
@@ -52,7 +54,7 @@ class ZapButton extends HookConsumerWidget {
                 }
               }
 
-              final amount = await showDialog<int>(
+              final valueRecord = await showDialog<(int, String)>(
                 // ignore: use_build_context_synchronously
                 context: context,
                 builder: (context) {
@@ -72,41 +74,48 @@ class ZapButton extends HookConsumerWidget {
                           controller: amountController,
                           keyboardType: TextInputType.number,
                           decoration:
-                              InputDecoration(hintText: "Enter amount in sats"),
+                              InputDecoration(hintText: 'Enter amount in sats'),
                         ),
-                        SizedBox(height: 20),
+                        Gap(20),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             ElevatedButton(
-                              onPressed: () => Navigator.of(context).pop(21),
-                              child: Text('⚡️ 21'),
+                              onPressed: () => amountController.text = '21',
+                              child: Text('⚡️21'),
                             ),
+                            Gap(3),
                             ElevatedButton(
-                              onPressed: () => Navigator.of(context).pop(210),
-                              child: Text('⚡️ 210'),
+                              onPressed: () => amountController.text = '210',
+                              child: Text('⚡️210'),
                             ),
+                            Gap(3),
                             ElevatedButton(
-                              onPressed: () => Navigator.of(context).pop(2100),
-                              child: Text('⚡️ 2100'),
+                              onPressed: () => amountController.text = '2100',
+                              child: Text('⚡️2100'),
                             ),
                           ],
+                        ),
+                        TextField(
+                          controller: commentController,
+                          decoration:
+                              InputDecoration(hintText: 'Leave a comment'),
                         ),
                       ],
                     ),
                     actions: [
                       TextButton(
                         child: Text('Cancel'),
-                        onPressed: () {
-                          Navigator.of(context)
-                              .pop(); // Dismiss the dialog without returning an amount
-                        },
+                        onPressed: () => Navigator.of(context).pop(),
                       ),
                       TextButton(
                         child: Text('Zap').bold,
                         onPressed: () {
-                          Navigator.of(context)
-                              .pop(int.tryParse(amountController.text) ?? 0);
+                          final record = (
+                            int.tryParse(amountController.text) ?? 0,
+                            commentController.text
+                          );
+                          Navigator.of(context).pop(record);
                         },
                       ),
                     ],
@@ -114,17 +123,29 @@ class ZapButton extends HookConsumerWidget {
                 },
               );
 
-              if (amount != null && amount > 0) {
+              if (valueRecord == null) {
+                return;
+              }
+              final (amount, comment) = valueRecord;
+
+              if (amount > 0) {
                 try {
                   // ignore: use_build_context_synchronously
                   context.showInfo('Zap sent!',
                       description:
                           '$amount sats on their way. Your zap should show up in a few seconds.');
-                  if (user != null) {
-                    await user.zap(amount, event: app.latestMetadata!);
+
+                  // Reload user as we are in a callback and it could have changed
+                  final loggedInUser =
+                      ref.settings.findOneLocalById('_')!.user.value;
+                  if (loggedInUser != null) {
+                    await loggedInUser.zap(amount,
+                        event: app.latestMetadata!, comment: comment);
                   } else {
                     await anonUser!.zap(amount,
-                        event: app.latestMetadata!, signer: pkSigner);
+                        event: app.latestMetadata!,
+                        signer: pkSigner,
+                        comment: comment);
                   }
                 } catch (e) {
                   // ignore: use_build_context_synchronously
