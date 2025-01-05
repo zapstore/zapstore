@@ -17,10 +17,7 @@ extension ContextX on BuildContext {
       icon: icon ?? Icon(Icons.info),
       style: ToastificationStyle.fillColored,
       alignment: Alignment.topCenter,
-      title: Text(
-        message,
-        style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-      ),
+      title: _ToastTitleWidget(message),
       description: description != null
           ? _ToastDescriptionWidget(description: description)
           : null,
@@ -30,9 +27,8 @@ extension ContextX on BuildContext {
     );
   }
 
-  void showError(
-      {required String title,
-      String? description,
+  void showError(String title,
+      {String? description,
       Icon? icon,
       List<(String, Future<void> Function())> actions = const []}) {
     toastification.show(
@@ -41,12 +37,7 @@ extension ContextX on BuildContext {
       style: ToastificationStyle.fillColored,
       alignment: Alignment.topCenter,
       icon: icon ?? Icon(Icons.error),
-      title: Text(
-        title,
-        style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-        overflow: TextOverflow.ellipsis,
-        maxLines: 4,
-      ),
+      title: _ToastTitleWidget(title),
       showProgressBar: false,
       closeOnClick: true,
       description: description != null
@@ -64,10 +55,7 @@ extension ContextX on BuildContext {
       type: ToastificationType.info,
       icon: Icon(Icons.info),
       style: ToastificationStyle.fillColored,
-      title: Text(
-        'Zapstore has a new version available',
-        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-      ),
+      title: _ToastTitleWidget('Zapstore has a new version available'),
       description: Text('Tap to go to update screen'),
       callbacks: ToastificationCallbacks(
         onTap: (item) {
@@ -78,6 +66,21 @@ extension ContextX on BuildContext {
       showProgressBar: false,
       closeButtonShowType: CloseButtonShowType.always,
       alignment: Alignment.topCenter,
+    );
+  }
+}
+
+class _ToastTitleWidget extends StatelessWidget {
+  final String text;
+  const _ToastTitleWidget(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+      overflow: TextOverflow.ellipsis,
+      maxLines: 4,
     );
   }
 }
@@ -93,7 +96,12 @@ class _ToastDescriptionWidget extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        RichText(text: TextSpan(text: description)),
+        RichText(
+          text: TextSpan(
+            text: description,
+            style: TextStyle(fontSize: 16),
+          ),
+        ),
         for (final (text, fn) in actions)
           ElevatedButton(
             style: ElevatedButton.styleFrom(

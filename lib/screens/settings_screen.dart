@@ -92,8 +92,8 @@ class SettingsScreen extends HookConsumerWidget {
                     feedbackController.clear();
                   } catch (e, stack) {
                     if (context.mounted) {
-                      context.showError(
-                          title: e.toString(), description: stack.toString());
+                      context.showError(e.toString(),
+                          description: stack.toString());
                     }
                   }
                 }
@@ -205,8 +205,7 @@ class SettingsScreen extends HookConsumerWidget {
                 }
               } catch (e) {
                 if (context.mounted) {
-                  context.showError(
-                      title: 'Unable to send system info',
+                  context.showError('Unable to send system info',
                       description: e.toString());
                 }
               }

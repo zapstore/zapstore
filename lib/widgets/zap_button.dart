@@ -23,12 +23,6 @@ class ZapButton extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final nwcConnection = ref.watch(nwcConnectionProvider);
-    final user = ref.settings
-        .watchOne('_', alsoWatch: (_) => {_.user})
-        .model!
-        .user
-        .value;
-
     final amountController = TextEditingController();
     final commentController = TextEditingController();
 
@@ -59,17 +53,33 @@ class ZapButton extends HookConsumerWidget {
                 context: context,
                 builder: (context) {
                   return AlertDialog(
-                    title: Text('Choose zap amount').bold,
+                    title: Text('Zap this release').bold,
                     content: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (user == null)
-                          SignInButton(
-                            publicKeyAllowed: false,
-                            minimal: true,
-                            signedOutText:
-                                '⚠️ If you do not sign in, you will be zapping anonymously',
-                          ),
+                        Consumer(
+                          builder: (context, ref, _) {
+                            final user = ref.settings
+                                .watchOne('_', alsoWatch: (_) => {_.user})
+                                .model!
+                                .user
+                                .value;
+
+                            if (user == null) {
+                              return Column(
+                                children: [
+                                  Text(
+                                      '⚠️ If you do not sign in, you will be zapping anonymously'),
+                                  SignInButton(
+                                    publicKeyAllowed: false,
+                                    minimal: true,
+                                  ),
+                                ],
+                              );
+                            }
+                            return Container();
+                          },
+                        ),
                         TextField(
                           controller: amountController,
                           keyboardType: TextInputType.number,
@@ -98,8 +108,8 @@ class ZapButton extends HookConsumerWidget {
                         ),
                         TextField(
                           controller: commentController,
-                          decoration:
-                              InputDecoration(hintText: 'Leave a comment'),
+                          decoration: InputDecoration(
+                              hintText: 'Add a comment (optional)'),
                         ),
                       ],
                     ),
@@ -130,11 +140,6 @@ class ZapButton extends HookConsumerWidget {
 
               if (amount > 0) {
                 try {
-                  // ignore: use_build_context_synchronously
-                  context.showInfo('Zap sent!',
-                      description:
-                          '$amount sats on their way. Your zap should show up in a few seconds.');
-
                   // Reload user as we are in a callback and it could have changed
                   final loggedInUser =
                       ref.settings.findOneLocalById('_')!.user.value;
@@ -147,10 +152,12 @@ class ZapButton extends HookConsumerWidget {
                         signer: pkSigner,
                         comment: comment);
                   }
+                  // ignore: use_build_context_synchronously
+                  context.showInfo('$amount sat${amount > 1 ? 's' : ''} sent!',
+                      description: 'Payment was successful');
                 } catch (e) {
                   // ignore: use_build_context_synchronously
-                  context.showError(
-                      title: 'Unable to zap', description: e.toString());
+                  context.showError('Unable to zap', description: e.toString());
                 }
               }
             },

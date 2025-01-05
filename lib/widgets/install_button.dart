@@ -51,8 +51,8 @@ class InstallButton extends HookConsumerWidget {
                   if (settings.trustedUsers.contains(app.signer.value!)) {
                     app.install().catchError((e) {
                       if (context.mounted) {
-                        context.showError(
-                            title: 'Could not install', description: e.message);
+                        context.showError('Could not install',
+                            description: e.message);
                       }
                     });
                   } else {
@@ -64,8 +64,8 @@ class InstallButton extends HookConsumerWidget {
                 } else if (app.canUpdate) {
                   app.install().catchError((e) {
                     if (context.mounted) {
-                      context.showError(
-                          title: 'Could not install', description: e.message);
+                      context.showError('Could not install',
+                          description: e.message);
                     }
                   });
                 } else {
@@ -74,8 +74,8 @@ class InstallButton extends HookConsumerWidget {
               },
             ErrorInstallProgress(:final e, :final info, :final actions) => () {
                 // show error and reset state to idle
-                context.showError(
-                    title: e.message, description: info, actions: actions);
+                context.showError(e.message,
+                    description: info, actions: actions);
                 ref.read(installationProgressProvider(app.id!).notifier).state =
                     IdleInstallProgress();
               },

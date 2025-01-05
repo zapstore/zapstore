@@ -17,13 +17,12 @@ class SignInButton extends ConsumerWidget {
   final bool minimal;
   final String label;
   final bool publicKeyAllowed;
-  final String? signedOutText;
-  SignInButton(
-      {super.key,
-      this.minimal = false,
-      this.label = 'Sign in',
-      this.publicKeyAllowed = true,
-      this.signedOutText});
+  SignInButton({
+    super.key,
+    this.minimal = false,
+    this.label = 'Sign in',
+    this.publicKeyAllowed = true,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -36,7 +35,6 @@ class SignInButton extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (user == null && signedOutText != null) Text(signedOutText!),
         Row(
           children: [
             if (!minimal) RoundedImage(url: user?.avatarUrl, size: 46),
@@ -136,9 +134,8 @@ class SignInDialogBox extends HookConsumerWidget {
                       if (signedInNpub == null) {
                         if (context.mounted) {
                           Navigator.of(context).pop();
-                          context.showError(
-                              title: "Could not sign in",
-                              description: "Signer did not respond");
+                          context.showError('Could not sign in',
+                              description: 'Signer did not respond');
                         }
                         return;
                       }
@@ -204,8 +201,7 @@ class SignInDialogBox extends HookConsumerWidget {
                         }
                       } on Exception catch (e, stack) {
                         if (context.mounted) {
-                          context.showError(
-                              title: e.toString(),
+                          context.showError(e.toString(),
                               description: stack.toString().safeSubstring(200));
                         }
                       }
