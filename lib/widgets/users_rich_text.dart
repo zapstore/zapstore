@@ -1,3 +1,4 @@
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:zapstore/models/user.dart';
 import 'package:zapstore/widgets/rounded_image.dart';
@@ -9,6 +10,7 @@ class UsersRichText extends StatelessWidget {
   final User? signedInUser;
   final int? maxUsersToDisplay;
   final double fontSize;
+  final bool onlyUseCommaSeparator;
 
   const UsersRichText({
     super.key,
@@ -17,7 +19,8 @@ class UsersRichText extends StatelessWidget {
     required this.users,
     this.signedInUser,
     this.maxUsersToDisplay,
-    this.fontSize = 16,
+    this.fontSize = 15,
+    this.onlyUseCommaSeparator = false,
   });
 
   @override
@@ -30,50 +33,66 @@ class UsersRichText extends StatelessWidget {
         ? users.take(maxUsersToDisplay!).toList()
         : users;
 
-    return RichText(
-      text: TextSpan(
-        children: [
-          for (final user in usersToDisplay)
-            WidgetSpan(
-              alignment: PlaceholderAlignment.middle,
-              child: Wrap(
-                spacing: 0,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  if (usersToDisplay.indexOf(user) == 0 &&
-                      leadingTextSpan != null)
-                    RichText(text: leadingTextSpan!),
-                  if (user != signedInUser)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 2, right: 2),
-                      child: RoundedImage(url: user.avatarUrl, size: 20),
-                    ),
-                  Text(
-                    user == signedInUser
-                        ? (leadingTextSpan != null ? ' you' : 'You')
-                        : ' ${user.nameOrNpub}',
+    final spans = <InlineSpan>[];
+
+    if (leadingTextSpan != null) {
+      spans.add(leadingTextSpan!);
+    }
+
+    usersToDisplay.forEachIndexed((i, user) {
+      if (user == signedInUser) {
+        spans.add(TextSpan(
+            text: leadingTextSpan != null ? ' you' : 'You',
+            style: TextStyle(fontWeight: FontWeight.bold)));
+      } else {
+        spans.add(
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            // Add a wrap in order to treat it as a non-breaking block
+            child: Wrap(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: RoundedImage(url: user.avatarUrl, size: 20),
+                ),
+                Text(user.nameOrNpub,
                     style: TextStyle(
-                        fontSize: fontSize, fontWeight: FontWeight.bold),
-                  ),
-                  Text(
-                      usersToDisplay.indexOf(user) == usersToDisplay.length - 1
-                          ? ''
-                          : (usersToDisplay.indexOf(user) ==
-                                  usersToDisplay.length - 2
-                              ? usersToDisplay.length < users.length
-                                  ? ', '
-                                  : ' and '
-                              : ', '),
-                      style: TextStyle(fontSize: fontSize)),
-                  if (usersToDisplay.indexOf(user) == usersToDisplay.length - 1)
-                    Text(
-                        '${usersToDisplay.length < users.length ? ' and ${users.length - usersToDisplay.length} others' : ''}${trailingText ?? ''}',
-                        style: TextStyle(fontSize: fontSize))
-                ],
-              ),
+                        fontSize: fontSize, fontWeight: FontWeight.bold)),
+              ],
             ),
-        ],
-      ),
+          ),
+        );
+      }
+
+      // Before the last span
+      if (i < usersToDisplay.length - 2) {
+        spans.add(TextSpan(text: ', '));
+      }
+
+      if (i == usersToDisplay.length - 2) {
+        // If onlyUseCommaSeparator, or users length goes over max to display,
+        // then add a comma because we'll later add "and others"
+        if (onlyUseCommaSeparator || usersToDisplay.length < users.length) {
+          spans.add(TextSpan(text: ', '));
+        } else {
+          spans.add(TextSpan(text: ' and '));
+        }
+      }
+
+      // Last span
+      if (i == usersToDisplay.length - 1) {
+        if (usersToDisplay.length < users.length) {
+          final remainingUsersLength = users.length - usersToDisplay.length;
+          spans.add(TextSpan(text: ' and $remainingUsersLength others'));
+        }
+        if (trailingText != null) {
+          spans.add(TextSpan(text: trailingText));
+        }
+      }
+    });
+
+    return Text.rich(
+      TextSpan(style: TextStyle(fontSize: fontSize), children: spans),
     );
   }
 }

@@ -153,7 +153,6 @@ class App extends base.App with DataModelMixin<App> {
       }
 
       final url = latestMetadata!.urls.first;
-
       final (baseDirectory, directory, filename) =
           await Task.split(filePath: file.path);
 

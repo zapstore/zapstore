@@ -33,6 +33,7 @@ class WebOfTrustContainer extends HookConsumerWidget {
             return UsersRichText(
               users: trustedUsers,
               signedInUser: signedInUser,
+              onlyUseCommaSeparator: true,
               trailingText: ' and others follow this signer on nostr.',
             );
           },
