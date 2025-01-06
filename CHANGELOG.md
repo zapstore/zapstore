@@ -1,3 +1,8 @@
+# 0.2.0
+
+  - Feature: Sign in with NIP-55 (Amber)
+  - Feature: Ability to zap via NWC and view zap receipts
+
 # 0.1.8
 
   - Bugfix: Prevent unnecessary relay initialization
