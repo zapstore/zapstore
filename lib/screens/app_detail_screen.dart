@@ -56,7 +56,8 @@ class AppDetailScreen extends HookConsumerWidget {
         .findAllLocal()
         .where((s) => s.appIds.contains(app.identifier))
         .map((s) => s.signer.value)
-        .nonNulls;
+        .nonNulls
+        .toSet();
 
     return RefreshIndicator(
       onRefresh: () => ref.apps.findOne(model.identifier, remote: true),
