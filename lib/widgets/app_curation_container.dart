@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:purplebase/purplebase.dart';
+import 'package:purplebase/purplebase.dart' as base;
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app_curation_set.dart';
 import 'package:zapstore/models/user.dart';
@@ -20,7 +20,7 @@ class AppCurationContainer extends HookConsumerWidget {
     final selectedAppCurationSet = ref.watch(_selectedIdProvider);
     final appCurationSets = ref.appCurationSets
         .findAllLocal()
-        .sortedBy((s) => s.createdAt!)
+        .sortedBy((s) => s.event.createdAt)
         .reversed
         .toList();
 
@@ -101,9 +101,9 @@ class AppCurationContainer extends HookConsumerWidget {
 // Providers
 
 class AppCurationSetNotifier
-    extends FamilyAsyncNotifier<AppCurationSet, ReplaceableEventLink> {
+    extends FamilyAsyncNotifier<AppCurationSet, base.ReplaceableEventLink> {
   @override
-  Future<AppCurationSet> build(ReplaceableEventLink arg) async {
+  Future<AppCurationSet> build(base.ReplaceableEventLink arg) async {
     final appCurationSet = ref.appCurationSets.findOneLocalById(arg.formatted)!;
     fetch();
     return appCurationSet;
@@ -133,9 +133,9 @@ class AppCurationSetNotifier
 final appCurationSetProvider = AsyncNotifierProvider.family<
     AppCurationSetNotifier,
     AppCurationSet,
-    ReplaceableEventLink>(AppCurationSetNotifier.new);
+    base.ReplaceableEventLink>(AppCurationSetNotifier.new);
 
 final _selectedIdProvider =
-    StateProvider<ReplaceableEventLink>((_) => kNostrCurationSetLink);
+    StateProvider<base.ReplaceableEventLink>((_) => kNostrCurationSetLink);
 
 const kNostrCurationSetLink = (30267, kFranzapPubkey, 'nostr');

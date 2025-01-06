@@ -9,15 +9,17 @@ import 'package:flutter_phoenix/flutter_phoenix.dart';
 import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:intl/intl.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:zapstore/main.data.dart';
-import 'package:zapstore/models/feedback.dart';
-import 'package:zapstore/models/settings.dart';
-import 'package:zapstore/utils/extensions.dart';
-import 'package:zapstore/utils/system_info.dart';
-import 'package:zapstore/widgets/app_drawer.dart';
 import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
+import 'package:purplebase/purplebase.dart';
+import 'package:zapstore/main.data.dart';
+import 'package:zapstore/models/settings.dart';
+import 'package:zapstore/models/user.dart';
+import 'package:zapstore/navigation/app_initializer.dart';
+import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/utils/nwc.dart';
+import 'package:zapstore/utils/system_info.dart';
+import 'package:zapstore/widgets/sign_in_container.dart';
 
 class SettingsScreen extends HookConsumerWidget {
   const SettingsScreen({super.key});
@@ -26,12 +28,8 @@ class SettingsScreen extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final systemInfoState = ref.watch(systemInfoNotifierProvider);
 
-    final controller = useTextEditingController();
-    final user = ref.settings
-        .watchOne('_', alsoWatch: (_) => {_.user})
-        .model!
-        .user
-        .value;
+    final feedbackController = useTextEditingController();
+    final signedInUser = ref.watch(signedInUserProvider);
 
     return SingleChildScrollView(
       child: Column(
@@ -51,51 +49,69 @@ class SettingsScreen extends HookConsumerWidget {
           Text('Comments, suggestions and error reports welcome here.'),
           Gap(20),
           TextField(
-            controller: controller,
+            controller: feedbackController,
             maxLines: 10,
           ),
           Gap(20),
-          if (user == null) LoginContainer(minimal: true),
-          if (user != null)
+          if (signedInUser == null) SignInButton(minimal: true),
+          if (signedInUser != null &&
+                  signedInUser.settings.value!.signInMethod !=
+                      SignInMethod.nip55 ||
+              !amberSigner.isAvailable)
+            Text(
+                'To share feedback, you must be signed in with Amber. You can also message us on nostr!',
+                style: TextStyle(
+                    color: Colors.red[300], fontWeight: FontWeight.bold)),
+          if (signedInUser != null &&
+              signedInUser.settings.value!.signInMethod == SignInMethod.nip55 &&
+              amberSigner.isAvailable)
             AsyncButtonBuilder(
-              loadingWidget: SizedBox(
-                  width: 14, height: 14, child: CircularProgressIndicator()),
+              loadingWidget: SmallCircularProgressIndicator(),
               onPressed: () async {
-                if (controller.text.trim().isNotEmpty) {
-                  final text =
-                      '${controller.text.trim()} [from ${user.npub} on ${DateFormat('MMMM d, y').format(DateTime.now())}]';
-                  final event = AppFeedback(content: text).sign(kI);
+                if (feedbackController.text.trim().isNotEmpty) {
+                  final signedDirectMessage = await amberSigner.sign(
+                      PartialDirectMessage(
+                          content: feedbackController.text.trim(),
+                          receiver: kZapstorePubkey.npub),
+                      withPubkey: signedInUser.pubkey);
                   try {
-                    await http.post(Uri.parse('https://relay.zapstore.dev/'),
-                        body: jsonEncode(event.toMap()),
+                    final response = await http.post(
+                        Uri.parse('https://relay.zapstore.dev/'),
+                        body: jsonEncode(signedDirectMessage.toMap()),
                         headers: {'Content-Type': 'application/json'});
+                    if (response.statusCode >= 400) {
+                      throw Exception(response.body);
+                    }
                     if (context.mounted) {
                       context.showInfo('Thank you',
                           description: 'Message sent successfully');
                     }
-                    controller.clear();
+                    feedbackController.clear();
                   } catch (e, stack) {
                     if (context.mounted) {
-                      context.showError(
-                          title: (e as dynamic).message ?? e.toString(),
+                      context.showError(e.toString(),
                           description: stack.toString());
                     }
                   }
                 }
               },
-              builder: (context, child, callback, state) {
-                return switch (state) {
-                  _ => ElevatedButton(
-                      onPressed: callback,
-                      child: child,
-                    ),
-                };
-              },
-              child: Text('Send as ${user.nameOrNpub}'),
+              builder: (context, child, callback, state) =>
+                  ElevatedButton(onPressed: callback, child: child),
+              child: Text('Send as ${signedInUser.nameOrNpub}'),
             ),
-          Gap(40),
+          Gap(20),
           Divider(),
-          Gap(40),
+          Gap(20),
+          Text(
+            'Nostr Wallet Connect',
+            style: context.theme.textTheme.headlineLarge!
+                .copyWith(fontWeight: FontWeight.bold),
+          ),
+          Gap(20),
+          NwcContainer(),
+          Gap(20),
+          Divider(),
+          Gap(20),
           Text(
             'Tools',
             style: context.theme.textTheme.headlineLarge!
@@ -180,8 +196,7 @@ class SettingsScreen extends HookConsumerWidget {
                 }
               } catch (e) {
                 if (context.mounted) {
-                  context.showError(
-                      title: 'Unable to send system info',
+                  context.showError('Unable to send system info',
                       description: e.toString());
                 }
               }
@@ -191,6 +206,100 @@ class SettingsScreen extends HookConsumerWidget {
               _ => '',
             }),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class SmallCircularProgressIndicator extends StatelessWidget {
+  const SmallCircularProgressIndicator({
+    super.key,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(width: 14, height: 14, child: CircularProgressIndicator());
+  }
+}
+
+class NwcContainer extends HookConsumerWidget {
+  final bool dialogMode;
+  const NwcContainer({
+    super.key,
+    this.dialogMode = false,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final nwcConnection = ref.watch(nwcConnectionProvider);
+    final controller = useTextEditingController(text: '');
+    final isTextFieldEmpty = useState(true);
+
+    return Padding(
+      padding: const EdgeInsets.all(4),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (!nwcConnection.hasValue && nwcConnection.isLoading)
+            SmallCircularProgressIndicator(),
+          if (nwcConnection.isPresent) Text('Wallet connected'),
+          if (nwcConnection.hasError)
+            Text('Error connecting: ${nwcConnection.error}'),
+          if (!nwcConnection.isPresent && !nwcConnection.isLoading)
+            TextField(
+              autocorrect: false,
+              keyboardType: TextInputType.none,
+              controller: controller,
+              onChanged: (value) {
+                isTextFieldEmpty.value = value.isEmpty;
+              },
+              decoration: InputDecoration(
+                hintText: 'nostr+walletconnect://...',
+                suffixIcon: AsyncButtonBuilder(
+                  disabled: isTextFieldEmpty.value,
+                  loadingWidget: SmallCircularProgressIndicator(),
+                  onPressed: () async {
+                    final nwcUri = controller.text.trim();
+                    await ref
+                        .read(nwcConnectionProvider.notifier)
+                        .connectWallet(nwcUri);
+                    if (dialogMode && context.mounted) {
+                      Navigator.of(context).pop();
+                    }
+                  },
+                  builder: (context, child, callback, buttonState) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: SizedBox(
+                        child: ElevatedButton(
+                          onPressed: callback,
+                          style: ElevatedButton.styleFrom(
+                              disabledBackgroundColor: Colors.transparent,
+                              backgroundColor: Colors.transparent),
+                          child: child,
+                        ),
+                      ),
+                    );
+                  },
+                  child: Text('Connect'),
+                ),
+              ),
+            ),
+          if (nwcConnection.isPresent && !dialogMode)
+            ElevatedButton(
+              onPressed: () async {
+                controller.clear();
+                await ref
+                    .read(nwcConnectionProvider.notifier)
+                    .disconnectWallet();
+              },
+              style: ElevatedButton.styleFrom(
+                  disabledBackgroundColor: Colors.transparent,
+                  backgroundColor: Colors.transparent),
+              child: Text('Disconnect'),
+            ),
         ],
       ),
     );

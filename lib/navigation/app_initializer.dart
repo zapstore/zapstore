@@ -6,11 +6,15 @@ import 'package:zapstore/main.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/local_app.dart';
+import 'package:zapstore/models/user.dart';
 import 'package:zapstore/navigation/router.dart';
+import 'package:zapstore/utils/signers.dart';
 import 'package:zapstore/widgets/app_curation_container.dart';
 
 AppLifecycleListener? _lifecycleListener;
 SharedPreferences? sharedPreferences;
+User? anonUser;
+final amberSigner = AmberSigner();
 
 final appInitializer = FutureProvider<void>((ref) async {
   sharedPreferences = await SharedPreferences.getInstance();
@@ -41,6 +45,15 @@ final appInitializer = FutureProvider<void>((ref) async {
 
   // Preload zapstore's nostr curation set
   ref.read(appCurationSetProvider(kNostrCurationSetLink).notifier).fetch();
+
+  // Initialize signer
+  await amberSigner.initialize();
+
+  // Set up anon user (pubkey derives from pkSigner secret key)
+  anonUser ??= User.fromPubkey(
+          'c86eda2daae768374526bc54903f388d9a866c00740ec8db418d7ef2dca77b5b')
+      .init()
+      .saveLocal();
 
   // App-wide listeners
 

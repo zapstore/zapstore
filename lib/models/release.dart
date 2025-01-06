@@ -1,6 +1,6 @@
 import 'package:collection/collection.dart';
 import 'package:flutter_data/flutter_data.dart';
-import 'package:purplebase/purplebase.dart';
+import 'package:purplebase/purplebase.dart' as base;
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/file_metadata.dart';
 import 'package:zapstore/models/nostr_adapter.dart';
@@ -10,18 +10,21 @@ import 'package:zapstore/utils/extensions.dart';
 part 'release.g.dart';
 
 @DataAdapter([NostrAdapter, ReleaseAdapter])
-class Release extends BaseRelease with DataModelMixin<Release> {
+class Release extends base.Release with DataModelMixin<Release> {
+  @override
+  Object? get id => event.id;
+
   final HasMany<FileMetadata> artifacts;
   final BelongsTo<App> app;
   final BelongsTo<User> signer;
 
-  Release(
-      {super.createdAt,
-      super.content,
-      super.tags,
-      required this.artifacts,
-      required this.app,
-      required this.signer});
+  // Release(
+  //     {super.createdAt,
+  //     super.content,
+  //     super.tags,
+  //     required this.artifacts,
+  //     required this.app,
+  //     required this.signer});
 
   Release.fromJson(super.map)
       : app = belongsTo(map['app']),
@@ -38,9 +41,9 @@ mixin ReleaseAdapter on Adapter<Release> {
     final list = data is Iterable ? data : [data as Map];
 
     for (final Map<String, dynamic> map in list) {
-      final tagMap = tagsToMap(map['tags']);
-      map['app'] = tagMap['a']?.firstOrNull;
-      map['artifacts'] = tagMap['e']!.toList();
+      final tags = map['tags'];
+      map['app'] = base.BaseUtil.getTag(tags, 'a');
+      map['artifacts'] = base.BaseUtil.getTagSet(tags, 'e').toList();
     }
     return super.deserialize(data);
   }
@@ -48,5 +51,5 @@ mixin ReleaseAdapter on Adapter<Release> {
 
 extension ReleaseExt on Iterable<Release> {
   List<Release> get sortedByLatest =>
-      sorted((a, b) => b.createdAt!.compareTo(a.createdAt!));
+      sorted((a, b) => b.event.createdAt.compareTo(a.event.createdAt));
 }

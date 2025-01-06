@@ -28,16 +28,16 @@ class ReleaseCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(release.version!,
+            Text(release.version,
                 style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
             Gap(10),
-            release.content.length < 3000
-                ? MarkdownBody(data: release.content)
+            release.releaseNotes.length < 3000
+                ? MarkdownBody(data: release.releaseNotes)
                 : Container(
                     constraints: BoxConstraints(
                       maxHeight: 300,
                     ),
-                    child: Markdown(data: release.content),
+                    child: Markdown(data: release.releaseNotes),
                   ),
             Gap(30),
             if (metadata != null)
@@ -54,7 +54,7 @@ class ReleaseCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text('Date'),
-                  Text(formatter.format(release.createdAt!)),
+                  Text(formatter.format(release.event.createdAt)),
                 ],
               ),
             ),

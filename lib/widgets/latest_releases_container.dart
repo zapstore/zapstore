@@ -6,6 +6,7 @@ import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
+import 'package:zapstore/screens/settings_screen.dart';
 import 'package:zapstore/utils/notifier.dart';
 import 'package:zapstore/widgets/app_card.dart';
 
@@ -51,11 +52,7 @@ class LatestReleasesContainer extends HookConsumerWidget {
               for (final app in state.value!) AppCard(model: app),
             if (state.hasValue)
               AsyncButtonBuilder(
-                loadingWidget: SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(),
-                ),
+                loadingWidget: SmallCircularProgressIndicator(),
                 onPressed: () async {
                   return ref
                       .read(latestReleasesAppProvider.notifier)
@@ -125,7 +122,7 @@ class LatestReleasesAppNotifier extends PreloadingStateNotifier<List<App>> {
 
     // Set timestamp of oldest, to prepare for next query
     if (apps.isNotEmpty) {
-      _oldestCreatedAt = apps.last.createdAt;
+      _oldestCreatedAt = apps.last.event.createdAt;
     }
     return AsyncData(apps);
   }

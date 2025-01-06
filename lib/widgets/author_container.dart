@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:zapstore/models/user.dart';
-import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/rounded_image.dart';
 
 class AuthorContainer extends StatelessWidget {
@@ -44,7 +43,7 @@ class AuthorContainer extends StatelessWidget {
               children: [
                 Text(beforeText),
                 Text(
-                  user.nameOrNpub.substringMax(24),
+                  user.nameOrNpub,
                   style: TextStyle(fontWeight: FontWeight.bold),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,

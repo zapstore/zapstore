@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:dart_emoji/dart_emoji.dart';
@@ -16,10 +17,7 @@ extension ContextX on BuildContext {
       icon: icon ?? Icon(Icons.info),
       style: ToastificationStyle.fillColored,
       alignment: Alignment.topCenter,
-      title: Text(
-        message,
-        style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-      ),
+      title: _ToastTitleWidget(message),
       description: description != null
           ? _ToastDescriptionWidget(description: description)
           : null,
@@ -29,9 +27,8 @@ extension ContextX on BuildContext {
     );
   }
 
-  void showError(
-      {required String title,
-      String? description,
+  void showError(String title,
+      {String? description,
       Icon? icon,
       List<(String, Future<void> Function())> actions = const []}) {
     toastification.show(
@@ -40,11 +37,7 @@ extension ContextX on BuildContext {
       style: ToastificationStyle.fillColored,
       alignment: Alignment.topCenter,
       icon: icon ?? Icon(Icons.error),
-      title: Text(
-        title,
-        style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-        overflow: TextOverflow.ellipsis,
-      ),
+      title: _ToastTitleWidget(title),
       showProgressBar: false,
       closeOnClick: true,
       description: description != null
@@ -62,10 +55,7 @@ extension ContextX on BuildContext {
       type: ToastificationType.info,
       icon: Icon(Icons.info),
       style: ToastificationStyle.fillColored,
-      title: Text(
-        'Zapstore has a new version available',
-        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-      ),
+      title: _ToastTitleWidget('Zapstore has a new version available'),
       description: Text('Tap to go to update screen'),
       callbacks: ToastificationCallbacks(
         onTap: (item) {
@@ -76,6 +66,21 @@ extension ContextX on BuildContext {
       showProgressBar: false,
       closeButtonShowType: CloseButtonShowType.always,
       alignment: Alignment.topCenter,
+    );
+  }
+}
+
+class _ToastTitleWidget extends StatelessWidget {
+  final String text;
+  const _ToastTitleWidget(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+      overflow: TextOverflow.ellipsis,
+      maxLines: 4,
     );
   }
 }
@@ -91,7 +96,12 @@ class _ToastDescriptionWidget extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        RichText(text: TextSpan(text: description)),
+        RichText(
+          text: TextSpan(
+            text: description,
+            style: TextStyle(fontSize: 16),
+          ),
+        ),
         for (final (text, fn) in actions)
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -108,12 +118,12 @@ class _ToastDescriptionWidget extends StatelessWidget {
   }
 }
 
-BelongsTo<T> belongsTo<T extends DataModelMixin<T>>(Map<String, dynamic> map) {
-  return BelongsTo<T>.fromJson(map);
+BelongsTo<T> belongsTo<T extends DataModelMixin<T>>(Map<String, dynamic>? map) {
+  return map != null ? BelongsTo<T>.fromJson(map) : BelongsTo<T>();
 }
 
-HasMany<T> hasMany<T extends DataModelMixin<T>>(Map<String, dynamic> map) {
-  return HasMany<T>.fromJson(map);
+HasMany<T> hasMany<T extends DataModelMixin<T>>(Map<String, dynamic>? map) {
+  return map != null ? HasMany<T>.fromJson(map) : HasMany<T>();
 }
 
 final emojiParser = EmojiParser();
@@ -125,8 +135,16 @@ extension StringWidget on String {
     });
   }
 
-  String substringMax(int size) {
-    return substring(0, min(length, size));
+  String safeSubstring(int size) {
+    return substring(0, min(length, size)) + (size < length ? '...' : '');
+  }
+
+  String get shorten {
+    // npub1wf4puf...43dgh9
+    if (length < 18) return this;
+    final leading = substring(0, 9);
+    final trailing = substring(length - 6, length - 1);
+    return '$leading...$trailing';
   }
 
   String removeParenthesis() {
@@ -134,6 +152,40 @@ extension StringWidget on String {
   }
 }
 
-const kI = "e593c54f840b32054dcad0fac15d57e4ac6523e31fe26b3087de6b07a2e9af58";
+extension TextExt on Text {
+  Widget get bold {
+    return Text(data!, style: TextStyle(fontWeight: FontWeight.bold));
+  }
+}
 
 const kZapstoreAppIdentifier = 'dev.zapstore.app';
+
+// stream utils
+
+Stream<List<T>> bufferByTime<T>(Stream<T> source, Duration duration) {
+  final controller = StreamController<List<T>>();
+
+  final buffer = [];
+
+  Timer? timer;
+
+  // Listen to the source stream
+  source.listen((data) {
+    buffer.add(data);
+
+    // If there's no active timer, start one
+    timer ??= Timer(duration, () {
+      controller.add(List.from(buffer)); // Emit buffered data
+      buffer.clear(); // Clear the buffer
+      timer = null; // Reset the timer
+    });
+  }, onDone: () {
+    // Emit remaining items in the buffer when the source is done
+    if (buffer.isNotEmpty) {
+      controller.add(List.from(buffer));
+    }
+    controller.close(); // Close the controller
+  });
+
+  return controller.stream; // Return the buffered stream
+}

@@ -23,6 +23,13 @@ mixin _$UserAdapter on Adapter<User> {
       type: 'users',
       kind: 'HasMany',
       instance: (_) => (_ as User).followers,
+    ),
+    'settings': RelationshipMeta<Settings>(
+      name: 'settings',
+      inverseName: 'user',
+      type: 'settings',
+      kind: 'BelongsTo',
+      instance: (_) => (_ as User).settings,
     )
   };
 
@@ -67,6 +74,13 @@ extension UserRelationshipGraphNodeX on RelationshipGraphNode<User> {
   RelationshipGraphNode<User> get followers {
     final meta = _$UserAdapter._kUserRelationshipMetas['followers']
         as RelationshipMeta<User>;
+    return meta.clone(
+        parent: this is RelationshipMeta ? this as RelationshipMeta : null);
+  }
+
+  RelationshipGraphNode<Settings> get settings {
+    final meta = _$UserAdapter._kUserRelationshipMetas['settings']
+        as RelationshipMeta<Settings>;
     return meta.clone(
         parent: this is RelationshipMeta ? this as RelationshipMeta : null);
   }

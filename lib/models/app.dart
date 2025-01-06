@@ -12,7 +12,7 @@ import 'package:install_plugin/install_plugin.dart';
 import 'package:mutex/mutex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:purplebase/purplebase.dart';
+import 'package:purplebase/purplebase.dart' as base;
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/file_metadata.dart';
 import 'package:zapstore/models/local_app.dart';
@@ -28,7 +28,10 @@ part 'app.g.dart';
 final mutex = Mutex();
 
 @DataAdapter([NostrAdapter, AppAdapter])
-class App extends BaseApp with DataModelMixin<App> {
+class App extends base.App with DataModelMixin<App> {
+  @override
+  Object? get id => event.id;
+
   final HasMany<Release> releases;
   final BelongsTo<User> signer;
   final BelongsTo<User> developer;
@@ -149,13 +152,7 @@ class App extends BaseApp with DataModelMixin<App> {
         await file.delete();
       }
 
-      var url = latestMetadata!.urls.first;
-      // TODO: Remove in 0.2.x
-      if (url.startsWith('https://cdn.zap.store')) {
-        url = url.replaceFirst(
-            'https://cdn.zap.store', 'https://cdn.zapstore.dev');
-      }
-
+      final url = latestMetadata!.urls.first;
       final (baseDirectory, directory, filename) =
           await Task.split(filePath: file.path);
 
@@ -266,14 +263,14 @@ mixin AppAdapter on Adapter<App> {
       // Find most recent `created_at` from returned apps
       // and assign it to their queried at value for caching
       final m = apps.isNotEmpty
-          ? apps.fold(apps.first.createdAt!, (acc, e) {
-              return acc.isAfter(e.createdAt!) ? acc : e.createdAt!;
+          ? apps.fold(apps.first.event.createdAt, (acc, e) {
+              return acc.isAfter(e.event.createdAt) ? acc : e.event.createdAt;
             })
           : null;
 
       if (m != null) {
         for (final app in apps) {
-          queriedAtMap[app.identifier!] = m;
+          queriedAtMap[app.identifier] = m;
         }
       }
     } else {
@@ -283,8 +280,9 @@ mixin AppAdapter on Adapter<App> {
 
     // Find all appid@version ($3) as we need to pick one tag to query on
     // (filters by kind ($1) and pubkey ($2) done locally)
-    final latestReleaseIdentifiers =
-        apps.map((app) => app.linkedReplaceableEvents.firstOrNull?.$3).nonNulls;
+    final latestReleaseIdentifiers = apps
+        .map((app) => app.event.linkedReplaceableEvents.firstOrNull?.$3)
+        .nonNulls;
     if (latestReleaseIdentifiers.isNotEmpty) {
       releases = await ref.releases.findAll(
         params: {'#d': latestReleaseIdentifiers},
@@ -348,10 +346,16 @@ mixin AppAdapter on Adapter<App> {
     final list = data is Iterable ? data : [data as Map];
 
     for (final Map<String, dynamic> map in list) {
-      final tagMap = tagsToMap(map['tags']);
-      map['developer'] = tagMap['zap']?.firstOrNull ??
-          (map['pubkey'] != kZapstorePubkey ? map['pubkey'] : null);
-      map['localApp'] = tagMap['d']!.first;
+      final tags = map['tags'];
+      final pubkey = map['pubkey'];
+      map['localApp'] = base.BaseUtil.getTag(tags, 'd')!;
+      // Find zap recipient as specified in event or fall back to author's pubkey
+      map['developer'] = base.BaseUtil.getTag(tags, 'zap') ?? pubkey;
+      // If app is signed by Zapstore (except the Zapstore app), remove from being the developer
+      if (pubkey == kZapstorePubkey &&
+          map['localApp'] != kZapstoreAppIdentifier) {
+        map.remove('developer');
+      }
     }
 
     return super.deserialize(data);
@@ -387,7 +391,7 @@ Future<bool> _isHashMismatch(String path, String hash) async {
 
 extension AppExt on Iterable<App> {
   List<App> get sortedByLatest =>
-      sorted((a, b) => b.createdAt!.compareTo(a.createdAt!));
+      sorted((a, b) => b.event.createdAt.compareTo(a.event.createdAt));
 }
 
 // class

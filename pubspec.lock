@@ -130,10 +130,10 @@ packages:
     dependency: transitive
     description:
       name: bip340
-      sha256: "2a92f6ed68959f75d67c9a304c17928b9c9449587d4f75ee68f34152f7f69e87"
+      sha256: b7bcd70a860e605046006adaa72bc4f7453f4d31d7ba74a4ad9d5de387a0fc0b
       url: "https://pub.dev"
     source: hosted
-    version: "0.2.0"
+    version: "0.3.0"
   boolean_selector:
     dependency: transitive
     description:
@@ -286,6 +286,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.0.6"
+  cryptography:
+    dependency: transitive
+    description:
+      name: cryptography
+      sha256: d146b76d33d94548cf035233fbc2f4338c1242fa119013bead807d033fc4ae05
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.7.0"
   cupertino_icons:
     dependency: "direct main"
     description:
@@ -310,14 +318,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.3.7"
-  decimal:
-    dependency: transitive
-    description:
-      name: decimal
-      sha256: "24a261d5d5c87e86c7651c417a5dbdf8bcd7080dd592533910e8d0505a279f21"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.3.3"
   device_info_plus:
     dependency: "direct main"
     description:
@@ -342,6 +342,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.5.1"
+  elliptic:
+    dependency: transitive
+    description:
+      name: elliptic
+      sha256: "0c303d810603953a65dc39c4c542fb7538defd9e212403c54c266140819523b6"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.3.11"
   equatable:
     dependency: transitive
     description:
@@ -452,6 +460,54 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.6.1"
+  flutter_secure_storage:
+    dependency: "direct main"
+    description:
+      name: flutter_secure_storage
+      sha256: "165164745e6afb5c0e3e3fcc72a012fb9e58496fb26ffb92cf22e16a821e85d0"
+      url: "https://pub.dev"
+    source: hosted
+    version: "9.2.2"
+  flutter_secure_storage_linux:
+    dependency: transitive
+    description:
+      name: flutter_secure_storage_linux
+      sha256: "4d91bfc23047422cbcd73ac684bc169859ee766482517c22172c86596bf1464b"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.2.1"
+  flutter_secure_storage_macos:
+    dependency: transitive
+    description:
+      name: flutter_secure_storage_macos
+      sha256: "1693ab11121a5f925bbea0be725abfcfbbcf36c1e29e571f84a0c0f436147a81"
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.1.2"
+  flutter_secure_storage_platform_interface:
+    dependency: transitive
+    description:
+      name: flutter_secure_storage_platform_interface
+      sha256: cf91ad32ce5adef6fba4d736a542baca9daf3beac4db2d04be350b87f69ac4a8
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.1.2"
+  flutter_secure_storage_web:
+    dependency: transitive
+    description:
+      name: flutter_secure_storage_web
+      sha256: f4ebff989b4f07b2656fb16b47852c0aab9fed9b4ec1c70103368337bc1886a9
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.2.1"
+  flutter_secure_storage_windows:
+    dependency: transitive
+    description:
+      name: flutter_secure_storage_windows
+      sha256: b20b07cb5ed4ed74fc567b78a72936203f587eba460af1df11281c9326cd3709
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.1.2"
   flutter_test:
     dependency: "direct dev"
     description: flutter
@@ -526,6 +582,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.0"
+  hex:
+    dependency: transitive
+    description:
+      name: hex
+      sha256: "4e7cd54e4b59ba026432a6be2dd9d96e4c5205725194997193bf871703b82c4a"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.2.0"
   hooks_riverpod:
     dependency: "direct main"
     description:
@@ -558,14 +622,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.0.2"
-  humanizer:
-    dependency: transitive
-    description:
-      name: humanizer
-      sha256: "08728a4b6d62accd7d09e668bd54e81e6e09a82c8cfda30553224b3eb868d4f2"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.2.0"
   icons_launcher:
     dependency: "direct dev"
     description:
@@ -626,10 +682,10 @@ packages:
     dependency: transitive
     description:
       name: js
-      sha256: c1b2e9b5ea78c45e1a0788d29606ba27dc5f71f019f32ca5140f61ef071838cf
+      sha256: f2c445dce49627136094980615a031419f7f3eb393237e4ecd97ac15dea343f3
       url: "https://pub.dev"
     source: hosted
-    version: "0.7.1"
+    version: "0.6.7"
   json_annotation:
     dependency: "direct main"
     description:
@@ -678,6 +734,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "5.0.0"
+  logger:
+    dependency: transitive
+    description:
+      name: logger
+      sha256: be4b23575aac7ebf01f225a241eb7f6b5641eeaf43c6a8613510fc2f8cf187d1
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.5.0"
   logging:
     dependency: transitive
     description:
@@ -742,6 +806,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.1.0"
+  ndk:
+    dependency: "direct main"
+    description:
+      name: ndk
+      sha256: "07c284a14e7800513743a84c911a546dcfcdc0c0ce2def4895c4e4c2286f159e"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.2.4"
   octo_image:
     dependency: transitive
     description:
@@ -945,11 +1017,9 @@ packages:
   purplebase:
     dependency: "direct main"
     description:
-      path: "."
-      ref: "7f0eefd1fd1bcbc947123dc377183dbae58ea97a"
-      resolved-ref: "7f0eefd1fd1bcbc947123dc377183dbae58ea97a"
-      url: "https://github.com/purplebase/purplebase"
-    source: git
+      path: "../purplebase"
+      relative: true
+    source: path
     version: "0.2.0"
   quiver:
     dependency: transitive
@@ -959,14 +1029,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.2.2"
-  rational:
-    dependency: transitive
-    description:
-      name: rational
-      sha256: cb808fb6f1a839e6fc5f7d8cb3b0a10e1db48b3be102de73938c627f0b636336
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.2.3"
   remove_markdown:
     dependency: "direct main"
     description:
@@ -1063,6 +1125,15 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.0.1"
+  signer_plugin:
+    dependency: "direct main"
+    description:
+      path: "."
+      ref: baa5b2fcf7ba8db606a76794582348a1403438b0
+      resolved-ref: baa5b2fcf7ba8db606a76794582348a1403438b0
+      url: "https://github.com/chebizarro/flutter-signer-plugin"
+    source: git
+    version: "0.0.1"
   skeletonizer:
     dependency: "direct main"
     description:

@@ -1,5 +1,5 @@
 import 'package:flutter_data/flutter_data.dart';
-import 'package:purplebase/purplebase.dart';
+import 'package:purplebase/purplebase.dart' as base;
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/nostr_adapter.dart';
@@ -9,8 +9,11 @@ import 'package:zapstore/utils/extensions.dart';
 part 'app_curation_set.g.dart';
 
 @DataAdapter([NostrAdapter, AppCurationSetAdapter])
-class AppCurationSet extends BaseAppCurationSet
+class AppCurationSet extends base.AppCurationSet
     with DataModelMixin<AppCurationSet> {
+  @override
+  Object get id => event.id;
+
   final HasMany<App> apps;
   final BelongsTo<User> signer;
 
@@ -21,7 +24,7 @@ class AppCurationSet extends BaseAppCurationSet
 
   Map<String, dynamic> toJson() => super.toMap();
 
-  String get name => content.isNotEmpty ? content : identifier!;
+  String get name => event.content.isNotEmpty ? event.content : identifier;
 }
 
 mixin AppCurationSetAdapter on Adapter<AppCurationSet> {
@@ -45,8 +48,8 @@ mixin AppCurationSetAdapter on Adapter<AppCurationSet> {
   DeserializedData<AppCurationSet> deserialize(Object? data, {String? key}) {
     final list = data is Iterable ? data : [data as Map];
     for (final Map<String, dynamic> map in list) {
-      final tagMap = tagsToMap(map['tags']);
-      map['apps'] = tagMap['a'];
+      final tags = map['tags'];
+      map['apps'] = base.BaseUtil.getTagSet(tags, 'a');
     }
     return super.deserialize(data);
   }

@@ -16,8 +16,10 @@ import 'package:zapstore/widgets/install_button.dart';
 import 'package:zapstore/widgets/release_card.dart';
 import 'package:zapstore/widgets/signer_and_developer_row.dart';
 import 'package:zapstore/widgets/spinning_logo.dart';
+import 'package:zapstore/widgets/users_rich_text.dart';
 import 'package:zapstore/widgets/versioned_app_header.dart';
-import 'package:zapstore/widgets/wot_container.dart';
+import 'package:zapstore/widgets/zap_button.dart';
+import 'package:zapstore/widgets/zap_receipts.dart';
 
 class AppDetailScreen extends HookConsumerWidget {
   final App model;
@@ -33,11 +35,11 @@ class AppDetailScreen extends HookConsumerWidget {
     // TODO: Bug using remote=true in watchOne, use hook for now
     final snapshot = useFuture(useMemoized(() async {
       final storedApps =
-          ref.apps.appAdapter.findWhereIdentifierInLocal({model.identifier!});
+          ref.apps.appAdapter.findWhereIdentifierInLocal({model.identifier});
       if (storedApps.firstOrNull?.latestMetadata != null) {
         return storedApps.first;
       }
-      return ref.apps.findOne(model.identifier!, remote: true);
+      return ref.apps.findOne(model.identifier, remote: true);
     }));
     final state = ref.apps.watchOne(model.id!,
         alsoWatch: (_) => {
@@ -57,7 +59,7 @@ class AppDetailScreen extends HookConsumerWidget {
         .nonNulls;
 
     return RefreshIndicator(
-      onRefresh: () => ref.apps.findOne(model.identifier!, remote: true),
+      onRefresh: () => ref.apps.findOne(model.identifier, remote: true),
       child: Column(
         children: [
           Expanded(
@@ -147,14 +149,17 @@ class AppDetailScreen extends HookConsumerWidget {
                           ),
                         ),
                         selectable: false,
-                        data: app.content.parseEmojis(),
+                        data: app.event.content.parseEmojis(),
                       ),
                       Gap(10),
                       Padding(
                         padding: const EdgeInsets.only(right: 14),
                         child: SignerAndDeveloperRow(app: app),
                       ),
-                      Gap(20),
+                      Gap(10),
+                      ZapButton(app: app),
+                      ZapReceipts(app: app),
+                      Gap(10),
                       Container(
                         padding: EdgeInsets.all(10),
                         decoration: BoxDecoration(
@@ -218,7 +223,7 @@ class AppDetailScreen extends HookConsumerWidget {
                                   Gap(10),
                                   Flexible(
                                     child: AutoSizeText(
-                                      app.identifier!,
+                                      app.identifier,
                                       minFontSize: 12,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
@@ -247,7 +252,7 @@ class AppDetailScreen extends HookConsumerWidget {
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
                                             Text(
-                                              '${app.latestMetadata!.hash!.substring(0, 6)}...${app.latestMetadata!.hash!.substring(58, 64)}',
+                                              app.latestMetadata!.hash!.shorten,
                                               maxLines: 1,
                                             ),
                                             Gap(6),
@@ -280,7 +285,8 @@ class AppDetailScreen extends HookConsumerWidget {
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
                                             Text(
-                                              '${app.latestMetadata!.apkSignatureHash!.substring(0, 6)}...${app.latestMetadata!.apkSignatureHash!.substring(58, 64)}',
+                                              app.latestMetadata!
+                                                  .apkSignatureHash!.shorten,
                                               maxLines: 1,
                                             ),
                                             Gap(6),

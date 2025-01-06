@@ -1,10 +1,13 @@
 import 'package:purplebase/purplebase.dart';
 
-class AppFeedback extends BaseEvent<AppFeedback> {
-  @override
-  int get kind => 1011;
+class AppFeedback extends RegularEvent<AppFeedback> {
+  AppFeedback.fromJson(super.map) : super.fromJson();
+}
 
-  AppFeedback({
+class PartialAppFeedback extends RegularPartialEvent<AppFeedback> {
+  PartialAppFeedback({
     required String content,
-  }) : super(content: content);
+  }) {
+    event.content = content;
+  }
 }

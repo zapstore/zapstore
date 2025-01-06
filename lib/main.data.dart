@@ -11,6 +11,7 @@ import 'package:zapstore/models/local_app.dart';
 import 'package:zapstore/models/release.dart';
 import 'package:zapstore/models/settings.dart';
 import 'package:zapstore/models/user.dart';
+import 'package:zapstore/models/zap_receipt.dart';
 
 final adapterProvidersMap = <String, Provider<Adapter<DataModelMixin>>>{
   'appCurationSets': appCurationSetsAdapterProvider,
@@ -19,7 +20,8 @@ final adapterProvidersMap = <String, Provider<Adapter<DataModelMixin>>>{
   'localApps': localAppsAdapterProvider,
   'releases': releasesAdapterProvider,
   'settings': settingsAdapterProvider,
-  'users': usersAdapterProvider
+  'users': usersAdapterProvider,
+  'zapReceipts': zapReceiptsAdapterProvider
 };
 
 extension AdapterWidgetRefX on WidgetRef {
@@ -35,6 +37,8 @@ extension AdapterWidgetRefX on WidgetRef {
   Adapter<Settings> get settings =>
       watch(settingsAdapterProvider)..internalWatch = watch;
   Adapter<User> get users => watch(usersAdapterProvider)..internalWatch = watch;
+  Adapter<ZapReceipt> get zapReceipts =>
+      watch(zapReceiptsAdapterProvider)..internalWatch = watch;
 }
 
 extension AdapterRefX on Ref {
@@ -50,4 +54,6 @@ extension AdapterRefX on Ref {
   Adapter<Settings> get settings =>
       watch(settingsAdapterProvider)..internalWatch = watch;
   Adapter<User> get users => watch(usersAdapterProvider)..internalWatch = watch;
+  Adapter<ZapReceipt> get zapReceipts =>
+      watch(zapReceiptsAdapterProvider)..internalWatch = watch;
 }
