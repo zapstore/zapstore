@@ -152,12 +152,7 @@ class App extends base.App with DataModelMixin<App> {
         await file.delete();
       }
 
-      var url = latestMetadata!.urls.first;
-      // TODO: Remove in 0.2.x
-      if (url.startsWith('https://cdn.zap.store')) {
-        url = url.replaceFirst(
-            'https://cdn.zap.store', 'https://cdn.zapstore.dev');
-      }
+      final url = latestMetadata!.urls.first;
 
       final (baseDirectory, directory, filename) =
           await Task.split(filePath: file.path);
