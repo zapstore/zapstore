@@ -37,12 +37,13 @@ class UsersRichText extends StatelessWidget {
 
     if (leadingTextSpan != null) {
       spans.add(leadingTextSpan!);
+      spans.add(TextSpan(text: ' '));
     }
 
     usersToDisplay.forEachIndexed((i, user) {
       if (user == signedInUser) {
         spans.add(TextSpan(
-            text: leadingTextSpan != null ? ' you' : 'You',
+            text: leadingTextSpan != null ? 'you' : 'You',
             style: TextStyle(fontWeight: FontWeight.bold)));
       } else {
         spans.add(
