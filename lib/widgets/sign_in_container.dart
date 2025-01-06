@@ -16,17 +16,23 @@ import 'package:zapstore/widgets/rounded_image.dart';
 class SignInButton extends ConsumerWidget {
   final bool minimal;
   final String label;
-  final bool publicKeyAllowed;
+  final bool requireNip55;
+
   SignInButton({
     super.key,
     this.minimal = false,
     this.label = 'Sign in',
-    this.publicKeyAllowed = true,
+    this.requireNip55 = false,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.watch(signedInUserProvider);
+    var user = ref.watch(signedInUserProvider);
+    final signedInWithPubkey =
+        user != null && user.settings.value!.signInMethod != SignInMethod.nip55;
+    if (requireNip55 && signedInWithPubkey) {
+      user = null;
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -71,7 +77,7 @@ class SignInButton extends ConsumerWidget {
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
                   content: SignInDialogBox(
-                    publicKeyAllowed: publicKeyAllowed,
+                    publicKeyAllowed: !requireNip55,
                   ),
                 ),
               );

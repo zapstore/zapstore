@@ -47,7 +47,8 @@ class ZapReceipts extends HookConsumerWidget {
     }
 
     final receipts = zapReceipts.value!;
-    final totalAmountInSats = receipts.fold(0, (acc, e) => acc + e.amount);
+    final satsAmount = receipts.fold(0, (acc, e) => acc + e.amount);
+    final formattedSatsAmount = kNumberFormatter.format(satsAmount);
 
     final zapperIds = receipts.map((r) => r.senderPubkey).toSet();
     final zappers = ref.users.findManyLocalByIds(zapperIds);
@@ -60,14 +61,14 @@ class ZapReceipts extends HookConsumerWidget {
           children: [
             TextSpan(text: '⚡'),
             TextSpan(
-                text: ' $totalAmountInSats sats ',
+                text: ' $formattedSatsAmount sats ',
                 style: TextStyle(fontWeight: FontWeight.bold)),
             TextSpan(text: 'zapped by'),
           ],
         ),
         users: zappers,
         signedInUser: signedInUser,
-        maxUsersToDisplay: 5,
+        maxUsersToDisplay: 6,
       ),
     );
   }

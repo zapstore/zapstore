@@ -53,18 +53,21 @@ class SettingsScreen extends HookConsumerWidget {
             maxLines: 10,
           ),
           Gap(20),
-          if (signedInUser == null) SignInButton(minimal: true),
+          if (signedInUser == null ||
+              signedInUser.settings.value!.signInMethod != SignInMethod.nip55)
+            Column(
+              children: [
+                Text(
+                    'To send a message you must be signed in with an external signer like Amber.',
+                    softWrap: true,
+                    style: TextStyle(
+                        color: Colors.red[300], fontWeight: FontWeight.bold)),
+                Gap(5),
+                SignInButton(minimal: true, requireNip55: true),
+              ],
+            ),
           if (signedInUser != null &&
-                  signedInUser.settings.value!.signInMethod !=
-                      SignInMethod.nip55 ||
-              !amberSigner.isAvailable)
-            Text(
-                'To share feedback, you must be signed in with Amber. You can also message us on nostr!',
-                style: TextStyle(
-                    color: Colors.red[300], fontWeight: FontWeight.bold)),
-          if (signedInUser != null &&
-              signedInUser.settings.value!.signInMethod == SignInMethod.nip55 &&
-              amberSigner.isAvailable)
+              signedInUser.settings.value!.signInMethod == SignInMethod.nip55)
             AsyncButtonBuilder(
               loadingWidget: SmallCircularProgressIndicator(),
               onPressed: () async {

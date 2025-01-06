@@ -5,6 +5,7 @@ import 'package:dart_emoji/dart_emoji.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_data/flutter_data.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import 'package:toastification/toastification.dart';
 import 'package:zapstore/models/app.dart';
 
@@ -159,6 +160,8 @@ extension TextExt on Text {
 }
 
 const kZapstoreAppIdentifier = 'dev.zapstore.app';
+
+final kNumberFormatter = NumberFormat('#,###');
 
 // stream utils
 

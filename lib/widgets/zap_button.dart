@@ -1,9 +1,12 @@
 import 'package:async_button_builder/async_button_builder.dart';
+import 'package:auto_size_text/auto_size_text.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
+import 'package:zapstore/models/settings.dart';
 import 'package:zapstore/models/user.dart';
 import 'package:zapstore/navigation/app_initializer.dart';
 import 'package:zapstore/screens/settings_screen.dart';
@@ -64,61 +67,77 @@ class ZapButton extends HookConsumerWidget {
                 builder: (context) {
                   return AlertDialog(
                     title: Text('Zap this release').bold,
-                    content: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Consumer(
-                          builder: (context, ref, _) {
-                            final signedInUser =
-                                ref.watch(signedInUserProvider);
+                    content: SizedBox(
+                      width: double.maxFinite,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Consumer(
+                            builder: (context, ref, _) {
+                              final signedInUser =
+                                  ref.watch(signedInUserProvider);
 
-                            if (signedInUser == null) {
-                              return Column(
-                                children: [
-                                  Text(
-                                      '⚠️ If you do not sign in, you will be zapping anonymously'),
-                                  SignInButton(
-                                    publicKeyAllowed: false,
-                                    minimal: true,
-                                  ),
-                                ],
-                              );
-                            }
-                            return Container();
-                          },
-                        ),
-                        TextField(
-                          controller: amountController,
-                          keyboardType: TextInputType.number,
-                          decoration:
-                              InputDecoration(hintText: 'Enter amount in sats'),
-                        ),
-                        Gap(20),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            ElevatedButton(
-                              onPressed: () => amountController.text = '21',
-                              child: Text('⚡️21'),
+                              if (signedInUser == null ||
+                                  signedInUser.settings.value!.signInMethod !=
+                                      SignInMethod.nip55) {
+                                return Column(
+                                  children: [
+                                    Text(
+                                        '⚠️ If you do not sign in (with an external signer like Amber), you will be zapping anonymously'),
+                                    SignInButton(
+                                      requireNip55: true,
+                                      minimal: true,
+                                    ),
+                                  ],
+                                );
+                              }
+                              return Container();
+                            },
+                          ),
+                          TextField(
+                            controller: amountController,
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                              hintText: 'Enter amount in sats',
                             ),
-                            Gap(3),
-                            ElevatedButton(
-                              onPressed: () => amountController.text = '210',
-                              child: Text('⚡️210'),
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly
+                            ],
+                          ),
+                          Gap(20),
+                          SizedBox(
+                            width: double.maxFinite,
+                            child: Wrap(
+                              alignment: WrapAlignment.start,
+                              spacing: 4,
+                              children: [
+                                ('🤙 21', 21),
+                                ('💜 210', 210),
+                                ('🤩 420', 420),
+                                ('🚀 2100', 2100),
+                                ('💯 10K', 10000),
+                                ('💎 21K', 21000),
+                              ]
+                                  .map(
+                                    (r) => ElevatedButton(
+                                      onPressed: () => amountController.text =
+                                          r.$2.toString(),
+                                      child: AutoSizeText(
+                                        r.$1,
+                                        style: TextStyle(fontSize: 12.5),
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
                             ),
-                            Gap(3),
-                            ElevatedButton(
-                              onPressed: () => amountController.text = '2100',
-                              child: Text('⚡️2100'),
-                            ),
-                          ],
-                        ),
-                        TextField(
-                          controller: commentController,
-                          decoration: InputDecoration(
-                              hintText: 'Add a comment (optional)'),
-                        ),
-                      ],
+                          ),
+                          TextField(
+                            controller: commentController,
+                            decoration: InputDecoration(
+                                hintText: 'Add a comment (optional)'),
+                          ),
+                        ],
+                      ),
                     ),
                     actions: [
                       TextButton(
