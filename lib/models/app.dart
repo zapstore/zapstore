@@ -68,6 +68,7 @@ class App extends base.App with DataModelMixin<App> {
       localApp.value?.status == AppInstallStatus.updatable &&
       latestMetadata != null &&
       signer.isPresent;
+  bool get isInstalled => localApp.value?.status != null;
   bool get isUpdated => localApp.value?.status == AppInstallStatus.updated;
   bool get isDowngrade => localApp.value?.status == AppInstallStatus.downgrade;
   bool get hasCertificateMismatch =>
@@ -349,12 +350,18 @@ mixin AppAdapter on Adapter<App> {
       final tags = map['tags'];
       final pubkey = map['pubkey'];
       map['localApp'] = base.BaseUtil.getTag(tags, 'd')!;
-      // Find zap recipient as specified in event or fall back to author's pubkey
-      map['developer'] = base.BaseUtil.getTag(tags, 'zap') ?? pubkey;
-      // If app is signed by Zapstore (except the Zapstore app), remove from being the developer
-      if (pubkey == kZapstorePubkey &&
-          map['localApp'] != kZapstoreAppIdentifier) {
-        map.remove('developer');
+
+      // Find developer
+      final zapTag = base.BaseUtil.getTag(tags, 'zap');
+      if (pubkey == kZapstorePubkey) {
+        if (zapTag != null) {
+          map['developer'] = zapTag;
+        }
+        if (map['localApp'] == kZapstoreAppIdentifier) {
+          map['developer'] = pubkey;
+        }
+      } else {
+        map['developer'] = pubkey;
       }
     }
 
