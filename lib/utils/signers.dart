@@ -31,14 +31,13 @@ class AmberSigner extends Signer {
       throw Exception("Cannot sign, missing Amber");
     }
 
-    if (partialEvent is DirectMessage) {
+    if (partialEvent is PartialDirectMessage) {
       final signedMessage = await _signerPlugin.nip04Encrypt(
           partialEvent.event.content,
           "",
           withPubkey!.npub,
-          (partialEvent as DirectMessage).receiver.hexKey);
+          (partialEvent as PartialDirectMessage).receiver.hexKey);
       final encryptedContent = signedMessage['result'];
-      // TODO: Check this is actually encrypting the content?
       partialEvent.event.content = encryptedContent;
     }
 
