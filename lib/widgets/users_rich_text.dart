@@ -56,9 +56,11 @@ class UsersRichText extends StatelessWidget {
                   padding: const EdgeInsets.only(right: 4),
                   child: RoundedImage(url: user.avatarUrl, size: 20),
                 ),
-                Text(user.nameOrNpub,
-                    style: TextStyle(
-                        fontSize: fontSize, fontWeight: FontWeight.bold)),
+                Text(
+                  user.nameOrNpub,
+                  style: TextStyle(
+                      fontSize: fontSize, fontWeight: FontWeight.bold),
+                ),
               ],
             ),
           ),
@@ -93,7 +95,10 @@ class UsersRichText extends StatelessWidget {
     });
 
     return Text.rich(
-      TextSpan(style: TextStyle(fontSize: fontSize), children: spans),
+      TextSpan(
+        style: TextStyle(fontSize: fontSize, height: 1.7),
+        children: spans,
+      ),
     );
   }
 }

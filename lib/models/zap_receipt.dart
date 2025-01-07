@@ -33,11 +33,10 @@ mixin ZapReceiptAdapter on Adapter<ZapReceipt> {
     return super.deserialize(data);
   }
 
-  List<ZapReceipt> findByRecipient(
-      {required String pubkey, required String eventId}) {
+  List<ZapReceipt> findByEventId(String eventId) {
     final result = db.select(
-        "SELECT z.key, value from zapReceipts z, json_each(json_extract(data, '\$.tags')) WHERE json_extract(value, '\$[0]') = 'p' AND json_extract(value, '\$[1]') = ?AND json_extract(value, '\$[0]') = 'e' AND json_extract(value, '\$[1]') = ?",
-        [pubkey, eventId]);
+        "SELECT z.key, z.data from zapReceipts z, json_each(json_extract(data, '\$.tags')) WHERE json_extract(value, '\$[0]') = 'e' AND json_extract(value, '\$[1]') = ?",
+        [eventId]);
     return deserializeFromResult(result);
   }
 }

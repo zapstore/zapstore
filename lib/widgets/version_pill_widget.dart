@@ -20,7 +20,7 @@ class VersionPillWidget extends StatelessWidget {
       children: [
         if (app.canUpdate)
           PillWidget(
-            text: WidgetSpan(
+            WidgetSpan(
               alignment: PlaceholderAlignment.middle,
               child: Wrap(
                 crossAxisAlignment: WrapCrossAlignment.center,
@@ -41,7 +41,7 @@ class VersionPillWidget extends StatelessWidget {
         if (app.canUpdate) Icon(Icons.arrow_right),
         if (app.latestMetadata != null)
           PillWidget(
-            text: WidgetSpan(
+            WidgetSpan(
               alignment: PlaceholderAlignment.middle,
               child: Wrap(
                 crossAxisAlignment: WrapCrossAlignment.center,

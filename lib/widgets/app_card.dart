@@ -230,7 +230,7 @@ class TagsContainer extends StatelessWidget {
         for (final tag in tags)
           Padding(
             padding: const EdgeInsets.only(right: 6),
-            child: PillWidget(text: TextSpan(text: tag)),
+            child: PillWidget(TextSpan(text: tag)),
           ),
       ],
     );

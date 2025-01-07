@@ -18,7 +18,6 @@ import 'package:zapstore/widgets/signer_and_developer_row.dart';
 import 'package:zapstore/widgets/spinning_logo.dart';
 import 'package:zapstore/widgets/users_rich_text.dart';
 import 'package:zapstore/widgets/versioned_app_header.dart';
-import 'package:zapstore/widgets/zap_button.dart';
 import 'package:zapstore/widgets/zap_receipts.dart';
 
 class AppDetailScreen extends HookConsumerWidget {
@@ -157,10 +156,8 @@ class AppDetailScreen extends HookConsumerWidget {
                         padding: const EdgeInsets.only(right: 14),
                         child: SignerAndDeveloperRow(app: app),
                       ),
-                      Gap(10),
-                      ZapButton(app: app),
                       ZapReceipts(app: app),
-                      Gap(10),
+                      Gap(20),
                       Container(
                         padding: EdgeInsets.all(10),
                         decoration: BoxDecoration(

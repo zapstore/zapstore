@@ -47,7 +47,7 @@ class AppCurationContainer extends HookConsumerWidget {
                     onTap: () => ref.read(_selectedIdProvider.notifier).state =
                         appCurationSet.getReplaceableEventLink(),
                     child: PillWidget(
-                      text: WidgetSpan(
+                      WidgetSpan(
                         alignment: PlaceholderAlignment.middle,
                         child: Wrap(
                           crossAxisAlignment: WrapCrossAlignment.center,

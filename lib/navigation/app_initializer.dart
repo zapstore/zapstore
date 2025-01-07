@@ -72,6 +72,8 @@ final appInitializer = FutureProvider<void>((ref) async {
     if (uri.scheme == 'https' && uri.hasFragment) {
       appId = uri.fragment;
     } else if (uri.scheme == 'zapstore') {
+      // zapstore://com.app.id
+      // zapstore://com.app.id?signer=npub1xyz
       appId = uri.host;
     }
     if (appId != null) {

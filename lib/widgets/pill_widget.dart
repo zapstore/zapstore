@@ -4,11 +4,8 @@ class PillWidget extends StatelessWidget {
   final InlineSpan text;
   final Color color;
   final double size;
-  const PillWidget(
-      {super.key,
-      required this.text,
-      this.color = Colors.blue,
-      this.size = 13});
+  const PillWidget(this.text,
+      {super.key, this.color = Colors.blue, this.size = 13});
 
   @override
   Widget build(BuildContext context) {

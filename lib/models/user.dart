@@ -18,6 +18,35 @@ class User extends base.User with DataModelMixin<User> {
   @override
   Object? get id => event.id;
 
+  User.fromJson(super.map)
+      : followers = hasMany(map['followers']),
+        following = hasMany(map['following']),
+        settings = belongsTo(map['settings']),
+        super.fromJson();
+
+  User.fromPubkey(String pubkey)
+      : this.fromJson({
+          'id': pubkey,
+          'kind': 0,
+          'pubkey': pubkey.hexKey,
+          'created_at': DateTime.now().millisecondsSinceEpoch ~/ 1000,
+          'content': '{}',
+          'tags': [],
+        });
+
+  Map<String, dynamic> toJson() => super.toMap();
+
+  @DataRelationship(inverse: 'followers')
+  final HasMany<User> following;
+  @DataRelationship(inverse: 'following')
+  final HasMany<User> followers;
+  @DataRelationship(inverse: 'user')
+  final BelongsTo<Settings> settings;
+
+  String get nameOrNpub => name ?? npub.shorten;
+
+  // Zaps
+
   Future<void> zap(int amountInSats,
       {required base.Event event, String? comment, base.Signer? signer}) async {
     final adapter = DataModel.adapterFor(this) as NostrAdapter;
@@ -87,6 +116,7 @@ class User extends base.User with DataModelMixin<User> {
     }
 
     // Pay the invoice via NWC (errors are thrown)
+    // TODO: If timeout is thrown, tell the user the invoice still may get paid
     await adapter.socialRelays.ndk!.nwc.payInvoice(nwcConnection,
         invoice: invoice, timeout: Duration(seconds: 20));
   }
@@ -98,33 +128,6 @@ class User extends base.User with DataModelMixin<User> {
     final map = jsonDecode(response.body);
     return map;
   }
-
-  User.fromJson(super.map)
-      : followers = hasMany(map['followers']),
-        following = hasMany(map['following']),
-        settings = belongsTo(map['settings']),
-        super.fromJson();
-
-  User.fromPubkey(String pubkey)
-      : this.fromJson({
-          'id': pubkey,
-          'kind': 0,
-          'pubkey': pubkey.hexKey,
-          'created_at': DateTime.now().millisecondsSinceEpoch ~/ 1000,
-          'content': '{}',
-          'tags': [],
-        });
-
-  Map<String, dynamic> toJson() => super.toMap();
-
-  @DataRelationship(inverse: 'followers')
-  final HasMany<User> following;
-  @DataRelationship(inverse: 'following')
-  final HasMany<User> followers;
-  @DataRelationship(inverse: 'user')
-  final BelongsTo<Settings> settings;
-
-  String get nameOrNpub => name ?? npub.shorten;
 }
 
 mixin UserAdapter on NostrAdapter<User> {

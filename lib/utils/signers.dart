@@ -21,7 +21,6 @@ class AmberSigner extends Signer {
   @override
   Future<String?> getPublicKey() async {
     final map = await _signerPlugin.getPublicKey();
-    print('got $map');
     return map['npub'] ?? map['result'];
   }
 
@@ -39,6 +38,7 @@ class AmberSigner extends Signer {
           withPubkey!.npub,
           (partialEvent as DirectMessage).receiver.hexKey);
       final encryptedContent = signedMessage['result'];
+      // TODO: Check this is actually encrypting the content?
       partialEvent.event.content = encryptedContent;
     }
 
