@@ -78,7 +78,7 @@ class ZapReceipts extends HookConsumerWidget {
     return _wrap(
       UsersRichText(
         leadingTextSpan: TextSpan(
-          style: TextStyle(fontSize: 16),
+          style: TextStyle(fontSize: 16, height: 1.7),
           children: [
             TextSpan(text: '⚡'),
             TextSpan(
