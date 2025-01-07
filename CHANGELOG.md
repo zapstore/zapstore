@@ -1,3 +1,8 @@
+# 0.2.1
+
+  - Bugfix: Fix zaps caching, loading, display and order by amount
+  - Other minor bugfixes
+
 # 0.2.0
 
   - Feature: Sign in with NIP-55 (Amber)
