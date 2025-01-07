@@ -59,7 +59,10 @@ class UsersRichText extends StatelessWidget {
                 Text(
                   user.nameOrNpub,
                   style: TextStyle(
-                      fontSize: fontSize, fontWeight: FontWeight.bold),
+                    fontSize: fontSize,
+                    fontWeight: FontWeight.bold,
+                    height: 1.25,
+                  ),
                 ),
               ],
             ),
