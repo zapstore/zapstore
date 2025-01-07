@@ -71,7 +71,11 @@ class ZapButton extends HookConsumerWidget {
                       width: double.maxFinite,
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
+                        spacing: 10,
                         children: [
+                          if (app.isInstalled && !app.isUpdated)
+                            Text(
+                                '⚠️ Zaps will go toward the latest release (${app.latestMetadata!.version}), not the one currently installed (${app.localApp.value!.installedVersion})'),
                           Consumer(
                             builder: (context, ref, _) {
                               final signedInUser =
@@ -104,7 +108,7 @@ class ZapButton extends HookConsumerWidget {
                               FilteringTextInputFormatter.digitsOnly
                             ],
                           ),
-                          Gap(20),
+                          Gap(10),
                           SizedBox(
                             width: double.maxFinite,
                             child: Wrap(
