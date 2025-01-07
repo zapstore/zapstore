@@ -33,7 +33,6 @@ class SignInButton extends ConsumerWidget {
     if (requireNip55 && signedInWithPubkey) {
       user = null;
     }
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -47,16 +46,17 @@ class SignInButton extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
+                    spacing: 4,
                     children: [
                       Text(
                         user.nameOrNpub,
-                        // softWrap: true,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
-                      Gap(4),
-                      Icon(Icons.verified, color: Colors.lightBlue, size: 18),
+                      if (user.settings.value!.signInMethod ==
+                          SignInMethod.nip55)
+                        Icon(Icons.diamond, color: Colors.lightBlue, size: 18),
                     ],
                   ),
                   // if (user.following.isNotEmpty)
