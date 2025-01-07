@@ -72,7 +72,6 @@ class ZapReceipts extends HookConsumerWidget {
       final totalUserAmount = receipts
           .where((r) => u.pubkey == r.senderPubkey)
           .fold(0, (acc, e) => acc + e.amount);
-      print('$totalUserAmount - ${u.nameOrNpub}');
       return totalUserAmount.wrapped;
     });
 
@@ -97,7 +96,7 @@ class ZapReceipts extends HookConsumerWidget {
 
   Widget _wrap(Widget inner) {
     return Padding(
-      padding: const EdgeInsets.only(top: 10, bottom: 20),
+      padding: const EdgeInsets.only(top: 10, bottom: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         spacing: 10,

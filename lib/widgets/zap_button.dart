@@ -186,8 +186,15 @@ class ZapButton extends HookConsumerWidget {
                   context.showInfo('$amount sat${amount > 1 ? 's' : ''} sent!',
                       description: 'Payment was successful');
                 } catch (e) {
+                  var title = 'Unable to zap';
+                  var description = e.toString();
+                  if (e.toString().contains('Timed out')) {
+                    title = 'Unknown state';
+                    description =
+                        'The call timed out but payment may still go through! Please watch the zaps list.\n\n$description';
+                  }
                   // ignore: use_build_context_synchronously
-                  context.showError('Unable to zap', description: e.toString());
+                  context.showError(title, description: description);
                 }
               }
             },

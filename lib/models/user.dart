@@ -116,7 +116,6 @@ class User extends base.User with DataModelMixin<User> {
     }
 
     // Pay the invoice via NWC (errors are thrown)
-    // TODO: If timeout is thrown, tell the user the invoice still may get paid
     await adapter.socialRelays.ndk!.nwc.payInvoice(nwcConnection,
         invoice: invoice, timeout: Duration(seconds: 20));
   }
