@@ -175,19 +175,20 @@ class ZapReceiptsNotifier extends StateNotifier<AsyncValue<Set<ZapReceipt>>> {
           data.map((r) => ZapReceipt.fromJson(r.toJson()).init().saveLocal());
       await _loadZappers(zapReceipts);
 
-      // Mark loading done for this event
-      ref
-          .read(_zapsPreviouslyLoadedProvider(fileMetadata.event.id).notifier)
-          .state = true;
-
       state = AsyncData({if (state.hasValue) ...state.value!, ...zapReceipts});
     });
 
-    // If after 10 seconds we receive no zaps, then change the state to empty
-    // (to prevent forever spinners)
-    Timer(Duration(seconds: 10), () {
-      if (mounted && state is AsyncLoading) {
-        state = AsyncData({});
+    // If after 8 seconds we receive no zaps, then change the state to empty
+    // (to prevent forever spinners) and set to loading attempted
+    Timer(Duration(seconds: 8), () {
+      if (mounted) {
+        // Mark loading done for this event
+        ref
+            .read(_zapsPreviouslyLoadedProvider(fileMetadata.event.id).notifier)
+            .state = true;
+        if (state is AsyncLoading) {
+          state = AsyncData({});
+        }
       }
     });
   }
