@@ -59,6 +59,7 @@ class FollowsWhoFollowContainer extends HookConsumerWidget {
 final followsWhoFollowProvider = FutureProvider.autoDispose
     .family<List<User>, ({String from, String to})>((ref, arg) async {
   final _ = ref.watch(signedInUserProvider);
-  final users = await ref.users.userAdapter.getTrusted(arg.from, arg.to);
+  final users =
+      await ref.users.userAdapter.getFollowsWhoFollow(arg.from, arg.to);
   return users.toSet().toList();
 });

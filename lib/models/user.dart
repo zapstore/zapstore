@@ -226,26 +226,20 @@ mixin UserAdapter on NostrAdapter<User> {
     return super.deserialize(data);
   }
 
-  Future<List<User>> getTrusted(String npub1, String npub2) async {
-    final url = 'https://trustgraph.live/api/fwf/$npub1/$npub2';
-    final users = await sendRequest(
-      Uri.parse(url),
-      onSuccess: (response, label) async {
-        if (response.body == null) return null;
-        final map =
-            Map<String, dynamic>.from(jsonDecode(response.body.toString()));
-
-        final trustedKeys = map.keys.map((npub) => npub.hexKey);
-        return await findAll(
-          params: {'authors': trustedKeys},
-          onSuccess: (response, label, adapter) {
-            final data = deserialize(response.body);
-            return data.models;
-          },
-        );
-      },
-    );
-    return users!;
+  Future<List<User>> getFollowsWhoFollow(String npub1, String npub2) async {
+    final search = jsonEncode({
+      'source': npub1.hexKey,
+      'targets': [npub2.hexKey]
+    });
+    final response = await ref.users.nostrAdapter.vertexRelay
+        .queryRaw(base.RelayRequest(kinds: {6312, 7000}, search: search));
+    if (response.isEmpty || response.first['kind'] == 7000) {
+      return [];
+    }
+    final result = response.first['content'];
+    final pubkeyList = (jsonDecode(result) as List).map((e) => e['pubkey']);
+    final users = await findAll(params: {'authors': pubkeyList});
+    return users;
   }
 }
 

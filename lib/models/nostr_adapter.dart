@@ -14,6 +14,7 @@ import 'package:zapstore/widgets/latest_releases_container.dart';
 // const kAppRelays = {'ws://10.0.2.2:3000'};
 const kAppRelays = {'wss://relay.zapstore.dev'};
 const kSocialRelays = {'wss://relay.damus.io', 'wss://relay.primal.net', 'ndk'};
+const kVertexRelay = {'wss://relay.vertexlab.io'};
 
 mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
   RelayMessageNotifier get relay =>
@@ -21,6 +22,9 @@ mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
 
   RelayMessageNotifier get socialRelays =>
       ref.read(relayProviderFamily(kSocialRelays).notifier);
+
+  RelayMessageNotifier get vertexRelay =>
+      ref.read(relayProviderFamily(kVertexRelay).notifier);
 
   @override
   Future<void> onInitialized() async {
