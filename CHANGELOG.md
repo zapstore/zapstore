@@ -1,3 +1,8 @@
+# 0.2.2
+
+  - Bugfix: Zap loading fix, zap sender fallback fix
+  - Feature: Replace buggy WoT API-based service with Vertex DVM-based service (alpha)
+
 # 0.2.1
 
   - Bugfix: Fix zaps caching, loading, display and order by amount
