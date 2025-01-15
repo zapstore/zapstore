@@ -130,8 +130,6 @@ class User extends base.User with DataModelMixin<User> {
 }
 
 mixin UserAdapter on NostrAdapter<User> {
-  final queriedAtMap = <String, DateTime>{};
-
   @override
   Future<List<User>> findAll(
       {bool? remote,
@@ -150,12 +148,9 @@ mixin UserAdapter on NostrAdapter<User> {
     final request = base.RelayRequest(
       kinds: {0}, // 3
       authors: {...authors},
-      since: queriedAtMap[authors.join()],
     );
 
     final result = await socialRelays.queryRaw(request);
-    // Very rough caching
-    queriedAtMap[authors.join()] = DateTime.now().subtract(Duration(hours: 1));
 
     if (onSuccess != null) {
       return await onSuccess.call(DataResponse(statusCode: 200, body: result),
