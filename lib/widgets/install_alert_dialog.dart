@@ -43,7 +43,7 @@ class InstallAlertDialog extends HookConsumerWidget {
                   oneLine: true),
             Gap(20),
             if (app.signer.value != null)
-              FollowsWhoFollowContainer(
+              RelevantWhoFollowContainer(
                 fromNpub: signedInUser?.npub ?? kFranzapPubkey.npub,
                 toNpub: app.signer.value!.npub,
               ),

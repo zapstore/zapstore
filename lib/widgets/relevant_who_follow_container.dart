@@ -6,8 +6,8 @@ import 'package:zapstore/models/user.dart';
 import 'package:zapstore/screens/settings_screen.dart';
 import 'package:zapstore/widgets/users_rich_text.dart';
 
-class FollowsWhoFollowContainer extends HookConsumerWidget {
-  const FollowsWhoFollowContainer({
+class RelevantWhoFollowContainer extends HookConsumerWidget {
+  const RelevantWhoFollowContainer({
     super.key,
     required this.fromNpub,
     required this.toNpub,
@@ -60,6 +60,6 @@ final followsWhoFollowProvider = FutureProvider.autoDispose
     .family<List<User>, ({String from, String to})>((ref, arg) async {
   final _ = ref.watch(signedInUserProvider);
   final users =
-      await ref.users.userAdapter.getFollowsWhoFollow(arg.from, arg.to);
+      await ref.users.userAdapter.getRelevantWhoFollow(arg.from, arg.to);
   return users.toSet().toList();
 });

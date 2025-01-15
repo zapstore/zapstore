@@ -226,7 +226,7 @@ mixin UserAdapter on NostrAdapter<User> {
     return super.deserialize(data);
   }
 
-  Future<List<User>> getFollowsWhoFollow(String npub1, String npub2) async {
+  Future<List<User>> getRelevantWhoFollow(String npub1, String npub2) async {
     final search = jsonEncode({
       'source': npub1.hexKey,
       'targets': [npub2.hexKey]
