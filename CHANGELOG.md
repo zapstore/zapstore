@@ -1,3 +1,7 @@
+# 0.2.3
+
+  - Bugfix: Remove user caching
+
 # 0.2.2
 
   - Bugfix: Zap loading fix, zap sender fallback fix
