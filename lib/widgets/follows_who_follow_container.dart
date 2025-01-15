@@ -6,8 +6,8 @@ import 'package:zapstore/models/user.dart';
 import 'package:zapstore/screens/settings_screen.dart';
 import 'package:zapstore/widgets/users_rich_text.dart';
 
-class WebOfTrustContainer extends HookConsumerWidget {
-  const WebOfTrustContainer({
+class FollowsWhoFollowContainer extends HookConsumerWidget {
+  const FollowsWhoFollowContainer({
     super.key,
     required this.fromNpub,
     required this.toNpub,
@@ -26,8 +26,7 @@ class WebOfTrustContainer extends HookConsumerWidget {
       AsyncData<List<User>>(value: final trustedUsers) => Builder(
           builder: (context) {
             if (trustedUsers.isEmpty) {
-              return Text(
-                  'No trusted users between you and the signer. (This may be a service error)');
+              return Text('You don\'t follow any users who follow the signer.');
             }
 
             return UsersRichText(
@@ -39,14 +38,14 @@ class WebOfTrustContainer extends HookConsumerWidget {
           },
         ),
       AsyncError(:final error) =>
-        Center(child: Text('Error checking web of trust: $error')),
+        Center(child: Text('Error connecting with web of trust DVM: $error')),
       // Loading state
       _ => Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: Column(
               children: [
-                Text('Loading web of trust...'),
+                Text('Loading profiles in your web of trust...'),
                 Gap(10),
                 SmallCircularProgressIndicator(),
               ],

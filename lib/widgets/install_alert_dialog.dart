@@ -7,7 +7,7 @@ import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/user.dart';
 import 'package:zapstore/widgets/sign_in_container.dart';
 import 'package:zapstore/widgets/author_container.dart';
-import 'package:zapstore/widgets/wot_container.dart';
+import 'package:zapstore/widgets/follows_who_follow_container.dart';
 
 class InstallAlertDialog extends HookConsumerWidget {
   const InstallAlertDialog({
@@ -43,13 +43,13 @@ class InstallAlertDialog extends HookConsumerWidget {
                   oneLine: true),
             Gap(20),
             if (app.signer.value != null)
-              WebOfTrustContainer(
+              FollowsWhoFollowContainer(
                 fromNpub: signedInUser?.npub ?? kFranzapPubkey.npub,
                 toNpub: app.signer.value!.npub,
               ),
             if (signedInUser == null)
               SignInButton(
-                label: 'Sign in to view your web of trust',
+                label: 'Sign in to view profiles in your web of trust',
                 minimal: true,
               ),
             Gap(16),
