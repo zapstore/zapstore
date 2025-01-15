@@ -7,7 +7,7 @@ import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/user.dart';
 import 'package:zapstore/widgets/sign_in_container.dart';
 import 'package:zapstore/widgets/author_container.dart';
-import 'package:zapstore/widgets/follows_who_follow_container.dart';
+import 'package:zapstore/widgets/relevant_who_follow_container.dart';
 
 class InstallAlertDialog extends HookConsumerWidget {
   const InstallAlertDialog({

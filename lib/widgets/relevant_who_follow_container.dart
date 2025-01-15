@@ -19,7 +19,7 @@ class RelevantWhoFollowContainer extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final data =
-        ref.watch(followsWhoFollowProvider((from: fromNpub, to: toNpub)));
+        ref.watch(relevantWhoFollowProvider((from: fromNpub, to: toNpub)));
     final signedInUser = ref.watch(signedInUserProvider);
 
     return switch (data) {
@@ -56,7 +56,7 @@ class RelevantWhoFollowContainer extends HookConsumerWidget {
   }
 }
 
-final followsWhoFollowProvider = FutureProvider.autoDispose
+final relevantWhoFollowProvider = FutureProvider.autoDispose
     .family<List<User>, ({String from, String to})>((ref, arg) async {
   final _ = ref.watch(signedInUserProvider);
   final users =
