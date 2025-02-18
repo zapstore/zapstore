@@ -60,7 +60,7 @@ dependency_overrides:
     # path: ../../purplebase/purplebase
     git:
       url: https://github.com/purplebase/purplebase
-      ref: 6e7c86bc98a8a08b67b8fe8f70d3fcbd58d6476c
+      ref: 512eab9828d2d1ca9e1b7e48a5742a3b08b9b99f
   flutter_data:
     git:
       url: https://github.com/zapstore/flutter_data

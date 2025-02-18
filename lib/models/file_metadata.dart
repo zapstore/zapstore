@@ -23,10 +23,6 @@ class FileMetadata extends base.FileMetadata with DataModelMixin<FileMetadata> {
         super.fromJson();
 
   Map<String, dynamic> toJson() => super.toMap();
-
-  // String? get version => tagMap['version']?.firstOrNull;
-  int? get versionCode => int.tryParse(event.getTag('version') ?? '');
-  String? get apkSignatureHash => event.getTag('apk_signature_hash');
 }
 
 mixin FileMetadataAdapter on Adapter<FileMetadata> {

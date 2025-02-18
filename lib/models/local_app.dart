@@ -10,6 +10,7 @@ import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/system_info.dart';
+import 'package:zapstore/utils/version.dart';
 
 part 'local_app.g.dart';
 
@@ -166,8 +167,9 @@ mixin LocalAppAdapter on Adapter<LocalApp> {
       comp = app.latestMetadata!.versionCode!.compareTo(code);
     }
 
+    // If versionCode was not available or not enough, compare string version
     if (comp == 0) {
-      comp = app.latestMetadata!.version!.compareTo(installedVersion);
+      comp = compareVersions(installedVersion, app.latestMetadata!.version!);
     }
 
     if (comp == 1) return AppInstallStatus.updatable;
