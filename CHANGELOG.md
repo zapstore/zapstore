@@ -1,3 +1,9 @@
+# 0.2.4
+
+  - Bugfix: Fix bad version comparison
+  - Bugfix: Fix links in release notes
+  - Feature: Add a warning for old latest release
+
 # 0.2.3
 
   - Bugfix: Remove user caching
