@@ -32,6 +32,24 @@ class ReleaseCard extends StatelessWidget {
             Text(release.version,
                 style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
             Gap(10),
+            if (DateTime.now().difference(release.event.createdAt) >
+                Duration(days: 365))
+              Padding(
+                padding: const EdgeInsets.all(8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  children: [
+                    Icon(Icons.warning_rounded, size: 18),
+                    Gap(10),
+                    Text('This release is over a year old',
+                        style: TextStyle(
+                          color: Colors.red[100],
+                          fontWeight: FontWeight.bold,
+                        )),
+                  ],
+                ),
+              ),
+            Gap(10),
             release.releaseNotes.length < 3000
                 ? MarkdownBody(
                     data: release.releaseNotes,
@@ -56,16 +74,6 @@ class ReleaseCard extends StatelessWidget {
                   children: [Text('Version'), Text(metadata.version!)],
                 ),
               ),
-            Padding(
-              padding: const EdgeInsets.all(8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Date'),
-                  Text(formatter.format(release.event.createdAt)),
-                ],
-              ),
-            ),
             if (metadata != null)
               Padding(
                 padding: const EdgeInsets.all(8),
@@ -77,6 +85,16 @@ class ReleaseCard extends StatelessWidget {
                   ],
                 ),
               ),
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Date'),
+                  Text(formatter.format(release.event.createdAt)),
+                ],
+              ),
+            ),
           ],
         ),
       ),
