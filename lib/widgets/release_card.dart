@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:gap/gap.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:zapstore/models/release.dart';
 
 class ReleaseCard extends StatelessWidget {
@@ -32,7 +33,14 @@ class ReleaseCard extends StatelessWidget {
                 style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
             Gap(10),
             release.releaseNotes.length < 3000
-                ? MarkdownBody(data: release.releaseNotes)
+                ? MarkdownBody(
+                    data: release.releaseNotes,
+                    onTapLink: (text, url, title) {
+                      if (url != null) {
+                        launchUrl(Uri.parse(url));
+                      }
+                    },
+                  )
                 : Container(
                     constraints: BoxConstraints(
                       maxHeight: 300,
