@@ -165,11 +165,11 @@ mixin LocalAppAdapter on Adapter<LocalApp> {
           ? installedVersionCode + 2000
           : installedVersionCode;
       comp = app.latestMetadata!.versionCode!.compareTo(code);
-    }
-
-    // If versionCode was not available or not enough, compare string version
-    if (comp == 0) {
-      comp = compareVersions(installedVersion, app.latestMetadata!.version!);
+    } else {
+      // If versionCode was not available, compare string version
+      try {
+        comp = compareVersions(installedVersion, app.latestMetadata!.version!);
+      } catch (_) {}
     }
 
     if (comp == 1) return AppInstallStatus.updatable;
