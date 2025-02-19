@@ -10,6 +10,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
+import 'package:zapstore/models/local_app.dart';
 import 'package:zapstore/models/release.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/install_button.dart';
@@ -36,6 +37,9 @@ class AppDetailScreen extends HookConsumerWidget {
       final storedApps =
           ref.apps.appAdapter.findWhereIdentifierInLocal({model.identifier});
       if (storedApps.firstOrNull?.latestMetadata != null) {
+        // Refresh local app status
+        await ref.localApps.localAppAdapter
+            .refreshUpdateStatus(appId: storedApps.first.id.toString());
         return storedApps.first;
       }
       return ref.apps.findOne(model.identifier, remote: true);
