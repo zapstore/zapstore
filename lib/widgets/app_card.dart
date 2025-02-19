@@ -103,6 +103,27 @@ class AppCard extends HookConsumerWidget {
                           compact: true,
                         ),
                       ),
+                    if (app.identifier == kZapstoreAppIdentifier &&
+                        app.canUpdate)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 10),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.start,
+                          children: [
+                            Icon(
+                              Icons.warning_rounded,
+                              size: 18,
+                              color: Colors.orange[200],
+                            ),
+                            Gap(10),
+                            Text('Please make sure to update',
+                                style: TextStyle(
+                                  color: Colors.orange[200],
+                                  fontWeight: FontWeight.bold,
+                                )),
+                          ],
+                        ),
+                      ),
                   ],
                 ),
               ),

@@ -1,12 +1,14 @@
 import 'dart:async';
 
 import 'package:async_button_builder/async_button_builder.dart';
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/screens/settings_screen.dart';
+import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/notifier.dart';
 import 'package:zapstore/widgets/app_card.dart';
 
@@ -108,13 +110,17 @@ class LatestReleasesAppNotifier extends PreloadingStateNotifier<List<App>> {
 
   @override
   AsyncValue<List<App>> fetchLocal() {
-    final model = ref.apps.findAllLocal();
+    final models = ref.apps.findAllLocal();
 
-    if (model.isEmpty) {
+    if (models.isEmpty) {
       return AsyncLoading();
     }
 
-    final apps = model
+    // Do we have a Zapstore version that needs update?
+    final zapstoreApp =
+        models.firstWhereOrNull((a) => a.identifier == kZapstoreAppIdentifier);
+
+    final apps = models
         .where((a) => a.latestMetadata != null)
         .sortedByLatest
         .take(_page * 10)
@@ -123,6 +129,11 @@ class LatestReleasesAppNotifier extends PreloadingStateNotifier<List<App>> {
     // Set timestamp of oldest, to prepare for next query
     if (apps.isNotEmpty) {
       _oldestCreatedAt = apps.last.event.createdAt;
+    }
+    // "Pin" Zapstore if it needs to be updated
+    if (zapstoreApp != null && zapstoreApp.canUpdate) {
+      apps.remove(zapstoreApp);
+      apps.insert(0, zapstoreApp);
     }
     return AsyncData(apps);
   }

@@ -4,10 +4,8 @@ import 'dart:math';
 import 'package:dart_emoji/dart_emoji.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_data/flutter_data.dart';
-import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:toastification/toastification.dart';
-import 'package:zapstore/models/app.dart';
 
 extension ContextX on BuildContext {
   ThemeData get theme => Theme.of(this);
@@ -47,26 +45,6 @@ extension ContextX on BuildContext {
               actions: actions,
             )
           : null,
-    );
-  }
-
-  void showZapstoreUpdate(App app) {
-    toastification.show(
-      context: this,
-      type: ToastificationType.info,
-      icon: Icon(Icons.info),
-      style: ToastificationStyle.fillColored,
-      title: _ToastTitleWidget('Zapstore has a new version available'),
-      description: Text('Tap to go to update screen'),
-      callbacks: ToastificationCallbacks(
-        onTap: (item) {
-          toastification.dismissById(item.id);
-          go('/updates/details', extra: app);
-        },
-      ),
-      showProgressBar: false,
-      closeButtonShowType: CloseButtonShowType.always,
-      alignment: Alignment.topCenter,
     );
   }
 }

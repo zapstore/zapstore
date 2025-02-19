@@ -6,7 +6,6 @@ import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
-import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/app_card.dart';
 import 'package:zapstore/widgets/app_curation_container.dart';
 import 'package:zapstore/widgets/latest_releases_container.dart';
@@ -21,17 +20,6 @@ class SearchScreen extends HookConsumerWidget {
     final focusNode = useFocusNode();
     final searchResultState = ref.watch(searchResultProvider);
     final scrollController = useScrollController();
-
-    // Show toast if this app has updates
-    useMemoized(() {
-      final app = ref.apps.appAdapter
-          .findWhereIdentifierInLocal({kZapstoreAppIdentifier}).firstOrNull;
-      if (app?.canUpdate ?? false) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          context.showZapstoreUpdate(app!);
-        });
-      }
-    });
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
