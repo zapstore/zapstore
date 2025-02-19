@@ -129,7 +129,9 @@ class InstallButton extends HookConsumerWidget {
                       ? Text('Install')
                       : Center(child: SpinningLogo(size: 40))),
               DownloadingInstallProgress(:final progress) => Text(
-                  '${(progress * 100).floor()}%',
+                  progress == 0
+                      ? 'Starting download...'
+                      : '${(progress * 100).floor()}%',
                   style: TextStyle(fontWeight: FontWeight.bold),
                 ),
               VerifyingHashProgress() => Text('Verifying file integrity'),
