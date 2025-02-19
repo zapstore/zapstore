@@ -29,7 +29,7 @@ class SignInButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     var user = ref.watch(signedInUserProvider);
     final signedInWithPubkey =
-        user != null && user.settings.value!.signInMethod != SignInMethod.nip55;
+        user?.settings.value?.signInMethod == SignInMethod.pubkey;
     if (requireNip55 && signedInWithPubkey) {
       user = null;
     }

@@ -54,7 +54,7 @@ class SettingsScreen extends HookConsumerWidget {
           ),
           Gap(20),
           if (signedInUser == null ||
-              signedInUser.settings.value!.signInMethod != SignInMethod.nip55)
+              signedInUser.settings.value?.signInMethod != SignInMethod.nip55)
             Column(
               children: [
                 Text(
