@@ -1,3 +1,9 @@
+# 0.2.5
+
+  - Bugfix: Improve version comparison and add guard
+  - Bugfix: Refresh local app status when not fetching from remote
+  - Bugfix: Remove Zapstore update toast and pin it in latest releases instead
+
 # 0.2.4
 
   - Bugfix: Fix bad version comparison
