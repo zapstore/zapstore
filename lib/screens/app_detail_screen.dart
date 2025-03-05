@@ -10,13 +10,11 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
-import 'package:zapstore/models/local_app.dart';
 import 'package:zapstore/models/release.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/install_button.dart';
 import 'package:zapstore/widgets/release_card.dart';
 import 'package:zapstore/widgets/signer_and_developer_row.dart';
-import 'package:zapstore/widgets/spinning_logo.dart';
 import 'package:zapstore/widgets/users_rich_text.dart';
 import 'package:zapstore/widgets/versioned_app_header.dart';
 import 'package:zapstore/widgets/zap_receipts.dart';
@@ -34,16 +32,11 @@ class AppDetailScreen extends HookConsumerWidget {
 
     // TODO: Bug using remote=true in watchOne, use hook for now
     final snapshot = useFuture(useMemoized(() async {
-      final storedApps =
-          ref.apps.appAdapter.findWhereIdentifierInLocal({model.identifier});
-      if (storedApps.firstOrNull?.latestMetadata != null) {
-        // Refresh local app status
-        await ref.localApps.localAppAdapter
-            .refreshUpdateStatus(appId: storedApps.first.id.toString());
-        return storedApps.first;
-      }
-      return ref.apps.findOne(model.identifier, remote: true);
+      // Skip cache to actually hit the remote to refresh
+      return await ref.apps
+          .findOne(model.identifier, remote: true, params: {'skipCache': true});
     }));
+
     final state = ref.apps.watchOne(model.id!,
         alsoWatch: (_) => {
               _.localApp,
@@ -61,6 +54,21 @@ class AppDetailScreen extends HookConsumerWidget {
         .map((s) => s.signer.value)
         .nonNulls
         .toSet();
+
+    // If request returned and result was null, go back
+    if (snapshot.connectionState == ConnectionState.done &&
+        snapshot.data == null) {
+      return Center(
+        child: ElevatedButton(
+          onPressed: () {
+            Navigator.of(context).pop();
+          },
+          child: Text(
+            'This app is no longer available.\nPress to go back.',
+          ),
+        ),
+      );
+    }
 
     return RefreshIndicator(
       onRefresh: () => ref.apps.findOne(model.identifier, remote: true),
@@ -314,7 +322,6 @@ class AppDetailScreen extends HookConsumerWidget {
                       ),
                       Gap(10),
                       if (app.releases.isEmpty) Text('No available releases'),
-                      if (!snapshot.hasData) SpinningLogo(size: 120),
                       if (app.releases.isNotEmpty)
                         ReleaseCard(
                             release:

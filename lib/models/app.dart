@@ -221,7 +221,7 @@ mixin AppAdapter on Adapter<App> {
     // If looking up multiple apps via `#d`, use `queriedAtMap`
     // to find the earliest queried at Date, to be used in the
     // next request `since` field
-    if (params.containsKey('#d')) {
+    if (params.containsKey('#d') && !params['skipCache']) {
       DateTime? earliestQueryAt;
       final identifiers = <String>{...params['#d']};
 
