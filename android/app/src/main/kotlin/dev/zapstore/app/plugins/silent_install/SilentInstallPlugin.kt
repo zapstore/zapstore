@@ -79,6 +79,14 @@ class SilentInstallPlugin : FlutterPlugin, MethodCallHandler {
                 params.setPackageSource(PackageInstaller.PACKAGE_SOURCE_STORE)
             }
 
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                params.setInstallReason(PackageManager.INSTALL_REASON_USER)
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                params.setRequestUpdateOwnership(true)
+            }
+
             val sessionId = packageInstaller.createSession(params)
             val session = packageInstaller.openSession(sessionId)
 
