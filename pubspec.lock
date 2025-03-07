@@ -654,14 +654,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.5.3+2"
-  install_plugin:
-    dependency: "direct main"
-    description:
-      name: install_plugin
-      sha256: "6fb67ba0781e75de4f2f2266ed25e835bfd277c5bfc2ed034af52774355857c6"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.1.0"
   intl:
     dependency: "direct main"
     description:

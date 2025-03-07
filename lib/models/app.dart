@@ -8,7 +8,6 @@ import 'package:collection/collection.dart';
 import 'package:convert/convert.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_data/flutter_data.dart';
-import 'package:install_plugin/install_plugin.dart';
 import 'package:mutex/mutex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -20,6 +19,7 @@ import 'package:zapstore/models/nostr_adapter.dart';
 import 'package:zapstore/models/release.dart';
 import 'package:zapstore/models/user.dart';
 import 'package:path/path.dart' as path;
+import 'package:zapstore/plugins/silent_install/silent_install_plugin.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/system_info.dart';
 
@@ -118,13 +118,10 @@ class App extends base.App with DataModelMixin<App> {
 
       notifier.state = RequestInstallProgress();
 
-      // NOTE: Using https://github.com/hui-z/flutter_install_plugin
-      // Tried https://github.com/zapstore/android_package_installer
-      // but it is giving users problems (and for me it's slower)
-      // Probably need to fork hui-z's with support for user-canceled action
-      // NOTE: Must use mutex: https://github.com/hui-z/flutter_install_plugin/issues/68
+      // NOTE: Using our custom SilentInstallPlugin for better APK installation handling
+      // Tries to install silently if possible, or with user confirmation if required
       final result = await mutex.protect(() async {
-        return InstallPlugin.install(file.path);
+        return SilentInstallPlugin.install(file.path);
       });
 
       if (result['isSuccess']) {
