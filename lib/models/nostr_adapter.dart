@@ -57,8 +57,8 @@ mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
 
   int get kind {
     var pbType = internalType.singularize().capitalize();
-    pbType =
-        pbType.replaceFirst('datum', 'data'); // handle FileMetadata edge case
+    // handle FileMetadata edge case
+    pbType = pbType.replaceFirst('datum', 'data');
     return Event.types[pbType]!.kind;
   }
 

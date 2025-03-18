@@ -59,8 +59,6 @@ class SignInButton extends ConsumerWidget {
                         Icon(Icons.diamond, color: Colors.lightBlue, size: 18),
                     ],
                   ),
-                  // if (user.following.isNotEmpty)
-                  //   Text('${user.following.length} contacts'),
                 ],
               ),
           ],

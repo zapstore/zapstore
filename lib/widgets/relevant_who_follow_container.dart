@@ -9,24 +9,22 @@ import 'package:zapstore/widgets/users_rich_text.dart';
 class RelevantWhoFollowContainer extends HookConsumerWidget {
   const RelevantWhoFollowContainer({
     super.key,
-    required this.fromNpub,
     required this.toNpub,
   });
 
-  final String fromNpub;
   final String toNpub;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final data =
-        ref.watch(relevantWhoFollowProvider((from: fromNpub, to: toNpub)));
     final signedInUser = ref.watch(signedInUserProvider);
+    final data = ref.watch(relevantWhoFollowProvider((to: toNpub)));
 
     return switch (data) {
       AsyncData<List<User>>(value: final trustedUsers) => Builder(
           builder: (context) {
             if (trustedUsers.isEmpty) {
-              return Text('You don\'t follow any users who follow the signer.');
+              return Text(
+                  'No reputable profiles follow the signer. Make sure you know the signer.');
             }
 
             return UsersRichText(
@@ -37,15 +35,14 @@ class RelevantWhoFollowContainer extends HookConsumerWidget {
             );
           },
         ),
-      AsyncError(:final error) =>
-        Center(child: Text('Error connecting with web of trust DVM: $error')),
+      AsyncError(:final error) => Center(child: Text(error.toString())),
       // Loading state
       _ => Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: Column(
               children: [
-                Text('Loading profiles in your web of trust...'),
+                Text('Checking reputation...'),
                 Gap(10),
                 SmallCircularProgressIndicator(),
               ],
@@ -57,9 +54,9 @@ class RelevantWhoFollowContainer extends HookConsumerWidget {
 }
 
 final relevantWhoFollowProvider = FutureProvider.autoDispose
-    .family<List<User>, ({String from, String to})>((ref, arg) async {
-  final _ = ref.watch(signedInUserProvider);
-  final users =
-      await ref.users.userAdapter.getRelevantWhoFollow(arg.from, arg.to);
+    .family<List<User>, ({String to})>((ref, arg) async {
+  final signedInUser = ref.watch(signedInUserProvider);
+  final users = await ref.users.userAdapter
+      .getRelevantWhoFollow(signedInUser!.npub, arg.to);
   return users.toSet().toList();
 });

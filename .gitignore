@@ -48,3 +48,5 @@ app.*.map.json
 /tmp
 /flutter_data
 .fvm/
+
+android/app/.cxx/

@@ -2,12 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:purplebase/purplebase.dart' as base;
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/user.dart';
-import 'package:zapstore/widgets/sign_in_container.dart';
 import 'package:zapstore/widgets/author_container.dart';
 import 'package:zapstore/widgets/relevant_who_follow_container.dart';
+import 'package:zapstore/widgets/sign_in_container.dart';
 
 class InstallAlertDialog extends HookConsumerWidget {
   const InstallAlertDialog({
@@ -43,15 +42,16 @@ class InstallAlertDialog extends HookConsumerWidget {
                   oneLine: true),
             Gap(20),
             if (app.signer.value != null)
-              RelevantWhoFollowContainer(
-                fromNpub: signedInUser?.npub ?? kFranzapPubkey.npub,
-                toNpub: app.signer.value!.npub,
-              ),
-            if (signedInUser == null)
-              SignInButton(
-                label: 'Sign in to view profiles in your web of trust',
-                minimal: true,
-              ),
+              signedInUser != null
+                  ? RelevantWhoFollowContainer(
+                      toNpub: app.signer.value!.npub,
+                    )
+                  : SignInButton(
+                      label:
+                          'Sign in to view the signer\'s reputable followers',
+                      minimal: true,
+                      requireNip55: true,
+                    ),
             Gap(16),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -65,7 +65,7 @@ class InstallAlertDialog extends HookConsumerWidget {
                 Gap(4),
                 Expanded(
                   child: Text(
-                    'Do not ask again for ${app.signer.value!.name} apps',
+                    'Do not ask again for apps from ${app.signer.value!.name}',
                   ),
                 )
               ],

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:collection/collection.dart';
@@ -7,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/nostr_adapter.dart';
 import 'package:zapstore/models/settings.dart';
+import 'package:zapstore/models/verify_reputation_dvm.dart';
 import 'package:zapstore/navigation/app_initializer.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/nwc.dart';
@@ -146,7 +148,7 @@ mixin UserAdapter on NostrAdapter<User> {
     }
 
     final request = base.RelayRequest(
-      kinds: {0}, // 3
+      kinds: {0},
       authors: {...authors},
     );
 
@@ -198,9 +200,11 @@ mixin UserAdapter on NostrAdapter<User> {
       );
     }
 
+    params ??= {};
+
     final result = await socialRelays.queryRaw(base.RelayRequest(
-      kinds: {0}, // 3
-      tags: params ?? {},
+      kinds: {0},
+      tags: params,
       authors: {publicKey},
     ));
 
@@ -215,21 +219,44 @@ mixin UserAdapter on NostrAdapter<User> {
     final list = data is Iterable ? data : [data as Map];
 
     for (final Map<String, dynamic> map in list) {
+      // if (map['kind'] == 3) {
+      //   map['following'] = {
+      //     for (final [name, value] in map['tags'] as Iterable)
+      //       if (name == 'p') value
+      //   };
+      // }
       map['id'] = map['pubkey'];
     }
 
     return super.deserialize(data);
   }
 
-  Future<List<User>> getRelevantWhoFollow(String npub1, String npub2) async {
-    final search = jsonEncode({
-      'source': npub1.hexKey,
-      'targets': [npub2.hexKey]
+  Future<List<User>> getRelevantWhoFollow(
+      String fromNpub, String toNpub) async {
+    final dvmReq = await PartialVerifyReputationRequest(
+            source: fromNpub.hexKey, target: toNpub.hexKey)
+        .signWith(amberSigner, withPubkey: fromNpub.hexKey);
+    await ref.users.nostrAdapter.vertexRelay.publish(dvmReq);
+
+    final req = base.RelayRequest(kinds: {
+      6312,
+      7000
+    }, tags: {
+      'e': [dvmReq.event.id]
     });
-    final response = await ref.users.nostrAdapter.vertexRelay
-        .queryRaw(base.RelayRequest(kinds: {6312, 7000}, search: search));
-    if (response.isEmpty || response.first['kind'] == 7000) {
+    final response = await ref.users.nostrAdapter.vertexRelay.queryRaw(req);
+
+    if (response.isEmpty) {
       return [];
+    }
+    if (response.first['kind'] == 7000) {
+      final error = (response.first['tags'] as Iterable?)
+          ?.firstWhereOrNull((t) => t[0] == 'status')?[2];
+      if (error.toString().contains('credits')) {
+        throw 'Unable to check followers';
+      } else {
+        throw error;
+      }
     }
     final result = response.first['content'];
     final pubkeyList = (jsonDecode(result) as List).map((e) => e['pubkey']);

@@ -7,9 +7,11 @@ import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/local_app.dart';
 import 'package:zapstore/models/user.dart';
+import 'package:zapstore/models/verify_reputation_dvm.dart';
 import 'package:zapstore/navigation/router.dart';
 import 'package:zapstore/utils/signers.dart';
 import 'package:zapstore/widgets/app_curation_container.dart';
+import 'package:purplebase/purplebase.dart' as base;
 
 AppLifecycleListener? _lifecycleListener;
 SharedPreferences? sharedPreferences;
@@ -54,6 +56,10 @@ final appInitializer = FutureProvider<void>((ref) async {
           'c86eda2daae768374526bc54903f388d9a866c00740ec8db418d7ef2dca77b5b')
       .init()
       .saveLocal();
+
+  // Register event types
+  base.Event.types['VerifyReputationRequest'] =
+      (kind: 5312, constructor: VerifyReputationRequest.fromJson);
 
   // App-wide listeners
 
