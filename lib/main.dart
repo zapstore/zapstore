@@ -43,7 +43,11 @@ void main() {
     );
   }, errorHandler);
 
-  FlutterError.onError = (_) => errorHandler(_.exception, _.stack);
+  FlutterError.onError = (details) {
+    // Prevents debugger stopping multiple times
+    FlutterError.dumpErrorToConsole(details);
+    errorHandler(details.exception, details.stack);
+  };
 }
 
 class ZapstoreApp extends ConsumerWidget {
