@@ -23,13 +23,8 @@ class UpdatesScreen extends HookConsumerWidget {
         key: UniqueKey(),
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.start,
-            children: [
-              Text('Installed apps',
-                  style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold)),
-            ],
-          ),
+          Text('Installed apps',
+              style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold)),
           if (updatedApps.isEmpty && updatableApps.isEmpty)
             SpinningLogo(size: 80),
           if (updatableApps.isNotEmpty)

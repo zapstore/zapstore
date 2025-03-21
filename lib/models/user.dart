@@ -6,6 +6,7 @@ import 'package:flutter_data/flutter_data.dart';
 import 'package:purplebase/purplebase.dart' as base;
 import 'package:http/http.dart' as http;
 import 'package:zapstore/main.data.dart';
+import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/nostr_adapter.dart';
 import 'package:zapstore/models/settings.dart';
 import 'package:zapstore/models/verify_reputation_dvm.dart';
@@ -24,6 +25,7 @@ class User extends base.User with DataModelMixin<User> {
       : followers = hasMany(map['followers']),
         following = hasMany(map['following']),
         settings = belongsTo(map['settings']),
+        apps = hasMany(map['apps']),
         super.fromJson();
 
   User.fromPubkey(String pubkey)
@@ -44,6 +46,9 @@ class User extends base.User with DataModelMixin<User> {
   final HasMany<User> followers;
   @DataRelationship(inverse: 'user')
   final BelongsTo<Settings> settings;
+
+  @DataRelationship(inverse: 'signer')
+  final HasMany<App> apps;
 
   String get nameOrNpub => name ?? npub.shorten;
 

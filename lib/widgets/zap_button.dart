@@ -30,7 +30,7 @@ class ZapButton extends HookConsumerWidget {
     final amountController = TextEditingController();
     final commentController = TextEditingController();
 
-    if (app.developer.value?.lud16 == null) {
+    if (app.signer.value?.lud16 == null) {
       return Container();
     }
 

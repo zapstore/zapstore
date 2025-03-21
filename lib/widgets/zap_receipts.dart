@@ -16,7 +16,6 @@ import 'package:zapstore/models/zap_receipt.dart';
 import 'package:zapstore/screens/settings_screen.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/users_rich_text.dart';
-import 'package:zapstore/widgets/zap_button.dart';
 
 class ZapReceipts extends HookConsumerWidget {
   ZapReceipts({
@@ -33,30 +32,21 @@ class ZapReceipts extends HookConsumerWidget {
     // NOTE: These watchers will become more efficient
     ref.users.watchAll();
 
-    final fileMetadata = app.latestMetadata;
-    // NOTE: Only show zaps for self-signed apps (at least for now)
-    final isSelfSigned = app.signer.value == app.developer.value;
-    if (fileMetadata == null || !isSelfSigned) {
-      return Container();
-    }
-
-    final zapReceipts = ref.watch(zapReceiptsNotifier(fileMetadata));
+    final zapReceipts = ref.watch(zapReceiptsNotifier(app.latestMetadata!));
 
     if (zapReceipts.isLoading) {
-      return _wrap(
-        Row(
-          children: [
-            Gap(4),
-            Text('Loading zaps...'),
-            Gap(10),
-            SmallCircularProgressIndicator(),
-          ],
-        ),
+      return Row(
+        children: [
+          Gap(4),
+          Text('Loading zaps...'),
+          Gap(10),
+          SmallCircularProgressIndicator(),
+        ],
       );
     }
 
     if (zapReceipts.value!.isEmpty) {
-      return _wrap(Container());
+      return Container();
     }
 
     final receipts = zapReceipts.value!;
@@ -75,36 +65,20 @@ class ZapReceipts extends HookConsumerWidget {
       return totalUserAmount.wrapped;
     });
 
-    return _wrap(
-      UsersRichText(
-        leadingTextSpan: TextSpan(
-          style: TextStyle(fontSize: 16, height: 1.7),
-          children: [
-            TextSpan(text: '⚡'),
-            TextSpan(
-                text: ' $formattedSatsAmount sats ',
-                style: TextStyle(fontWeight: FontWeight.bold)),
-            TextSpan(text: 'zapped by'),
-          ],
-        ),
-        users: zappers,
-        signedInUser: signedInUser,
-        maxUsersToDisplay: kMaxUsersToDisplay,
-      ),
-    );
-  }
-
-  Widget _wrap(Widget inner) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 10, bottom: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        spacing: 10,
+    return UsersRichText(
+      leadingTextSpan: TextSpan(
+        style: TextStyle(fontSize: 16, height: 1.7),
         children: [
-          SizedBox(width: double.maxFinite, child: ZapButton(app: app)),
-          inner,
+          TextSpan(text: '⚡'),
+          TextSpan(
+              text: ' $formattedSatsAmount sats ',
+              style: TextStyle(fontWeight: FontWeight.bold)),
+          TextSpan(text: 'zapped by'),
         ],
       ),
+      users: zappers,
+      signedInUser: signedInUser,
+      maxUsersToDisplay: kMaxUsersToDisplay,
     );
   }
 }
@@ -119,13 +93,10 @@ class ZapReceiptsNotifier extends StateNotifier<AsyncValue<Set<ZapReceipt>>> {
 
   ZapReceiptsNotifier(this.ref, this.fileMetadata) : super(AsyncLoading()) {
     final adapter = ref.users.nostrAdapter;
-    final developerPubkey =
-        fileMetadata.event.getTag('zap') ?? fileMetadata.event.pubkey;
+    final developerPubkey = fileMetadata.event.pubkey;
+    final app = fileMetadata.release.value!.app.value!;
 
-    // If it is a Zapstore-signed release from the indexer, return
-    if (developerPubkey == kZapstorePubkey &&
-        fileMetadata.release.value!.app.value!.identifier !=
-            kZapstoreAppIdentifier) {
+    if (!app.isSelfSigned) {
       state = AsyncData({});
       return;
     }

@@ -14,9 +14,10 @@ import 'package:zapstore/models/release.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/install_button.dart';
 import 'package:zapstore/widgets/release_card.dart';
-import 'package:zapstore/widgets/signer_and_developer_row.dart';
+import 'package:zapstore/widgets/signer_container.dart';
 import 'package:zapstore/widgets/users_rich_text.dart';
 import 'package:zapstore/widgets/versioned_app_header.dart';
+import 'package:zapstore/widgets/zap_button.dart';
 import 'package:zapstore/widgets/zap_receipts.dart';
 
 class AppDetailScreen extends HookConsumerWidget {
@@ -43,7 +44,6 @@ class AppDetailScreen extends HookConsumerWidget {
               _.releases,
               _.releases.artifacts,
               _.signer,
-              _.developer
             });
 
     final app = state.model ?? model;
@@ -166,9 +166,20 @@ class AppDetailScreen extends HookConsumerWidget {
                       Gap(10),
                       Padding(
                         padding: const EdgeInsets.only(right: 14),
-                        child: SignerAndDeveloperRow(app: app),
+                        child: SignerContainer(app: app),
                       ),
-                      ZapReceipts(app: app),
+                      if (app.latestMetadata != null && app.isSelfSigned)
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Gap(10),
+                            SizedBox(
+                                width: double.infinity,
+                                child: ZapButton(app: app)),
+                            Gap(10),
+                            ZapReceipts(app: app),
+                          ],
+                        ),
                       Gap(20),
                       Container(
                         padding: EdgeInsets.all(10),

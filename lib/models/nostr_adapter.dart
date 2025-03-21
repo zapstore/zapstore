@@ -164,11 +164,7 @@ mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
     final metadataIds =
         releases.map((r) => r.event.linkedEvents).nonNulls.expand((_) => _);
     final apps = releases.map((r) => r.app.value).nonNulls;
-
-    final userIds = {
-      for (final app in apps) app.signer.id,
-      for (final app in apps) app.developer.id,
-    }.nonNulls;
+    final userIds = apps.map((a) => a.signer.id).nonNulls;
 
     // Metadata and users probably go to separate relays
     // so query in parallel

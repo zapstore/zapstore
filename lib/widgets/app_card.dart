@@ -7,7 +7,6 @@ import 'package:remove_markdown/remove_markdown.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/app.dart';
-import 'package:zapstore/models/user.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/author_container.dart';
 import 'package:zapstore/widgets/install_button.dart';
@@ -33,9 +32,7 @@ class AppCard extends HookConsumerWidget {
 
     final isUpdate = app.canUpdate && showUpdate;
     return GestureDetector(
-      onTap: () {
-        context.go('${showUpdate ? '/updates' : ''}/details', extra: app);
-      },
+      onTap: () => context.push('/details', extra: app),
       child: Card(
         margin: EdgeInsets.only(top: 6, bottom: 6),
         elevation: 0,
@@ -82,10 +79,7 @@ class AppCard extends HookConsumerWidget {
                       softWrap: true,
                     ),
                     Gap(6),
-                    // Only show Signed by apps' original authors
-                    if (app.signer.isPresent &&
-                        (app.signer.value!.pubkey != kZapstorePubkey ||
-                            {kZapstoreAppIdentifier}.contains(app.identifier)))
+                    if (app.signer.isPresent && app.isSelfSigned)
                       AuthorContainer(
                         user: app.signer.value!,
                         beforeText: 'Signed by',
@@ -186,7 +180,7 @@ class TinyAppCard extends HookConsumerWidget {
     return GestureDetector(
       onTap: () {
         if (app != null) {
-          context.go('/details', extra: app);
+          context.push('/details', extra: app);
         }
       },
       child: Card(

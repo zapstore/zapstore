@@ -34,12 +34,10 @@ class App extends base.App with DataModelMixin<App> {
 
   final HasMany<Release> releases;
   final BelongsTo<User> signer;
-  final BelongsTo<User> developer;
   final BelongsTo<LocalApp> localApp;
 
   App.fromJson(super.map)
-      : developer = belongsTo(map['developer']),
-        releases = hasMany(map['releases']),
+      : releases = hasMany(map['releases']),
         signer = belongsTo(map['signer']),
         localApp = belongsTo(map['localApp']),
         super.fromJson();
@@ -73,6 +71,9 @@ class App extends base.App with DataModelMixin<App> {
   bool get isDowngrade => localApp.value?.status == AppInstallStatus.downgrade;
   bool get hasCertificateMismatch =>
       localApp.value?.status == AppInstallStatus.certificateMismatch;
+
+  bool get isSelfSigned => !(signer.value!.pubkey == kZapstorePubkey &&
+      identifier != kZapstoreAppIdentifier);
 
   Future<void> install({bool alwaysTrustSigner = false}) async {
     if (!canInstall && !canUpdate || hasCertificateMismatch) {
@@ -221,7 +222,7 @@ mixin AppAdapter on Adapter<App> {
     // If looking up multiple apps via `#d`, use `queriedAtMap`
     // to find the earliest queried at Date, to be used in the
     // next request `since` field
-    if (params.containsKey('#d') && !params['skipCache']) {
+    if (params.containsKey('#d') && !(params['skipCache'] ?? false)) {
       DateTime? earliestQueryAt;
       final identifiers = <String>{...params['#d']};
 
@@ -348,21 +349,8 @@ mixin AppAdapter on Adapter<App> {
 
     for (final Map<String, dynamic> map in list) {
       final tags = map['tags'];
-      final pubkey = map['pubkey'];
       map['localApp'] = base.BaseUtil.getTag(tags, 'd')!;
-
-      // Find developer
-      final zapTag = base.BaseUtil.getTag(tags, 'zap');
-      if (pubkey == kZapstorePubkey) {
-        if (zapTag != null) {
-          map['developer'] = zapTag;
-        }
-        if (map['localApp'] == kZapstoreAppIdentifier) {
-          map['developer'] = pubkey;
-        }
-      } else {
-        map['developer'] = pubkey;
-      }
+      map['signer'] = map['pubkey'];
     }
 
     return super.deserialize(data);

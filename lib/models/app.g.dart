@@ -19,15 +19,10 @@ mixin _$AppAdapter on Adapter<App> {
     ),
     'signer': RelationshipMeta<User>(
       name: 'signer',
+      inverseName: 'apps',
       type: 'users',
       kind: 'BelongsTo',
       instance: (_) => (_ as App).signer,
-    ),
-    'developer': RelationshipMeta<User>(
-      name: 'developer',
-      type: 'users',
-      kind: 'BelongsTo',
-      instance: (_) => (_ as App).developer,
     ),
     'localApp': RelationshipMeta<LocalApp>(
       name: 'localApp',
@@ -77,13 +72,6 @@ extension AppRelationshipGraphNodeX on RelationshipGraphNode<App> {
   RelationshipGraphNode<User> get signer {
     final meta =
         _$AppAdapter._kAppRelationshipMetas['signer'] as RelationshipMeta<User>;
-    return meta.clone(
-        parent: this is RelationshipMeta ? this as RelationshipMeta : null);
-  }
-
-  RelationshipGraphNode<User> get developer {
-    final meta = _$AppAdapter._kAppRelationshipMetas['developer']
-        as RelationshipMeta<User>;
     return meta.clone(
         parent: this is RelationshipMeta ? this as RelationshipMeta : null);
   }

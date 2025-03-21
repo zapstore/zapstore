@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:purplebase/purplebase.dart' as base;
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/user.dart';
 import 'package:zapstore/screens/settings_screen.dart';
@@ -10,8 +11,10 @@ class RelevantWhoFollowContainer extends HookConsumerWidget {
   const RelevantWhoFollowContainer({
     super.key,
     required this.toNpub,
+    this.loadingText = 'Checking reputation...',
   });
 
+  final String loadingText;
   final String toNpub;
 
   @override
@@ -19,16 +22,23 @@ class RelevantWhoFollowContainer extends HookConsumerWidget {
     final signedInUser = ref.watch(signedInUserProvider);
     final data = ref.watch(relevantWhoFollowProvider((to: toNpub)));
 
+    if (signedInUser == null) {
+      return Container();
+    }
+
     return switch (data) {
-      AsyncData<List<User>>(value: final trustedUsers) => Builder(
+      AsyncData<List<User>>(value: final users) => Builder(
           builder: (context) {
-            if (trustedUsers.isEmpty) {
+            // Find relevant who follow, remove the target that comes included
+            final relevantWhoFollow =
+                users.where((u) => u.pubkey.npub != toNpub).toList();
+            if (relevantWhoFollow.isEmpty) {
               return Text(
                   'No reputable profiles follow the signer. Make sure you know the signer.');
             }
 
             return UsersRichText(
-              users: trustedUsers,
+              users: relevantWhoFollow,
               signedInUser: signedInUser,
               onlyUseCommaSeparator: true,
               trailingText: ' and others follow this signer on nostr.',
@@ -42,7 +52,7 @@ class RelevantWhoFollowContainer extends HookConsumerWidget {
             padding: const EdgeInsets.all(24),
             child: Column(
               children: [
-                Text('Checking reputation...'),
+                Text(loadingText),
                 Gap(10),
                 SmallCircularProgressIndicator(),
               ],

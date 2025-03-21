@@ -4,10 +4,12 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:zapstore/main.dart';
 import 'package:zapstore/models/app.dart';
 import 'package:zapstore/models/nostr_adapter.dart';
+import 'package:zapstore/models/user.dart';
 import 'package:zapstore/navigation/app_initializer.dart';
 import 'package:zapstore/navigation/desktop_scaffold.dart';
 import 'package:zapstore/navigation/mobile_scaffold.dart';
 import 'package:zapstore/screens/app_detail_screen.dart';
+import 'package:zapstore/screens/developer_screen.dart';
 import 'package:zapstore/screens/search_screen.dart';
 import 'package:zapstore/screens/settings_screen.dart';
 import 'package:zapstore/screens/updates_screen.dart';
@@ -37,13 +39,7 @@ final appRouter = GoRouter(
             GoRoute(
               path: '/',
               builder: (context, state) => SearchScreen(),
-              routes: [
-                GoRoute(
-                  path: 'details',
-                  builder: (context, state) =>
-                      AppDetailScreen(model: state.extra as App),
-                ),
-              ],
+              routes: [appDetailsRoute, developerRoute],
             ),
           ],
         ),
@@ -53,13 +49,7 @@ final appRouter = GoRouter(
             GoRoute(
               path: '/updates',
               builder: (context, state) => UpdatesScreen(),
-              routes: [
-                GoRoute(
-                  path: 'details',
-                  builder: (context, state) =>
-                      AppDetailScreen(model: state.extra as App),
-                ),
-              ],
+              routes: [appDetailsRoute, developerRoute],
             ),
           ],
         ),
@@ -77,6 +67,16 @@ final appRouter = GoRouter(
       ],
     ),
   ],
+);
+
+final appDetailsRoute = GoRoute(
+  path: 'details',
+  builder: (context, state) => AppDetailScreen(model: state.extra as App),
+);
+
+final developerRoute = GoRoute(
+  path: 'developer',
+  builder: (context, state) => DeveloperScreen(model: state.extra as User),
 );
 
 class ScaffoldWithNestedNavigation extends HookConsumerWidget {
