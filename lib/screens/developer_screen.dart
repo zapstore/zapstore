@@ -1,6 +1,5 @@
 import 'package:auto_size_text/auto_size_text.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_data/flutter_data.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -8,11 +7,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:zapstore/main.data.dart';
 import 'package:zapstore/models/user.dart';
 import 'package:zapstore/widgets/app_card.dart';
-import 'package:zapstore/widgets/author_container.dart';
 import 'package:zapstore/widgets/relevant_who_follow_container.dart';
 import 'package:zapstore/widgets/rounded_image.dart';
-import 'package:zapstore/widgets/user_avatar.dart';
-import 'package:zapstore/widgets/zap_receipts.dart';
 
 class DeveloperScreen extends HookConsumerWidget {
   final User model;
