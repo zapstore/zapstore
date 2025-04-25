@@ -168,7 +168,9 @@ class AppDetailScreen extends HookConsumerWidget {
                         padding: const EdgeInsets.only(right: 14),
                         child: SignerContainer(app: app),
                       ),
-                      if (app.latestMetadata != null && app.isSelfSigned)
+                      if (app.latestMetadata != null &&
+                          app.signer.isPresent &&
+                          app.isSelfSigned)
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
