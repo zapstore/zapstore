@@ -2,7 +2,7 @@ name: zapstore
 description: The permissionless app store
 publish_to: 'none'
 
-version: 0.2.5+25
+version: 0.2.6+26
 
 environment:
   sdk: '>=3.3.0 <4.0.0'

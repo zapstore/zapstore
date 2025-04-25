@@ -1,3 +1,9 @@
+# 0.2.6
+
+  - Bugfix: Always refresh app when entering detail screen (#207)
+  - Bugfix: Use verify reputation as DVM (#210)
+  - Feature: Basic developer screen
+
 # 0.2.5
 
   - Bugfix: Improve version comparison and add guard
