@@ -280,17 +280,39 @@ mixin AppAdapter on Adapter<App> {
       apps = await super.findAll(params: params);
     }
 
-    // Find all appid@version ($3) as we need to pick one tag to query on
-    // (filters by kind ($1) and pubkey ($2) done locally)
-    final latestReleaseIdentifiers = apps
-        .map((app) => app.event.linkedReplaceableEvents.firstOrNull?.$3)
-        .nonNulls;
-    if (latestReleaseIdentifiers.isNotEmpty) {
-      releases = await ref.releases.findAll(
-        params: {'#d': latestReleaseIdentifiers},
-      );
+    final appsOldFormat =
+        apps.where((app) => app.event.linkedReplaceableEvents.isNotEmpty);
+    final appsNewFormat =
+        apps.where((app) => app.event.linkedReplaceableEvents.isEmpty);
+
+    if (appsOldFormat.isNotEmpty) {
+      // OLD FORMAT BRANCH
+      // Find all appid@version ($3) as we need to pick one tag to query on
+      // (filters by kind ($1) and pubkey ($2) done locally)
+      final latestReleaseIdentifiers = appsOldFormat
+          .map((app) => app.event.linkedReplaceableEvents.first.$3);
+
+      if (latestReleaseIdentifiers.isNotEmpty) {
+        releases = await ref.releases.findAll(
+          params: {'#d': latestReleaseIdentifiers},
+        );
+      } else {
+        releases = [];
+      }
     } else {
-      releases = [];
+      // NEW FORMAT
+      final futures = appsNewFormat
+          .map((app) => ref.releases.findAll(
+                params: {
+                  '#i': [app.identifier],
+                  'authors': [app.event.pubkey],
+                  'limit': 1
+                },
+              ))
+          .toSet();
+
+      final lists = await Future.wait(futures);
+      releases = lists.expand((a) => a).toList();
     }
 
     await nostrAdapter.loadArtifactsAndUsers(releases);
