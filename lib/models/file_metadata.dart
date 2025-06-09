@@ -9,7 +9,6 @@ part 'file_metadata.g.dart';
 
 @DataAdapter([NostrAdapter, FileMetadataAdapter])
 class FileMetadata extends base.FileMetadata with DataModelMixin<FileMetadata> {
-  final BelongsTo<User> author;
   final BelongsTo<Release> release;
   final BelongsTo<User> signer;
 
@@ -17,8 +16,7 @@ class FileMetadata extends base.FileMetadata with DataModelMixin<FileMetadata> {
   Object? get id => event.id;
 
   FileMetadata.fromJson(super.map)
-      : author = belongsTo(map['author']),
-        release = belongsTo(map['release']),
+      : release = belongsTo(map['release']),
         signer = belongsTo(map['signer']),
         super.fromJson();
 
@@ -31,7 +29,19 @@ mixin FileMetadataAdapter on Adapter<FileMetadata> {
     final list = data is Iterable ? data : [data as Map];
     for (final e in list) {
       final map = e as Map<String, dynamic>;
-      map['author'] = map['pubkey'];
+      final isNewFormat = map['kind'] == 3063;
+      if (isNewFormat) {
+        // Map to old 1063
+        map['kind'] = 1063;
+        map['tags'].add([
+          'min_sdk_version',
+          base.BaseUtil.getTag(map['tags'], 'min_os_version')
+        ]);
+        map['tags'].add([
+          'target_sdk_version',
+          base.BaseUtil.getTag(map['tags'], 'target_os_version')
+        ]);
+      }
     }
     return super.deserialize(data);
   }

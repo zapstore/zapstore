@@ -10,12 +10,6 @@ part of 'file_metadata.dart';
 
 mixin _$FileMetadataAdapter on Adapter<FileMetadata> {
   static final Map<String, RelationshipMeta> _kFileMetadataRelationshipMetas = {
-    'author': RelationshipMeta<User>(
-      name: 'author',
-      type: 'users',
-      kind: 'BelongsTo',
-      instance: (_) => (_ as FileMetadata).author,
-    ),
     'release': RelationshipMeta<Release>(
       name: 'release',
       inverseName: 'artifacts',
@@ -64,13 +58,6 @@ extension FileMetadataAdapterX on Adapter<FileMetadata> {
 
 extension FileMetadataRelationshipGraphNodeX
     on RelationshipGraphNode<FileMetadata> {
-  RelationshipGraphNode<User> get author {
-    final meta = _$FileMetadataAdapter._kFileMetadataRelationshipMetas['author']
-        as RelationshipMeta<User>;
-    return meta.clone(
-        parent: this is RelationshipMeta ? this as RelationshipMeta : null);
-  }
-
   RelationshipGraphNode<Release> get release {
     final meta =
         _$FileMetadataAdapter._kFileMetadataRelationshipMetas['release']
