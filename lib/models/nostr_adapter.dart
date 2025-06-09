@@ -178,6 +178,7 @@ mixin NostrAdapter<T extends DataModelMixin<T>> on Adapter<T> {
       if (metadataIds.isNotEmpty)
         ref.fileMetadata.findAll(
           params: {
+            'kinds': {1063, 3063},
             'ids': metadataIds,
             '#m': [kAndroidMimeType],
             'ignoreReturn': true,

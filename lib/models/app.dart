@@ -300,7 +300,7 @@ mixin AppAdapter on Adapter<App> {
         releases = [];
       }
     } else {
-      // NEW FORMAT
+      // NEW FORMAT BRANCH
       final futures = appsNewFormat
           .map((app) => ref.releases.findAll(
                 params: {

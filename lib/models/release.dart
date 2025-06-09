@@ -42,7 +42,8 @@ mixin ReleaseAdapter on Adapter<Release> {
 
     for (final Map<String, dynamic> map in list) {
       final tags = map['tags'];
-      map['app'] = base.BaseUtil.getTag(tags, 'a');
+      map['app'] = base.BaseUtil.getTag(tags, 'a') ??
+          '32267:${map['pubkey']}:${base.BaseUtil.getTag(tags, 'i')}';
       map['artifacts'] = base.BaseUtil.getTagSet(tags, 'e').toList();
     }
     return super.deserialize(data);

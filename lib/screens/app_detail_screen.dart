@@ -31,7 +31,6 @@ class AppDetailScreen extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scrollController = ScrollController();
 
-    // TODO: Bug using remote=true in watchOne, use hook for now
     final snapshot = useFuture(useMemoized(() async {
       // Skip cache to actually hit the remote to refresh
       return await ref.apps
