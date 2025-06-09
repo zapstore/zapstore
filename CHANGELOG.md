@@ -1,3 +1,8 @@
+# 0.2.7
+
+  - Support new event format, prepare for relay migration and future NIP upgrade
+  - Increase default zap amounts (#219)
+
 # 0.2.6
 
   - Bugfix: Always refresh app when entering detail screen (#207)
