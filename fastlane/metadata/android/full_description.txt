@@ -1,1 +1,17 @@
+<h1>Zapstore: Decentralized Marketplace for Android Apps</h1>
+
+<p>Welcome to Zapstore, the platform for a decentralized approach to accessing, publishing, and distributing Android applications directly using the Nostr protocol, ensuring complete privacy and control.</p>
+
+<h2>Key Features</h2>
+<ul>
+  <li><strong>Decentralization with Nostr:</strong> Use the Nostr protocol to download and share APKs directly from relays, avoiding intermediaries.</li>
+  <li><strong>Privacy-Centric:</strong> Maintain control of your data with no third-party storage or sharing.</li>
+  <li><strong>Censorship Resistance:</strong> Access your content freely, without the risks of censorship.</li>
+</ul>
+
+<h2>How Zapstore Works</h2>
+
+<p>Zapstore's community-driven model utilizes a network of relays for app distribution and updates, promoting privacy and innovation.</p>
+
+<p>Join Zapstore today to experience a decentralized, censorship-free app marketplace where your digital rights are prioritized. For more details, visit our <a href="https://zapstore.dev/docs/">documentation</a>.</p>
 
