@@ -1,1 +1,1 @@
-
+Discover, publish, and distribute apps directly with Zapstore via Nostr protocol.
