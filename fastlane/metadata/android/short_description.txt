@@ -1,1 +1,1 @@
-Discover, publish, and distribute apps directly with Zapstore via Nostr protocol.
+Zapstore is an open, permissionless app store where you discover great apps through your social connections

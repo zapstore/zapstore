@@ -1,17 +1,25 @@
-<h1>Zapstore: Decentralized Marketplace for Android Apps</h1>
+# Zapstore: The Permissionless App Store
 
-<p>Welcome to Zapstore, the platform for a decentralized approach to accessing, publishing, and distributing Android applications directly using the Nostr protocol, ensuring complete privacy and control.</p>
+Zapstore is a decentralized app distribution platform that puts privacy and freedom first. Built on the open, permissionless Nostr protocol and powered by Lightning Network micropayments, Zapstore creates a direct connection between app creators and their users.
 
-<h2>Key Features</h2>
-<ul>
-  <li><strong>Decentralization with Nostr:</strong> Use the Nostr protocol to download and share APKs directly from relays, avoiding intermediaries.</li>
-  <li><strong>Privacy-Centric:</strong> Maintain control of your data with no third-party storage or sharing.</li>
-  <li><strong>Censorship Resistance:</strong> Access your content freely, without the risks of censorship.</li>
-</ul>
+## Key Features
 
-<h2>How Zapstore Works</h2>
+- Developer Nostr-signed releases
+- No centralized walled gardens
+- Fast and efficient updates through relays
+- Web-of-trust powered checks
+- Discover apps through your social graph
+- Privacy-first approach with no data collection
 
-<p>Zapstore's community-driven model utilizes a network of relays for app distribution and updates, promoting privacy and innovation.</p>
+### For developers
 
-<p>Join Zapstore today to experience a decentralized, censorship-free app marketplace where your digital rights are prioritized. For more details, visit our <a href="https://zapstore.dev/docs/">documentation</a>.</p>
+- Simple app publishing via CLI or web interface
+- Built-in monetization through Lightning Network
+- Zero platform fees
+- Complete control over app distribution
+- Direct user engagement
 
+## Why Choose Zapstore?
+
+- **For Users**: Access trustworthy apps recommended by your social network, maintain your privacy, and support developers directly in a censorship-resistant environment.
+- **For Developers**: Distribute your apps freely without gatekeepers, build sustainable income through direct monetization, and engage with your user community on your own terms.
