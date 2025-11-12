@@ -2,6 +2,10 @@
 
 # zapstore
 
+## App developers
+
+Looking to publish your app on Zapstore? Start with the [App Developer Guide](docs/app-developer-guide.md) for prerequisites, publishing workflow, trust model details, and troubleshooting tips.
+
 ## Build from source
 
 ```bash
