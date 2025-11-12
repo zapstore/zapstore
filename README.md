@@ -4,7 +4,7 @@
 
 ## App developers
 
-Looking to publish your app on Zapstore? Start with the [App Developer Guide](docs/app-developer-guide.md) for prerequisites, publishing workflow, trust model details, and troubleshooting tips.
+Looking to publish your app on Zapstore? Start with the [App Developer Guide](docs/app-developer-guide.md) for prerequisites, publishing workflow, trust model details, and troubleshooting tips. For a deeper mental model of how the Android client, CLI, Blossom, and relays interact, see the [Architecture overview](docs/architecture.md).
 
 ## Build from source
 
