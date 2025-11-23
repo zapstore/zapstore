@@ -1,5 +1,16 @@
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/zapstore/zapstore)
 
+<a href="https://zapstore.dev/apps/naddr1qvzqqqr7pvpzq7xwd748yfjrsu5yuerm56fcn9tntmyv04w95etn0e23xrczvvraqqgxgetk9eaxzurnw3hhyefwv9c8qakg5jt">
+  <img src="./assets/images/badge.png"
+  alt="Get it on ZapStore" width="200">
+</a>
+
+```
+<a href="https://zapstore.dev/apps/naddr1qvzqqqr7pvpzq7xwd748yfjrsu5yuerm56fcn9tntmyv04w95etn0e23xrczvvraqqgxgetk9eaxzurnw3hhyefwv9c8qakg5jt">
+  <img src="https://raw.githubusercontent.com/zapstore/zapstore/refs/heads/master/assets/images/badge.png"
+  alt="Get it on ZapStore" width="200">
+</a>
+```
 # zapstore
 
 ## Build from source
