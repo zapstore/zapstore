@@ -93,6 +93,13 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
   final List<String> _installQueue = [];
   bool _isInstallingFromQueue = false;
 
+  @override
+  void dispose() {
+    _downloader.unregisterCallbacks();
+    ref.read(packageManagerProvider.notifier).onInstallResult = null;
+    super.dispose();
+  }
+
   Future<void> _initialize() async {
     _downloader = FileDownloader();
 
@@ -523,6 +530,8 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
 
   /// Handle installation result from BroadcastReceiver
   void _handleInstallResult(Map<String, dynamic> result) {
+    if (!mounted) return; // Safety check - notifier may be disposed
+
     final packageName = result['packageName'] as String?;
     final success = result['success'] as bool? ?? false;
 
@@ -535,6 +544,7 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
       // Check if download exists
       if (success) {
         // Clean up downloaded file - ALWAYS delete after successful install
+        // Fire-and-forget: no state modifications in callback
         downloadInfo.task.filePath().then((filePath) async {
           try {
             final file = File(filePath);
@@ -546,7 +556,7 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
           }
         });
 
-        // Remove from state
+        // Remove from state (synchronous, before any async gaps)
         state = Map.from(state)..remove(packageName);
 
         // Refresh package list to show installed app
