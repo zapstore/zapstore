@@ -16,6 +16,12 @@ class UpdatesScreen extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final baseTabStyle = context.textTheme.titleMedium;
+    final tabLabelStyle = (baseTabStyle ?? const TextStyle()).copyWith(
+      fontSize: (baseTabStyle?.fontSize ?? 16) * 0.85,
+      fontWeight: FontWeight.bold,
+    );
+
     return DefaultTabController(
       length: 3,
       child: Scaffold(
@@ -23,6 +29,8 @@ class UpdatesScreen extends HookConsumerWidget {
           automaticallyImplyLeading: false,
           toolbarHeight: 0,
           bottom: TabBar(
+            labelStyle: tabLabelStyle,
+            unselectedLabelStyle: tabLabelStyle,
             tabs: [
               Tab(text: 'Updates'),
               Tab(text: 'Up to date'),
@@ -356,8 +364,9 @@ class _UpToDateTab extends HookConsumerWidget {
     }
 
     return ListView(
-      children:
-          upToDateApps.map((app) => AppCard(app: app, showUpdateArrow: false)).toList(),
+      children: upToDateApps
+          .map((app) => AppCard(app: app, showUpdateArrow: false))
+          .toList(),
     );
   }
 }
