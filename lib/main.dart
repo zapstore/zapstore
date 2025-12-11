@@ -18,6 +18,7 @@ import 'package:zapstore/services/updates_service.dart';
 import 'package:zapstore/theme.dart';
 import 'package:zapstore/services/package_manager/android_package_manager.dart';
 import 'package:zapstore/services/package_manager/dummy_package_manager.dart';
+import 'package:zapstore/services/market_intent_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 
 /// Global provider container for error reporting (accessible outside widget tree)
@@ -234,6 +235,9 @@ final appInitializationProvider = FutureProvider<void>((ref) async {
   // Initialize package manager
   final packageManager = ref.read(packageManagerProvider.notifier);
   await packageManager.syncInstalledPackages();
+
+  // Initialize market intent handling (for market:// URIs)
+  await ref.read(marketIntentServiceProvider).initialize();
 
   await _attemptAutoSignIn(ref);
 });

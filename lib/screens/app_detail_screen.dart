@@ -7,6 +7,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:zapstore/utils/debug_utils.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/services/profile_service.dart';
+import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/widgets/app_detail_widgets.dart';
 import 'package:zapstore/widgets/app_header.dart';
 import 'package:zapstore/widgets/app_info_table.dart';
@@ -19,9 +20,101 @@ import 'package:zapstore/widgets/screenshots_gallery.dart';
 import 'package:zapstore/widgets/version_pill_widget.dart';
 
 class AppDetailScreen extends HookConsumerWidget {
-  const AppDetailScreen({super.key, required this.app});
+  const AppDetailScreen({super.key, this.app, this.appId})
+    : assert(app != null || appId != null);
 
+  /// The app to display (if already loaded)
+  final App? app;
+
+  /// The app identifier to load (used for deep links / market:// intents)
+  final String? appId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // If we only have appId, query for the app first
+    if (app == null && appId != null) {
+      return _AppLoaderView(appId: appId!);
+    }
+
+    return _AppDetailView(app: app!);
+  }
+}
+
+/// Internal view that loads an app by ID
+class _AppLoaderView extends ConsumerWidget {
+  final String appId;
+  const _AppLoaderView({required this.appId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final platform = ref.read(packageManagerProvider.notifier).platform;
+
+    final appsState = ref.watch(
+      query<App>(
+        tags: {
+          '#d': {appId},
+          '#f': {platform},
+        },
+        limit: 1,
+        source: const LocalAndRemoteSource(stream: false, background: true),
+        subscriptionPrefix: 'app-detail-loader',
+      ),
+    );
+
+    final app = appsState.models.firstOrNull;
+
+    if (app != null) {
+      return _AppDetailView(app: app);
+    }
+
+    // Handle states
+    switch (appsState) {
+      case StorageError(:final exception):
+        return _ErrorScaffold(message: exception.toString());
+      case StorageData():
+        return _ErrorScaffold(message: 'App "$appId" not found in Zapstore.');
+      default:
+        break;
+    }
+
+    // Loading state
+    return const Scaffold(
+      body: SafeArea(
+        child: Padding(padding: EdgeInsets.all(16), child: AppDetailSkeleton()),
+      ),
+    );
+  }
+}
+
+class _ErrorScaffold extends StatelessWidget {
+  final String message;
+  const _ErrorScaffold({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Open App')),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, size: 64),
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Text(message, textAlign: TextAlign.center),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Internal view that displays app details (app already loaded)
+class _AppDetailView extends HookConsumerWidget {
   final App app;
+  const _AppDetailView({required this.app});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
