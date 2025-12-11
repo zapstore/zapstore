@@ -1,6 +1,8 @@
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/zapstore/zapstore)
+# Zapstore
 
-# zapstore
+The open app store powered by your social network
+
+[https://zapstore.dev](https://zapstore.dev)
 
 ## Build from source
 

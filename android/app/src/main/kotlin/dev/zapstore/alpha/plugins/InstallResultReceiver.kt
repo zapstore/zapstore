@@ -1,0 +1,140 @@
+package dev.zapstore.alpha.plugins
+
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageInstaller
+import android.os.Build
+import android.util.Log
+import androidx.core.app.NotificationCompat
+import androidx.core.content.getSystemService
+
+private const val TAG = "InstallResultReceiver"
+
+/**
+ * BroadcastReceiver to handle APK installation results
+ * Enhanced with Accrescent-inspired silent install handling
+ */
+class InstallResultReceiver : BroadcastReceiver() {
+    
+    override fun onReceive(context: Context, intent: Intent) {
+        val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
+        val packageName = intent.getStringExtra(PackageInstaller.EXTRA_PACKAGE_NAME) ?: "unknown"
+        val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
+        val sessionId = intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -1)
+
+        Log.d(TAG, "Install result: status=$status, package=$packageName, message=$message")
+
+        when (status) {
+            PackageInstaller.STATUS_PENDING_USER_ACTION -> {
+                Log.d(TAG, "User confirmation required for $packageName (installer takeover)")
+                
+                // Launch confirmation dialog
+                val confirmIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
+                }
+                if (confirmIntent != null) {
+                    confirmIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    try {
+                        context.startActivity(confirmIntent)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to launch confirmation dialog", e)
+                        showUserActionNotification(context, sessionId, confirmIntent, packageName)
+                    }
+                }
+                
+                AndroidPackageManagerPlugin.notifyInstallResult(mapOf(
+                    "success" to false,
+                    "packageName" to packageName,
+                    "message" to "User action required",
+                    "status" to status,
+                    "requiresUserAction" to true
+                ))
+            }
+            
+            PackageInstaller.STATUS_SUCCESS -> {
+                Log.d(TAG, "Installation successful: $packageName")
+                AndroidPackageManagerPlugin.notifyInstallResult(mapOf(
+                    "success" to true,
+                    "packageName" to packageName,
+                    "message" to (message ?: "Installation completed successfully")
+                ))
+            }
+            
+            PackageInstaller.STATUS_FAILURE -> {
+                Log.w(TAG, "Installation failed: $packageName - $message")
+                AndroidPackageManagerPlugin.notifyInstallResult(mapOf(
+                    "success" to false,
+                    "packageName" to packageName,
+                    "message" to (message ?: "Installation failed"),
+                    "status" to status
+                ))
+            }
+            
+            PackageInstaller.STATUS_FAILURE_ABORTED -> {
+                Log.d(TAG, "Installation cancelled: $packageName")
+                AndroidPackageManagerPlugin.notifyInstallResult(mapOf(
+                    "success" to false,
+                    "packageName" to packageName,
+                    "message" to "Installation was cancelled",
+                    "status" to status,
+                    "aborted" to true
+                ))
+            }
+            
+            else -> {
+                Log.w(TAG, "Unknown installation status $status: $packageName")
+                AndroidPackageManagerPlugin.notifyInstallResult(mapOf(
+                    "success" to false,
+                    "packageName" to packageName,
+                    "message" to (message ?: "Installation failed with unknown status"),
+                    "status" to status
+                ))
+            }
+        }
+    }
+    
+    private fun showUserActionNotification(
+        context: Context, 
+        sessionId: Int, 
+        confirmIntent: Intent, 
+        packageName: String
+    ) {
+        // Check notification permission on Android 13+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) 
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                return
+            }
+        }
+        
+        val notificationManager = context.getSystemService<NotificationManager>()
+        if (notificationManager?.areNotificationsEnabled() == true) {
+            val pendingIntent = PendingIntent.getActivity(
+                context,
+                sessionId,
+                confirmIntent,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_CANCEL_CURRENT
+            )
+            
+            val notification = NotificationCompat.Builder(context, "install_channel")
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle("Installation requires confirmation")
+                .setContentText("Tap to continue installing $packageName")
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(true)
+                .build()
+
+            try {
+                notificationManager.notify(sessionId, notification)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to show notification", e)
+            }
+        }
+    }
+}

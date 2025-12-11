@@ -1,150 +1,289 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
-import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:zapstore/main.data.dart';
-import 'package:zapstore/models/app.dart';
-import 'package:zapstore/widgets/app_card.dart';
-import 'package:zapstore/widgets/app_curation_container.dart';
-import 'package:zapstore/widgets/latest_releases_container.dart';
-import 'package:zapstore/widgets/user_avatar.dart';
+import 'package:models/models.dart';
 
+import '../widgets/app_pack_container.dart';
+import '../widgets/latest_releases_container.dart';
+import '../widgets/app_card.dart';
+import '../utils/extensions.dart';
+import '../main.dart';
+import '../services/package_manager/package_manager.dart';
+
+/// Main search and app discovery screen
 class SearchScreen extends HookConsumerWidget {
   const SearchScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final controller = useTextEditingController();
-    final focusNode = useFocusNode();
-    final searchResultState = ref.watch(searchResultProvider);
+    final searchController = useTextEditingController();
     final scrollController = useScrollController();
+    final searchFocusNode = useFocusNode();
+    final searchQuery = useState<String>('');
 
+    // Check app initialization state
+    final initState = ref.watch(appInitializationProvider);
+
+    // Get platform from package manager
+    final platform = ref.read(packageManagerProvider.notifier).platform;
+
+    // Use reactive query instead of manual search
+    // Query system handles relay connectivity internally
+    final searchResultsState = searchQuery.value.trim().isNotEmpty
+        ? ref.watch(
+            query<App>(
+              search: searchQuery.value.trim(),
+              limit: 20,
+              tags: {
+                '#f': {platform},
+              },
+              and: (app) => {
+                app.latestRelease,
+                // Load nested FileMetadata from latestRelease (same relay group)
+                if (app.latestRelease.value != null)
+                  app.latestRelease.value!.latestMetadata,
+              },
+              // Force the search to hit the default relay group (relay.zapstore.dev)
+              // so a connection appears in Debug Info when searching.
+              source: const RemoteSource(
+                relays: 'AppCatalog',
+                stream: false,
+                background: false,
+              ),
+              subscriptionPrefix: 'search-results',
+            ),
+          )
+        : null;
+
+    // Function to perform search
+    final performSearch = useCallback((String query) {
+      if (query.trim().isEmpty) {
+        searchQuery.value = '';
+        return;
+      }
+      searchQuery.value = query.trim();
+    }, []);
+
+    // Auto-scroll to top when search results change from loading to data
+    useEffect(() {
+      if (searchResultsState is StorageData && scrollController.hasClients) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          scrollController.animateTo(
+            0,
+            duration: const Duration(milliseconds: 100),
+            curve: Curves.easeInOut,
+          );
+        });
+      }
+      return null;
+    }, [searchResultsState]);
+
+    // Extract search results and states
+    final searchResults = searchResultsState is StorageData
+        ? (searchResultsState as StorageData<App>).models
+        : <App>[];
+    final isSearching = searchResultsState is StorageLoading;
+    final searchError = searchResultsState is StorageError
+        ? (searchResultsState as StorageError<App>).exception.toString()
+        : null;
+
+    // Show search results (query system handles relay connectivity internally)
+    final effectiveResults = searchResults;
+    // Show loading if: query exists and either loading or query hasn't started yet
+    final effectiveIsSearching =
+        searchQuery.value.trim().isNotEmpty &&
+        (isSearching || searchResultsState == null);
+
+    // Authors are now loaded via profileProvider in individual AppCards with caching
+
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Column(
+        children: [
+          // Professional search bar with better spacing
+          Container(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 18),
+            child: ValueListenableBuilder<TextEditingValue>(
+              valueListenable: searchController,
+              builder: (context, value, _) {
+                final hasText = value.text.isNotEmpty;
+
+                return SearchBar(
+                  controller: searchController,
+                  focusNode: searchFocusNode,
+                  hintText: 'Search apps',
+                  leading: Icon(
+                    Icons.search_rounded,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  trailing: [
+                    if (hasText)
+                      IconButton(
+                        icon: Icon(
+                          Icons.clear_rounded,
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                        ),
+                        onPressed: () {
+                          searchController.clear();
+                          searchQuery.value = '';
+                          searchFocusNode.requestFocus();
+                        },
+                        tooltip: 'Clear search',
+                      ),
+                  ],
+                  onSubmitted: performSearch,
+                  elevation: WidgetStateProperty.all(0),
+                  backgroundColor: WidgetStateProperty.all(
+                    Theme.of(context).colorScheme.surfaceContainerHighest
+                        .withValues(alpha: 0.8),
+                  ),
+                  shape: WidgetStateProperty.all(
+                    RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      side: BorderSide(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.outline.withValues(alpha: 0.3),
+                        width: 1,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          // Scrollable content
+          Expanded(
+            child: SingleChildScrollView(
+              controller: scrollController,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Search Results Section
+                  if (searchQuery.value.isNotEmpty)
+                    _buildSearchResults(
+                      context,
+                      searchQuery.value,
+                      effectiveResults,
+                      effectiveIsSearching,
+                      searchError,
+                    ),
+
+                  // App Curation Container with professional spacing
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: AppPackContainer(
+                      showSkeleton: !(initState.hasValue || initState.hasError),
+                    ),
+                  ),
+
+                  // Latest Releases Container
+                  LatestReleasesContainer(
+                    scrollController: scrollController,
+                    showSkeleton: !(initState.hasValue || initState.hasError),
+                  ),
+
+                  const SizedBox(height: 16), // Bottom padding
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchResults(
+    BuildContext context,
+    String query,
+    List<App> results,
+    bool isSearching,
+    String? error,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            GestureDetector(
-              onTap: () => Scaffold.of(context).openDrawer(),
-              child: UserAvatar(),
-            ),
-            Gap(20),
-            Expanded(
-              child: SearchBar(
-                controller: controller,
-                focusNode: focusNode,
-                onTapOutside: (_) => focusNode.unfocus(),
-                shape: WidgetStateProperty.all(
-                  RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(28),
-                  ),
-                ),
-                leading: Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 8, 6, 6),
-                  child: Icon(
-                    Icons.search,
-                    color: Colors.blueGrey,
-                    size: 20,
-                  ),
-                ),
-                trailing: [
-                  if (searchResultState.isLoading)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 10),
-                      child: SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 3),
-                      ),
-                    ),
-                  if (controller.text.isNotEmpty &&
-                      !searchResultState.isLoading)
-                    IconButton(
-                      hoverColor: Colors.transparent,
-                      onPressed: () async {
-                        // clear input and results, then return focus
-                        controller.clear();
-                        ref.read(searchQueryProvider.notifier).state = null;
+        if (isSearching)
+          Column(
+            children: List.generate(3, (index) => AppCard(isLoading: true)),
+          )
+        else if (error != null)
+          _buildSearchErrorState(context, error)
+        else if (results.isEmpty)
+          _buildSearchEmptyState(context, query)
+        else
+          _buildSearchResultsList(context, results),
 
-                        await scrollController.animateTo(
-                          scrollController.position.minScrollExtent,
-                          duration: Duration(milliseconds: 300),
-                          curve: Curves.easeOut,
-                        );
-                        focusNode.requestFocus();
-                      },
-                      icon: Icon(Icons.close),
-                    ),
-                ],
-                hintText: 'Search for apps',
-                hintStyle:
-                    WidgetStateProperty.all(TextStyle(color: Colors.grey[600])),
-                elevation: WidgetStateProperty.all(2.2),
-                onSubmitted: (query) async {
-                  if (query.isEmpty) return;
-                  ref.read(searchQueryProvider.notifier).state = query;
-                  scrollController.animateTo(
-                    scrollController.position.minScrollExtent,
-                    duration: Duration(milliseconds: 300),
-                    curve: Curves.easeOut,
-                  );
-                },
-              ),
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+
+  Widget _buildSearchErrorState(BuildContext context, String error) {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Center(
+        child: Column(
+          children: [
+            Icon(Icons.error_outline, size: 48, color: Colors.red[400]),
+            const SizedBox(height: 16),
+            Text('Search Error', style: context.textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Text(
+              error,
+              style: context.textTheme.bodySmall,
+              textAlign: TextAlign.center,
             ),
           ],
         ),
-        Gap(10),
-        if (searchResultState.hasError)
-          Text(searchResultState.error!.toString()),
-        Expanded(
-          child: SingleChildScrollView(
-            controller: scrollController,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              key: UniqueKey(),
-              children: [
-                if ((searchResultState.value?.isEmpty ?? false) &&
-                    !searchResultState.isLoading)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 16),
-                    child: Center(
-                        child: Text(
-                      'No results for ${ref.read(searchQueryProvider)}',
-                      style: TextStyle(fontSize: 16),
-                    )),
-                  ),
-                if (searchResultState.value?.isNotEmpty ?? false)
-                  for (final app in searchResultState.value!)
-                    AppCard(model: app),
-                Gap(20),
-                const AppCurationContainer(),
-                Gap(20),
-                LatestReleasesContainer(scrollController: scrollController),
-                Gap(10),
-              ],
+      ),
+    );
+  }
+
+  Widget _buildSearchEmptyState(BuildContext context, String query) {
+    // Show empty state when no results found
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Center(
+        child: Column(
+          children: [
+            Icon(Icons.search_off, size: 48, color: Colors.grey[400]),
+            const SizedBox(height: 16),
+            Text('No results found', style: context.textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Text(
+              'No apps found for "$query"',
+              style: context.textTheme.bodySmall,
+              textAlign: TextAlign.center,
             ),
-          ),
+          ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildSearchResultsList(BuildContext context, List<App> results) {
+    return Column(
+      children: [
+        // App Cards - authors loaded via profileProvider in AppCard
+        ...results.map((app) => _SearchResultCard(app: app)),
       ],
     );
   }
 }
 
-final searchQueryProvider = StateProvider<String?>((ref) => null);
+/// Helper widget for search result cards with version information
+class _SearchResultCard extends ConsumerWidget {
+  const _SearchResultCard({required this.app});
 
-final searchResultProvider =
-    AsyncNotifierProvider<SearchResultNotifier, List<App>?>(
-        SearchResultNotifier.new);
+  final App app;
 
-class SearchResultNotifier extends AsyncNotifier<List<App>?> {
   @override
-  Future<List<App>?> build() async {
-    final query = ref.watch(searchQueryProvider);
-    if (query != null) {
-      return await ref.apps.findAll(params: {'search': query, 'limit': 16});
-    }
-    return null;
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Check if app has updates
+    // Author loaded via profileProvider in AppCard
+    return AppCard(app: app, showUpdateArrow: app.hasUpdate);
   }
 }

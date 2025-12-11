@@ -1,6 +1,8 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
+/// A rounded image widget with fallback to person icon
+/// Used for user avatars and app icons with consistent styling
 class RoundedImage extends StatelessWidget {
   const RoundedImage({
     super.key,

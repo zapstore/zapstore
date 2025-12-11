@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
 
+/// A pill-shaped widget for displaying text with a colored background
+/// Used for tags, categories, and interactive filter chips
 class PillWidget extends StatelessWidget {
   final InlineSpan text;
   final Color color;
   final double size;
-  const PillWidget(this.text,
-      {super.key, this.color = Colors.blue, this.size = 13});
+
+  const PillWidget(
+    this.text, {
+    super.key,
+    this.color = Colors.blue,
+    this.size = 13,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -19,7 +26,7 @@ class PillWidget extends StatelessWidget {
         text: TextSpan(
           style: TextStyle(
             color: Colors.white,
-            fontSize: size * 1.2,
+            fontSize: size,
             fontWeight: FontWeight.bold,
             fontFamily: 'Inter',
           ),

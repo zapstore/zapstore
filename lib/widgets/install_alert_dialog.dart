@@ -2,59 +2,77 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:zapstore/models/app.dart';
-import 'package:zapstore/models/user.dart';
+import 'package:models/models.dart';
+import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/author_container.dart';
+import 'package:zapstore/widgets/common/base_dialog.dart';
+import 'package:zapstore/widgets/download_text_container.dart';
 import 'package:zapstore/widgets/relevant_who_follow_container.dart';
-import 'package:zapstore/widgets/sign_in_container.dart';
+import 'package:zapstore/widgets/sign_in_button.dart';
 
 class InstallAlertDialog extends HookConsumerWidget {
-  const InstallAlertDialog({
-    super.key,
-    required this.app,
-  });
+  const InstallAlertDialog({super.key, required this.app});
 
   final App app;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final publisher = app.author.value;
+    if (publisher == null) {
+      return const SizedBox.shrink();
+    }
     final trustedSignerNotifier = useState(false);
-    final signedInUser = ref.watch(signedInUserProvider);
+    final profile = ref.watch(Signer.activeProfileProvider(LocalSource()));
+    final theme = Theme.of(context);
+    final baseTextSize = theme.textTheme.bodyMedium?.fontSize ?? 14.0;
 
-    return AlertDialog(
-      elevation: 10,
-      title: Text(
-        'Are you sure you want to install ${app.name}?',
-        style: TextStyle(fontWeight: FontWeight.bold),
-      ),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-                'By installing this app you are trusting the signer now and for all future updates. Make sure you know who they are.'),
-            Gap(20),
-            if (app.signer.value != null)
-              AuthorContainer(
-                  user: app.signer.value!,
-                  beforeText: 'Signed by',
-                  oneLine: true),
-            Gap(20),
-            if (app.signer.value != null)
-              signedInUser != null
-                  ? RelevantWhoFollowContainer(
-                      toNpub: app.signer.value!.npub,
-                    )
-                  : SignInButton(
-                      label:
-                          'Sign in to view the signer\'s reputable followers',
-                      minimal: true,
-                      requireNip55: true,
-                    ),
-            Gap(16),
+    return BaseDialog(
+      title: const BaseDialogTitle('Trust this app?'),
+      content: BaseDialogContent(
+        children: [
+          if (app.isRelaySigned) ...[
+            AuthorContainer(
+              profile: publisher,
+              beforeText: 'The',
+              afterText:
+                  ' relay makes the ${app.name ?? app.identifier} app available but did not develop it. ',
+              oneLine: false,
+              size: baseTextSize,
+            ),
+            Gap(10),
+            DownloadTextContainer(
+              beforeText:
+                  '${app.name ?? app.identifier} will be installed from its original release location:',
+              oneLine: false,
+              showFullUrl: true,
+              url: app.latestFileMetadata!.urls.first,
+              size: baseTextSize,
+            ),
+          ] else ...[
+            AuthorContainer(
+              profile: publisher,
+              beforeText: '${app.name ?? app.identifier} is published by',
+              afterText: '.',
+              oneLine: false,
+              size: baseTextSize,
+            ),
+            Gap(14),
+            profile != null
+                ? RelevantWhoFollowContainer(
+                    toNpub: publisher.npub,
+                    trailingText:
+                        ' and others follow ${publisher.nameOrNpub} on Nostr.\n\nThis information helps you determine ${publisher.nameOrNpub}\'s reputation. They are not endorsements of the ${app.name} app.',
+                    size: baseTextSize,
+                  )
+                : SignInButton(
+                    label:
+                        'Sign in to view the publisher\'s reputable followers',
+                    minimal: true,
+                    requireNip55: true,
+                  ),
+            Gap(14),
             Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Switch(
                   value: trustedSignerNotifier.value,
@@ -64,37 +82,46 @@ class InstallAlertDialog extends HookConsumerWidget {
                 ),
                 Gap(4),
                 Expanded(
-                  child: Text(
-                    'Do not ask again for apps from ${app.signer.value!.name}',
+                  child: Row(
+                    children: [
+                      Text(
+                        'Always trust',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurface,
+                        ),
+                      ),
+                      Gap(4),
+                      AuthorContainer(
+                        beforeText: '',
+                        profile: publisher,
+                        size: baseTextSize,
+                      ),
+                    ],
                   ),
-                )
+                ),
               ],
-            )
+            ),
           ],
-        ),
+        ],
       ),
       actions: [
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          child: TextButton(
-            onPressed: () {
-              app.install(alwaysTrustSigner: trustedSignerNotifier.value);
-              // NOTE: can't use context.pop()
-              Navigator.of(context).pop();
-            },
-            child: Text(
-              '${trustedSignerNotifier.value ? 'Always trust' : 'Trust'} ${app.signer.value!.name} and install app',
-              style: TextStyle(fontWeight: FontWeight.bold),
-              textAlign: TextAlign.right,
-            ),
-          ),
-        ),
         TextButton(
           onPressed: () {
             // NOTE: can't use context.pop()
             Navigator.of(context).pop();
           },
-          child: Text('Go back'),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () {
+            Navigator.of(
+              context,
+            ).pop((trustPermanently: trustedSignerNotifier.value));
+          },
+          style: FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          ),
+          child: const Text('Trust and install app'),
         ),
       ],
     );

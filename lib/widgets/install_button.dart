@@ -1,154 +1,723 @@
-import 'package:auto_size_text/auto_size_text.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter_hooks/flutter_hooks.dart';
-import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:percent_indicator/linear_percent_indicator.dart';
-import 'package:zapstore/main.data.dart';
-import 'package:zapstore/models/app.dart';
-import 'package:zapstore/models/local_app.dart';
-import 'package:zapstore/utils/extensions.dart';
-import 'package:zapstore/utils/system_info.dart';
-import 'package:zapstore/widgets/install_alert_dialog.dart';
-import 'package:zapstore/widgets/spinning_logo.dart';
+import 'dart:async';
 
-class InstallButton extends HookConsumerWidget {
-  InstallButton({
+import 'package:async_button_builder/async_button_builder.dart';
+import 'package:collection/collection.dart';
+import 'package:flutter/material.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:models/models.dart';
+import 'package:zapstore/services/download_service.dart';
+import 'package:zapstore/services/package_manager/package_manager.dart';
+import 'package:zapstore/services/trust_service.dart';
+import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/widgets/common/base_dialog.dart';
+import 'package:zapstore/widgets/install_alert_dialog.dart';
+import 'package:zapstore/widgets/install_button_state.dart';
+import 'package:zapstore/services/notification_service.dart';
+import 'package:zapstore/theme.dart';
+
+class InstallButton extends ConsumerWidget {
+  const InstallButton({
     super.key,
     required this.app,
+    this.release,
     this.compact = false,
   });
 
-  final bool compact;
   final App app;
+  final Release? release;
+  final bool compact;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final progress = ref.watch(installationProgressProvider(app.id!));
-    final status = app.localApp.value?.status;
+    final downloadInfo = ref.watch(downloadInfoProvider(app.identifier));
+    final installedPackage = ref
+        .watch(packageManagerProvider)
+        .where((p) => p.appId == app.identifier)
+        .firstOrNull;
 
-    useMemoized(() {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (progress is IdleInstallProgress && progress.success == true) {
-          context.showInfo('Success',
-              description:
-                  '${app.name ?? app.identifier} was successfully installed');
-        }
-      });
-    }, [app.id, progress]);
+    // Determine current state from inputs using the extracted function
+    final state = determineInstallButtonState(
+      app: app,
+      installedPackage: installedPackage,
+      downloadInfo: downloadInfo,
+      release: release,
+      formatTotalSizeMb: _formatTotalSizeMb,
+    );
 
-    return GestureDetector(
-      onTap: switch (status) {
-        AppInstallStatus.downgrade ||
-        AppInstallStatus.certificateMismatch =>
-          null,
-        AppInstallStatus.updated => () {
-            packageManager.openApp(app.identifier);
-          },
-        _ => switch (progress) {
-            IdleInstallProgress() => () {
-                if (app.canInstall) {
-                  final settings = ref.settings.findOneLocalById('_')!;
-                  if (settings.trustedUsers.contains(app.signer.value!)) {
-                    app.install().catchError((e) {
-                      if (context.mounted) {
-                        context.showError('Could not install',
-                            description: e.message);
-                      }
-                    });
-                  } else {
-                    showDialog(
-                      context: context,
-                      builder: (context) => InstallAlertDialog(app: app),
-                    );
-                  }
-                } else if (app.canUpdate) {
-                  app.install().catchError((e) {
-                    if (context.mounted) {
-                      context.showError('Could not install',
-                          description: e.message);
-                    }
-                  });
-                } else {
-                  // no action
-                }
-              },
-            ErrorInstallProgress(:final e, :final info, :final actions) => () {
-                // show error and reset state to idle
-                context.showError(e.message,
-                    description: info, actions: actions);
-                ref.read(installationProgressProvider(app.id!).notifier).state =
-                    IdleInstallProgress();
-              },
-            _ => null,
-          }
-      },
-      child: LinearPercentIndicator(
-        lineHeight: compact ? 30 : 42,
-        percent: switch (progress) {
-          VerifyingHashProgress() => 1,
-          DownloadingInstallProgress(:final progress) => progress,
-          _ => switch (status) {
-              AppInstallStatus.updated => 1,
-              _ => 0,
-            },
-        },
-        backgroundColor: switch (progress) {
-          ErrorInstallProgress() => Colors.red,
-          IdleInstallProgress() =>
-            (!app.canInstall && !app.canUpdate || app.hasCertificateMismatch)
-                ? Colors.grey
-                : kUpdateColor,
-          _ => kUpdateColor,
-        },
-        progressColor: Colors.blue[800],
-        barRadius: Radius.circular(20),
-        padding: EdgeInsets.all(0),
-        animateFromLastPercent: true,
-        center: switch (status) {
-          AppInstallStatus.downgrade => Text(
-              'Installed version ${app.localApp.value?.installedVersion ?? ''} is higher, can\'t downgrade',
-              textAlign: TextAlign.center,
-            ),
-          AppInstallStatus.certificateMismatch => Text(
-              'Not possible to update',
-              textAlign: TextAlign.center,
-            ),
-          AppInstallStatus.updated => Text('Open'),
-          _ => switch (progress) {
-              IdleInstallProgress() => app.canUpdate
-                  ? Padding(
-                      padding: const EdgeInsets.only(left: 8, right: 8),
-                      child: AutoSizeText(
-                        'Update',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: compact ? 10 : 14),
-                      ),
-                    )
-                  : (app.canInstall
-                      ? Text('Install')
-                      : Center(child: SpinningLogo(size: 40))),
-              DownloadingInstallProgress(:final progress) => Text(
-                  progress == 0
-                      ? 'Starting download...'
-                      : '${(progress * 100).floor()}%',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+    // Compact mode - just the button without positioning or extra actions
+    if (compact) {
+      return _buildButtonForState(context, ref, state);
+    }
+
+    // Regular mode - positioned at bottom with extra action buttons
+    return Positioned(
+      bottom: 0,
+      left: 0,
+      right: 0,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Theme.of(context).scaffoldBackgroundColor,
+        ),
+        child: SafeArea(
+          child: Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 48,
+                  child: _buildButtonForState(context, ref, state),
                 ),
-              VerifyingHashProgress() => Text('Verifying file integrity'),
-              RequestInstallProgress() =>
-                Text('Requesting ${app.canUpdate ? 'update' : 'installation'}'),
-              ErrorInstallProgress() => Padding(
-                  padding: const EdgeInsets.only(left: 8, right: 8),
-                  child: Text(
-                    'Error (tap for details)',
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-            }
-        },
+              ),
+              // Show action buttons only for installed apps
+              if (state is InstalledUpToDate ||
+                  state is UpdateAvailable ||
+                  state is DowngradeBlocked) ...[
+                if (state is UpdateAvailable) ...[
+                  const SizedBox(width: 8),
+                  _buildOpenIconButton(context, ref),
+                ],
+                const SizedBox(width: 8),
+                _buildUninstallIconButton(context, ref),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
-}
 
-final kUpdateColor = Colors.blue[700]!;
+  /// Builds the appropriate button widget based on the current state
+  /// Uses pattern matching on sealed class for exhaustive handling
+  Widget _buildButtonForState(
+    BuildContext context,
+    WidgetRef ref,
+    InstallButtonState state,
+  ) {
+    final fontSize = compact ? 13.0 : 16.0;
+
+    return switch (state) {
+      // Not installed, ready to install
+      ReadyToInstall(:final hasRelease) => _buildAsyncButton(
+          context,
+          ref,
+          text: 'Install',
+          onPressed: hasRelease ? () => _startDownload(ref) : null,
+          isPrimary: true,
+          fontSize: fontSize,
+          needsTrustCheck: true,
+        ),
+
+      // Installed and up to date
+      InstalledUpToDate() => _buildAsyncButton(
+          context,
+          ref,
+          text: 'Open',
+          onPressed: () => _openApp(context, ref),
+          isPrimary: true,
+          fontSize: fontSize,
+          needsTrustCheck: false,
+        ),
+
+      // Update available
+      UpdateAvailable(:final hasRelease) => _buildAsyncButton(
+          context,
+          ref,
+          text: 'Update',
+          onPressed: hasRelease ? () => _startDownload(ref) : null,
+          isPrimary: true,
+          fontSize: fontSize,
+          needsTrustCheck: false,
+        ),
+
+      // Downgrade blocked
+      DowngradeBlocked() => _buildSimpleButton(
+          context,
+          "Can't downgrade",
+          null,
+          isPrimary: false,
+          showSpinner: false,
+          fontSize: fontSize,
+          isDowngrade: true,
+        ),
+
+      // Download in progress
+      Downloading(:final progress, :final totalSizeMb) => _buildProgressButton(
+          context,
+          ref,
+          progress: progress,
+          text: _formatDownloadProgress(progress, totalSizeMb),
+          fontSize: fontSize,
+          onTap: () => _pauseDownload(ref),
+        ),
+
+      // Download paused
+      DownloadPaused(:final progress, :final totalSizeMb) =>
+        _buildProgressButton(
+          context,
+          ref,
+          progress: progress,
+          text: _formatDownloadProgress(progress, totalSizeMb, paused: true),
+          fontSize: fontSize,
+          onTap: () => _resumeDownload(ref),
+        ),
+
+      // Download enqueued
+      DownloadEnqueued(:final isUpdate) => _buildSimpleButton(
+          context,
+          isUpdate ? 'Update' : 'Install',
+          () => _cancelAndRestart(ref),
+          isPrimary: true,
+          fontSize: fontSize,
+        ),
+
+      // Downloaded, ready to install
+      DownloadedReadyToInstall(:final isUpdate) => AsyncButtonBuilder(
+          onPressed: () => _installFromDownloaded(ref),
+          builder: (context, child, callback, buttonState) {
+            return _buildSimpleButton(
+              context,
+              buttonState.maybeWhen(
+                loading: () => 'Installing...',
+                orElse: () => isUpdate ? 'Update' : 'Install',
+              ),
+              buttonState.maybeWhen(
+                loading: () => null,
+                orElse: () => callback,
+              ),
+              isPrimary: true,
+              showSpinner: buttonState.maybeWhen(
+                loading: () => true,
+                orElse: () => false,
+              ),
+              fontSize: fontSize,
+            );
+          },
+          child: Text(
+            isUpdate ? 'Update' : 'Install',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+          onError: () {
+            if (context.mounted) {
+              context.showError('Installation failed. Please try again.');
+            }
+          },
+        ),
+
+      // Installing
+      Installing() => _buildSimpleButton(
+          context,
+          'Requesting installation',
+          null,
+          isPrimary: true,
+          showSpinner: true,
+          fontSize: fontSize,
+        ),
+
+      // Failed
+      Failed(:final canRetryReckless, :final downloadInfo) =>
+        _buildSimpleButton(
+          context,
+          'Error (tap for details)',
+          () => _handleErrorTap(ref, context, downloadInfo, canRetryReckless),
+          isPrimary: false,
+          isError: true,
+          fontSize: fontSize,
+        ),
+    };
+  }
+
+  /// Helper to format download progress text
+  String _formatDownloadProgress(
+    double progress,
+    String? totalSizeMb, {
+    bool paused = false,
+  }) {
+    final percent = (progress * 100).round();
+    final pausedSuffix = paused ? ' (paused)' : '';
+    return totalSizeMb != null
+        ? '$percent% of $totalSizeMb$pausedSuffix'
+        : '$percent%$pausedSuffix';
+  }
+
+  /// Builds async button with trust check for fresh installs
+  Widget _buildAsyncButton(
+    BuildContext context,
+    WidgetRef ref, {
+    required String text,
+    required Future<void> Function()? onPressed,
+    required bool isPrimary,
+    required double fontSize,
+    required bool needsTrustCheck,
+  }) {
+    // Store error message for display
+    String? lastError;
+
+    return AsyncButtonBuilder(
+      onPressed: onPressed == null
+          ? null
+          : () async {
+              // Trust check only for fresh installs
+              if (needsTrustCheck) {
+                final signerPubkey = app.author.value?.pubkey;
+                bool shouldShowDialog = true;
+                if (signerPubkey != null) {
+                  try {
+                    final isTrusted = await ref
+                        .read(trustServiceProvider)
+                        .isSignerTrusted(signerPubkey);
+                    shouldShowDialog = !isTrusted;
+                  } catch (_) {
+                    shouldShowDialog = true;
+                  }
+                }
+
+                if (shouldShowDialog) {
+                  if (!context.mounted) return;
+                  final result = await showBaseDialog<({bool trustPermanently})>(
+                    context: context,
+                    dialog: InstallAlertDialog(app: app),
+                  );
+                  if (result == null) return;
+                  if (result.trustPermanently && signerPubkey != null) {
+                    try {
+                      await ref
+                          .read(trustServiceProvider)
+                          .addTrustedSigner(signerPubkey);
+                    } catch (_) {
+                      // ignore persistence errors
+                    }
+                  }
+                }
+              }
+              try {
+                await onPressed();
+              } catch (e) {
+                // Store the error message for display
+                lastError = e.toString();
+                rethrow;
+              }
+            },
+      builder: (context, child, callback, buttonState) {
+        return _buildSimpleButton(
+          context,
+          buttonState.maybeWhen(
+            loading: () => text == 'Open' ? 'Launching...' : 'Starting...',
+            orElse: () => text,
+          ),
+          buttonState.maybeWhen(loading: () => null, orElse: () => callback),
+          isPrimary: isPrimary,
+          showSpinner: false,
+          fontSize: fontSize,
+        );
+      },
+      child: Text(
+        text,
+        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+      ),
+      onError: () {
+        if (context.mounted) {
+          // Show the actual error message if available
+          final message = lastError != null
+              ? lastError!.replaceFirst('Exception: ', '')
+              : 'Operation failed. Please try again.';
+          context.showError(message);
+        }
+      },
+    );
+  }
+
+  Widget _buildUninstallIconButton(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    return IconButton.filled(
+      onPressed: () => _uninstallApp(ref, context),
+      icon: const Icon(Icons.delete_outline),
+      style: IconButton.styleFrom(
+        backgroundColor: theme.colorScheme.errorContainer,
+        foregroundColor: theme.colorScheme.onErrorContainer,
+        padding: const EdgeInsets.all(12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+      tooltip: 'Uninstall',
+    );
+  }
+
+  // Removed: update logic moved to AppExt
+
+  Widget _buildOpenIconButton(BuildContext context, WidgetRef ref) {
+    const actionColor = AppColors.darkActionPrimary;
+    return IconButton.filled(
+      onPressed: () => _openApp(context, ref),
+      icon: const Icon(Icons.open_in_new),
+      style: IconButton.styleFrom(
+        backgroundColor: actionColor,
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.all(12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+      tooltip: 'Open',
+    );
+  }
+
+  Widget _buildProgressButton(
+    BuildContext context,
+    WidgetRef ref, {
+    required double progress,
+    required String text,
+    required double fontSize,
+    VoidCallback? onTap,
+  }) {
+    const actionColor = AppColors.darkActionPrimary;
+    final darkerAction = Color.alphaBlend(
+      Colors.black.withValues(alpha: 0.22),
+      actionColor,
+    );
+
+    return FilledButton(
+      onPressed: onTap ?? () => _cancelDownload(ref),
+      style: FilledButton.styleFrom(
+        backgroundColor: Colors.transparent,
+        disabledBackgroundColor: Colors.transparent,
+        disabledForegroundColor: Colors.white,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        shadowColor: Colors.transparent,
+        padding: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Stack(
+          children: [
+            Positioned.fill(child: Container(color: actionColor)),
+            Positioned.fill(
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: FractionallySizedBox(
+                  widthFactor: progress,
+                  heightFactor: 1.0,
+                  child: Container(color: darkerAction),
+                ),
+              ),
+            ),
+            Center(
+              child: Text(
+                text,
+                style: TextStyle(
+                  fontSize: fontSize,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSimpleButton(
+    BuildContext context,
+    String text,
+    VoidCallback? onPressed, {
+    bool isPrimary = true,
+    bool isError = false,
+    bool showSpinner = false,
+    double fontSize = 16.0,
+    bool isDowngrade = false,
+  }) {
+    final theme = Theme.of(context);
+
+    Widget child = Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Flexible(
+          child: Text(
+            text,
+            style: TextStyle(fontSize: fontSize, fontWeight: FontWeight.bold),
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
+          ),
+        ),
+        if (showSpinner) ...[
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(
+              strokeWidth: 3,
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+            ),
+          ),
+        ],
+      ],
+    );
+
+    if (isError) {
+      return FilledButton(
+        onPressed: onPressed,
+        style: FilledButton.styleFrom(
+          backgroundColor: theme.colorScheme.error,
+          disabledBackgroundColor: theme.colorScheme.error,
+          disabledForegroundColor: Colors.white,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        child: child,
+      );
+    } else if (isDowngrade) {
+      // Greyed out disabled button for downgrades (opaque)
+      final greyColor = theme.colorScheme.outline;
+      return FilledButton(
+        onPressed: null, // disabled
+        style: FilledButton.styleFrom(
+          backgroundColor: greyColor,
+          disabledBackgroundColor: greyColor,
+          disabledForegroundColor: theme.colorScheme.onSurface.withValues(
+            alpha: 0.5,
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        child: child,
+      );
+    } else {
+      const actionColor = AppColors.darkActionPrimary;
+      final backgroundColor = isPrimary
+          ? actionColor
+          : actionColor.withValues(alpha: 0.8);
+
+      return FilledButton(
+        onPressed: onPressed,
+        style: FilledButton.styleFrom(
+          backgroundColor: backgroundColor,
+          disabledBackgroundColor: backgroundColor,
+          disabledForegroundColor: Colors.white,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        child: child,
+      );
+    }
+  }
+
+  Future<void> _startDownload(WidgetRef ref) async {
+    if (release == null) return;
+
+    final downloadService = ref.read(downloadServiceProvider.notifier);
+    await downloadService.downloadApp(app, release!);
+  }
+
+  Future<void> _installFromDownloaded(WidgetRef ref) async {
+    try {
+      final downloadService = ref.read(downloadServiceProvider.notifier);
+      await downloadService.installFromDownloaded(app.identifier);
+    } catch (_) {
+      rethrow;
+    }
+  }
+
+  Future<void> _resumeDownload(WidgetRef ref) async {
+    final downloadService = ref.read(downloadServiceProvider.notifier);
+    await downloadService.resumeDownload(app.identifier);
+  }
+
+  Future<void> _pauseDownload(WidgetRef ref) async {
+    try {
+      final downloadService = ref.read(downloadServiceProvider.notifier);
+      await downloadService.pauseDownload(app.identifier);
+    } catch (e) {
+      // Failed to pause download
+    }
+  }
+
+  Future<void> _cancelDownload(WidgetRef ref) async {
+    try {
+      final downloadService = ref.read(downloadServiceProvider.notifier);
+      await downloadService.cancelDownload(app.identifier);
+    } catch (e) {
+      // Failed to cancel download
+    }
+  }
+
+  Future<void> _openApp(BuildContext context, WidgetRef ref) async {
+    try {
+      final packageManager = ref.read(packageManagerProvider.notifier);
+      context.showInfo('Launching ${app.name ?? app.identifier}...');
+      await packageManager.launchApp(app.identifier);
+    } catch (e) {
+      if (!context.mounted) return;
+      context.showError('Failed to launch ${app.name ?? app.identifier}: $e');
+    }
+  }
+
+  Future<void> _cancelAndRestart(WidgetRef ref) async {
+    final downloadService = ref.read(downloadServiceProvider.notifier);
+    await downloadService.cancelDownload(app.identifier);
+  }
+
+  String? _formatTotalSizeMb(Release? release) {
+    try {
+      final sizeBytes = app.latestFileMetadata?.size;
+      if (sizeBytes == null || sizeBytes <= 0) return null;
+      final mb = sizeBytes / (1024 * 1024);
+      return '${mb.toStringAsFixed(1)} MB';
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _handleErrorTap(
+    WidgetRef ref,
+    BuildContext context,
+    DownloadInfo downloadInfo,
+    bool canRetryReckless,
+  ) {
+    final errorMessage =
+        downloadInfo.errorDetails ?? 'Download failed. Please try again.';
+
+    context.showError(
+      errorMessage,
+      actions: canRetryReckless
+          ? [
+              (
+                '⚠️ Proceed anyway (RECKLESS)',
+                () async {
+                  // Retry installation with skipVerification=true
+                  final filePath = await downloadInfo.task.filePath();
+                  final packageManager = ref.read(
+                    packageManagerProvider.notifier,
+                  );
+
+                  // Update download state to show installing
+                  final downloadService = ref.read(
+                    downloadServiceProvider.notifier,
+                  );
+                  downloadService.markInstalling(app.identifier);
+
+                  try {
+                    await packageManager.install(
+                      app.identifier,
+                      filePath,
+                      expectedHash: downloadInfo.fileMetadata.hash,
+                      expectedSize: downloadInfo.fileMetadata.size ?? 0,
+                      skipVerification: true, // SKIP VERIFICATION
+                    );
+                  } catch (e) {
+                    if (context.mounted) {
+                      context.showError('Installation failed: $e');
+                    }
+                  }
+                },
+              ),
+            ]
+          : [],
+    );
+
+    // Only cancel if user doesn't have the option to proceed
+    // For hash errors, keep the download so user can proceed
+    if (!canRetryReckless) {
+      final downloadService = ref.read(downloadServiceProvider.notifier);
+      downloadService.cancelDownload(app.identifier);
+    }
+  }
+
+  Future<void> _uninstallApp(WidgetRef ref, BuildContext context) async {
+    // Special handling for Zapstore app itself
+    if (app.identifier == 'dev.zapstore.alpha') {
+      final shouldProceed = await _showZapstoreUninstallDialog(context);
+      if (!shouldProceed) return;
+    }
+
+    try {
+      final packageManager = ref.read(packageManagerProvider.notifier);
+      await packageManager.uninstall(app.identifier);
+      if (context.mounted) {
+        _monitorUninstallCompletion(ref, context);
+      }
+    } catch (e) {
+      if (context.mounted) {
+        context.showError('Uninstall failed: $e');
+      }
+    }
+  }
+
+  Future<bool> _showZapstoreUninstallDialog(BuildContext context) async {
+    final result = await showBaseDialog<bool>(
+      context: context,
+      dialog: Builder(
+        builder: (dialogContext) => BaseDialog(
+          title: const BaseDialogTitle('Uninstall Zapstore'),
+          content: const BaseDialogContent(
+            children: [
+              Text(
+                'This will uninstall Zapstore from your device.',
+                style: TextStyle(fontSize: 16),
+              ),
+              SizedBox(height: 12),
+              Text(
+                'To download the previous stable Zapstore version, visit:',
+                style: TextStyle(fontSize: 16),
+              ),
+              SizedBox(height: 8),
+              Text(
+                'zapstore.dev/download',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(dialogContext).colorScheme.error,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              ),
+              child: const Text('Uninstall'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    return result ?? false;
+  }
+
+  void _monitorUninstallCompletion(WidgetRef ref, BuildContext context) {
+    bool notificationShown = false;
+    late final ProviderSubscription<List<PackageInfo>> subscription;
+
+    // Listen to package manager changes instead of polling
+    subscription = ref.listenManual(packageManagerProvider, (previous, next) {
+      final isStillInstalled = next.any((p) => p.appId == app.identifier);
+
+      // Only show notification once when app becomes uninstalled
+      if (!isStillInstalled && !notificationShown && context.mounted) {
+        notificationShown = true;
+        context.showInfo('${app.name ?? app.identifier} has been uninstalled');
+        // Close subscription after showing notification
+        subscription.close();
+      }
+    });
+
+    // Timeout after 30 seconds
+    Future.delayed(const Duration(seconds: 30), () {
+      if (!notificationShown) {
+        subscription.close();
+      }
+    });
+  }
+}

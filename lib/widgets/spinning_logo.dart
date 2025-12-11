@@ -1,49 +1,32 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_hooks/flutter_hooks.dart';
 
-class SpinningLogo extends StatefulWidget {
+/// An animated spinning logo widget used for loading states
+/// Continuously rotates the Zapstore logo image
+class SpinningLogo extends HookWidget {
   final double size;
   const SpinningLogo({super.key, this.size = 200});
 
   @override
-  SpinningLogoState createState() => SpinningLogoState();
-}
-
-class SpinningLogoState extends State<SpinningLogo>
-    with TickerProviderStateMixin {
-  late AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: Duration(seconds: 2),
-    )..repeat(); // Repeat the animation indefinitely
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose(); // Dispose of the controller when done
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
+    final controller = useAnimationController(
+      duration: const Duration(seconds: 2),
+    )..repeat();
+
     return Center(
       child: AnimatedBuilder(
-        animation: _controller,
+        animation: controller,
         builder: (context, child) {
           return Transform.rotate(
-            angle:
-                _controller.value * 2.0 * 3.14159, // Full rotation in radians
+            angle: controller.value * 2.0 * 3.14159,
             child: child,
           );
         },
         child: Image.asset(
           'assets/images/logo-fg.png',
-          height: widget.size,
-          width: widget.size,
-        ), // Adjust size as needed
+          height: size,
+          width: size,
+        ),
       ),
     );
   }

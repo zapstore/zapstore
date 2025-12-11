@@ -1,144 +1,435 @@
-import 'dart:async';
-
-import 'package:async_button_builder/async_button_builder.dart';
-import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
-import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:zapstore/main.data.dart';
-import 'package:zapstore/models/app.dart';
-import 'package:zapstore/screens/settings_screen.dart';
+import 'package:models/models.dart';
+import 'package:async_button_builder/async_button_builder.dart';
+import 'package:zapstore/services/profile_service.dart';
 import 'package:zapstore/utils/extensions.dart';
-import 'package:zapstore/utils/notifier.dart';
-import 'package:zapstore/widgets/app_card.dart';
+import 'app_card.dart';
 
 class LatestReleasesContainer extends HookConsumerWidget {
+  const LatestReleasesContainer({
+    super.key,
+    required this.scrollController,
+    this.showSkeleton = false,
+  });
+
   final ScrollController scrollController;
-  const LatestReleasesContainer({super.key, required this.scrollController});
+  final bool showSkeleton;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(latestReleasesAppProvider);
+    if (showSkeleton) {
+      return _buildSkeletonState(context);
+    }
+
+    final state = ref.watch(latestReleasesProvider);
+    final storage = state.storage;
+
+    // Combine live storage models (newest) with paged older apps
+    final combinedApps = [...storage.models, ...state.olderApps];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Latest Releases', style: context.textTheme.headlineSmall),
+              if (storage.models.isNotEmpty)
+                TextButton(
+                  onPressed: () {
+                    scrollController.animateTo(
+                      scrollController.position.maxScrollExtent,
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeInOut,
+                    );
+                  },
+                  child: const Text('See more'),
+                ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        if (storage is StorageLoading<App> || storage.models.isEmpty)
+          Column(
+            children: List.generate(
+              3,
+              (index) => const AppCard(isLoading: true),
+            ),
+          )
+        else if (storage is StorageError<App>)
+          _buildErrorState(context, storage.exception.toString())
+        else
+          _buildAppsList(
+            context,
+            ref,
+            combinedApps,
+            state.isLoadingMore,
+            state.hasMore,
+            ref.read(latestReleasesProvider.notifier).loadMore,
+          ),
+      ],
+    );
+  }
+
+  Widget _buildErrorState(BuildContext context, String error) {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Center(
+        child: Column(
           children: [
-            Text('Latest releases',
-                style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
-            ElevatedButton(
-              onPressed: () {
-                scrollController.animateTo(
-                  scrollController.position.maxScrollExtent,
-                  duration: Duration(milliseconds: 300),
-                  curve: Curves.easeOut,
-                );
-              },
-              style:
-                  ElevatedButton.styleFrom(backgroundColor: Colors.transparent),
-              child: Text('See more'),
-            )
+            Icon(Icons.error_outline, size: 48, color: Colors.red[400]),
+            const SizedBox(height: 16),
+            Text('Error loading apps', style: context.textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Text(
+              error,
+              style: context.textTheme.bodySmall,
+              textAlign: TextAlign.center,
+            ),
           ],
         ),
-        Gap(12),
-        Column(
-          children: [
-            if (state.hasError) Text('Error fetching: ${state.error}'),
-            if (state.isLoading)
-              for (final _ in List.generate(3, (_) => _)) SkeletonAppCard(),
-            if (state.hasValue)
-              // NOTE: Since we're showing apps but it's really a list of releases
-              // apps will appear repeated, to convert to set
-              for (final app in state.value!) AppCard(model: app),
-            if (state.hasValue)
-              AsyncButtonBuilder(
-                loadingWidget: SmallCircularProgressIndicator(),
-                onPressed: () async {
-                  return ref
-                      .read(latestReleasesAppProvider.notifier)
-                      .fetchRemote(next: true);
-                },
-                builder: (context, child, callback, state) {
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 2),
-                    child: SizedBox(
-                      child: ElevatedButton(
-                        onPressed: callback,
-                        style: ElevatedButton.styleFrom(
-                            disabledBackgroundColor: Colors.transparent,
-                            backgroundColor: Colors.grey[900]),
-                        child: child,
+      ),
+    );
+  }
+
+  Widget _buildAppsList(
+    BuildContext context,
+    WidgetRef ref,
+    List<App> apps,
+    bool isLoadingMore,
+    bool hasMoreApps,
+    Future<void> Function() onLoadMore,
+  ) {
+    return Column(
+      children: [
+        ...apps.map((app) {
+          final releaseAuthor = app.latestRelease.value?.author.value;
+          return AppCard(
+            app: app,
+            author: releaseAuthor,
+            showUpdateArrow: app.hasUpdate,
+          );
+        }),
+
+        const SizedBox(height: 10),
+
+        if (hasMoreApps)
+          AsyncButtonBuilder(
+            loadingWidget: SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 3,
+                color: Theme.of(context).colorScheme.onSurface,
+                backgroundColor: Theme.of(
+                  context,
+                ).colorScheme.surfaceContainerHighest,
+              ),
+            ),
+            onPressed: isLoadingMore ? null : onLoadMore,
+            builder: (context, child, callback, state) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: callback,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Theme.of(
+                        context,
+                      ).colorScheme.surfaceContainerHighest,
+                      foregroundColor: Theme.of(context).colorScheme.onSurface,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
                       ),
                     ),
-                  );
-                },
-                child: Text('Load more'),
+                    child: child,
+                  ),
+                ),
+              );
+            },
+            child: Text(isLoadingMore ? 'Loading...' : 'Load more'),
+          )
+        else
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Center(
+              child: Text(
+                'No more apps to load',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: Colors.grey[600]),
               ),
-          ],
-        )
+            ),
+          ),
+
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+
+  static Widget _buildSkeletonState(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Latest Releases', style: context.textTheme.headlineMedium),
+              TextButton(
+                onPressed: null, // Disabled during loading
+                child: const Text('See more'),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        // Show 3 skeleton app cards
+        Column(children: List.generate(3, (index) => AppCard(isLoading: true))),
       ],
     );
   }
 }
 
-class LatestReleasesAppNotifier extends PreloadingStateNotifier<List<App>> {
-  DateTime? _oldestCreatedAt;
-  int _page = 1;
+// Provider and Notifier for latest releases pagination and relationship loading
 
-  LatestReleasesAppNotifier(super.ref);
+class LatestReleasesState {
+  final StorageState<App> storage;
+  final List<App> olderApps;
+  final bool isLoadingMore;
+  final bool hasMore;
 
-  @override
-  Future<void> fetchRemote({bool next = false}) async {
-    if (next) {
-      _page++;
-    }
+  const LatestReleasesState({
+    required this.storage,
+    required this.olderApps,
+    required this.isLoadingMore,
+    required this.hasMore,
+  });
 
-    // Can't use ignoreReturn, as super.findAll does use the result
-    await ref.apps.findAll(
-      params: {
-        'includes': true,
-        'limit': 10,
-        'until': next ? _oldestCreatedAt : null,
-        'since': null,
-      },
+  factory LatestReleasesState.initial() => LatestReleasesState(
+    storage: StorageLoading<App>(const []),
+    olderApps: const [],
+    isLoadingMore: false,
+    hasMore: true,
+  );
+
+  LatestReleasesState copyWith({
+    StorageState<App>? storage,
+    List<App>? olderApps,
+    bool? isLoadingMore,
+    bool? hasMore,
+  }) {
+    return LatestReleasesState(
+      storage: storage ?? this.storage,
+      olderApps: olderApps ?? this.olderApps,
+      isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+      hasMore: hasMore ?? this.hasMore,
     );
-
-    state = fetchLocal();
-  }
-
-  @override
-  AsyncValue<List<App>> fetchLocal() {
-    final models = ref.apps.findAllLocal();
-
-    if (models.isEmpty) {
-      return AsyncLoading();
-    }
-
-    // Do we have a Zapstore version that needs update?
-    final zapstoreApp =
-        models.firstWhereOrNull((a) => a.identifier == kZapstoreAppIdentifier);
-
-    final apps = models
-        .where((a) => a.latestMetadata != null)
-        .sortedByLatest
-        .take(_page * 10)
-        .toList();
-
-    // Set timestamp of oldest, to prepare for next query
-    if (apps.isNotEmpty) {
-      _oldestCreatedAt = apps.last.event.createdAt;
-    }
-    // "Pin" Zapstore if it needs to be updated
-    if (zapstoreApp != null && zapstoreApp.canUpdate) {
-      apps.remove(zapstoreApp);
-      apps.insert(0, zapstoreApp);
-    }
-    return AsyncData(apps);
   }
 }
 
-final latestReleasesAppProvider =
-    StateNotifierProvider<LatestReleasesAppNotifier, AsyncValue<List<App>>>(
-        LatestReleasesAppNotifier.new);
+final latestReleasesProvider =
+    StateNotifierProvider<LatestReleasesNotifier, LatestReleasesState>(
+      (ref) => LatestReleasesNotifier(ref),
+    );
+
+class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
+  LatestReleasesNotifier(this.ref) : super(LatestReleasesState.initial()) {
+    _startQuery();
+  }
+
+  final Ref ref;
+  static const int _pageSize = 10;
+  ProviderSubscription<StorageState<App>>? _sub;
+  // We keep a fixed live head window from query(); older pages are appended
+
+  void _startQuery() {
+    _sub?.close();
+
+    _sub = ref.listen<StorageState<App>>(
+      query<App>(
+        limit: _pageSize,
+        tags: {
+          '#f': {'android-arm64-v8a'},
+        },
+        and: (app) => {
+          app.latestRelease,
+          // Load nested FileMetadata from latestRelease (same relay group)
+          if (app.latestRelease.value != null)
+            app.latestRelease.value!.latestMetadata,
+        },
+        // NOTE: It must stream=true
+        source: const LocalAndRemoteSource(
+          relays: 'AppCatalog',
+          stream: true,
+          background: true,
+        ),
+        andSource: const LocalAndRemoteSource(
+          relays: 'AppCatalog',
+          stream: false,
+        ), // No streaming for relationships
+        subscriptionPrefix: 'latest',
+      ),
+      (previous, next) async {
+        // Always mirror storage state and ensure olderApps don't duplicate the live head
+        if (next is StorageData<App>) {
+          final liveIds = next.models.map((a) => a.id).toSet();
+          final filteredOlder = state.olderApps
+              .where((a) => !liveIds.contains(a.id))
+              .toList();
+          state = state.copyWith(storage: next, olderApps: filteredOlder);
+
+          final newApps = next.models;
+
+          // For new apps, one-off fetch their relationships
+          // TODO: Not needed - should be dealt with by and/andSource
+          if (newApps.isNotEmpty) {
+            await _fetchRelationshipsForNewApps(newApps);
+          }
+        } else {
+          state = state.copyWith(storage: next);
+        }
+
+        if (next is StorageError<App>) {
+          state = state.copyWith(isLoadingMore: false);
+        }
+      },
+      fireImmediately: true,
+    );
+  }
+
+  /// One-off fetch of Release and FileMetadata for newly received apps
+  Future<void> _fetchRelationshipsForNewApps(List<App> newApps) async {
+    if (newApps.isEmpty) return;
+
+    // One-off fetch: Get releases for these apps from remote
+    final releases = await ref.storage.query(
+      Request<Release>(
+        newApps
+            .map((app) => app.latestRelease.req?.filters.firstOrNull)
+            .nonNulls
+            .toList(),
+      ),
+      source: const RemoteSource(stream: false),
+    );
+
+    // One-off fetch: Get file metadata for the releases from remote
+    if (releases.isNotEmpty) {
+      await ref.storage.query(
+        Request<FileMetadata>(
+          releases
+              .map((r) => r.latestMetadata.req?.filters.firstOrNull)
+              .nonNulls
+              .toList(),
+        ),
+        source: const RemoteSource(stream: false),
+      );
+    }
+
+    // One-off fetch: Get release author profiles from 'social' relay group
+    final authorPubkeys = releases.map((r) => r.event.pubkey).toSet();
+    if (authorPubkeys.isNotEmpty) {
+      await ref.read(profileServiceProvider).fetchProfiles(authorPubkeys);
+    }
+  }
+
+  /// Fetch authors for a page of apps (used during pagination)
+  Future<void> _loadRelationshipsFor(List<App> appsPage) async {
+    final releases = appsPage
+        .map((a) => a.latestRelease.value)
+        .whereType<Release>()
+        .toList();
+
+    if (releases.isEmpty) return;
+
+    // Only need to query release authors from 'social' group (different relay group)
+    final authorPubkeys = releases.map((r) => r.event.pubkey).toSet();
+    if (authorPubkeys.isNotEmpty) {
+      await ref.read(profileServiceProvider).fetchProfiles(authorPubkeys);
+    }
+  }
+
+  Future<void> loadMore() async {
+    final live = state.storage.models;
+    final combined = [...live, ...state.olderApps];
+    if (state.isLoadingMore || !state.hasMore || combined.isEmpty) return;
+
+    final oldest = combined
+        .map((a) => a.event.createdAt)
+        .reduce((a, b) => a.isBefore(b) ? a : b)
+        .subtract(const Duration(milliseconds: 1));
+
+    state = state.copyWith(isLoadingMore: true);
+
+    try {
+      // Fetch older apps
+      final olderPage = await ref.storage.query(
+        RequestFilter<App>(
+          until: oldest,
+          limit: _pageSize,
+          tags: {
+            '#f': {'android-arm64-v8a'},
+          },
+        ).toRequest(),
+        source: const LocalAndRemoteSource(stream: false, background: false),
+      );
+
+      if (olderPage.isNotEmpty) {
+        // Load relationships: releases and their file metadata (same relay group)
+        final releases = await ref.storage.query(
+          Request<Release>(
+            olderPage
+                .map((app) => app.latestRelease.req?.filters.firstOrNull)
+                .nonNulls
+                .toList(),
+          ),
+          source: const RemoteSource(stream: false),
+        );
+
+        // Load file metadata for the releases
+        if (releases.isNotEmpty) {
+          await ref.storage.query(
+            Request<FileMetadata>(
+              releases
+                  .map((r) => r.latestMetadata.req?.filters.firstOrNull)
+                  .nonNulls
+                  .toList(),
+            ),
+            source: const RemoteSource(stream: false),
+          );
+        }
+
+        // Load release authors from different relay group (social)
+        await _loadRelationshipsFor(olderPage);
+
+        final existingIds = combined.map((a) => a.id).toSet();
+        final uniqueOlder = olderPage
+            .where((a) => !existingIds.contains(a.id))
+            .toList();
+        state = state.copyWith(
+          olderApps: [...state.olderApps, ...uniqueOlder],
+          isLoadingMore: false,
+          hasMore: olderPage.length >= _pageSize,
+        );
+      } else {
+        state = state.copyWith(isLoadingMore: false, hasMore: false);
+      }
+    } catch (_) {
+      state = state.copyWith(isLoadingMore: false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _sub?.close();
+    super.dispose();
+  }
+}

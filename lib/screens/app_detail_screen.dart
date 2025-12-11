@@ -1,356 +1,256 @@
-import 'package:auto_size_text/auto_size_text.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:easy_image_viewer/easy_image_viewer.dart';
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter_hooks/flutter_hooks.dart';
-import 'package:flutter_markdown/flutter_markdown.dart';
-import 'package:gap/gap.dart';
+import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
-import 'package:zapstore/main.data.dart';
-import 'package:zapstore/models/app.dart';
-import 'package:zapstore/models/release.dart';
+import 'package:models/models.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:zapstore/utils/debug_utils.dart';
 import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/services/profile_service.dart';
+import 'package:zapstore/widgets/app_detail_widgets.dart';
+import 'package:zapstore/widgets/app_header.dart';
+import 'package:zapstore/widgets/app_info_table.dart';
+import 'package:zapstore/widgets/author_container.dart';
+import 'package:zapstore/widgets/comments_section.dart';
+import 'package:zapstore/widgets/download_text_container.dart';
+import 'package:zapstore/widgets/expandable_markdown.dart';
 import 'package:zapstore/widgets/install_button.dart';
-import 'package:zapstore/widgets/release_card.dart';
-import 'package:zapstore/widgets/signer_container.dart';
-import 'package:zapstore/widgets/users_rich_text.dart';
-import 'package:zapstore/widgets/versioned_app_header.dart';
-import 'package:zapstore/widgets/zap_button.dart';
-import 'package:zapstore/widgets/zap_receipts.dart';
+import 'package:zapstore/widgets/screenshots_gallery.dart';
+import 'package:zapstore/widgets/version_pill_widget.dart';
 
 class AppDetailScreen extends HookConsumerWidget {
-  final App model;
-  AppDetailScreen({
-    required this.model,
-    super.key,
-  });
+  const AppDetailScreen({super.key, required this.app});
+
+  final App app;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final scrollController = ScrollController();
+    // Check if debug mode should be enabled
+    final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
+    final showDebugSections = isDebugMode(signedInPubkey);
 
-    final snapshot = useFuture(useMemoized(() async {
-      // Skip cache to actually hit the remote to refresh
-      return await ref.apps
-          .findOne(model.identifier, remote: true, params: {'skipCache': true});
-    }));
+    // Watch the app for real-time updates using model provider
+    final appState = ref.watch(
+      model<App>(
+        app,
+        and: (a) => {
+          a.latestRelease,
+          if (a.latestRelease.value != null)
+            a.latestRelease.value!.latestMetadata,
+        },
+        source: LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
+      ),
+    );
 
-    final state = ref.apps.watchOne(model.id!,
-        alsoWatch: (_) => {
-              _.localApp,
-              _.releases,
-              _.releases.artifacts,
-              _.signer,
-            });
+    // Query author profile from social relays
+    final authorAsync = ref.watch(profileProvider(app.pubkey));
+    final author = authorAsync.value;
 
-    final app = state.model ?? model;
+    // Use loaded version from state
+    final currentApp = appState.models.firstOrNull ?? app;
+    final latestRelease = currentApp.latestRelease.value;
+    final latestMetadata = currentApp.latestFileMetadata;
 
-    final curatedBy = ref.appCurationSets
-        .findAllLocal()
-        .where((s) => s.appIds.contains(app.identifier))
-        .map((s) => s.signer.value)
-        .nonNulls
-        .toSet();
-
-    // If request returned and result was null, go back
-    if (snapshot.connectionState == ConnectionState.done &&
-        snapshot.data == null) {
-      return Center(
-        child: ElevatedButton(
-          onPressed: () {
-            Navigator.of(context).pop();
-          },
-          child: Text(
-            'This app is no longer available.\nPress to go back.',
+    // Show skeleton while loading essential relationships
+    if (latestRelease == null || latestMetadata == null) {
+      return Scaffold(
+        body: SafeArea(
+          child: Stack(
+            children: [
+              RefreshIndicator(
+                onRefresh: () => [app].loadMetadata(),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.only(top: 16, bottom: 80),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16),
+                    child: AppDetailSkeleton(),
+                  ),
+                ),
+              ),
+              InstallButton(app: currentApp, release: latestRelease),
+            ],
           ),
         ),
       );
     }
 
-    return RefreshIndicator(
-      onRefresh: () => ref.apps.findOne(model.identifier, remote: true),
-      child: Column(
-        children: [
-          Expanded(
-            child: CustomScrollView(
-              slivers: [
-                SliverList(
-                  delegate: SliverChildListDelegate(
-                    [
-                      VersionedAppHeader(app: app),
-                      Gap(16),
-                      if (app.hasCertificateMismatch)
-                        Container(
-                          decoration: BoxDecoration(
-                            color: Colors.orange[900],
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(10),
-                            child: Text(
-                              '${app.name} ${app.latestMetadata!.version} has a different Android certificate than version ${app.localApp.value!.installedVersion} installed on your device.\n\nHave you used another app store to install ${app.name}? If so, you can choose to remove it and re-install coming back to this screen.\n\nIt otherwise could be a malicious update, contact the developer for details.\n\nNew certificate hash: ${app.latestMetadata!.apkSignatureHash}',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                        ),
-                      if (app.images.isNotEmpty)
-                        Scrollbar(
-                          controller: scrollController,
-                          interactive: true,
-                          trackVisibility: true,
-                          child: SingleChildScrollView(
-                            controller: scrollController,
-                            scrollDirection: Axis.horizontal,
-                            child: SizedBox(
-                              height: 320,
-                              child: Row(
-                                children: [
-                                  for (final i in app.images)
-                                    GestureDetector(
-                                      onTap: () {
-                                        final imageProvider =
-                                            CachedNetworkImageProvider(i,
-                                                scale: 0.6);
-                                        showImageViewer(
-                                          context,
-                                          imageProvider,
-                                          doubleTapZoomable: true,
-                                        );
-                                      },
-                                      child: Padding(
-                                        padding:
-                                            const EdgeInsets.only(right: 12),
-                                        child: CachedNetworkImage(
-                                          imageUrl: i,
-                                          errorWidget: (_, __, ___) =>
-                                              Container(),
-                                        ),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      Divider(height: 24),
-                      if (curatedBy.isNotEmpty)
-                        Container(
-                          decoration: BoxDecoration(
-                            color: Colors.grey[900],
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(10),
-                            child: UsersRichText(
-                              trailingText: ' picked this app',
-                              users: curatedBy.toList(),
-                            ),
-                          ),
-                        ),
-                      if (curatedBy.isNotEmpty) Gap(20),
-                      MarkdownBody(
-                        styleSheet: MarkdownStyleSheet(
-                          h1: TextStyle(fontWeight: FontWeight.bold),
-                          h2: TextStyle(fontWeight: FontWeight.bold),
-                          p: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w300,
-                          ),
-                        ),
-                        selectable: false,
-                        data: app.event.content.parseEmojis(),
-                      ),
-                      Gap(10),
+    return Scaffold(
+      body: SafeArea(
+        child: Stack(
+          children: [
+            // Main scrollable content
+            RefreshIndicator(
+              onRefresh: () => [app].loadMetadata(),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.only(
+                  top: 16,
+                  bottom: 80,
+                ), // Horizontal padding applied per-section to allow screenshots to be full-bleed
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // App header with icon, name, version, and author (always show app info)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: AppHeader(app: currentApp),
+                    ),
+
+                    // Published by / Released at section
+                    if (app.isRelaySigned)
                       Padding(
-                        padding: const EdgeInsets.only(right: 14),
-                        child: SignerContainer(app: app),
+                        padding: const EdgeInsets.only(
+                          left: 16,
+                          right: 16,
+                          bottom: 8,
+                        ),
+                        child: DownloadTextContainer(
+                          url: latestMetadata.urls.first,
+                          size: 14,
+                        ),
+                      )
+                    else
+                      Padding(
+                        padding: const EdgeInsets.only(
+                          left: 16,
+                          right: 16,
+                          bottom: 8,
+                        ),
+                        child: author != null
+                            ? AuthorContainer(
+                                profile: author,
+                                beforeText: 'Published by',
+                                oneLine: true,
+                                size: 14,
+                                app: app,
+                                onTap: () {
+                                  final segments = GoRouterState.of(
+                                    context,
+                                  ).uri.pathSegments;
+                                  final first = segments.isNotEmpty
+                                      ? segments.first
+                                      : 'search';
+                                  context.push(
+                                    '/$first/developer/${author.pubkey}',
+                                  );
+                                },
+                              )
+                            : const AuthorSkeleton(),
                       ),
-                      if (app.latestMetadata != null &&
-                          app.signer.isPresent &&
-                          app.isSelfSigned)
-                        Column(
+
+                    // Screenshots gallery
+                    if (currentApp.images.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: ScreenshotsGallery(app: currentApp),
+                      ),
+
+                    // App description (always available from app)
+                    if (app.description.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(
+                          left: 20,
+                          right: 20,
+                          top: 8,
+                        ),
+                        child: ExpandableMarkdown(
+                          data: app.description,
+                          styleSheet:
+                              MarkdownStyleSheet.fromTheme(
+                                Theme.of(context),
+                              ).copyWith(
+                                p: context.textTheme.bodyLarge?.copyWith(
+                                  height: 1.6,
+                                ),
+                              ),
+                        ),
+                      ),
+
+                    // Social action buttons (Zap + Share + Save)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 16),
+                          SocialActionsRow(app: currentApp, author: author),
+                          const SizedBox(height: 16),
+                        ],
+                      ),
+                    ),
+
+                    if (!currentApp.isInstalled || currentApp.hasUpdate)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Gap(10),
-                            SizedBox(
-                                width: double.infinity,
-                                child: ZapButton(app: app)),
-                            Gap(10),
-                            ZapReceipts(app: app),
-                          ],
-                        ),
-                      Gap(20),
-                      Container(
-                        padding: EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: Colors.grey[900],
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Column(
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.all(8),
-                              child: Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text('Source'),
-                                  Gap(10),
-                                  Flexible(
-                                    child: GestureDetector(
-                                      onTap: () {
-                                        if (app.repository != null) {
-                                          launchUrl(Uri.parse(app.repository!));
-                                        }
-                                      },
-                                      child: app.repository != null
-                                          ? AutoSizeText(
-                                              app.repository!,
-                                              minFontSize: 12,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            )
-                                          : Text('Source code not available',
-                                              style: TextStyle(
-                                                  color: Colors.red[300],
-                                                  fontWeight: FontWeight.bold)),
-                                    ),
+                            const SizedBox(height: 12),
+
+                            // Latest release title
+                            Text(
+                              'Latest release',
+                              style: context.textTheme.headlineMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+
+                            const SizedBox(height: 8),
+
+                            // Latest version info
+                            Row(
+                              children: [
+                                VersionPillWidget(
+                                  app: currentApp,
+                                  forceVersion: latestMetadata.version,
+                                ),
+                                const SizedBox(width: 12),
+                                Text(
+                                  formatDate(latestMetadata.createdAt),
+                                  style: context.textTheme.bodyMedium?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface
+                                        .withValues(alpha: 0.6),
                                   ),
-                                ],
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.all(8),
-                              child: Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text('License'),
-                                  Text((app.license == null ||
-                                          app.license == 'NOASSERTION')
-                                      ? 'Unknown'
-                                      : app.license!)
-                                ],
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.all(8),
-                              child: Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text('App ID'),
-                                  Gap(10),
-                                  Flexible(
-                                    child: AutoSizeText(
-                                      app.identifier,
-                                      minFontSize: 12,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  )
-                                ],
-                              ),
-                            ),
-                            if (app.latestMetadata != null)
-                              Padding(
-                                padding: const EdgeInsets.all(8),
-                                child: Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text('APK package SHA-256'),
-                                    Flexible(
-                                      child: GestureDetector(
-                                        onTap: () {
-                                          Clipboard.setData(ClipboardData(
-                                              text: app.latestMetadata!.hash!));
-                                          context.showInfo(
-                                              'Copied APK package SHA-256 to the clipboard');
-                                        },
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Text(
-                                              app.latestMetadata!.hash!.shorten,
-                                              maxLines: 1,
-                                            ),
-                                            Gap(6),
-                                            Icon(Icons.copy_rounded, size: 18)
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ],
                                 ),
-                              ),
-                            if (app.latestMetadata?.apkSignatureHash != null)
-                              Padding(
-                                padding: const EdgeInsets.all(8),
-                                child: Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text('APK certificate SHA-256'),
-                                    Flexible(
-                                      child: GestureDetector(
-                                        onTap: () {
-                                          Clipboard.setData(ClipboardData(
-                                              text: app.latestMetadata!
-                                                  .apkSignatureHash!));
-                                          context.showInfo(
-                                              'Copied APK certificate SHA-256 to the clipboard');
-                                        },
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Text(
-                                              app.latestMetadata!
-                                                  .apkSignatureHash!.shorten,
-                                              maxLines: 1,
-                                            ),
-                                            Gap(6),
-                                            Icon(Icons.copy_rounded, size: 18)
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
+                              ],
+                            ),
+
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 20),
+                              child: ReleaseNotes(release: latestRelease),
+                            ),
                           ],
                         ),
                       ),
-                      Divider(height: 60),
-                      Text(
-                        'Latest release'.toUpperCase(),
-                        style: TextStyle(
-                          fontSize: 16,
-                          letterSpacing: 3,
-                          fontWeight: FontWeight.w300,
-                        ),
+
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: AppInfoTable(
+                        app: currentApp,
+                        fileMetadata: latestMetadata,
                       ),
-                      Gap(10),
-                      if (app.releases.isEmpty) Text('No available releases'),
-                      if (app.releases.isNotEmpty)
-                        ReleaseCard(
-                            release:
-                                app.releases.toList().sortedByLatest.first),
-                    ],
-                  ),
+                    ),
+
+                    CommentsSection(fileMetadata: latestMetadata),
+
+                    // Debug section - only visible for specific pubkey
+                    if (showDebugSections)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: DebugVersionsSection(app: currentApp),
+                      ),
+
+                    const SizedBox(height: 100), // Space for install button
+                  ],
                 ),
-              ],
+              ),
             ),
-          ),
-          SizedBox(
-            height: 50,
-            child: Center(
-              child: InstallButton(app: app),
-            ),
-          ),
-        ],
+
+            // Sticky install/uninstall row (show even if release is loading)
+            InstallButton(app: currentApp, release: latestRelease),
+          ],
+        ),
       ),
     );
   }

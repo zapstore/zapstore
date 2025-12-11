@@ -1,62 +1,80 @@
 import 'package:flutter/material.dart';
-import 'package:gap/gap.dart';
-import 'package:zapstore/models/user.dart';
-import 'package:zapstore/widgets/rounded_image.dart';
+import 'package:models/models.dart';
+import 'common/profile_avatar.dart';
+import '../utils/extensions.dart';
 
+/// Author container widget showing "Published by [profile]" text with avatar
+/// Based on the old AuthorContainer design pattern
+/// Can be hidden for Zapstore-published apps (except main Zapstore app)
 class AuthorContainer extends StatelessWidget {
-  final User user;
-  final String beforeText;
+  final Profile profile;
+  final String? beforeText;
   final String? afterText;
   final bool oneLine;
-  final double size;
+  final double? size;
+  final App? app; // Optional app to check for Zapstore hiding logic
+  final VoidCallback? onTap; // Optional tap handler
 
   const AuthorContainer({
     super.key,
-    required this.user,
-    this.beforeText = 'Signed by',
+    required this.profile,
+    this.beforeText,
     this.afterText,
     this.oneLine = true,
-    this.size = 14,
+    this.size,
+    this.app,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(top: 4, bottom: 4),
-      child: Row(
+    // ignore: no_leading_underscores_for_local_identifiers
+    final _size = size ?? context.textTheme.bodyMedium!.fontSize!;
+
+    // Hide "Published by Zapstore" for Zapstore-published apps (except main Zapstore app)
+    if (app != null && app!.isRelaySigned) {
+      return const SizedBox.shrink();
+    }
+
+    final baseStyle = context.textTheme.bodyMedium?.copyWith(
+      fontSize: _size,
+      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+    );
+    final boldStyle = baseStyle?.copyWith(fontWeight: FontWeight.w600);
+
+    final rowWidget = Text.rich(
+      TextSpan(
         children: [
-          RoundedImage(url: user.avatarUrl, size: oneLine ? (size * 1.5) : 46),
-          Gap(10),
-          if (oneLine)
-            Expanded(
-              child: Text(
-                '$beforeText ${user.nameOrNpub}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: size),
+          if (beforeText != null)
+            TextSpan(text: '$beforeText ', style: baseStyle),
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: SizedBox(
+                width: _size * 1.4,
+                height: _size * 1.4,
+                child: ProfileAvatar(profile: profile, radius: _size * 0.7),
               ),
             ),
-          if (!oneLine)
-            Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(beforeText),
-                Text(
-                  user.nameOrNpub,
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (afterText != null)
-                  Text(
-                    afterText!,
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                  ),
-              ],
-            )
+          ),
+          TextSpan(text: profile.nameOrNpub, style: boldStyle),
+          if (afterText != null) TextSpan(text: afterText, style: baseStyle),
         ],
       ),
+      softWrap: !oneLine,
+      overflow: oneLine ? TextOverflow.ellipsis : TextOverflow.visible,
+      maxLines: oneLine ? 1 : null,
     );
+
+    if (onTap != null) {
+      return InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(padding: const EdgeInsets.all(4), child: rowWidget),
+      );
+    }
+
+    return rowWidget;
   }
 }
