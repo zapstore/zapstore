@@ -10,6 +10,7 @@ import 'package:zapstore/widgets/common/profile_avatar.dart';
 import 'package:any_link_preview/any_link_preview.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:zapstore/utils/url_utils.dart';
 
 /// Enum for different media types
 enum MediaType { image, video, audio, none }
@@ -1073,8 +1074,13 @@ class MediaWidget extends StatelessWidget {
   }
 
   Widget _buildImageWidget(BuildContext context) {
+    final sanitizedUrl = sanitizeHttpUrl(url);
+    if (sanitizedUrl == null) {
+      return _buildUnsupportedWidget(context);
+    }
+
     return CachedNetworkImage(
-      imageUrl: url,
+      imageUrl: sanitizedUrl,
       fit: BoxFit.cover,
       placeholder: (context, url) =>
           SizedBox(height: 200, child: _buildContentImageLoader(context)),

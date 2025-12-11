@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:zapstore/utils/url_utils.dart';
 
 /// A rounded image widget with fallback to person icon
 /// Used for user avatars and app icons with consistent styling
@@ -17,6 +18,7 @@ class RoundedImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final sanitizedUrl = sanitizeHttpUrl(url);
     final fallbackContainer = Container(
       height: size,
       width: size,
@@ -29,12 +31,13 @@ class RoundedImage extends StatelessWidget {
     );
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius.toDouble()),
-      child: url == null
+      child: sanitizedUrl == null
           ? fallbackContainer
-          : (url!.endsWith('svg') || url!.endsWith('xml')
+          : (sanitizedUrl.toLowerCase().endsWith('svg') ||
+                  sanitizedUrl.toLowerCase().endsWith('xml')
               ? fallbackContainer
               : CachedNetworkImage(
-                  imageUrl: url!,
+                  imageUrl: sanitizedUrl,
                   errorWidget: (_, __, ___) => fallbackContainer,
                   useOldImageOnUrlChange: false,
                   fit: BoxFit.cover,

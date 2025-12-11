@@ -1,14 +1,14 @@
 import 'package:async_button_builder/async_button_builder.dart';
+import 'package:background_downloader/background_downloader.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
+import 'package:zapstore/services/bookmarks_service.dart';
 import 'package:zapstore/services/download_service.dart';
-import 'package:zapstore/utils/extensions.dart';
-import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/services/updates_service.dart';
-import 'package:zapstore/widgets/app_card.dart';
 import 'package:zapstore/theme.dart';
-import 'package:background_downloader/background_downloader.dart';
+import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/widgets/app_card.dart';
 
 /// Screen for managing app updates
 class UpdatesScreen extends HookConsumerWidget {
@@ -16,16 +16,41 @@ class UpdatesScreen extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Watch categorized apps from StateNotifier
+    return DefaultTabController(
+      length: 3,
+      child: Scaffold(
+        appBar: AppBar(
+          automaticallyImplyLeading: false,
+          toolbarHeight: 0,
+          bottom: TabBar(
+            tabs: [
+              Tab(text: 'Updates'),
+              Tab(text: 'Up to date'),
+              Tab(text: 'Bookmarks'),
+            ],
+          ),
+        ),
+        body: const Padding(
+          padding: EdgeInsets.only(top: 16),
+          child: TabBarView(
+            children: [_UpdatesTab(), _UpToDateTab(), _BookmarksTab()],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _UpdatesTab extends HookConsumerWidget {
+  const _UpdatesTab();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
     final categorized = ref.watch(categorizedAppsProvider);
     final automaticUpdates = categorized.automaticUpdates;
     final manualUpdates = categorized.manualUpdates;
-    final upToDateApps = categorized.upToDateApps;
 
-    // Watch download service for installing apps
     final downloads = ref.watch(downloadServiceProvider);
-
-    // Get installing app IDs from download service
     final installingAppIds = downloads.entries
         .where(
           (entry) =>
@@ -38,7 +63,6 @@ class UpdatesScreen extends HookConsumerWidget {
         .map((entry) => entry.key)
         .toSet();
 
-    // Query for installing apps that might not be in the updates list
     final installingAppsState = installingAppIds.isNotEmpty
         ? ref.watch(
             query<App>(
@@ -50,7 +74,6 @@ class UpdatesScreen extends HookConsumerWidget {
           )
         : StorageData<App>(const []);
 
-    // Get installing apps from the query, excluding apps already in update sections
     final updateAppIds = {
       ...automaticUpdates.map((a) => a.identifier),
       ...manualUpdates.map((a) => a.identifier),
@@ -64,329 +87,371 @@ class UpdatesScreen extends HookConsumerWidget {
         )
         .toList();
 
-    return Scaffold(
-      body: RefreshIndicator(
-        onRefresh: () => _handleRefresh(ref),
-        child: ListView(
-          children: [
-            // Installing section
-            if (installingApps.isNotEmpty) ...[
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.downloading,
-                      size: 20,
-                      color: AppColors.darkActionPrimary,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Installing',
-                      style: context.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.darkPillBackground,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      constraints: const BoxConstraints(
-                        minWidth: 18,
-                        minHeight: 18,
-                      ),
-                      child: Text(
-                        installingApps.length > 99
-                            ? '99+'
-                            : installingApps.length.toString(),
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ],
+    return ListView(
+      children: [
+        if (installingApps.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.downloading,
+                  size: 20,
+                  color: AppColors.darkActionPrimary,
                 ),
-              ),
-              ...installingApps.map(
-                (app) => AppCard(
-                  app: app,
-                  showUpdateArrow: false,
-                  showUpdateButton: true,
-                  showZapEncouragement: true,
-                ),
-              ),
-            ],
-
-            // Automatic updates section
-            if (automaticUpdates.isNotEmpty) ...[
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.system_update,
-                      size: 20,
-                      color: AppColors.darkActionPrimary,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Ready to Update',
-                      style: context.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.darkPillBackground,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      constraints: const BoxConstraints(
-                        minWidth: 18,
-                        minHeight: 18,
-                      ),
-                      child: Text(
-                        automaticUpdates.length > 99
-                            ? '99+'
-                            : automaticUpdates.length.toString(),
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                    const Spacer(),
-                    AsyncButtonBuilder(
-                      onPressed: () async {
-                        final downloadService = ref.read(
-                          downloadServiceProvider.notifier,
-                        );
-                        // Start downloads for all automatic updates
-                        for (final app in automaticUpdates) {
-                          final release = app.latestRelease.value;
-                          if (release != null) {
-                            try {
-                              await downloadService.downloadApp(app, release);
-                            } catch (e) {
-                              // Failed to start download
-                            }
-                          }
-                        }
-                      },
-                      builder: (context, child, callback, buttonState) {
-                        const pillBg = AppColors.darkPillBackground;
-                        const pillText = Colors.white;
-
-                        return TextButton.icon(
-                          onPressed: buttonState.maybeWhen(
-                            loading: () => null,
-                            orElse: () => callback,
-                          ),
-                          icon: buttonState.maybeWhen(
-                            loading: () => SizedBox(
-                              width: 12,
-                              height: 12,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: pillText,
-                              ),
-                            ),
-                            orElse: () =>
-                                Icon(Icons.download, size: 14, color: pillText),
-                          ),
-                          label: Text(
-                            'Update All',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              color: pillText,
-                            ),
-                          ),
-                          style: TextButton.styleFrom(
-                            backgroundColor: pillBg,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
-                            ),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                        );
-                      },
-                      child: const SizedBox.shrink(),
-                    ),
-                  ],
-                ),
-              ),
-              ...automaticUpdates.map(
-                (app) => AppCard(
-                  app: app,
-                  showUpdateArrow: true,
-                  showUpdateButton: true,
-                  showZapEncouragement: true,
-                ),
-              ),
-            ],
-
-            // Manual updates section
-            if (manualUpdates.isNotEmpty) ...[
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.touch_app,
-                      size: 20,
-                      color: AppColors.darkActionPrimary,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Ready to Manually Update',
-                      style: context.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.darkPillBackground,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      constraints: const BoxConstraints(
-                        minWidth: 18,
-                        minHeight: 18,
-                      ),
-                      child: Text(
-                        manualUpdates.length > 99
-                            ? '99+'
-                            : manualUpdates.length.toString(),
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Text(
-                  'These updates require confirming the Android system prompt',
-                  style: context.textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withValues(alpha: 0.6),
+                const SizedBox(width: 8),
+                Text(
+                  'Installing',
+                  style: context.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
-              ),
-              ...manualUpdates.map(
-                (app) => AppCard(
-                  app: app,
-                  showUpdateArrow: true,
-                  showUpdateButton: true,
-                  showZapEncouragement: true,
-                ),
-              ),
-            ],
-
-            // Up to date section
-            if (upToDateApps.isNotEmpty) ...[
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.check_circle_outline,
-                      size: 20,
-                      color: AppColors.darkActionPrimary,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Up to Date',
-                      style: context.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.darkPillBackground,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      constraints: const BoxConstraints(
-                        minWidth: 18,
-                        minHeight: 18,
-                      ),
-                      child: Text(
-                        upToDateApps.length > 99
-                            ? '99+'
-                            : upToDateApps.length.toString(),
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              // Show informative message when no updates available
-              if (automaticUpdates.isEmpty && manualUpdates.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.darkPillBackground,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  constraints: const BoxConstraints(
+                    minWidth: 18,
+                    minHeight: 18,
+                  ),
                   child: Text(
-                    'All apps are up to date',
-                    style: context.textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.onSurface.withValues(alpha: 0.6),
+                    installingApps.length > 99
+                        ? '99+'
+                        : installingApps.length.toString(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
                     ),
+                    textAlign: TextAlign.center,
                   ),
                 ),
-              ...upToDateApps.map(
-                (app) => AppCard(
-                  app: app,
-                  showUpdateArrow: false, // Up-to-date apps show single version
+              ],
+            ),
+          ),
+          ...installingApps.map(
+            (app) => AppCard(
+              app: app,
+              showUpdateArrow: false,
+              showUpdateButton: true,
+              showZapEncouragement: true,
+            ),
+          ),
+        ],
+        if (automaticUpdates.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.system_update,
+                  size: 20,
+                  color: AppColors.darkActionPrimary,
                 ),
+                const SizedBox(width: 8),
+                Text(
+                  'Ready to Update',
+                  style: context.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.darkPillBackground,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  constraints: const BoxConstraints(
+                    minWidth: 18,
+                    minHeight: 18,
+                  ),
+                  child: Text(
+                    automaticUpdates.length > 99
+                        ? '99+'
+                        : automaticUpdates.length.toString(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                const Spacer(),
+                AsyncButtonBuilder(
+                  onPressed: () async {
+                    final downloadService = ref.read(
+                      downloadServiceProvider.notifier,
+                    );
+                    for (final app in automaticUpdates) {
+                      final release = app.latestRelease.value;
+                      if (release != null) {
+                        try {
+                          await downloadService.downloadApp(app, release);
+                        } catch (_) {
+                          // Ignore download start failures per-app to keep others going
+                        }
+                      }
+                    }
+                  },
+                  builder: (context, child, callback, buttonState) {
+                    const pillBg = AppColors.darkPillBackground;
+                    const pillText = Colors.white;
+
+                    return TextButton.icon(
+                      onPressed: buttonState.maybeWhen(
+                        loading: () => null,
+                        orElse: () => callback,
+                      ),
+                      icon: buttonState.maybeWhen(
+                        loading: () => const SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: pillText,
+                          ),
+                        ),
+                        orElse: () => const Icon(
+                          Icons.download,
+                          size: 14,
+                          color: pillText,
+                        ),
+                      ),
+                      label: const Text(
+                        'Update All',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: pillText,
+                        ),
+                      ),
+                      style: TextButton.styleFrom(
+                        backgroundColor: pillBg,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    );
+                  },
+                  child: const SizedBox.shrink(),
+                ),
+              ],
+            ),
+          ),
+          ...automaticUpdates.map(
+            (app) => AppCard(
+              app: app,
+              showUpdateArrow: true,
+              showUpdateButton: true,
+              showZapEncouragement: true,
+            ),
+          ),
+        ],
+        if (manualUpdates.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.touch_app,
+                  size: 20,
+                  color: AppColors.darkActionPrimary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Ready to Manually Update',
+                  style: context.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.darkPillBackground,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  constraints: const BoxConstraints(
+                    minWidth: 18,
+                    minHeight: 18,
+                  ),
+                  child: Text(
+                    manualUpdates.length > 99
+                        ? '99+'
+                        : manualUpdates.length.toString(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Text(
+              'These updates require confirming the Android system prompt',
+              style: context.textTheme.bodyMedium?.copyWith(
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.6),
               ),
-            ],
-          ],
-        ),
-      ),
+            ),
+          ),
+          ...manualUpdates.map(
+            (app) => AppCard(
+              app: app,
+              showUpdateArrow: true,
+              showUpdateButton: true,
+              showZapEncouragement: true,
+            ),
+          ),
+        ],
+      ],
     );
   }
+}
 
-  /// Handle pull-to-refresh action
-  Future<void> _handleRefresh(WidgetRef ref) async {
-    // Sync installed packages to detect uninstalled apps
-    await ref.read(packageManagerProvider.notifier).syncInstalledPackages();
+class _UpToDateTab extends HookConsumerWidget {
+  const _UpToDateTab();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final upToDateApps = ref.watch(categorizedAppsProvider).upToDateApps;
+
+    if (upToDateApps.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            'No up-to-date apps yet',
+            style: context.textTheme.bodyMedium?.copyWith(
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.6),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return ListView(
+      children:
+          upToDateApps.map((app) => AppCard(app: app, showUpdateArrow: false)).toList(),
+    );
+  }
+}
+
+class _BookmarksTab extends HookConsumerWidget {
+  const _BookmarksTab();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
+
+    if (signedInPubkey == null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            'Sign in to view bookmarks',
+            style: context.textTheme.bodyMedium?.copyWith(
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.6),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final bookmarksAsync = ref.watch(bookmarksProvider);
+
+    return bookmarksAsync.when(
+      loading: () => Center(
+        child: CircularProgressIndicator(
+          color: Theme.of(context).colorScheme.primary,
+        ),
+      ),
+      error: (_, __) => Center(
+        child: Text(
+          'Error loading bookmarks',
+          style: context.textTheme.bodyMedium?.copyWith(
+            color: Theme.of(context).colorScheme.error,
+          ),
+        ),
+      ),
+      data: (addressableIds) {
+        final identifiers = addressableIds
+            .map((id) {
+              final parts = id.split(':');
+              return parts.length >= 3 ? parts[2] : null;
+            })
+            .whereType<String>()
+            .toSet();
+
+        final bookmarkedAppsState = identifiers.isNotEmpty
+            ? ref.watch(
+                query<App>(
+                  tags: {'#d': identifiers},
+                  and: (app) => {app.latestRelease},
+                  source: const LocalSource(),
+                  subscriptionPrefix: 'bookmark-apps',
+                ),
+              )
+            : StorageData<App>(const []);
+
+        final savedApps = bookmarkedAppsState.models.toList()
+          ..sort(
+            (a, b) => (a.name ?? a.identifier).toLowerCase().compareTo(
+              (b.name ?? b.identifier).toLowerCase(),
+            ),
+          );
+
+        if (savedApps.isEmpty) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                'No bookmarked apps yet',
+                style: context.textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.5),
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+          );
+        }
+
+        return ListView(
+          padding: EdgeInsets.zero,
+          children: savedApps
+              .map((app) => AppCard(app: app, showUpdateArrow: false))
+              .toList(),
+        );
+      },
+    );
   }
 }

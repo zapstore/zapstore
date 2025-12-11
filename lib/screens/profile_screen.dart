@@ -14,13 +14,11 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/main.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
+import 'package:zapstore/services/updates_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/common/profile_avatar.dart';
 import 'package:zapstore/theme.dart';
 import 'package:zapstore/services/notification_service.dart';
-import 'package:zapstore/services/bookmarks_service.dart';
-import 'package:zapstore/services/updates_service.dart';
-import 'package:zapstore/widgets/app_card.dart';
 import 'package:zapstore/widgets/common/note_parser.dart';
 import 'package:zapstore/widgets/latest_releases_container.dart';
 import 'package:zapstore/widgets/nwc_widgets.dart';
@@ -47,11 +45,6 @@ class ProfileScreen extends ConsumerWidget {
 
           // Debug Messages Section
           const _DebugMessagesSection(),
-          const SizedBox(height: 24),
-
-          // Bookmarks Section
-          const _BookmarksSection(),
-
           const SizedBox(height: 24),
 
           // Settings Heading
@@ -315,191 +308,6 @@ class _SignInButtonWithAmberCheck extends ConsumerWidget {
         );
       },
       child: const SizedBox.shrink(),
-    );
-  }
-}
-
-// Bookmarks Section
-class _BookmarksSection extends HookConsumerWidget {
-  const _BookmarksSection();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
-
-    if (signedInPubkey == null) {
-      return const SizedBox.shrink();
-    }
-
-    // Watch bookmarks from centralized provider (handles decryption)
-    final bookmarksAsync = ref.watch(bookmarksProvider);
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: bookmarksAsync.when(
-          loading: () => Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.bookmark,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Bookmarked Apps',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-              Center(
-                child: CircularProgressIndicator(
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-              ),
-              const SizedBox(height: 24),
-            ],
-          ),
-          error: (_, __) => Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.bookmark,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Bookmarked Apps',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Center(
-                child: Text(
-                  'Error loading bookmarks',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.error,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          data: (bookmarkedAddressableIds) {
-            // Extract just the identifier part from addressable IDs (kind:pubkey:identifier)
-            final bookmarkedIdentifiers = bookmarkedAddressableIds
-                .map((id) {
-                  final parts = id.split(':');
-                  return parts.length >= 3 ? parts[2] : null;
-                })
-                .where((id) => id != null)
-                .cast<String>()
-                .toSet();
-
-            // Query for bookmarked apps (local-only since all apps are managed through Zapstore)
-            final bookmarkedAppsState = bookmarkedIdentifiers.isNotEmpty
-                ? ref.watch(
-                    query<App>(
-                      tags: {'#d': bookmarkedIdentifiers},
-                      and: (app) => {app.latestRelease},
-                      source: const LocalSource(),
-                      subscriptionPrefix: 'bookmark-apps',
-                    ),
-                  )
-                : StorageData<App>(const []);
-
-            // Get bookmarked apps and sort alphabetically
-            final savedApps = bookmarkedAppsState.models.toList()
-              ..sort(
-                (a, b) => (a.name ?? a.identifier).toLowerCase().compareTo(
-                  (b.name ?? b.identifier).toLowerCase(),
-                ),
-              );
-
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(
-                      Icons.bookmark,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Bookmarked Apps',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.primaryContainer,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        savedApps.length > 99
-                            ? '99+'
-                            : savedApps.length.toString(),
-                        style: TextStyle(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.onPrimaryContainer,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Your private bookmarked apps',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withValues(alpha: 0.6),
-                  ),
-                ),
-                if (savedApps.isEmpty) ...[
-                  const SizedBox(height: 24),
-                  Center(
-                    child: Text(
-                      'No bookmarked apps yet',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.onSurface.withValues(alpha: 0.5),
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                ] else ...[
-                  const SizedBox(height: 16),
-                  ...savedApps.map(
-                    (app) => AppCard(app: app, showUpdateArrow: false),
-                  ),
-                ],
-              ],
-            );
-          },
-        ),
-      ),
     );
   }
 }
@@ -830,7 +638,7 @@ class _DebugMessagesSection extends HookConsumerWidget {
                                     Text(
                                       '${phase.name}'
                                       '${relay.reconnectAttempts > 0 ? ' · retry ${relay.reconnectAttempts}' : ''}'
-                                      '${connectedFor != null ? ' · connected $connectedFor' : ''}',
+                                      '${connectedFor != null ? ' · connected for $connectedFor' : ''}',
                                       style: TextStyle(
                                         fontSize: 10,
                                         color: phaseColor,

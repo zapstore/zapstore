@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/widgets/version_pill_widget.dart';
+import 'package:zapstore/utils/url_utils.dart';
 
 class AppHeader extends StatelessWidget {
   const AppHeader({super.key, required this.app});
@@ -12,6 +13,8 @@ class AppHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final iconUrl = firstValidHttpUrl(app.icons);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -24,11 +27,11 @@ class AppHeader extends StatelessWidget {
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: app.icons.isNotEmpty
+              child: iconUrl != null
                   ? ClipRRect(
                       borderRadius: BorderRadius.circular(16),
                       child: CachedNetworkImage(
-                        imageUrl: app.icons.first,
+                        imageUrl: iconUrl,
                         fit: BoxFit.cover,
                         fadeInDuration: const Duration(milliseconds: 500),
                         fadeOutDuration: const Duration(milliseconds: 200),

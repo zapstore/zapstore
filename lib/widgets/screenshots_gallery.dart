@@ -3,6 +3,7 @@ import 'package:easy_image_viewer/easy_image_viewer.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:models/models.dart';
+import 'package:zapstore/utils/url_utils.dart';
 // Local shimmer duplicated to avoid private import
 
 class ScreenshotsGallery extends HookWidget {
@@ -12,9 +13,9 @@ class ScreenshotsGallery extends HookWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (app.images.isEmpty) return const SizedBox.shrink();
+    final imageUrls = filterValidHttpUrls(app.images);
+    if (imageUrls.isEmpty) return const SizedBox.shrink();
 
-    final imageUrls = app.images.toList();
     final scrollController = useScrollController();
     useListenable(scrollController);
 

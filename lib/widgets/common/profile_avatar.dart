@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:models/models.dart';
+import 'package:zapstore/utils/url_utils.dart';
 import '../../theme.dart';
 
 class ProfileAvatar extends StatelessWidget {
@@ -17,10 +18,10 @@ class ProfileAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final pictureUrl = profile?.pictureUrl;
+    final pictureUrl = sanitizeHttpUrl(profile?.pictureUrl);
 
     Widget avatar = ClipOval(
-      child: pictureUrl != null && pictureUrl.isNotEmpty
+      child: pictureUrl != null
           ? CachedNetworkImage(
               imageUrl: pictureUrl,
               fit: BoxFit.cover,

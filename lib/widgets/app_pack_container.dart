@@ -9,6 +9,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 import 'package:auto_size_text/auto_size_text.dart';
 import '../utils/extensions.dart';
+import '../utils/url_utils.dart';
 import '../services/profile_service.dart';
 import '../theme.dart';
 
@@ -317,6 +318,8 @@ class _AppGridCard extends ConsumerWidget {
       return _buildSkeleton(context);
     }
 
+    final iconUrl = firstValidHttpUrl(app!.icons);
+
     return GestureDetector(
       onTap: () {
         // Trigger loading of latestRelease relationship if not available (async, no wait)
@@ -372,9 +375,9 @@ class _AppGridCard extends ConsumerWidget {
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(12),
-                    child: app!.icons.isNotEmpty
+                    child: iconUrl != null
                         ? CachedNetworkImage(
-                            imageUrl: app!.icons.first,
+                            imageUrl: iconUrl,
                             fit: BoxFit.cover,
                             fadeInDuration: const Duration(milliseconds: 500),
                             fadeOutDuration: const Duration(milliseconds: 200),

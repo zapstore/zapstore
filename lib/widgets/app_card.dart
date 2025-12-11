@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 import 'package:background_downloader/background_downloader.dart';
 import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/utils/url_utils.dart';
 import 'package:zapstore/services/download_service.dart';
 import 'package:zapstore/services/profile_service.dart';
 import 'package:zapstore/widgets/zap_widgets.dart';
@@ -224,7 +225,7 @@ class AppCard extends HookConsumerWidget {
   }
 
   Widget _buildAppIcon(BuildContext context) {
-    final iconUrl = app!.icons.isNotEmpty ? app!.icons.first : null;
+    final iconUrl = firstValidHttpUrl(app!.icons);
 
     return Container(
       width: 58,
