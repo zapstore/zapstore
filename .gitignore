@@ -50,3 +50,5 @@ app.*.map.json
 .fvm/
 
 android/app/.cxx/
+
+.env
