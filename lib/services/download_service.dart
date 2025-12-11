@@ -158,6 +158,25 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
   /// Clear any existing downloads on startup (no resume)
   Future<void> _clearExistingDownloads() async {
     try {
+      // Remove any tracked tasks and their files (including completed ones)
+      final trackedRecords = await _downloader.database
+          .allRecords(group: FileDownloader.defaultGroup);
+
+      for (final record in trackedRecords) {
+        final task = record.task;
+        if (task is DownloadTask) {
+          try {
+            final filePath = await task.filePath();
+            final file = File(filePath);
+            if (await file.exists()) {
+              await file.delete();
+            }
+          } catch (e) {
+            // Ignore cleanup failures
+          }
+        }
+      }
+
       // Cancel all existing tasks
       final tasks = await _downloader.allTasks();
 
@@ -178,7 +197,11 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
         }
       }
 
-      // Clear the database
+      // Clear persisted task records (completed/failed and active)
+      await _downloader.database
+          .deleteAllRecords(group: FileDownloader.defaultGroup);
+
+      // Reset downloader state
       await _downloader.reset();
     } catch (e) {
       // Failed to clear existing downloads
