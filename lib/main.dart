@@ -10,7 +10,7 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:amber_signer/amber_signer.dart';
-import 'package:flutter_phoenix/flutter_phoenix.dart';
+import 'package:zapstore/services/app_restart_service.dart';
 import 'package:zapstore/router.dart';
 import 'package:zapstore/services/error_reporting_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
@@ -39,11 +39,9 @@ void main() {
 
   runZonedGuarded(() {
     runApp(
-      Phoenix(
-        child: UncontrolledProviderScope(
-          container: _providerContainer,
-          child: const ZapstoreApp(),
-        ),
+      UncontrolledProviderScope(
+        container: _providerContainer,
+        child: const ZapstoreApp(),
       ),
     );
   }, _errorHandler);
@@ -212,12 +210,16 @@ class ZapstoreHome extends StatelessWidget {
 
 final appInitializationProvider = FutureProvider<void>((ref) async {
   final dir = await getApplicationDocumentsDirectory();
+  final dbPath = path.join(dir.path, 'zapstore.db');
 
-  // Initialize storage first
+  // Clear storage if requested from a clear all operation
+  await maybeClearStorage(dbPath);
+
+  // Initialize storage
   await ref.read(
     initializationProvider(
       StorageConfiguration(
-        databasePath: path.join(dir.path, 'zapstore.db'),
+        databasePath: dbPath,
         defaultRelays: {
           'bootstrap': {'wss://purplepag.es', 'wss://relay.zapstore.dev'},
           'AppCatalog': {'wss://relay.zapstore.dev'},

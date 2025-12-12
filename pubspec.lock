@@ -383,14 +383,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.7.7+1"
-  flutter_phoenix:
-    dependency: "direct main"
-    description:
-      name: flutter_phoenix
-      sha256: "39589dac934ea476d0e43fb60c1ddfba58f14960743640c8250dea11c4333378"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.1.1"
   flutter_riverpod:
     dependency: "direct main"
     description:

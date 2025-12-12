@@ -9,18 +9,16 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
-import 'package:flutter_phoenix/flutter_phoenix.dart';
+import 'package:zapstore/services/app_restart_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/main.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
-import 'package:zapstore/services/updates_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/common/profile_avatar.dart';
 import 'package:zapstore/theme.dart';
 import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/widgets/common/note_parser.dart';
-import 'package:zapstore/widgets/latest_releases_container.dart';
 import 'package:zapstore/widgets/nwc_widgets.dart';
 
 // Note: Relay debugging features have been removed as they depend on internal APIs
@@ -1018,24 +1016,22 @@ class _DataManagementSection extends ConsumerWidget {
             ),
             const SizedBox(height: 16),
             ListTile(
-              leading: Icon(
-                Icons.delete_sweep,
-                color: Theme.of(context).colorScheme.error,
-              ),
-              title: Text(
-                'Clear All Data',
-                style: TextStyle(
+              leading: CircleAvatar(
+                radius: 18,
+                backgroundColor: Theme.of(
+                  context,
+                ).colorScheme.error.withValues(alpha: 0.12),
+                child: Icon(
+                  Icons.delete_sweep,
                   color: Theme.of(context).colorScheme.error,
-                  fontWeight: FontWeight.w500,
                 ),
               ),
-              subtitle: const Text(
-                'Remove all cached data and restart the app. This action will sign you out.',
-              ),
-              trailing: Icon(
-                Icons.warning,
-                color: Theme.of(context).colorScheme.error,
-                size: 20,
+              title: Text(
+                'Clear local storage',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.error,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               contentPadding: EdgeInsets.zero,
               onTap: () => _showClearAllDataDialog(context, ref),
@@ -1054,16 +1050,12 @@ class _DataManagementSection extends ConsumerWidget {
           children: [
             Icon(Icons.warning, color: Theme.of(context).colorScheme.error),
             const SizedBox(width: 8),
-            const Text('Clear All Data'),
+            const Text('Clear local storage'),
           ],
         ),
         content: const Text(
-          'This will permanently delete all cached data including:\n\n'
-          '• Downloaded app information\n'
-          '• Profile data\n'
-          '• Settings and preferences\n'
-          '• Authentication tokens\n\n'
-          'The app will restart after clearing data. This action cannot be undone.',
+          'Clears all cached data (except NWC secret) and restarts the app. '
+          'You will be signed out.',
         ),
         actions: [
           TextButton(
@@ -1082,7 +1074,7 @@ class _DataManagementSection extends ConsumerWidget {
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             ),
-            child: const Text('Clear All Data'),
+            child: const Text('Clear storage'),
           ),
         ],
       ),
@@ -1090,9 +1082,6 @@ class _DataManagementSection extends ConsumerWidget {
   }
 
   Future<void> _clearAllData(BuildContext context, WidgetRef ref) async {
-    // Capture the navigator before async operations
-    final navigator = Navigator.of(context, rootNavigator: true);
-
     try {
       // Show loading dialog
       showDialog(
@@ -1107,40 +1096,18 @@ class _DataManagementSection extends ConsumerWidget {
                 backgroundColor: AppColors.darkSkeletonBase,
               ),
               SizedBox(height: 16),
-              Text('Clearing data...'),
+              Text('Restarting...'),
             ],
           ),
         ),
       );
 
-      // Sign out if signed in (do this first to avoid any storage-related issues)
-      final signer = ref.read(amberSignerProvider);
-      await signer.signOut();
-
-      // CRITICAL: Invalidate all providers to close active storage subscriptions
-      // This prevents deadlock when clearing storage
-      ref.invalidate(latestReleasesProvider);
-      ref.invalidate(categorizedAppsProvider);
-
-      // Clear local storage with safety checks
-      final storageNotifier = ref.read(storageNotifierProvider.notifier);
-      // Prefer obliterate to remove DB files entirely to avoid half-cleared schema
-      await storageNotifier.obliterate();
-
-      // Restart app - Phoenix.rebirth restarts the entire app so dialogs are automatically closed
-      // Use the original context parameter which remains valid
-      // ignore: use_build_context_synchronously
-      Phoenix.rebirth(context);
+      // Native restart - storage will be cleared on next launch
+      await restartApp();
     } catch (e) {
-      // Close loading dialog and show error - check mounted here since we're not restarting
-      try {
-        navigator.pop();
-      } catch (_) {
-        // Dialog might already be closed, ignore
-      }
-
       if (context.mounted) {
-        context.showError('Failed to clear data: ${e.toString()}');
+        Navigator.of(context, rootNavigator: true).pop();
+        context.showError('Failed to restart: ${e.toString()}');
       }
     }
   }
