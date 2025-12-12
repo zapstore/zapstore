@@ -58,6 +58,11 @@ class DownloadedReadyToInstall extends InstallButtonState {
   const DownloadedReadyToInstall({required this.isUpdate});
 }
 
+/// Certificate mismatch - force update required (uninstall + install)
+class ForceUpdateRequired extends InstallButtonState {
+  const ForceUpdateRequired();
+}
+
 /// Installation is in progress
 class Installing extends InstallButtonState {
   const Installing();
@@ -93,6 +98,10 @@ InstallButtonState determineInstallButtonState({
   if (downloadInfo != null) {
     // Ready to install from downloaded file
     if (downloadInfo.isReadyToInstall) {
+      // Check for certificate mismatch
+      if (downloadInfo.errorDetails == 'CERTIFICATE_MISMATCH') {
+        return const ForceUpdateRequired();
+      }
       return DownloadedReadyToInstall(isUpdate: isInstalled && hasUpdate);
     }
 

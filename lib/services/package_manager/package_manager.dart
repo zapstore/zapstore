@@ -41,9 +41,6 @@ class PackageInfo extends Equatable {
   ];
 }
 
-/// Callback type for installation results
-typedef InstallResultCallback = void Function(Map<String, dynamic> result);
-
 /// Package management interface
 abstract class PackageManager extends StateNotifier<List<PackageInfo>> {
   PackageManager(this.ref) : super([]);
@@ -51,10 +48,9 @@ abstract class PackageManager extends StateNotifier<List<PackageInfo>> {
   /// Riverpod ref for accessing storage and other dependencies.
   final Ref ref;
 
-  /// Optional callback for installation results
-  InstallResultCallback? onInstallResult;
-
-  /// Install an APK or package from the given file path
+  /// Install an APK or package from the given file path.
+  /// Returns when installation completes (success or failure).
+  /// Throws on failure.
   Future<void> install(
     String appId,
     String filePath, {

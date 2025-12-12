@@ -1,38 +1,17 @@
 import 'dart:io';
-import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 
-/// Android implementation of PackageManager with integrated installation
+/// Android implementation of PackageManager with integrated installation.
 final class AndroidPackageManager extends PackageManager {
-  AndroidPackageManager(super.ref) {
-    // Set up method channel handler for callbacks from native side
-    // NOTE: Do not call any plugins in the constructor. Plugins may not yet be
-    // registered at this point, leading to MissingPluginException.
-    // However, setting the method call handler is safe.
-    _channel.setMethodCallHandler(_handleMethodCall);
-  }
+  AndroidPackageManager(super.ref);
 
   static const MethodChannel _channel = MethodChannel(
     'android_package_manager',
   );
   bool _supportsSilentInstall = false;
-
-  @override
-  void dispose() {
-    _channel.setMethodCallHandler(null);
-    super.dispose();
-  }
-
-  /// Handle method calls from native side
-  Future<void> _handleMethodCall(MethodCall call) async {
-    if (call.method == 'onInstallResult') {
-      final result = Map<String, dynamic>.from(call.arguments as Map);
-      // Use the callback from the base class
-      onInstallResult?.call(result);
-    }
-  }
 
   @override
   String get platform => 'android-arm64-v8a';
@@ -55,81 +34,51 @@ final class AndroidPackageManager extends PackageManager {
       throw Exception('APK file not found: $filePath');
     }
 
-    try {
-      // Attempt installation via method channel with verification
-      final result = await _channel
-          .invokeMethod<Map<Object?, Object?>>('install', {
-            'filePath': filePath,
-            'packageName': appId,
-            'expectedHash': expectedHash,
-            'expectedSize': expectedSize,
-            'skipVerification': skipVerification,
-          })
-          .timeout(
-            Duration(seconds: 20),
-            onTimeout: () => {
-              'isSuccess': false,
-              'errorMessage': 'Installation timed out after 20 seconds',
-            },
-          );
+    final result = await _channel
+        .invokeMethod<Map<Object?, Object?>>('install', {
+          'filePath': filePath,
+          'packageName': appId,
+          'expectedHash': expectedHash,
+          'expectedSize': expectedSize,
+          'skipVerification': skipVerification,
+        })
+        .timeout(
+          const Duration(minutes: 5),
+          onTimeout: () => {
+            'isSuccess': false,
+            'errorMessage': 'Installation timed out - user did not respond',
+          },
+        );
 
-      final resultMap = Map<String, dynamic>.from(result ?? {});
+    final resultMap = Map<String, dynamic>.from(result ?? {});
 
-      if (!(resultMap['isSuccess'] == true)) {
-        final error = resultMap['errorMessage'] ?? 'Installation failed';
-
-        // Provide more helpful error messages based on silent install capability
-        if (_supportsSilentInstall && error.contains('User action required')) {
-          throw Exception(
-            'Silent installation failed: $error\n\n'
-            'This may indicate:\n'
-            '• The app requires special permissions\n'
-            '• System policy prevents silent installation\n'
-            '• The APK signature is not trusted\n\n'
-            'The installation dialog should appear automatically.',
-          );
-        }
-
-        throw Exception(error);
-      }
-
-      // Refresh installed packages state
-      await syncInstalledPackages();
-    } catch (e) {
-      throw Exception('Installation failed: $e');
+    if (!(resultMap['isSuccess'] == true)) {
+      final error = resultMap['errorMessage'] ?? 'Installation failed';
+      throw Exception(error);
     }
+
+    // Refresh installed packages state
+    await syncInstalledPackages();
   }
 
   @override
   Future<void> uninstall(String appId) async {
-    try {
-      // Call uninstall method via method channel
-      final result = await _channel
-          .invokeMethod<Map<Object?, Object?>>('uninstall', {
-            'packageName': appId,
-          })
-          .timeout(
-            const Duration(seconds: 15),
-            onTimeout: () => {
-              'isSuccess': false,
-              'errorMessage': 'Uninstallation timed out after 15 seconds',
-            },
-          );
+    final result = await _channel.invokeMethod<Map<Object?, Object?>>('uninstall', {
+      'packageName': appId,
+    });
 
-      final resultMap = Map<String, dynamic>.from(result ?? {});
+    final resultMap = Map<String, dynamic>.from(result ?? {});
 
-      if (!(resultMap['isSuccess'] == true)) {
-        final error = resultMap['errorMessage'] ?? 'Uninstallation failed';
-        throw Exception(error);
+    if (!(resultMap['isSuccess'] == true)) {
+      final wasCancelled = resultMap['cancelled'] == true;
+      if (wasCancelled) {
+        throw Exception('Uninstall was cancelled');
       }
-
-      // Refresh installed packages state after a brief delay
-      // to allow the system uninstaller to complete
-      await Future.delayed(const Duration(milliseconds: 500));
-      await syncInstalledPackages();
-    } catch (e) {
-      throw Exception('Uninstallation failed: $e');
+      throw Exception('Uninstallation failed');
     }
+
+    // Refresh installed packages state
+    await syncInstalledPackages();
   }
 
   @override
@@ -260,6 +209,7 @@ final class AndroidPackageManager extends PackageManager {
             app['bundleId'] as String? ?? app['packageName'] as String? ?? '';
         final version = app['versionName'] as String? ?? '0.0.0';
         final versionCode = app['versionCode'] as int?;
+        final signatureHash = app['signatureHash'] as String? ?? '';
 
         if (appId.isNotEmpty) {
           packages.add(
@@ -268,8 +218,7 @@ final class AndroidPackageManager extends PackageManager {
               version: version,
               versionCode: versionCode,
               installTime: null, // Method channel doesn't provide install time
-              signatureHash:
-                  '', // Method channel doesn't provide signature hash
+              signatureHash: signatureHash,
             ),
           );
         }

@@ -1,14 +1,14 @@
-import 'dart:async';
-
 import 'package:async_button_builder/async_button_builder.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/services/download_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/services/trust_service.dart';
 import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/widgets/author_container.dart';
 import 'package:zapstore/widgets/common/base_dialog.dart';
 import 'package:zapstore/widgets/install_alert_dialog.dart';
 import 'package:zapstore/widgets/install_button_state.dart';
@@ -34,6 +34,22 @@ class InstallButton extends ConsumerWidget {
         .watch(packageManagerProvider)
         .where((p) => p.appId == app.identifier)
         .firstOrNull;
+
+    // Listen for installation failures and show errors
+    ref.listen(downloadInfoProvider(app.identifier), (previous, next) {
+      // Installation just failed - show error
+      if (next != null &&
+          next.isReadyToInstall &&
+          next.errorDetails != null &&
+          previous?.errorDetails != next.errorDetails) {
+        if (context.mounted) {
+          final errorMessage = next.errorDetails == 'CERTIFICATE_MISMATCH'
+              ? 'Installation failed: Certificate mismatch detected'
+              : 'Installation failed: ${next.errorDetails}';
+          context.showError(errorMessage);
+        }
+      }
+    });
 
     // Determine current state from inputs using the extracted function
     final state = determineInstallButtonState(
@@ -98,57 +114,57 @@ class InstallButton extends ConsumerWidget {
     return switch (state) {
       // Not installed, ready to install
       ReadyToInstall(:final hasRelease) => _buildAsyncButton(
-          context,
-          ref,
-          text: 'Install',
-          onPressed: hasRelease ? () => _startDownload(ref) : null,
-          isPrimary: true,
-          fontSize: fontSize,
-          needsTrustCheck: true,
-        ),
+        context,
+        ref,
+        text: 'Install',
+        onPressed: hasRelease ? () => _startDownload(ref) : null,
+        isPrimary: true,
+        fontSize: fontSize,
+        needsTrustCheck: true,
+      ),
 
       // Installed and up to date
       InstalledUpToDate() => _buildAsyncButton(
-          context,
-          ref,
-          text: 'Open',
-          onPressed: () => _openApp(context, ref),
-          isPrimary: true,
-          fontSize: fontSize,
-          needsTrustCheck: false,
-        ),
+        context,
+        ref,
+        text: 'Open',
+        onPressed: () => _openApp(context, ref),
+        isPrimary: true,
+        fontSize: fontSize,
+        needsTrustCheck: false,
+      ),
 
       // Update available
       UpdateAvailable(:final hasRelease) => _buildAsyncButton(
-          context,
-          ref,
-          text: 'Update',
-          onPressed: hasRelease ? () => _startDownload(ref) : null,
-          isPrimary: true,
-          fontSize: fontSize,
-          needsTrustCheck: false,
-        ),
+        context,
+        ref,
+        text: 'Update',
+        onPressed: hasRelease ? () => _startDownload(ref) : null,
+        isPrimary: true,
+        fontSize: fontSize,
+        needsTrustCheck: false,
+      ),
 
       // Downgrade blocked
       DowngradeBlocked() => _buildSimpleButton(
-          context,
-          "Can't downgrade",
-          null,
-          isPrimary: false,
-          showSpinner: false,
-          fontSize: fontSize,
-          isDowngrade: true,
-        ),
+        context,
+        "Can't downgrade",
+        null,
+        isPrimary: false,
+        showSpinner: false,
+        fontSize: fontSize,
+        isDowngrade: true,
+      ),
 
       // Download in progress
       Downloading(:final progress, :final totalSizeMb) => _buildProgressButton(
-          context,
-          ref,
-          progress: progress,
-          text: _formatDownloadProgress(progress, totalSizeMb),
-          fontSize: fontSize,
-          onTap: () => _pauseDownload(ref),
-        ),
+        context,
+        ref,
+        progress: progress,
+        text: _formatDownloadProgress(progress, totalSizeMb),
+        fontSize: fontSize,
+        onTap: () => _pauseDownload(ref),
+      ),
 
       // Download paused
       DownloadPaused(:final progress, :final totalSizeMb) =>
@@ -163,55 +179,62 @@ class InstallButton extends ConsumerWidget {
 
       // Download enqueued
       DownloadEnqueued(:final isUpdate) => _buildSimpleButton(
-          context,
-          isUpdate ? 'Update' : 'Install',
-          () => _cancelAndRestart(ref),
-          isPrimary: true,
-          fontSize: fontSize,
-        ),
+        context,
+        isUpdate ? 'Update' : 'Install',
+        () => _cancelAndRestart(ref),
+        isPrimary: true,
+        fontSize: fontSize,
+      ),
 
       // Downloaded, ready to install
       DownloadedReadyToInstall(:final isUpdate) => AsyncButtonBuilder(
-          onPressed: () => _installFromDownloaded(ref),
-          builder: (context, child, callback, buttonState) {
-            return _buildSimpleButton(
-              context,
-              buttonState.maybeWhen(
-                loading: () => 'Installing...',
-                orElse: () => isUpdate ? 'Update' : 'Install',
-              ),
-              buttonState.maybeWhen(
-                loading: () => null,
-                orElse: () => callback,
-              ),
-              isPrimary: true,
-              showSpinner: buttonState.maybeWhen(
-                loading: () => true,
-                orElse: () => false,
-              ),
-              fontSize: fontSize,
-            );
-          },
-          child: Text(
-            isUpdate ? 'Update' : 'Install',
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-          ),
-          onError: () {
-            if (context.mounted) {
-              context.showError('Installation failed. Please try again.');
-            }
-          },
+        onPressed: () => _installFromDownloaded(ref),
+        builder: (context, child, callback, buttonState) {
+          return _buildSimpleButton(
+            context,
+            buttonState.maybeWhen(
+              loading: () => 'Installing...',
+              orElse: () => isUpdate ? 'Update' : 'Install',
+            ),
+            buttonState.maybeWhen(loading: () => null, orElse: () => callback),
+            isPrimary: true,
+            showSpinner: buttonState.maybeWhen(
+              loading: () => true,
+              orElse: () => false,
+            ),
+            fontSize: fontSize,
+          );
+        },
+        child: Text(
+          isUpdate ? 'Update' : 'Install',
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
         ),
+        onError: () {
+          if (context.mounted) {
+            context.showError('Installation failed. Please try again.');
+          }
+        },
+      ),
+
+      // Certificate mismatch - requires force update
+      ForceUpdateRequired() => _buildSimpleButton(
+        context,
+        'Force update',
+        () => _showForceUpdateDialog(ref, context),
+        isPrimary: false,
+        fontSize: fontSize,
+        isError: true,
+      ),
 
       // Installing
       Installing() => _buildSimpleButton(
-          context,
-          'Requesting installation',
-          null,
-          isPrimary: true,
-          showSpinner: true,
-          fontSize: fontSize,
-        ),
+        context,
+        'Requesting installation',
+        null,
+        isPrimary: true,
+        showSpinner: true,
+        fontSize: fontSize,
+      ),
 
       // Failed
       Failed(:final canRetryReckless, :final downloadInfo) =>
@@ -273,10 +296,11 @@ class InstallButton extends ConsumerWidget {
 
                 if (shouldShowDialog) {
                   if (!context.mounted) return;
-                  final result = await showBaseDialog<({bool trustPermanently})>(
-                    context: context,
-                    dialog: InstallAlertDialog(app: app),
-                  );
+                  final result =
+                      await showBaseDialog<({bool trustPermanently})>(
+                        context: context,
+                        dialog: InstallAlertDialog(app: app),
+                      );
                   if (result == null) return;
                   if (result.trustPermanently && signerPubkey != null) {
                     try {
@@ -631,46 +655,91 @@ class InstallButton extends ConsumerWidget {
   }
 
   Future<void> _uninstallApp(WidgetRef ref, BuildContext context) async {
-    // Special handling for Zapstore app itself
-    if (app.identifier == 'dev.zapstore.alpha') {
-      final shouldProceed = await _showZapstoreUninstallDialog(context);
-      if (!shouldProceed) return;
-    }
-
     try {
       final packageManager = ref.read(packageManagerProvider.notifier);
       await packageManager.uninstall(app.identifier);
+      // Only reaches here after successful uninstall
       if (context.mounted) {
-        _monitorUninstallCompletion(ref, context);
+        context.showInfo('${app.name ?? app.identifier} has been uninstalled');
       }
     } catch (e) {
       if (context.mounted) {
-        context.showError('Uninstall failed: $e');
+        // Don't show error for user cancellation
+        final message = e.toString();
+        if (!message.contains('cancelled')) {
+          context.showError('Uninstall failed: $e');
+        }
       }
     }
   }
 
-  Future<bool> _showZapstoreUninstallDialog(BuildContext context) async {
-    final result = await showBaseDialog<bool>(
+  Future<void> _showForceUpdateDialog(
+    WidgetRef ref,
+    BuildContext context,
+  ) async {
+    // Get version and certificate info
+    final installedPackage = ref
+        .read(packageManagerProvider)
+        .where((p) => p.appId == app.identifier)
+        .firstOrNull;
+    final updateVersion = app.latestFileMetadata?.version ?? 'Unknown';
+    final currentVersion = installedPackage?.version ?? 'Unknown';
+    final currentCertHash = installedPackage?.signatureHash ?? 'Unknown';
+    final updateCertHash =
+        app.latestFileMetadata?.apkSignatureHash ?? 'Unknown';
+
+    // Get author profile
+    final author = app.author.value;
+
+    final shouldProceed = await showBaseDialog<bool>(
       context: context,
       dialog: Builder(
         builder: (dialogContext) => BaseDialog(
-          title: const BaseDialogTitle('Uninstall Zapstore'),
-          content: const BaseDialogContent(
+          titleIcon: Icon(
+            Icons.security,
+            color: Theme.of(dialogContext).colorScheme.error,
+          ),
+          title: const BaseDialogTitle('Certificate Mismatch'),
+          content: BaseDialogContent(
             children: [
-              Text(
-                'This will uninstall Zapstore from your device.',
-                style: TextStyle(fontSize: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: AuthorContainer(
+                      profile: author!,
+                      beforeText: 'This update was published by',
+                      afterText: ' but signed with a different certificate.',
+                      oneLine: false,
+                      size: 14,
+                    ),
+                  ),
+                ],
               ),
-              SizedBox(height: 12),
-              Text(
-                'To download the previous stable Zapstore version, visit:',
-                style: TextStyle(fontSize: 16),
+              const SizedBox(height: 12),
+
+              // Compact version and certificate comparison
+              _buildCompactHashRow(
+                dialogContext,
+                'Current ($currentVersion)',
+                currentCertHash,
+                'Installed version certificate',
               ),
-              SizedBox(height: 8),
+              const SizedBox(height: 8),
+              _buildCompactHashRow(
+                dialogContext,
+                'Update ($updateVersion)',
+                updateCertHash,
+                'New version certificate',
+              ),
+              const SizedBox(height: 12),
               Text(
-                'zapstore.dev/download',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                'Android security prevents updating apps signed by different certificates. Contact the publisher for details.',
+                style: TextStyle(fontSize: 14),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'To proceed anyway, uninstall the current version and install the new one. ALL APP DATA WILL BE LOST.',
+                style: TextStyle(fontSize: 14),
               ),
             ],
           ),
@@ -684,40 +753,96 @@ class InstallButton extends ConsumerWidget {
               style: FilledButton.styleFrom(
                 backgroundColor: Theme.of(dialogContext).colorScheme.error,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               ),
-              child: const Text('Uninstall'),
+              child: const Text('Uninstall & Install'),
             ),
           ],
         ),
       ),
     );
 
-    return result ?? false;
+    if (shouldProceed == true && context.mounted) {
+      try {
+        final downloadService = ref.read(downloadServiceProvider.notifier);
+        final packageManager = ref.read(packageManagerProvider.notifier);
+
+        final downloadInfo = downloadService.getDownloadInfo(app.identifier);
+        if (downloadInfo == null) {
+          throw Exception('Download not found');
+        }
+
+        final filePath = await downloadInfo.task.filePath();
+        final fileMetadata = downloadInfo.fileMetadata;
+
+        downloadService.clearError(app.identifier);
+
+        await packageManager.uninstall(app.identifier);
+
+        downloadService.markInstalling(app.identifier);
+
+        await packageManager.install(
+          app.identifier,
+          filePath,
+          expectedHash: fileMetadata.hash,
+          expectedSize: fileMetadata.size ?? 0,
+        );
+
+        downloadService.cancelDownload(app.identifier);
+      } catch (e) {
+        final message = e.toString();
+        if (context.mounted && !message.contains('cancelled')) {
+          context.showError('Force update failed: $e');
+        }
+      }
+    }
   }
 
-  void _monitorUninstallCompletion(WidgetRef ref, BuildContext context) {
-    bool notificationShown = false;
-    late final ProviderSubscription<List<PackageInfo>> subscription;
+  String _abbr(String v) {
+    final t = v.trim();
+    if (t.length <= 12) return t;
+    return '${t.substring(0, 6)}...${t.substring(t.length - 6)}';
+  }
 
-    // Listen to package manager changes instead of polling
-    subscription = ref.listenManual(packageManagerProvider, (previous, next) {
-      final isStillInstalled = next.any((p) => p.appId == app.identifier);
-
-      // Only show notification once when app becomes uninstalled
-      if (!isStillInstalled && !notificationShown && context.mounted) {
-        notificationShown = true;
-        context.showInfo('${app.name ?? app.identifier} has been uninstalled');
-        // Close subscription after showing notification
-        subscription.close();
-      }
-    });
-
-    // Timeout after 30 seconds
-    Future.delayed(const Duration(seconds: 30), () {
-      if (!notificationShown) {
-        subscription.close();
-      }
-    });
+  Widget _buildCompactHashRow(
+    BuildContext context,
+    String versionLabel,
+    String hash,
+    String tooltipText,
+  ) {
+    return Row(
+      children: [
+        Expanded(
+          child: RichText(
+            text: TextSpan(
+              style: Theme.of(context).textTheme.bodyMedium,
+              children: [
+                TextSpan(
+                  text: '$versionLabel → ',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                TextSpan(
+                  text: _abbr(hash),
+                  style: TextStyle(fontFamily: 'monospace'),
+                ),
+              ],
+            ),
+          ),
+        ),
+        IconButton(
+          icon: const Icon(Icons.copy, size: 16),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
+          style: IconButton.styleFrom(
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            minimumSize: Size.zero,
+          ),
+          tooltip: 'Copy certificate hash',
+          onPressed: () {
+            Clipboard.setData(ClipboardData(text: hash));
+            context.showInfo('Copied $tooltipText');
+          },
+        ),
+      ],
+    );
   }
 }

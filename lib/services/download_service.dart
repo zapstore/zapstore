@@ -96,7 +96,6 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
   @override
   void dispose() {
     _downloader.unregisterCallbacks();
-    ref.read(packageManagerProvider.notifier).onInstallResult = null;
     super.dispose();
   }
 
@@ -153,10 +152,6 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
       taskStatusCallback: _handleTaskUpdate,
       taskProgressCallback: _handleTaskUpdate,
     );
-
-    // Set up install result callback via the abstract interface
-    ref.read(packageManagerProvider.notifier).onInstallResult =
-        _handleInstallResult;
 
     // Clear any existing downloads on startup (no resume)
     await _clearExistingDownloads();
@@ -472,7 +467,7 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
     _processInstallQueue();
   }
   
-  /// Process installation queue sequentially to prevent concurrent installations
+  /// Process installation queue sequentially to prevent concurrent installations.
   Future<void> _processInstallQueue() async {
     // Don't start processing if already processing
     if (_isInstallingFromQueue) return;
@@ -502,7 +497,6 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
         // Use the stored file metadata from the download info
         final fileMetadata = downloadInfo.fileMetadata;
 
-        // Trigger installation with verification data
         final packageManager = ref.read(packageManagerProvider.notifier);
         await packageManager.install(
           appId,
@@ -511,65 +505,59 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
           expectedSize: fileMetadata.size ?? 0,
         );
         
-        // Remove from queue after successful installation initiation
+        // Installation succeeded - clean up downloaded file
+        try {
+          final file = File(filePath);
+          if (await file.exists()) {
+            await file.delete();
+          }
+        } catch (_) {
+          // Continue even if deletion fails
+        }
+        
+        // Remove from state (installation complete)
+        state = Map.from(state)..remove(appId);
+        
+        // Remove from queue
         _installQueue.removeAt(0);
         
-        // Add a small delay between installations to ensure Android processes them sequentially
+        // Add a small delay between installations
         if (_installQueue.isNotEmpty) {
           await Future.delayed(const Duration(milliseconds: 500));
         }
       } catch (e) {
-        // Remove from queue and state on error
+        // Installation failed
         _installQueue.removeAt(0);
-        state = Map.from(state)..remove(appId);
+        
+        final errorMessage = e.toString();
+        
+        // Detect certificate mismatch
+        final isCertificateMismatch = 
+          errorMessage.contains('signatures do not match') ||
+          errorMessage.contains('INSTALL_FAILED_UPDATE_INCOMPATIBLE') ||
+          errorMessage.contains('UPDATE_INCOMPATIBLE');
+        
+        // Detect user cancellation
+        final wasCancelled = errorMessage.contains('cancelled');
+        
+        if (wasCancelled) {
+          // User cancelled - just remove from state
+          state = Map.from(state)..remove(appId);
+        } else {
+          // Keep download info but mark as ready to install (can retry)
+          state = Map.from(state)
+            ..[appId] = downloadInfo.copyWith(
+              isInstalling: false,
+              isReadyToInstall: true,
+              errorDetails: isCertificateMismatch 
+                ? 'CERTIFICATE_MISMATCH'
+                : errorMessage.replaceFirst('Exception: ', ''),
+            );
+        }
       }
     }
     
     _isInstallingFromQueue = false;
-  }
-
-  /// Handle installation result from BroadcastReceiver
-  void _handleInstallResult(Map<String, dynamic> result) {
-    if (!mounted) return; // Safety check - notifier may be disposed
-
-    final packageName = result['packageName'] as String?;
-    final success = result['success'] as bool? ?? false;
-
-    if (packageName == null) return; // Safety check
-
-    // Find and remove the download
-    final downloadInfo = state[packageName];
-    // ignore: unnecessary_null_comparison
-    if (downloadInfo != null) {
-      // Check if download exists
-      if (success) {
-        // Clean up downloaded file - ALWAYS delete after successful install
-        // Fire-and-forget: no state modifications in callback
-        downloadInfo.task.filePath().then((filePath) async {
-          try {
-            final file = File(filePath);
-            if (await file.exists()) {
-              await file.delete();
-            }
-          } catch (e) {
-            // Continue even if deletion fails
-          }
-        });
-
-        // Remove from state (synchronous, before any async gaps)
-        state = Map.from(state)..remove(packageName);
-
-        // Refresh package list to show installed app
-        ref.read(packageManagerProvider.notifier).syncInstalledPackages();
-      } else {
-        // Keep download info but mark as ready to install (don't remove file)
-        state = Map.from(state)
-          ..[packageName] = downloadInfo.copyWith(
-            isInstalling: false,
-            isReadyToInstall: true,
-          );
-      }
-    }
   }
 
   /// Pause a download
@@ -659,6 +647,20 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
     return info != null &&
         (info.status == TaskStatus.running ||
             info.status == TaskStatus.enqueued);
+  }
+
+  /// Clear any error and prepare for retry
+  void clearError(String appId) {
+    final downloadInfo = state[appId];
+    if (downloadInfo != null && downloadInfo.errorDetails != null) {
+      state = {
+        ...state,
+        appId: downloadInfo.copyWith(
+          errorDetails: null,
+          // Keep isReadyToInstall: true so installFromDownloaded() can proceed
+        ),
+      };
+    }
   }
 
   /// Mark download as installing (for reckless mode retry)

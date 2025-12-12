@@ -14,24 +14,33 @@ import androidx.core.content.getSystemService
 private const val TAG = "InstallResultReceiver"
 
 /**
- * BroadcastReceiver to handle APK installation results
- * Enhanced with Accrescent-inspired silent install handling
+ * BroadcastReceiver to handle APK installation results.
+ * 
+ * This receiver completes the pending method channel Result stored in 
+ * AndroidPackageManagerPlugin, allowing Dart's await to finish.
+ * 
+ * For STATUS_PENDING_USER_ACTION (installer takeover prompt), we launch the
+ * confirmation dialog but DON'T complete the Result yet - we wait for the
+ * actual success/failure that follows after user confirms/cancels.
  */
 class InstallResultReceiver : BroadcastReceiver() {
     
     override fun onReceive(context: Context, intent: Intent) {
         val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
-        val packageName = intent.getStringExtra(PackageInstaller.EXTRA_PACKAGE_NAME) ?: "unknown"
+        val packageName = intent.getStringExtra(PackageInstaller.EXTRA_PACKAGE_NAME) 
+            ?: intent.getStringExtra("packageName") 
+            ?: "unknown"
         val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
         val sessionId = intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -1)
+        val isUpdate = intent.getBooleanExtra("isUpdate", false)
 
-        Log.d(TAG, "Install result: status=$status, package=$packageName, message=$message")
+        Log.d(TAG, "Install result: status=$status, package=$packageName, sessionId=$sessionId, message=$message")
 
         when (status) {
             PackageInstaller.STATUS_PENDING_USER_ACTION -> {
                 Log.d(TAG, "User confirmation required for $packageName (installer takeover)")
                 
-                // Launch confirmation dialog
+                // Launch confirmation dialog - user needs to approve
                 val confirmIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
                 } else {
@@ -48,52 +57,47 @@ class InstallResultReceiver : BroadcastReceiver() {
                     }
                 }
                 
-                AndroidPackageManagerPlugin.notifyInstallResult(mapOf(
-                    "success" to false,
-                    "packageName" to packageName,
-                    "message" to "User action required",
-                    "status" to status,
-                    "requiresUserAction" to true
-                ))
+                // DON'T complete the Result here - wait for the actual success/failure
+                // that will come after user confirms or cancels the dialog.
+                // The same sessionId will be used for the final result.
             }
             
             PackageInstaller.STATUS_SUCCESS -> {
-                Log.d(TAG, "Installation successful: $packageName")
-                AndroidPackageManagerPlugin.notifyInstallResult(mapOf(
-                    "success" to true,
+                Log.d(TAG, "Installation successful: $packageName (sessionId=$sessionId)")
+                // Complete the pending method channel result
+                AndroidPackageManagerPlugin.completeInstallResult(sessionId, mapOf(
+                    "isSuccess" to true,
+                    "errorMessage" to "",
                     "packageName" to packageName,
-                    "message" to (message ?: "Installation completed successfully")
+                    "isUpdate" to isUpdate
                 ))
             }
             
             PackageInstaller.STATUS_FAILURE -> {
-                Log.w(TAG, "Installation failed: $packageName - $message")
-                AndroidPackageManagerPlugin.notifyInstallResult(mapOf(
-                    "success" to false,
-                    "packageName" to packageName,
-                    "message" to (message ?: "Installation failed"),
-                    "status" to status
+                Log.w(TAG, "Installation failed: $packageName - $message (sessionId=$sessionId)")
+                AndroidPackageManagerPlugin.completeInstallResult(sessionId, mapOf(
+                    "isSuccess" to false,
+                    "errorMessage" to (message ?: "Installation failed"),
+                    "packageName" to packageName
                 ))
             }
             
             PackageInstaller.STATUS_FAILURE_ABORTED -> {
-                Log.d(TAG, "Installation cancelled: $packageName")
-                AndroidPackageManagerPlugin.notifyInstallResult(mapOf(
-                    "success" to false,
+                Log.d(TAG, "Installation cancelled: $packageName (sessionId=$sessionId)")
+                AndroidPackageManagerPlugin.completeInstallResult(sessionId, mapOf(
+                    "isSuccess" to false,
+                    "errorMessage" to "Installation was cancelled by user",
                     "packageName" to packageName,
-                    "message" to "Installation was cancelled",
-                    "status" to status,
-                    "aborted" to true
+                    "cancelled" to true
                 ))
             }
             
             else -> {
-                Log.w(TAG, "Unknown installation status $status: $packageName")
-                AndroidPackageManagerPlugin.notifyInstallResult(mapOf(
-                    "success" to false,
-                    "packageName" to packageName,
-                    "message" to (message ?: "Installation failed with unknown status"),
-                    "status" to status
+                Log.w(TAG, "Unknown installation status $status: $packageName (sessionId=$sessionId)")
+                AndroidPackageManagerPlugin.completeInstallResult(sessionId, mapOf(
+                    "isSuccess" to false,
+                    "errorMessage" to (message ?: "Installation failed with status $status"),
+                    "packageName" to packageName
                 ))
             }
         }

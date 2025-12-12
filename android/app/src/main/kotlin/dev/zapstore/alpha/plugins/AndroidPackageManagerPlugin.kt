@@ -47,10 +47,28 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler {
     private lateinit var context: Context
     
     companion object {
-        private var staticChannel: MethodChannel? = null
+        // Store pending install results keyed by sessionId - completed when broadcast arrives
+        private val pendingInstallResults = mutableMapOf<Int, Result>()
         
-        fun notifyInstallResult(result: Map<String, Any?>) {
-            staticChannel?.invokeMethod("onInstallResult", result)
+        /**
+         * Called by InstallResultReceiver when installation completes/fails.
+         * Completes the pending method channel result so Dart await finishes.
+         */
+        fun completeInstallResult(sessionId: Int, resultMap: Map<String, Any?>) {
+            val result = pendingInstallResults.remove(sessionId)
+            if (result != null) {
+                Log.d(TAG, "Completing install result for session $sessionId: $resultMap")
+                result.success(resultMap)
+            } else {
+                Log.w(TAG, "No pending result found for session $sessionId")
+            }
+        }
+        
+        /**
+         * Check if we have a pending result for this session (used by receiver)
+         */
+        fun hasPendingResult(sessionId: Int): Boolean {
+            return pendingInstallResults.containsKey(sessionId)
         }
     }
 
@@ -58,14 +76,14 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler {
         channel = MethodChannel(flutterPluginBinding.binaryMessenger, "android_package_manager")
         channel.setMethodCallHandler(this)
         context = flutterPluginBinding.applicationContext
-        staticChannel = channel
         
         Log.d(TAG, "AndroidPackageManagerPlugin initialized")
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         channel.setMethodCallHandler(null)
-        staticChannel = null
+        // Clear any pending results on detach
+        pendingInstallResults.clear()
     }
 
     override fun onMethodCall(call: MethodCall, result: Result) {
@@ -454,27 +472,30 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler {
             sessionStream.close()
         }
         
+        // Store pending result BEFORE committing - will be completed by InstallResultReceiver
+        pendingInstallResults[sessionId] = result
+        Log.d(TAG, "Stored pending result for session $sessionId, awaiting broadcast...")
+        
         // Create pending intent for installation result
-        val intent = Intent(context.applicationContext, InstallResultReceiver::class.java)
+        val intent = Intent(context.applicationContext, InstallResultReceiver::class.java).apply {
+            putExtra("sessionId", sessionId)
+            putExtra("packageName", packageName)
+            putExtra("isUpdate", isUpdate)
+        }
         val pendingIntent = PendingIntent.getBroadcast(
             context.applicationContext,
-            0,
+            sessionId,  // Use sessionId as requestCode for uniqueness
             intent,
-            PendingIntent.FLAG_MUTABLE
+            PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         
-        // Commit the session
+        // Commit the session - result will be delivered via broadcast to InstallResultReceiver
+        // which will call completeInstallResult() to finish the method channel call
         session.commit(pendingIntent.intentSender)
         session.close()
         
-        // Return success - actual result will come via broadcast
-        result.success(mapOf(
-            "isSuccess" to true,
-            "errorMessage" to "",
-            "isUpdate" to isUpdate,
-            "packageName" to packageName,
-            "sessionId" to sessionId
-        ))
+        // DO NOT call result.success() here - wait for InstallResultReceiver broadcast
+        // The Dart side will block on await until completeInstallResult() is called
     }
     
     private fun launchSystemInstaller(filePath: String, result: Result) {
@@ -522,11 +543,55 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler {
             
             context.startActivity(intent)
             
-            result.success(mapOf(
-                "isSuccess" to true,
-                "errorMessage" to "",
-                "packageName" to packageName
-            ))
+            // Poll for package removal since ACTION_DELETE has no callback
+            // This runs on a background thread to avoid blocking the main thread
+            Thread {
+                val timeoutMs = 120_000L  // 2 minute timeout for user to confirm
+                val pollIntervalMs = 500L
+                val startTime = System.currentTimeMillis()
+                
+                while (System.currentTimeMillis() - startTime < timeoutMs) {
+                    try {
+                        Thread.sleep(pollIntervalMs)
+                        
+                        // Check if package is still installed
+                        try {
+                            pm.getPackageInfo(packageName, 0)
+                            // Package still exists, keep polling
+                        } catch (e: PackageManager.NameNotFoundException) {
+                            // Package removed! Success
+                            Log.d(TAG, "Package $packageName successfully uninstalled")
+                            android.os.Handler(context.mainLooper).post {
+                                result.success(mapOf(
+                                    "isSuccess" to true,
+                                    "packageName" to packageName
+                                ))
+                            }
+                            return@Thread
+                        }
+                    } catch (e: InterruptedException) {
+                        break
+                    }
+                }
+                
+                // Timeout - check one more time then treat as cancelled
+                val stillInstalled = try {
+                    pm.getPackageInfo(packageName, 0)
+                    true
+                } catch (e: PackageManager.NameNotFoundException) {
+                    false
+                }
+                
+                android.os.Handler(context.mainLooper).post {
+                    result.success(mapOf(
+                        "isSuccess" to !stillInstalled,
+                        "packageName" to packageName,
+                        "cancelled" to stillInstalled
+                    ))
+                }
+            }.start()
+            
+            // DO NOT call result.success() here - wait for polling to complete
             
         } catch (e: Exception) {
             Log.e(TAG, "Uninstall failed for $packageName", e)
@@ -604,14 +669,56 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler {
                 pkg.versionCode.toLong()
             }
             
+            // Get signature hash
+            val signatureHash = try {
+                getSignatureHash(bundleId)
+            } catch (e: Exception) {
+                ""
+            }
+            
             out.add(mapOf(
                 "name" to name,
                 "bundleId" to bundleId,
                 "versionName" to versionName,
                 "versionCode" to versionCode,
+                "signatureHash" to signatureHash,
             ))
         }
         return out
+    }
+    
+    private fun getSignatureHash(packageName: String): String {
+        val pm = context.packageManager
+        val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            pm.getPackageInfo(
+                packageName,
+                PackageManager.PackageInfoFlags.of(PackageManager.GET_SIGNING_CERTIFICATES.toLong())
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            pm.getPackageInfo(packageName, PackageManager.GET_SIGNATURES)
+        }
+        
+        val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            packageInfo.signingInfo?.let { signingInfo ->
+                if (signingInfo.hasMultipleSigners()) {
+                    signingInfo.apkContentsSigners
+                } else {
+                    signingInfo.signingCertificateHistory
+                }
+            } ?: emptyArray()
+        } else {
+            @Suppress("DEPRECATION")
+            packageInfo.signatures ?: emptyArray()
+        }
+        
+        if (signatures.isEmpty()) return ""
+        
+        // Get SHA-256 hash of first signature
+        val signature = signatures[0]
+        val digest = MessageDigest.getInstance("SHA-256")
+        val hashBytes = digest.digest(signature.toByteArray())
+        return hashBytes.joinToString("") { "%02x".format(it) }
     }
 
 }
