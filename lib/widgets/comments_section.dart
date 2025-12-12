@@ -37,49 +37,60 @@ class CommentsSection extends ConsumerWidget {
           background: true,
           relays: 'social',
         ),
-        and: (comment) => {comment.author},
         subscriptionPrefix: 'app-comments',
       ),
     );
 
-    return switch (commentsState) {
-      StorageData(:final models) => Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    // Extract comments and error state
+    final List<Comment> comments = switch (commentsState) {
+      StorageData(:final models) => models,
+      _ => [],
+    };
+    final errorException = switch (commentsState) {
+      StorageError(:final exception) => exception,
+      _ => null,
+    };
+
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header - always visible
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Comments',
-                    style: Theme.of(
-                      context,
-                    ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                  ),
-                  if (models.isNotEmpty)
-                    _CommentCountBadge(
-                      count: models.length,
-                    ),
-                ],
+              Text(
+                'Comments',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
               ),
-              const SizedBox(height: 12),
-              _CommentsSection(
-                comments: models,
-                fileMetadata: fileMetadata!,
-              ),
+              if (comments.isNotEmpty) _CommentCountBadge(count: comments.length),
             ],
           ),
-        ),
-      StorageError(:final exception) => Padding(
-          padding: const EdgeInsets.all(16),
-          child: _buildCommentsError(
-            context,
-            exception,
-          ),
-        ),
-      _ => const SizedBox.shrink(),
-    };
+          const SizedBox(height: 12),
+          // Add Comment button - always visible
+          _AddCommentButton(fileMetadata: fileMetadata!),
+          // Error message if any
+          if (errorException != null) ...[
+            const SizedBox(height: 16),
+            _buildCommentsError(context, errorException),
+          ],
+          // Comments list - only when there are comments
+          if (comments.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            ...(comments.toList()..sort((a, b) => b.createdAt.compareTo(a.createdAt)))
+                .map(
+                  (comment) => Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: _CommentCard(comment: comment),
+                  ),
+                ),
+          ],
+        ],
+      ),
+    );
   }
 
   Widget _buildCommentsError(BuildContext context, Object exception) {
@@ -106,37 +117,6 @@ class CommentsSection extends ConsumerWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _CommentsSection extends HookConsumerWidget {
-  const _CommentsSection({required this.comments, required this.fileMetadata});
-
-  final List<Comment> comments;
-  final FileMetadata fileMetadata;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // Sort comments by creation date (newest first)
-    final sortedComments = comments.toList()
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-
-    final hasComments = sortedComments.isNotEmpty;
-
-    return Column(
-      children: [
-        _AddCommentButton(fileMetadata: fileMetadata),
-        if (hasComments) ...[
-          const SizedBox(height: 16),
-          ...sortedComments.map(
-            (comment) => Padding(
-              padding: const EdgeInsets.only(bottom: 16),
-              child: _CommentCard(comment: comment),
-            ),
-          ),
-        ],
-      ],
     );
   }
 }
@@ -174,8 +154,8 @@ class _CommentCard extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final author = comment.author.value;
-    // Extract version from comment tags
-    final version = comment.event.getFirstTagValue('version');
+    // Extract version from d tag (thread key)
+    final version = comment.event.getFirstTagValue('d');
 
     return Card(
       margin: EdgeInsets.zero,
@@ -425,11 +405,11 @@ class _CommentComposer extends HookConsumerWidget {
       final comment = PartialComment(
         content: content.trim(),
         rootModel: app,
-        parentModel: app,
+        // No parentModel for root comments - only A/K/P tags, no e/k/p
       );
 
-      // Add version tag with the installed or latest version
-      comment.event.addTagValue('version', versionToComment);
+      // Add d tag as thread key (version)
+      comment.event.addTagValue('d', versionToComment);
 
       final signedComment = await comment.signWith(signer);
 
