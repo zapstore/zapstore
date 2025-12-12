@@ -32,9 +32,6 @@ class ProfileScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
-    final isSignedIn = signedInPubkey != null;
-
     return Scaffold(
       body: ListView(
         children: [
@@ -48,18 +45,15 @@ class ProfileScreen extends ConsumerWidget {
           const SizedBox(height: 24),
 
           // Settings Heading
-          if (isSignedIn)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Text('Settings', style: context.textTheme.headlineSmall),
-            ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: Text('Settings', style: context.textTheme.headlineSmall),
+          ),
 
-          if (isSignedIn) ...[
-            const SizedBox(height: 16),
+          const SizedBox(height: 16),
 
-            // Lightning Wallet Section
-            const NWCConnectionCard(),
-          ],
+          // Lightning Wallet Section
+          const NWCConnectionCard(),
 
           const SizedBox(height: 24),
 

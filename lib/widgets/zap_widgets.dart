@@ -8,6 +8,7 @@ import 'package:models/models.dart';
 import 'package:zapstore/main.dart';
 import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
+import 'package:zapstore/services/secure_storage_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/common/base_dialog.dart';
 import 'package:zapstore/widgets/common/profile_avatar.dart';
@@ -217,21 +218,15 @@ class ZapAmountDialog extends HookConsumerWidget {
       ],
     );
     final pubkey = ref.watch(Signer.activePubkeyProvider);
-    final signer = ref.watch(Signer.activeSignerProvider);
+    final secureStorage = ref.watch(secureStorageServiceProvider);
     final hasWalletConnection = useState<bool>(false);
     useEffect(() {
-      if (signer == null) {
-        hasWalletConnection.value = false;
-        return null;
-      }
-      signer
-          .getNWCString()
-          .then(
-            (value) => hasWalletConnection.value = (value?.isNotEmpty == true),
-          )
+      secureStorage
+          .hasNWCString()
+          .then((hasNwc) => hasWalletConnection.value = hasNwc)
           .catchError((_) => hasWalletConnection.value = false);
       return null;
-    }, [signer]);
+    }, []);
 
     return BaseDialog(
       titleIcon: const Text('⚡️'),
@@ -363,7 +358,7 @@ class ZapAmountDialog extends HookConsumerWidget {
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          'Tap to sign in. You can zap anonymously or sign in for attribution.',
+                          'Zapping anonymously. Tap to sign in.',
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
                       ),
@@ -374,19 +369,17 @@ class ZapAmountDialog extends HookConsumerWidget {
               const SizedBox(height: 12),
             ],
 
-            if (pubkey != null && !hasWalletConnection.value) ...[
+            if (!hasWalletConnection.value) ...[
               InkWell(
-                onTap: signer == null
-                    ? null
-                    : () async {
-                        final connected = await showBaseDialog<bool>(
-                          context: context,
-                          dialog: NWCConnectionDialogInline(signer: signer),
-                        );
-                        if (connected == true) {
-                          hasWalletConnection.value = true;
-                        }
-                      },
+                onTap: () async {
+                  final connected = await showBaseDialog<bool>(
+                    context: context,
+                    dialog: const NWCConnectionDialogInline(),
+                  );
+                  if (connected == true) {
+                    hasWalletConnection.value = true;
+                  }
+                },
                 borderRadius: BorderRadius.circular(8),
                 child: Padding(
                   padding: const EdgeInsets.all(12),
@@ -478,6 +471,8 @@ class ZapAmountDialog extends HookConsumerWidget {
           onPressed: selectedAmount.value > 0
               ? () async {
                   try {
+                    final navigator = Navigator.of(context);
+
                     // Prepare signer (anonymous if needed)
                     var signer = ref.read(Signer.activeSignerProvider);
                     if (signer == null) {
@@ -488,8 +483,8 @@ class ZapAmountDialog extends HookConsumerWidget {
                       await signer.signIn(registerSigner: false);
                     }
 
-                    // Read NWC state (may be empty)
-                    final nwcString = await signer.getNWCString();
+                    // Read NWC from secure storage
+                    final nwcString = await secureStorage.getNWCString();
 
                     // Build zap request
                     final latestMetadata = app.latestFileMetadata;
@@ -516,29 +511,33 @@ class ZapAmountDialog extends HookConsumerWidget {
                     final signedZapRequest = await zapRequest.signWith(signer);
 
                     if (nwcString != null && nwcString.isNotEmpty) {
-                      if (context.mounted) Navigator.of(context).pop(true);
-                      // Continue payment in background (no await)
+                      final amount = selectedAmount.value;
+                      // Capture ScaffoldMessenger before popping (survives navigation)
+                      final messenger = ScaffoldMessenger.maybeOf(context);
+
+                      // Optimistic UX: show success immediately, pop, fire payment
+                      context.showInfo('⚡ Zap sent! $amount sats');
+                      navigator.pop(true);
+
+                      // Fire payment in background - errors shown via ScaffoldMessenger
                       // ignore: unawaited_futures
-                      signedZapRequest
-                          .pay()
-                          .then((_) {
-                            if (context.mounted) {
-                              context.showInfo(
-                                '⚡ Zap successful! ${selectedAmount.value} sats sent',
-                              );
-                            }
-                          })
-                          .catchError((e) {
-                            if (context.mounted) {
-                              context.showError('Zap failed: $e');
-                            }
+                      _executeZapPayment(signedZapRequest, nwcString, ref.ref)
+                          .catchError((Object e, StackTrace st) {
+                            debugPrint('Zap payment failed: $e\n$st');
+                            messenger?.showSnackBar(
+                              SnackBar(
+                                content: Text('Zap failed: $e'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                            return Future<PayInvoiceResult>.error(e, st);
                           });
                     } else {
                       final invoice = await signedZapRequest.getInvoice();
-                      if (context.mounted) Navigator.of(context).pop(true);
                       await Clipboard.setData(ClipboardData(text: invoice));
                       if (context.mounted) {
                         context.showInfo('Invoice copied to clipboard');
+                        navigator.pop(true);
                       }
                     }
                   } catch (e) {
@@ -577,6 +576,21 @@ class ZapAmountDialog extends HookConsumerWidget {
       ],
     );
   }
+}
+
+/// Execute zap payment using NWC connection string from secure storage
+Future<PayInvoiceResult> _executeZapPayment(
+  ZapRequest signedZapRequest,
+  String nwcString,
+  Ref ref,
+) async {
+  final lightningInvoice = await signedZapRequest.getInvoice();
+  final command = PayInvoiceCommand(invoice: lightningInvoice);
+  return await command.execute(
+    connectionUri: nwcString,
+    ref: ref,
+    timeout: const Duration(seconds: 30),
+  );
 }
 
 /// Dialog for entering a custom zap amount
@@ -620,15 +634,14 @@ class CustomAmountDialog extends HookWidget {
 }
 
 /// Inline NWC connection dialog used in zap flow
-class NWCConnectionDialogInline extends HookWidget {
-  final Signer signer;
-
-  const NWCConnectionDialogInline({super.key, required this.signer});
+class NWCConnectionDialogInline extends HookConsumerWidget {
+  const NWCConnectionDialogInline({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final controller = useTextEditingController();
     final isLoading = useState(false);
+    final secureStorage = ref.watch(secureStorageServiceProvider);
 
     return BaseDialog(
       titleIcon: const Text('⚡️'),
@@ -693,7 +706,7 @@ class NWCConnectionDialogInline extends HookWidget {
                   }
                   isLoading.value = true;
                   try {
-                    await signer.setNWCString(nwcString.trim());
+                    await secureStorage.setNWCString(nwcString.trim());
                     if (context.mounted) {
                       Navigator.pop(context, true);
                       context.showInfo(

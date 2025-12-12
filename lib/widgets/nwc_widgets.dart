@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:models/models.dart';
 import 'package:zapstore/services/notification_service.dart';
+import 'package:zapstore/services/secure_storage_service.dart';
 import 'package:zapstore/theme.dart';
 import 'package:zapstore/utils/extensions.dart';
 
 /// NWC connection status states
-enum NWCStatus { notSignedIn, checking, connected, disconnected, error }
+enum NWCStatus { checking, connected, disconnected, error }
 
 /// Card showing NWC connection status and management
 class NWCConnectionCard extends HookConsumerWidget {
@@ -16,38 +16,18 @@ class NWCConnectionCard extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final signer = ref.watch(Signer.activeSignerProvider);
-    final pubkey = ref.watch(Signer.activePubkeyProvider);
-    final isSignedIn = pubkey != null;
+    final secureStorage = ref.watch(secureStorageServiceProvider);
+    final nwcStatus = useState<NWCStatus>(NWCStatus.checking);
 
-    // Reactive NWC state via CustomData keyed by Signer.kNwcConnectionString
-    final nwcState = pubkey == null
-        ? null
-        : ref.watch(
-            query<CustomData>(
-              authors: {pubkey},
-              tags: {
-                '#d': {Signer.kNwcConnectionString},
-              },
-              limit: 1,
-              source: const LocalSource(),
-              subscriptionPrefix: 'nwc-data',
-            ),
-          );
-
-    final NWCStatus nwcStatus = () {
-      if (signer == null || pubkey == null) return NWCStatus.notSignedIn;
-      final state = nwcState;
-      if (state == null) return NWCStatus.checking;
-      return switch (state) {
-        StorageLoading() => NWCStatus.checking,
-        StorageError() => NWCStatus.error,
-        StorageData(:final models) =>
-          (models.isNotEmpty && models.first.content.trim().isNotEmpty)
-              ? NWCStatus.connected
-              : NWCStatus.disconnected,
-      };
-    }();
+    // Check NWC status on mount
+    useEffect(() {
+      secureStorage.hasNWCString().then((hasNwc) {
+        nwcStatus.value = hasNwc ? NWCStatus.connected : NWCStatus.disconnected;
+      }).catchError((_) {
+        nwcStatus.value = NWCStatus.error;
+      });
+      return null;
+    }, []);
 
     return Card(
       child: Padding(
@@ -73,29 +53,14 @@ class NWCConnectionCard extends HookConsumerWidget {
             const SizedBox(height: 12),
 
             Text(
-              isSignedIn
-                  ? 'Use Nostr Wallet Connect (NWC) to zap the developers.'
-                  : 'Connect a Lightning wallet to send zaps. Sign in required.',
+              'Use Nostr Wallet Connect (NWC) to zap the developers.',
               style: context.textTheme.bodySmall,
             ),
 
             const SizedBox(height: 12),
 
             // Connection Status
-            switch (nwcStatus) {
-              NWCStatus.notSignedIn => Row(
-                children: [
-                  Icon(
-                    Icons.warning,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withValues(alpha: 0.6),
-                    size: 16,
-                  ),
-                  const SizedBox(width: 8),
-                  const Expanded(child: Text('Sign in to connect wallet')),
-                ],
-              ),
+            switch (nwcStatus.value) {
               NWCStatus.checking => Row(
                 children: [
                   SizedBox(
@@ -155,77 +120,77 @@ class NWCConnectionCard extends HookConsumerWidget {
             const SizedBox(height: 16),
 
             // Action Buttons
-            if (isSignedIn)
-              Row(
-                children: [
-                  Expanded(
-                    child: TextButton.icon(
-                      onPressed: nwcStatus != NWCStatus.notSignedIn
-                          ? () => _showNWCDialog(context, ref, signer)
-                          : null,
-                      icon: Icon(
-                        Icons.flash_on,
-                        size: 18,
-                        color: Theme.of(context).brightness == Brightness.dark
-                            ? Colors.white
-                            : Theme.of(context).colorScheme.primary,
-                      ),
-                      label: Text(
-                        nwcStatus == NWCStatus.connected
-                            ? 'Update Connection'
-                            : 'Connect Wallet',
-                      ),
-                      style: TextButton.styleFrom(
-                        backgroundColor: AppColors.darkPillBackground,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 10,
-                        ),
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton.icon(
+                    onPressed: () => _showNWCDialog(context, ref, nwcStatus),
+                    icon: Icon(
+                      Icons.flash_on,
+                      size: 18,
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? Colors.white
+                          : Theme.of(context).colorScheme.primary,
+                    ),
+                    label: Text(
+                      nwcStatus.value == NWCStatus.connected
+                          ? 'Update Connection'
+                          : 'Connect Wallet',
+                    ),
+                    style: TextButton.styleFrom(
+                      backgroundColor: AppColors.darkPillBackground,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
                       ),
                     ),
                   ),
-                  if (nwcStatus == NWCStatus.connected) ...[
-                    const SizedBox(width: 8),
-                    FilledButton(
-                      onPressed: () =>
-                          _removeNWCConnection(context, ref, signer),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: Theme.of(context).colorScheme.error,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
-                        ),
-                        minimumSize: const Size(0, 0),
+                ),
+                if (nwcStatus.value == NWCStatus.connected) ...[
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: () =>
+                        _removeNWCConnection(context, ref, nwcStatus),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Theme.of(context).colorScheme.error,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
                       ),
-                      child: const Icon(Icons.delete_outline, size: 18),
+                      minimumSize: const Size(0, 0),
                     ),
-                  ],
+                    child: const Icon(Icons.delete_outline, size: 18),
+                  ),
                 ],
-              ),
+              ],
+            ),
           ],
         ),
       ),
     );
   }
 
-  void _showNWCDialog(BuildContext context, WidgetRef ref, Signer? signer) {
-    if (signer == null) return;
-
-    showDialog(
+  void _showNWCDialog(
+    BuildContext context,
+    WidgetRef ref,
+    ValueNotifier<NWCStatus> nwcStatus,
+  ) async {
+    final connected = await showDialog<bool>(
       context: context,
-      builder: (context) => NWCConnectionDialog(signer: signer),
+      builder: (context) => NWCConnectionDialog(ref: ref),
     );
+    if (connected == true) {
+      nwcStatus.value = NWCStatus.connected;
+    }
   }
 
   void _removeNWCConnection(
     BuildContext context,
     WidgetRef ref,
-    Signer? signer,
+    ValueNotifier<NWCStatus> nwcStatus,
   ) async {
-    if (signer == null) return;
-
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -253,7 +218,9 @@ class NWCConnectionCard extends HookConsumerWidget {
 
     if (confirmed == true) {
       try {
-        await signer.setNWCString('');
+        final secureStorage = ref.read(secureStorageServiceProvider);
+        await secureStorage.clearNWCString();
+        nwcStatus.value = NWCStatus.disconnected;
         if (context.mounted) {
           context.showInfo('Wallet connection removed');
         }
@@ -268,9 +235,9 @@ class NWCConnectionCard extends HookConsumerWidget {
 
 /// Dialog for connecting/updating NWC connection
 class NWCConnectionDialog extends HookWidget {
-  final Signer signer;
+  final WidgetRef ref;
 
-  const NWCConnectionDialog({super.key, required this.signer});
+  const NWCConnectionDialog({super.key, required this.ref});
 
   @override
   Widget build(BuildContext context) {
@@ -367,10 +334,11 @@ class NWCConnectionDialog extends HookWidget {
     isLoading.value = true;
 
     try {
-      await signer.setNWCString(nwcString.trim());
+      final secureStorage = ref.read(secureStorageServiceProvider);
+      await secureStorage.setNWCString(nwcString.trim());
 
       if (context.mounted) {
-        Navigator.pop(context);
+        Navigator.pop(context, true);
         context.showInfo('⚡ Lightning wallet connected successfully!');
       }
     } catch (e) {
@@ -382,4 +350,3 @@ class NWCConnectionDialog extends HookWidget {
     }
   }
 }
-
