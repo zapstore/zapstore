@@ -192,18 +192,16 @@ class AppPackContainer extends HookConsumerWidget {
       return _buildLoadingState(context);
     }
 
-    // Default to Nostr pack, or first available pack
-    final defaultSelection = () {
-      final nostrPack = nonEmptyPacks
-          .where((pack) => pack.id == kNostrCurationSetShareableId)
-          .firstOrNull;
-      return nostrPack?.id ?? nonEmptyPacks.first.id;
-    }();
+    // Show newest packs first (also drives default selection)
+    final sortedPacks = _sortPacksNewestFirst(nonEmptyPacks);
+
+    // Default to the newest available pack
+    final defaultSelection = sortedPacks.first.id;
 
     final selectedAppPack = useState<String?>(defaultSelection);
 
     // Find the selected app pack
-    final selectedPack = nonEmptyPacks
+    final selectedPack = sortedPacks
         .where((pack) => pack.id == selectedAppPack.value)
         .firstOrNull;
 
@@ -225,7 +223,7 @@ class AppPackContainer extends HookConsumerWidget {
                 _buildPackPills(
                   context,
                   ref,
-                  nonEmptyPacks,
+                  sortedPacks,
                   selectedAppPack.value,
                   (id) => selectedAppPack.value = id,
                 ),
@@ -264,18 +262,8 @@ class AppPackContainer extends HookConsumerWidget {
     String? selectedId,
     Function(String?) onSelect,
   ) {
-    // Sort app packs: Nostr pack first, then others
-    final sortedPacks = [...appPacks];
-    sortedPacks.sort((a, b) {
-      // Nostr pack goes first
-      if (a.id == kNostrCurationSetShareableId) return -1;
-      if (b.id == kNostrCurationSetShareableId) return 1;
-      // Others by creation date (newest first)
-      return b.event.createdAt.compareTo(a.event.createdAt);
-    });
-
     return Row(
-      children: sortedPacks.map((appPack) {
+      children: appPacks.map((appPack) {
         final isSelected = selectedId == appPack.id;
         // Load author via profileProvider with caching
         final authorAsync = ref.watch(profileProvider(appPack.event.pubkey));
@@ -354,6 +342,14 @@ class AppPackContainer extends HookConsumerWidget {
         },
       ),
     );
+  }
+
+  static List<AppPack> _sortPacksNewestFirst(List<AppPack> appPacks) {
+    final sortedPacks = [...appPacks];
+    sortedPacks.sort(
+      (a, b) => b.event.createdAt.compareTo(a.event.createdAt),
+    );
+    return sortedPacks;
   }
 }
 

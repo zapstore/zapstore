@@ -9,8 +9,5 @@ const kZapstorePubkey =
 const kFranzapPubkey =
     '726a1e261cc6474674e8285e3951b3bb139be9a773d1acf49dc868db861a1c11';
 
-/// Shareable identifier for the Nostr curation set
-const kNostrCurationSetShareableId = '30267:$kFranzapPubkey:nostr';
-
 /// Identifier for storing user bookmarks
 const kAppBookmarksIdentifier = 'zapstore-bookmarks';
