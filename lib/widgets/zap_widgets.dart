@@ -473,11 +473,11 @@ class ZapAmountDialog extends HookConsumerWidget {
                   try {
                     final navigator = Navigator.of(context);
 
-                    // Prepare signer (anonymous if needed)
+                    // Prepare signer (ephemeral if needed)
                     var signer = ref.read(Signer.activeSignerProvider);
                     if (signer == null) {
                       signer = Bip340PrivateKeySigner(
-                        kAnonymousPrivateKey,
+                        Utils.generateRandomHex64(),
                         ref.ref,
                       );
                       await signer.signIn(registerSigner: false);
@@ -489,6 +489,7 @@ class ZapAmountDialog extends HookConsumerWidget {
                     // Build zap request
                     final latestMetadata = app.latestFileMetadata;
                     final author = app.author.value;
+
                     if (latestMetadata == null || author == null) {
                       throw Exception(
                         'App or author not ready. Please try again.',
@@ -521,17 +522,24 @@ class ZapAmountDialog extends HookConsumerWidget {
 
                       // Fire payment in background - errors shown via ScaffoldMessenger
                       // ignore: unawaited_futures
-                      _executeZapPayment(signedZapRequest, nwcString, ref.ref)
-                          .catchError((Object e, StackTrace st) {
-                            debugPrint('Zap payment failed: $e\n$st');
-                            messenger?.showSnackBar(
+                      _executeZapPayment(
+                        signedZapRequest,
+                        nwcString,
+                        ref.ref,
+                      ).then(
+                        (_) {},
+                        onError: (Object e, StackTrace st) {
+                          if (messenger != null) {
+                            messenger.showSnackBar(
                               SnackBar(
                                 content: Text('Zap failed: $e'),
                                 backgroundColor: Colors.red,
+                                duration: const Duration(seconds: 5),
                               ),
                             );
-                            return Future<PayInvoiceResult>.error(e, st);
-                          });
+                          }
+                        },
+                      );
                     } else {
                       final invoice = await signedZapRequest.getInvoice();
                       await Clipboard.setData(ClipboardData(text: invoice));
@@ -586,11 +594,14 @@ Future<PayInvoiceResult> _executeZapPayment(
 ) async {
   final lightningInvoice = await signedZapRequest.getInvoice();
   final command = PayInvoiceCommand(invoice: lightningInvoice);
-  return await command.execute(
+
+  final result = await command.execute(
     connectionUri: nwcString,
     ref: ref,
     timeout: const Duration(seconds: 30),
   );
+
+  return result;
 }
 
 /// Dialog for entering a custom zap amount

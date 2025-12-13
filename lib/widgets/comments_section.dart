@@ -66,7 +66,8 @@ class CommentsSection extends ConsumerWidget {
                   context,
                 ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
               ),
-              if (comments.isNotEmpty) _CommentCountBadge(count: comments.length),
+              if (comments.isNotEmpty)
+                _CommentCountBadge(count: comments.length),
             ],
           ),
           const SizedBox(height: 12),
@@ -80,7 +81,8 @@ class CommentsSection extends ConsumerWidget {
           // Comments list - only when there are comments
           if (comments.isNotEmpty) ...[
             const SizedBox(height: 16),
-            ...(comments.toList()..sort((a, b) => b.createdAt.compareTo(a.createdAt)))
+            ...(comments.toList()
+                  ..sort((a, b) => b.createdAt.compareTo(a.createdAt)))
                 .map(
                   (comment) => Padding(
                     padding: const EdgeInsets.only(bottom: 16),
@@ -154,8 +156,8 @@ class _CommentCard extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final author = comment.author.value;
-    // Extract version from d tag (thread key)
-    final version = comment.event.getFirstTagValue('d');
+    // Extract version from v tag (per NIP-22 guidance)
+    final version = comment.event.getFirstTagValue('v');
 
     return Card(
       margin: EdgeInsets.zero,
@@ -408,8 +410,8 @@ class _CommentComposer extends HookConsumerWidget {
         // No parentModel for root comments - only A/K/P tags, no e/k/p
       );
 
-      // Add d tag as thread key (version)
-      comment.event.addTagValue('d', versionToComment);
+      // Add v tag for version (per NIP-22 guidance, not d tag)
+      comment.event.addTagValue('v', versionToComment);
 
       final signedComment = await comment.signWith(signer);
 

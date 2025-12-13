@@ -7,8 +7,8 @@ import 'package:zapstore/utils/extensions.dart';
 
 /// Service for reporting errors via NIP-44 encrypted DMs to Zapstore team.
 ///
-/// Uses [kAnonymousPrivateKey] for signing so error reports can be sent
-/// even when the user is not signed in.
+/// Generates an ephemeral signer per report so errors can be sent even when
+/// the user is not signed in.
 class ErrorReportingService {
   ErrorReportingService(this.ref);
 
@@ -31,8 +31,6 @@ class ErrorReportingService {
   Future<void> reportError(Object exception, StackTrace? stackTrace) async {
     // Don't report in debug mode
     if (kDebugMode) {
-      debugPrint('Error (not reported in debug): $exception');
-      debugPrint('$stackTrace');
       return;
     }
 
@@ -50,8 +48,8 @@ class ErrorReportingService {
     }
 
     try {
-      // Create anonymous signer for error reporting
-      final signer = Bip340PrivateKeySigner(kAnonymousPrivateKey, ref);
+      // Create ephemeral signer for error reporting
+      final signer = Bip340PrivateKeySigner(Utils.generateRandomHex64(), ref);
       await signer.signIn(setAsActive: false, registerSigner: false);
 
       // Format error report
@@ -65,19 +63,15 @@ class ErrorReportingService {
 
       // Sign and publish
       final signedDm = await dm.signWith(signer);
-      await ref.read(storageNotifierProvider.notifier).publish(
-        {signedDm},
-        source: const RemoteSource(relays: 'social', stream: false),
-      );
+      await ref.read(storageNotifierProvider.notifier).publish({
+        signedDm,
+      }, source: const RemoteSource(relays: 'social', stream: false));
 
       // Update rate limiting
       _reportedErrors[errorHash] = DateTime.now();
       _sessionReportCount++;
-
-      debugPrint('Error report sent successfully');
     } catch (e) {
       // Silently fail - we don't want error reporting to cause more errors
-      debugPrint('Failed to send error report: $e');
     }
   }
 
@@ -112,4 +106,3 @@ class ErrorReportingService {
 final errorReportingServiceProvider = Provider<ErrorReportingService>(
   ErrorReportingService.new,
 );
-

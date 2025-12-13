@@ -12,11 +12,5 @@ const kFranzapPubkey =
 /// Shareable identifier for the Nostr curation set
 const kNostrCurationSetShareableId = '30267:$kFranzapPubkey:nostr';
 
-/// Anonymous private key for error reporting and anonymous operations
-/// This key is used when the user is not signed in
-const kAnonymousPrivateKey =
-    'c86eda2daae768374526bc54903f388d9a866c00740ec8db418d7ef2dca77b5b';
-
 /// Identifier for storing user bookmarks
 const kAppBookmarksIdentifier = 'zapstore-bookmarks';
-
