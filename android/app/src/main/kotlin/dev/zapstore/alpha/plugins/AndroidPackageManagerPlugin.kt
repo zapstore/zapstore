@@ -50,12 +50,20 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler {
         // Store pending install results keyed by sessionId - completed when broadcast arrives
         private val pendingInstallResults = mutableMapOf<Int, Result>()
         
+        // Store pending user action intents keyed by packageName - for re-launching after foreground
+        private val pendingUserActionIntents = mutableMapOf<String, Intent>()
+        
         /**
          * Called by InstallResultReceiver when installation completes/fails.
          * Completes the pending method channel result so Dart await finishes.
          */
         fun completeInstallResult(sessionId: Int, resultMap: Map<String, Any?>) {
             val result = pendingInstallResults.remove(sessionId)
+            // Also clear any pending user action intent for this package
+            val packageName = resultMap["packageName"] as? String
+            if (packageName != null) {
+                pendingUserActionIntents.remove(packageName)
+            }
             if (result != null) {
                 Log.d(TAG, "Completing install result for session $sessionId: $resultMap")
                 result.success(resultMap)
@@ -69,6 +77,28 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler {
          */
         fun hasPendingResult(sessionId: Int): Boolean {
             return pendingInstallResults.containsKey(sessionId)
+        }
+        
+        /**
+         * Store a pending user action intent for later re-launch
+         */
+        fun storePendingUserActionIntent(packageName: String, intent: Intent) {
+            pendingUserActionIntents[packageName] = intent
+            Log.d(TAG, "Stored pending user action intent for $packageName")
+        }
+        
+        /**
+         * Get and remove a pending user action intent
+         */
+        fun getPendingUserActionIntent(packageName: String): Intent? {
+            return pendingUserActionIntents.remove(packageName)
+        }
+        
+        /**
+         * Check if there's a pending user action for a package
+         */
+        fun hasPendingUserAction(packageName: String): Boolean {
+            return pendingUserActionIntents.containsKey(packageName)
         }
     }
 
@@ -129,6 +159,14 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler {
                     return
                 }
                 launchApp(packageName, result)
+            }
+            "retryPendingInstall" -> {
+                val packageName = call.argument<String>("packageName")
+                if (packageName == null) {
+                    result.error("MISSING_ARGUMENT", "Package name is required", null)
+                    return
+                }
+                retryPendingInstall(packageName, result)
             }
             else -> {
                 result.notImplemented()
@@ -645,6 +683,39 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler {
             result.success(mapOf(
                 "isSuccess" to false,
                 "errorMessage" to "Launch failed: ${e.message}"
+            ))
+        }
+    }
+    
+    /**
+     * Re-launch a pending install prompt that was stored when app was backgrounded.
+     * This allows the user to see the install confirmation dialog again.
+     */
+    private fun retryPendingInstall(packageName: String, result: Result) {
+        val pendingIntent = getPendingUserActionIntent(packageName)
+        if (pendingIntent != null) {
+            try {
+                pendingIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(pendingIntent)
+                result.success(mapOf(
+                    "isSuccess" to true,
+                    "hasPending" to true,
+                    "packageName" to packageName
+                ))
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to re-launch install prompt for $packageName", e)
+                result.success(mapOf(
+                    "isSuccess" to false,
+                    "hasPending" to true,
+                    "errorMessage" to "Failed to launch install prompt: ${e.message}"
+                ))
+            }
+        } else {
+            // No pending intent found - installation might have completed or was never started
+            result.success(mapOf(
+                "isSuccess" to false,
+                "hasPending" to false,
+                "packageName" to packageName
             ))
         }
     }

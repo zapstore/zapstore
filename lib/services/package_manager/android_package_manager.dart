@@ -185,6 +185,22 @@ final class AndroidPackageManager extends PackageManager {
       throw Exception('Failed to launch app: $e');
     }
   }
+  
+  /// Re-launch a pending install prompt that was backgrounded.
+  /// Returns true if there was a pending prompt and it was re-launched.
+  Future<bool> retryPendingInstall(String appId) async {
+    try {
+      final result = await _channel
+          .invokeMethod<Map<Object?, Object?>>('retryPendingInstall', {
+            'packageName': appId,
+          });
+
+      final resultMap = Map<String, dynamic>.from(result ?? {});
+      return resultMap['hasPending'] == true && resultMap['isSuccess'] == true;
+    } catch (e) {
+      return false;
+    }
+  }
 
   @override
   Future<void> syncInstalledPackages() async {

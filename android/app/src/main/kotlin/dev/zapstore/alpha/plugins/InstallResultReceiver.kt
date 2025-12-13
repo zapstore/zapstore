@@ -48,6 +48,9 @@ class InstallResultReceiver : BroadcastReceiver() {
                     intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
                 }
                 if (confirmIntent != null) {
+                    // Store the intent so it can be re-launched if app is backgrounded
+                    AndroidPackageManagerPlugin.storePendingUserActionIntent(packageName, confirmIntent)
+                    
                     confirmIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     try {
                         context.startActivity(confirmIntent)
@@ -89,6 +92,51 @@ class InstallResultReceiver : BroadcastReceiver() {
                     "errorMessage" to "Installation was cancelled by user",
                     "packageName" to packageName,
                     "cancelled" to true
+                ))
+            }
+            
+            PackageInstaller.STATUS_FAILURE_BLOCKED -> {
+                Log.w(TAG, "Installation blocked: $packageName (sessionId=$sessionId)")
+                AndroidPackageManagerPlugin.completeInstallResult(sessionId, mapOf(
+                    "isSuccess" to false,
+                    "errorMessage" to (message ?: "Installation blocked by device policy"),
+                    "packageName" to packageName
+                ))
+            }
+            
+            PackageInstaller.STATUS_FAILURE_CONFLICT -> {
+                Log.w(TAG, "Installation conflict: $packageName (sessionId=$sessionId)")
+                AndroidPackageManagerPlugin.completeInstallResult(sessionId, mapOf(
+                    "isSuccess" to false,
+                    "errorMessage" to (message ?: "Installation conflicts with existing package"),
+                    "packageName" to packageName
+                ))
+            }
+            
+            PackageInstaller.STATUS_FAILURE_INCOMPATIBLE -> {
+                Log.w(TAG, "Installation incompatible: $packageName (sessionId=$sessionId)")
+                AndroidPackageManagerPlugin.completeInstallResult(sessionId, mapOf(
+                    "isSuccess" to false,
+                    "errorMessage" to (message ?: "Package is incompatible with this device"),
+                    "packageName" to packageName
+                ))
+            }
+            
+            PackageInstaller.STATUS_FAILURE_INVALID -> {
+                Log.w(TAG, "Installation invalid: $packageName (sessionId=$sessionId)")
+                AndroidPackageManagerPlugin.completeInstallResult(sessionId, mapOf(
+                    "isSuccess" to false,
+                    "errorMessage" to (message ?: "Invalid installation package"),
+                    "packageName" to packageName
+                ))
+            }
+            
+            PackageInstaller.STATUS_FAILURE_STORAGE -> {
+                Log.w(TAG, "Installation failed - storage: $packageName (sessionId=$sessionId)")
+                AndroidPackageManagerPlugin.completeInstallResult(sessionId, mapOf(
+                    "isSuccess" to false,
+                    "errorMessage" to (message ?: "Insufficient storage space"),
+                    "packageName" to packageName
                 ))
             }
             

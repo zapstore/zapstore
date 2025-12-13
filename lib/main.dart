@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:amber_signer/amber_signer.dart';
 import 'package:zapstore/services/app_restart_service.dart';
+import 'package:zapstore/services/download_service.dart';
 import 'package:zapstore/router.dart';
 import 'package:zapstore/services/error_reporting_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
@@ -280,7 +281,13 @@ class _AppLifecycleObserver with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    final downloadService = _ref.read(downloadServiceProvider.notifier);
+    
     if (state == AppLifecycleState.resumed) {
+      // Notify download service that app is in foreground
+      // This will process any pending installations
+      unawaited(downloadService.setAppForeground(true));
+      
       // App regained focus - re-sync installed packages from Android system
       // This will detect any apps installed/uninstalled outside of Zapstore
       unawaited(
@@ -291,11 +298,16 @@ class _AppLifecycleObserver with WidgetsBindingObserver {
 
       // Force immediate health check on storage/relay connections
       // This detects stale connections after system sleep and triggers reconnection
-
       final notifier =
           _ref.read(storageNotifierProvider.notifier)
               as PurplebaseStorageNotifier;
       notifier.ensureConnected();
+    } else if (state == AppLifecycleState.paused || 
+               state == AppLifecycleState.inactive ||
+               state == AppLifecycleState.detached ||
+               state == AppLifecycleState.hidden) {
+      // Notify download service that app is in background
+      unawaited(downloadService.setAppForeground(false));
     }
   }
 }

@@ -7,7 +7,21 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/utils/extensions.dart';
 
+import '../services/package_manager/android_package_manager.dart';
 import '../services/package_manager/package_manager.dart';
+
+/// Helper class for queued downloads waiting for a slot
+class _QueuedDownload {
+  final String appId;
+  final String appName;
+  final FileMetadata fileMetadata;
+
+  _QueuedDownload({
+    required this.appId,
+    required this.appName,
+    required this.fileMetadata,
+  });
+}
 
 /// Simplified Download Service leveraging background_downloader package
 ///
@@ -88,10 +102,91 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
 
   final Ref ref;
   late final FileDownloader _downloader;
-  
+
   // Installation queue to prevent concurrent installations
   final List<String> _installQueue = [];
   bool _isInstallingFromQueue = false;
+
+  // Download queue for when 3+ concurrent downloads are requested
+  final List<_QueuedDownload> _downloadQueue = [];
+
+  // Track pending installations (downloaded while app was backgrounded, non-silent only)
+  final Set<String> _pendingInstallations = {};
+
+  // App lifecycle state
+  bool _isAppInForeground = true;
+
+  /// Set app foreground state (called from lifecycle observer)
+  Future<void> setAppForeground(bool inForeground) async {
+    final wasBackground = !_isAppInForeground;
+    _isAppInForeground = inForeground;
+
+    // When returning to foreground, handle stalled installations and process pending
+    if (inForeground && wasBackground) {
+      await _handleReturnToForeground();
+    }
+  }
+
+  /// Handle returning to foreground - retry stalled installations and process pending
+  Future<void> _handleReturnToForeground() async {
+    // Find any apps stuck in "installing" state (stalled while backgrounded)
+    final stalledApps = state.entries
+        .where((e) => e.value.isInstalling)
+        .map((e) => e.key)
+        .toList();
+
+    // Try to re-launch pending install prompts for stalled apps
+    // The Android side stores the confirmation intent when user action is needed
+    final packageManager = ref.read(packageManagerProvider.notifier);
+    for (final appId in stalledApps) {
+      // Try to re-launch the pending install prompt
+      // This re-uses the existing Android session instead of creating a new one
+      if (packageManager is AndroidPackageManager) {
+        final relaunched = await packageManager.retryPendingInstall(appId);
+        if (relaunched) {
+          // Successfully re-launched the prompt, keep isInstalling: true
+          // The existing await in _processInstallQueue will complete when user confirms
+          continue;
+        }
+      }
+
+      // No pending prompt found - mark as ready to install for manual retry
+      final downloadInfo = state[appId];
+      if (downloadInfo != null) {
+        state = {
+          ...state,
+          appId: downloadInfo.copyWith(
+            isInstalling: false,
+            isReadyToInstall: true,
+          ),
+        };
+      }
+    }
+
+    // If there were stalled apps without pending prompts, reset the lock
+    final stalledWithoutPrompt = stalledApps.where((appId) {
+      final info = state[appId];
+      return info != null && !info.isInstalling && info.isReadyToInstall;
+    }).toList();
+
+    if (stalledWithoutPrompt.isNotEmpty) {
+      _isInstallingFromQueue = false;
+    }
+
+    // Process pending installations (downloads that completed while backgrounded)
+    if (_pendingInstallations.isNotEmpty) {
+      await _processPendingInstallations();
+    }
+
+    // Process the install queue
+    _processInstallQueue();
+  }
+
+  /// Get count of pending installations
+  int get pendingInstallationCount => _pendingInstallations.length;
+
+  /// Get count of queued downloads waiting for a slot
+  int get queuedDownloadCount => _downloadQueue.length;
 
   @override
   void dispose() {
@@ -161,8 +256,9 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
   Future<void> _clearExistingDownloads() async {
     try {
       // Remove any tracked tasks and their files (including completed ones)
-      final trackedRecords = await _downloader.database
-          .allRecords(group: FileDownloader.defaultGroup);
+      final trackedRecords = await _downloader.database.allRecords(
+        group: FileDownloader.defaultGroup,
+      );
 
       for (final record in trackedRecords) {
         final task = record.task;
@@ -200,8 +296,9 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
       }
 
       // Clear persisted task records (completed/failed and active)
-      await _downloader.database
-          .deleteAllRecords(group: FileDownloader.defaultGroup);
+      await _downloader.database.deleteAllRecords(
+        group: FileDownloader.defaultGroup,
+      );
 
       // Reset downloader state
       await _downloader.reset();
@@ -307,7 +404,7 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
       );
     }
 
-    // Check if already downloading
+    // Check if already downloading or queued
     if (state.containsKey(app.identifier)) {
       final existing = state[app.identifier]!;
       if (existing.status == TaskStatus.running ||
@@ -316,7 +413,12 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
       }
     }
 
-    // Enforce maximum 3 concurrent downloads
+    // Check if already in download queue
+    if (_downloadQueue.any((q) => q.appId == app.identifier)) {
+      return; // Already queued
+    }
+
+    // Count active downloads
     final activeDownloads = state.values
         .where(
           (info) =>
@@ -326,11 +428,43 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
         )
         .length;
 
+    // If at max concurrent, queue instead of throwing
     if (activeDownloads >= 3) {
-      throw Exception(
-        'Maximum concurrent downloads (3) reached. '
-        'Please wait for current downloads to complete.',
+      _downloadQueue.add(
+        _QueuedDownload(
+          appId: app.identifier,
+          appName: app.name ?? app.identifier,
+          fileMetadata: fileMetadata,
+        ),
       );
+      return; // Will be started when a slot frees up
+    }
+
+    // Start the download
+    await _startDownloadInternal(
+      app.identifier,
+      app.name ?? app.identifier,
+      fileMetadata,
+    );
+  }
+
+  /// Internal method to start a download (doesn't check limits)
+  Future<void> _startDownloadInternal(
+    String appId,
+    String appName,
+    FileMetadata fileMetadata,
+  ) async {
+    final packageManager = ref.read(packageManagerProvider.notifier);
+    final platform = packageManager.platform;
+
+    String? downloadUrl;
+    if (fileMetadata.platforms.contains(platform) ||
+        fileMetadata.platforms.isEmpty) {
+      downloadUrl = fileMetadata.urls.firstOrNull;
+    }
+
+    if (downloadUrl == null || downloadUrl.isEmpty) {
+      return; // Skip if no URL available
     }
 
     // Use FileMetadata hash as filename with platform-specific extension
@@ -338,43 +472,57 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
     final fileName = '${fileMetadata.hash}$packageExtension';
 
     // Create download task with built-in retry
-    // Use a more unique task ID to prevent collisions
     final taskId =
-        '${app.identifier}_${DateTime.now().millisecondsSinceEpoch}_${UniqueKey().toString()}';
+        '${appId}_${DateTime.now().millisecondsSinceEpoch}_${UniqueKey().toString()}';
     final task = DownloadTask(
       taskId: taskId,
       url: downloadUrl,
       filename: fileName,
       updates: Updates.statusAndProgress,
       requiresWiFi: false,
-      retries: 3, // Built-in retry logic
+      retries: 3,
       allowPause: true,
-      metaData: app.identifier, // Store app ID for easy lookup
-      displayName: app.name ?? app.identifier, // Show app name in notifications
+      metaData: appId,
+      displayName: appName,
     );
 
     // Update state with initial progress of 0.0
     state = {
       ...state,
-      app.identifier: DownloadInfo(
-        appId: app.identifier,
+      appId: DownloadInfo(
+        appId: appId,
         task: task,
         fileMetadata: fileMetadata,
-        progress: 0.0, // Explicitly set initial progress
+        progress: 0.0,
       ),
     };
 
     try {
-      // Enqueue the download
       final result = await _downloader.enqueue(task);
-
       if (!result) {
-        throw Exception('Failed to start download');
+        state = Map.from(state)..remove(appId);
       }
     } catch (e) {
-      // Remove from state on failure
-      state = Map.from(state)..remove(app.identifier);
-      rethrow;
+      state = Map.from(state)..remove(appId);
+    }
+  }
+
+  /// Start next download from queue when a slot frees up
+  void _startNextQueuedDownload() {
+    if (_downloadQueue.isEmpty) return;
+
+    final activeDownloads = state.values
+        .where(
+          (info) =>
+              info.status == TaskStatus.running ||
+              info.status == TaskStatus.enqueued ||
+              info.status == TaskStatus.waitingToRetry,
+        )
+        .length;
+
+    if (activeDownloads < 3) {
+      final next = _downloadQueue.removeAt(0);
+      _startDownloadInternal(next.appId, next.appName, next.fileMetadata);
     }
   }
 
@@ -424,16 +572,25 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
             errorDetails: errorDetails,
           ),
         };
+
+        // Start next queued download on failure
+        _startNextQueuedDownload();
       } else if (update.status == TaskStatus.paused) {
         state = {...state, appId: currentInfo.copyWith(status: update.status)};
       } else if (update.status == TaskStatus.canceled) {
         state = {...state, appId: currentInfo.copyWith(status: update.status)};
+
+        // Start next queued download on cancel
+        _startNextQueuedDownload();
       } else {
         state = {...state, appId: currentInfo.copyWith(status: update.status)};
 
         // Handle completion
         if (update.status == TaskStatus.complete) {
           _handleDownloadComplete(appId);
+
+          // Start next queued download on complete
+          _startNextQueuedDownload();
         }
       }
     } else if (update is TaskProgressUpdate) {
@@ -457,107 +614,142 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
     final downloadInfo = state[appId];
     // ignore: unnecessary_null_comparison
     if (downloadInfo == null) return; // Early exit if already removed
-    
-    // Add to installation queue
+
+    // Check if this app can be installed silently
+    final packageManager = ref.read(packageManagerProvider.notifier);
+    final canSilent = await packageManager.canInstallSilently(appId);
+
+    // If app is backgrounded AND this is NOT a silent install, defer to pending
+    if (!_isAppInForeground && !canSilent) {
+      _pendingInstallations.add(appId);
+      // Update state to show ready-to-install
+      state = {...state, appId: downloadInfo.copyWith(isReadyToInstall: true)};
+      return;
+    }
+
+    // App is in foreground OR this is a silent install - proceed normally
     if (!_installQueue.contains(appId)) {
       _installQueue.add(appId);
     }
-    
+
     // Process queue if not already processing
     _processInstallQueue();
   }
-  
+
+  /// Process installations that were pending while app was backgrounded
+  Future<void> _processPendingInstallations() async {
+    if (_pendingInstallations.isEmpty) return;
+
+    // Move all pending to install queue (keep isReadyToInstall: true until actually installing)
+    for (final appId in _pendingInstallations) {
+      if (!_installQueue.contains(appId)) {
+        _installQueue.add(appId);
+      }
+    }
+    _pendingInstallations.clear();
+
+    // Process the queue (will show system dialogs one after another)
+    _processInstallQueue();
+  }
+
   /// Process installation queue sequentially to prevent concurrent installations.
   Future<void> _processInstallQueue() async {
     // Don't start processing if already processing
     if (_isInstallingFromQueue) return;
-    
+
     // Don't process if queue is empty
     if (_installQueue.isEmpty) return;
-    
+
     _isInstallingFromQueue = true;
-    
-    while (_installQueue.isNotEmpty) {
-      final appId = _installQueue.first;
-      final downloadInfo = state[appId];
-      
-      // Skip if download info no longer exists
-      if (downloadInfo == null) {
-        _installQueue.removeAt(0);
-        continue;
-      }
-      
-      try {
-        // Get the downloaded file path
-        final filePath = await downloadInfo.task.filePath();
 
-        // Update state to show installing
-        state = {...state, appId: downloadInfo.copyWith(isInstalling: true)};
+    try {
+      while (_installQueue.isNotEmpty) {
+        // Remove from queue FIRST to prevent race conditions
+        final appId = _installQueue.removeAt(0);
+        final downloadInfo = state[appId];
 
-        // Use the stored file metadata from the download info
-        final fileMetadata = downloadInfo.fileMetadata;
+        // Skip if download info no longer exists
+        if (downloadInfo == null) {
+          continue;
+        }
 
-        final packageManager = ref.read(packageManagerProvider.notifier);
-        await packageManager.install(
-          appId,
-          filePath,
-          expectedHash: fileMetadata.hash,
-          expectedSize: fileMetadata.size ?? 0,
-        );
-        
-        // Installation succeeded - clean up downloaded file
         try {
-          final file = File(filePath);
-          if (await file.exists()) {
-            await file.delete();
+          // Get the downloaded file path
+          final filePath = await downloadInfo.task.filePath();
+
+          // Update state to show installing (and clear ready-to-install)
+          state = {
+            ...state,
+            appId: downloadInfo.copyWith(
+              isInstalling: true,
+              isReadyToInstall: false,
+            ),
+          };
+
+          // Use the stored file metadata from the download info
+          final fileMetadata = downloadInfo.fileMetadata;
+
+          final packageManager = ref.read(packageManagerProvider.notifier);
+          await packageManager.install(
+            appId,
+            filePath,
+            expectedHash: fileMetadata.hash,
+            expectedSize: fileMetadata.size ?? 0,
+          );
+
+          // Installation succeeded - clean up downloaded file
+          try {
+            final file = File(filePath);
+            if (await file.exists()) {
+              await file.delete();
+            }
+          } catch (_) {
+            // Continue even if deletion fails
           }
-        } catch (_) {
-          // Continue even if deletion fails
-        }
-        
-        // Remove from state (installation complete)
-        state = Map.from(state)..remove(appId);
-        
-        // Remove from queue
-        _installQueue.removeAt(0);
-        
-        // Add a small delay between installations
-        if (_installQueue.isNotEmpty) {
-          await Future.delayed(const Duration(milliseconds: 500));
-        }
-      } catch (e) {
-        // Installation failed
-        _installQueue.removeAt(0);
-        
-        final errorMessage = e.toString();
-        
-        // Detect certificate mismatch
-        final isCertificateMismatch = 
-          errorMessage.contains('signatures do not match') ||
-          errorMessage.contains('INSTALL_FAILED_UPDATE_INCOMPATIBLE') ||
-          errorMessage.contains('UPDATE_INCOMPATIBLE');
-        
-        // Detect user cancellation
-        final wasCancelled = errorMessage.contains('cancelled');
-        
-        if (wasCancelled) {
-          // User cancelled - just remove from state
+
+          // Remove from state (installation complete)
           state = Map.from(state)..remove(appId);
-        } else {
-          // Keep download info but mark as ready to install (can retry)
-          state = Map.from(state)
-            ..[appId] = downloadInfo.copyWith(
-              isInstalling: false,
-              isReadyToInstall: true,
-              errorDetails: isCertificateMismatch 
-                ? 'CERTIFICATE_MISMATCH'
-                : errorMessage.replaceFirst('Exception: ', ''),
-            );
+
+          // Add a small delay between installations
+          if (_installQueue.isNotEmpty) {
+            await Future.delayed(const Duration(milliseconds: 500));
+          }
+        } catch (e) {
+          // Installation failed for this app - continue with others
+          final errorMessage = e.toString();
+
+          // Detect certificate mismatch
+          final isCertificateMismatch =
+              errorMessage.contains('signatures do not match') ||
+              errorMessage.contains('INSTALL_FAILED_UPDATE_INCOMPATIBLE') ||
+              errorMessage.contains('UPDATE_INCOMPATIBLE');
+
+          // Detect user cancellation
+          final wasCancelled = errorMessage.contains('cancelled');
+
+          if (wasCancelled) {
+            // User cancelled - just remove from state
+            state = Map.from(state)..remove(appId);
+          } else {
+            // Keep download info but mark as ready to install (can retry)
+            state = Map.from(state)
+              ..[appId] = downloadInfo.copyWith(
+                isInstalling: false,
+                isReadyToInstall: true,
+                errorDetails: isCertificateMismatch
+                    ? 'CERTIFICATE_MISMATCH'
+                    : errorMessage.replaceFirst('Exception: ', ''),
+              );
+          }
+
+          // Continue processing other apps in queue
+          continue;
         }
       }
+    } finally {
+      // Always reset the lock, even if an unexpected error occurs
+      _isInstallingFromQueue = false;
     }
-    
-    _isInstallingFromQueue = false;
   }
 
   /// Pause a download
@@ -694,18 +886,13 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
       }
 
       // Update state to mark as no longer ready to install (about to install)
-      state = {
-        ...state,
-        appId: downloadInfo.copyWith(
-          isReadyToInstall: false,
-        ),
-      };
+      state = {...state, appId: downloadInfo.copyWith(isReadyToInstall: false)};
 
       // Add to installation queue instead of installing directly
       if (!_installQueue.contains(appId)) {
         _installQueue.add(appId);
       }
-      
+
       // Process queue if not already processing
       _processInstallQueue();
     } catch (e) {
