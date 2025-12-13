@@ -75,12 +75,7 @@ class AppHeader extends StatelessWidget {
                     minFontSize: 16,
                   ),
                   const SizedBox(height: 16),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      VersionPillWidget(app: app, showUpdateArrow: true),
-                    ],
-                  ),
+                VersionPillWidget(app: app, showUpdateArrow: true),
                 ],
               ),
             ),

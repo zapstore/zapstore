@@ -86,13 +86,15 @@ class VersionPillWidget extends HookConsumerWidget {
         ),
 
         // Arrow icon (always arrow, forbidden icon is in the pill itself)
-        Icon(
-          Icons.arrow_right,
-          size: 16,
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: Icon(
+            Icons.arrow_right,
+            size: 16,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
         ),
 
-        // Available version pill (highlighted for update, greyed for downgrade)
         _buildVersionPill(
           context,
           ref,
@@ -120,8 +122,8 @@ class VersionPillWidget extends HookConsumerWidget {
     bool isInstalledVersion = false,
     bool isDowngrade = false,
   }) {
-    // Trim version text to max 8 characters to make room for icon
-    String displayVersion = _displayVersion(version);
+    // Use full version text; no trimming
+    final displayVersion = version;
 
     // Determine app status for icon
     Widget? statusIcon;
@@ -168,8 +170,9 @@ class VersionPillWidget extends HookConsumerWidget {
         children: [
           Text(
             displayVersion,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+            maxLines: null,
+            overflow: TextOverflow.visible,
+            softWrap: true,
             style: context.textTheme.labelMedium?.copyWith(
               fontWeight: FontWeight.bold,
               color: finalTextColor,
@@ -186,10 +189,6 @@ class VersionPillWidget extends HookConsumerWidget {
         ],
       ),
     );
-  }
-
-  String _displayVersion(String version) {
-    return version.length > 10 ? '${version.substring(0, 9)}...' : version;
   }
 
   // No width enforcement; both pills share the same text style
