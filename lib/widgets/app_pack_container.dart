@@ -69,7 +69,7 @@ class AppPackContainer extends HookConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Skeleton pills
+        // Skeleton pills - match actual pill structure with "by (author)" section
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: Padding(
@@ -83,15 +83,7 @@ class AppPackContainer extends HookConsumerWidget {
                 child: Row(
                   children: List.generate(
                     3,
-                    (index) => Container(
-                      width: 120,
-                      height: 32,
-                      margin: const EdgeInsets.only(right: 12),
-                      decoration: BoxDecoration(
-                        color: AppColors.darkSkeletonBase,
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
+                    (index) => _buildSkeletonPill(context),
                   ),
                 ),
               ),
@@ -99,10 +91,69 @@ class AppPackContainer extends HookConsumerWidget {
           ),
         ),
 
-        // Skeleton grid
-        const SizedBox(height: 24),
+        // Skeleton grid - match actual spacing (16, not 24)
+        const SizedBox(height: 16),
         _buildSelectedAppsGrid(context, []), // Empty list shows skeletons
       ],
+    );
+  }
+
+  /// Skeleton pill that matches actual pill dimensions including "by (author)" section
+  static Widget _buildSkeletonPill(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 16),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest
+              .withValues(alpha: 0.8),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Pack name skeleton
+            Container(
+              height: 16,
+              width: 50,
+              decoration: BoxDecoration(
+                color: AppColors.darkSkeletonBase,
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+            // "by" text skeleton
+            const SizedBox(width: 4),
+            Container(
+              height: 14,
+              width: 16,
+              decoration: BoxDecoration(
+                color: AppColors.darkSkeletonBase,
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+            const SizedBox(width: 6),
+            // Author avatar skeleton
+            Container(
+              width: 18,
+              height: 18,
+              decoration: BoxDecoration(
+                color: AppColors.darkSkeletonBase,
+                borderRadius: BorderRadius.circular(9),
+              ),
+            ),
+            const SizedBox(width: 6),
+            // Author name skeleton
+            Container(
+              height: 14,
+              width: 50,
+              decoration: BoxDecoration(
+                color: AppColors.darkSkeletonBase,
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

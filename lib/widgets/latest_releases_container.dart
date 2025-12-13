@@ -183,10 +183,15 @@ class LatestReleasesContainer extends HookConsumerWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Latest Releases', style: context.textTheme.headlineMedium),
-              TextButton(
-                onPressed: null, // Disabled during loading
-                child: const Text('See more'),
+              // Match actual content: headlineSmall, not headlineMedium
+              Text('Latest Releases', style: context.textTheme.headlineSmall),
+              // Match actual content: show button but make it invisible to reserve space
+              Opacity(
+                opacity: 0,
+                child: TextButton(
+                  onPressed: null,
+                  child: const Text('See more'),
+                ),
               ),
             ],
           ),

@@ -20,6 +20,7 @@ import 'package:zapstore/services/package_manager/android_package_manager.dart';
 import 'package:zapstore/services/package_manager/dummy_package_manager.dart';
 import 'package:zapstore/services/market_intent_service.dart';
 import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/widgets/breathing_logo.dart';
 
 /// Global provider container for error reporting (accessible outside widget tree)
 late final ProviderContainer _providerContainer;
@@ -188,12 +189,8 @@ class ZapstoreHome extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.rocket_launch,
-              size: 64,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-            const SizedBox(height: 16),
+            const BreathingLogo(size: 120),
+            const SizedBox(height: 24),
             Text('Zapstore', style: context.textTheme.headlineMedium),
             const SizedBox(height: 8),
             Text(

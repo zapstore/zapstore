@@ -4,6 +4,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
+import 'package:markdown/markdown.dart' as md;
 import 'package:skeletonizer/skeletonizer.dart';
 import 'package:background_downloader/background_downloader.dart';
 import 'package:zapstore/utils/extensions.dart';
@@ -57,6 +58,13 @@ class AppCard extends HookConsumerWidget {
 
     // Use the working author (provided, relationship, or fallback)
     final actualAuthor = author ?? relationshipAuthor ?? fallbackAuthor;
+    final descriptionStyle = context.textTheme.bodyMedium?.copyWith(
+      height: 1.5,
+      color: AppColors.darkOnSurfaceSecondary,
+    );
+    final descriptionText = app!.description.isNotEmpty
+        ? _stripMarkdown(app!.description)
+        : 'No description available';
 
     return GestureDetector(
       onTap: () {
@@ -88,40 +96,57 @@ class AppCard extends HookConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // App Name and Version Row
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          app!.name ?? app!.identifier,
-                          style: context.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 0.1,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
-                        ),
+                  // App Name and Version
+                  if (showUpdateButton) ...[
+                    // When showing update button: name on top, version below
+                    Text(
+                      app!.name ?? app!.identifier,
+                      style: context.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.1,
                       ),
-                      const SizedBox(width: 12),
-                      VersionPillWidget(
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                    const SizedBox(height: 6),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: VersionPillWidget(
                         app: app!,
                         showUpdateArrow: showUpdateArrow,
                       ),
-                    ],
-                  ),
+                    ),
+                  ] else ...[
+                    // Default: name and version in same row
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            app!.name ?? app!.identifier,
+                            style: context.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.1,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        VersionPillWidget(
+                          app: app!,
+                          showUpdateArrow: showUpdateArrow,
+                        ),
+                      ],
+                    ),
+                  ],
 
                   const SizedBox(height: 12),
 
-                  // App Description with improved readability
+                  // App Description rendered as plain text (markdown stripped)
                   Text(
-                    app!.description.isNotEmpty
-                        ? app!.description
-                        : 'No description available',
-                    style: context.textTheme.bodyMedium?.copyWith(
-                      height: 1.5,
-                      color: AppColors.darkOnSurfaceSecondary,
-                    ),
+                    descriptionText,
+                    style: descriptionStyle,
                     overflow: TextOverflow.ellipsis,
                     maxLines: 3,
                     softWrap: true,
@@ -268,13 +293,59 @@ class AppCard extends HookConsumerWidget {
     );
   }
 
+  /// Parses markdown and returns plain text without formatting artifacts.
+  String _stripMarkdown(String input) {
+    final doc = md.Document(encodeHtml: false);
+    final nodes = doc.parseLines(input.split('\n'));
+    final buffer = StringBuffer();
+
+    void writeNode(md.Node node) {
+      if (node is md.Text) {
+        buffer.write(node.text);
+        return;
+      }
+
+      if (node is md.Element) {
+        // Preserve spacing for block-level elements
+        final isBlock = const {
+          'p',
+          'li',
+          'ul',
+          'ol',
+          'blockquote',
+          'h1',
+          'h2',
+          'h3',
+          'h4',
+          'h5',
+          'h6',
+        }.contains(node.tag);
+
+        if (node.tag == 'br') buffer.write('\n');
+
+        for (final child in node.children ?? []) {
+          writeNode(child);
+        }
+
+        if (isBlock) buffer.write('\n');
+      }
+    }
+
+    for (final node in nodes) {
+      writeNode(node);
+    }
+
+    return buffer.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
   Widget _buildSkeleton(BuildContext context) {
     return SkeletonizerConfig(
       data: AppColors.getSkeletonizerConfig(Theme.of(context).brightness),
       child: Skeletonizer(
         enabled: true,
         child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          // Match actual content: vertical: 6, not 8
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(20),
@@ -287,6 +358,7 @@ class AppCard extends HookConsumerWidget {
             ),
           ),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // App icon skeleton
               Container(
@@ -326,7 +398,7 @@ class AppCard extends HookConsumerWidget {
                       ],
                     ),
                     const SizedBox(height: 12),
-                    // Description skeleton
+                    // Description skeleton - 3 lines to match actual maxLines: 3
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -338,10 +410,19 @@ class AppCard extends HookConsumerWidget {
                             borderRadius: BorderRadius.circular(4),
                           ),
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 6),
                         Container(
                           height: 16,
-                          width: 200,
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            color: AppColors.darkSkeletonBase,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Container(
+                          height: 16,
+                          width: 140,
                           decoration: BoxDecoration(
                             color: AppColors.darkSkeletonBase,
                             borderRadius: BorderRadius.circular(4),
@@ -349,9 +430,9 @@ class AppCard extends HookConsumerWidget {
                         ),
                       ],
                     ),
-                    // Author skeleton (only if showSignedBy is true)
+                    // Author skeleton (only if showSignedBy is true) - match Gap(14) spacing
                     if (showSignedBy) ...[
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 14),
                       Row(
                         children: [
                           CircleAvatar(

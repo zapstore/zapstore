@@ -38,10 +38,6 @@ class ProfileScreen extends ConsumerWidget {
 
           const SizedBox(height: 24),
 
-          // Debug Messages Section
-          const _DebugMessagesSection(),
-          const SizedBox(height: 24),
-
           // Settings Heading
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -53,18 +49,6 @@ class ProfileScreen extends ConsumerWidget {
           // Lightning Wallet Section
           const NWCConnectionCard(),
 
-          const SizedBox(height: 24),
-
-          // Advanced Heading
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: Text('Advanced', style: context.textTheme.headlineSmall),
-          ),
-
-          const SizedBox(height: 16),
-
-          // Relay Management Section - disabled due to API changes
-          // const _RelayManagementSection(),
           const SizedBox(height: 16),
 
           // Data Management Section
@@ -74,6 +58,11 @@ class ProfileScreen extends ConsumerWidget {
 
           // About Section
           _AboutSection(),
+
+          const SizedBox(height: 24),
+
+          // Debug Messages Section
+          const _DebugMessagesSection(),
           const SizedBox(height: 24),
         ],
       ),
@@ -233,9 +222,6 @@ class _AuthenticationSection extends ConsumerWidget {
   Future<void> _signOut(BuildContext context, WidgetRef ref) async {
     try {
       await ref.read(amberSignerProvider).signOut();
-      if (context.mounted) {
-        context.showInfo('Signed out successfully');
-      }
     } catch (e) {
       if (context.mounted) {
         context.showError('Sign out failed: $e');

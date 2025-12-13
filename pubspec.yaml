@@ -53,6 +53,7 @@ dependencies:
   connectivity_plus: ^7.0.0
   app_links: ^6.4.1
   flutter_secure_storage: ^10.0.0
+  markdown: ^7.3.0
 
 dependency_overrides:
   models:

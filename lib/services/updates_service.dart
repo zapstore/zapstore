@@ -75,8 +75,7 @@ class CategorizedAppsNotifier extends StateNotifier<CategorizedApps> {
         },
         and: (app) => {
           app.latestRelease,
-          if (app.latestRelease.value != null)
-            app.latestRelease.value!.latestMetadata,
+          app.latestRelease.value?.latestMetadata,
         },
         source: const LocalAndRemoteSource(
           relays: 'AppCatalog',
