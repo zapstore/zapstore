@@ -221,6 +221,7 @@ final appInitializationProvider = FutureProvider<void>((ref) async {
         databasePath: dbPath,
         defaultQuerySource: LocalAndRemoteSource(relays: 'AppCatalog'),
         defaultRelays: {
+          'default': {'wss://relay.zapstore.dev'},
           'bootstrap': {'wss://purplepag.es', 'wss://relay.zapstore.dev'},
           'AppCatalog': {'wss://relay.zapstore.dev'},
           'social': {

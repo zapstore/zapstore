@@ -6,7 +6,6 @@ import 'package:models/models.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:zapstore/utils/debug_utils.dart';
 import 'package:zapstore/utils/extensions.dart';
-import 'package:zapstore/services/profile_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/widgets/app_detail_widgets.dart';
 import 'package:zapstore/widgets/app_header.dart';
@@ -136,8 +135,14 @@ class _AppDetailView extends HookConsumerWidget {
     );
 
     // Query author profile from social relays
-    final authorAsync = ref.watch(profileProvider(app.pubkey));
-    final author = authorAsync.value;
+    final authorState = ref.watch(query<Profile>(
+      authors: {app.pubkey},
+      source: const LocalAndRemoteSource(relays: {'social', 'vertex'}, cachedFor: Duration(hours: 2)),
+    ));
+    final author = switch (authorState) {
+      StorageData(:final models) => models.firstOrNull,
+      _ => null,
+    };
 
     // Use loaded version from state
     final currentApp = appState.models.firstOrNull ?? app;

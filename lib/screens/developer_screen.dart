@@ -13,7 +13,6 @@ import '../widgets/app_card.dart';
 import '../widgets/profile_header.dart';
 import '../widgets/zap_widgets.dart';
 import '../services/notification_service.dart';
-import '../services/profile_service.dart';
 
 /// Developer profile and apps screen
 class DeveloperScreen extends HookConsumerWidget {
@@ -26,8 +25,16 @@ class DeveloperScreen extends HookConsumerWidget {
     final scrollController = useScrollController();
 
     // Load developer profile
-    final profileAsync = ref.watch(profileProvider(pubkey));
-    final profile = profileAsync.value;
+    final profileState = ref.watch(query<Profile>(
+      authors: {pubkey},
+      source: const LocalAndRemoteSource(relays: {'social', 'vertex'}, cachedFor: Duration(hours: 2)),
+    ));
+    final profile = switch (profileState) {
+      StorageData(:final models) => models.firstOrNull,
+      _ => null,
+    };
+    final isProfileLoading = profileState is StorageLoading;
+    final hasProfileError = profileState is StorageError;
 
     // Shared developer apps query (AppCatalog)
     final developerAppsState = ref.watch(
@@ -57,8 +64,8 @@ class DeveloperScreen extends HookConsumerWidget {
             // Developer header - always show, with skeleton if loading
             _DeveloperHeader(
               profile: profile,
-              isLoading: profileAsync.isLoading,
-              hasError: profileAsync.hasError,
+              isLoading: isProfileLoading,
+              hasError: hasProfileError,
             ),
 
             // Zaps list for all developer's apps
@@ -86,8 +93,8 @@ class DeveloperScreen extends HookConsumerWidget {
                           ),
                           _DeveloperAboutTab(
                             profile: profile,
-                            isLoading: profileAsync.isLoading,
-                            hasError: profileAsync.hasError,
+                            isLoading: isProfileLoading,
+                            hasError: hasProfileError,
                           ),
                         ],
                       ),
@@ -138,9 +145,15 @@ class _DeveloperAppsTab extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Query author profile from 'social' relay group
-    final authorAsync = ref.watch(profileProvider(pubkey));
-    final author = authorAsync.value;
+    // Query author profile with caching
+    final authorState = ref.watch(query<Profile>(
+      authors: {pubkey},
+      source: const LocalAndRemoteSource(relays: {'social', 'vertex'}, cachedFor: Duration(hours: 2)),
+    ));
+    final author = switch (authorState) {
+      StorageData(:final models) => models.firstOrNull,
+      _ => null,
+    };
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

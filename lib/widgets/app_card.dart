@@ -10,7 +10,6 @@ import 'package:background_downloader/background_downloader.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/url_utils.dart';
 import 'package:zapstore/services/download_service.dart';
-import 'package:zapstore/services/profile_service.dart';
 import 'package:zapstore/widgets/zap_widgets.dart';
 
 import 'author_container.dart';
@@ -45,19 +44,22 @@ class AppCard extends HookConsumerWidget {
       return _buildSkeleton(context);
     }
 
-    // Use provided author, or try relationship, or fallback query
-    final relationshipAuthor = app!.author.value;
-
-    // Fallback: Query author profile directly if no author provided and relationship doesn't work
-    final authorPubkey = app!.event.pubkey;
-    final needsFallbackQuery = author == null && relationshipAuthor == null;
-    final authorProfileAsync = needsFallbackQuery
-        ? ref.watch(profileProvider(authorPubkey))
-        : null;
-    final fallbackAuthor = authorProfileAsync?.value;
-
-    // Use the working author (provided, relationship, or fallback)
-    final actualAuthor = author ?? relationshipAuthor ?? fallbackAuthor;
+    // Query author profile (always present via app.event.pubkey)
+    final authorState = ref.watch(
+      query<Profile>(
+        authors: {app!.event.pubkey},
+        source: const LocalAndRemoteSource(
+          relays: {'social', 'vertex'},
+          cachedFor: Duration(hours: 2),
+        ),
+      ),
+    );
+    final actualAuthor =
+        author ??
+        switch (authorState) {
+          StorageData(:final models) => models.firstOrNull,
+          _ => null,
+        };
     final descriptionStyle = context.textTheme.bodyMedium?.copyWith(
       height: 1.5,
       color: AppColors.darkOnSurfaceSecondary,

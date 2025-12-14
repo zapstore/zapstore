@@ -8,7 +8,6 @@ import 'package:zapstore/widgets/common/profile_avatar.dart';
 import 'package:intl/intl.dart';
 import 'package:zapstore/widgets/sign_in_button.dart';
 import 'package:zapstore/services/notification_service.dart';
-import 'package:zapstore/services/profile_service.dart';
 import 'package:zapstore/widgets/pill_widget.dart';
 import 'package:zapstore/theme.dart';
 
@@ -47,15 +46,6 @@ class CommentsSection extends HookConsumerWidget {
       StorageError(:final exception) => exception,
       _ => null,
     };
-
-    // Batch fetch author profiles for all comments
-    useEffect(() {
-      final authorPubkeys = comments.map((c) => c.event.pubkey).toSet();
-      if (authorPubkeys.isNotEmpty) {
-        ref.read(profileServiceProvider).fetchProfiles(authorPubkeys);
-      }
-      return null;
-    }, [comments.map((c) => c.id).join(',')]);
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -161,9 +151,21 @@ class _CommentCard extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Use profileProvider for centralized caching and batched fetching
-    final authorAsync = ref.watch(profileProvider(comment.event.pubkey));
-    final author = authorAsync.value ?? comment.author.value;
+    // Query author profile with caching
+    // Query author profile (comment.event.pubkey is always present)
+    final authorState = ref.watch(
+      query<Profile>(
+        authors: {comment.event.pubkey},
+        source: const LocalAndRemoteSource(
+          relays: {'social', 'vertex'},
+          cachedFor: Duration(hours: 2),
+        ),
+      ),
+    );
+    final author = switch (authorState) {
+      StorageData(:final models) => models.firstOrNull,
+      _ => null,
+    };
     // Extract version from v tag (per NIP-22 guidance)
     final version = comment.event.getFirstTagValue('v');
 

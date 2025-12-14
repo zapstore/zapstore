@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/utils/extensions.dart';
-import 'package:zapstore/services/profile_service.dart';
 import 'package:any_link_preview/any_link_preview.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -387,11 +386,14 @@ class ProfileEntityWidget extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final profileAsync = ref.watch(profileProvider(profileData.pubkey));
+    final profileState = ref.watch(query<Profile>(
+      authors: {profileData.pubkey},
+      source: const LocalAndRemoteSource(relays: {'social', 'vertex'}, cachedFor: Duration(hours: 2)),
+    ));
 
     // Show animated npub while profile is being loaded
-    if (profileAsync.isLoading || (!profileAsync.hasValue)) {
-      return GestureDetector(
+    return switch (profileState) {
+      StorageLoading() => GestureDetector(
         onTap: onProfileTap != null
             ? () => onProfileTap!(profileData.pubkey)
             : null,
@@ -399,12 +401,25 @@ class ProfileEntityWidget extends ConsumerWidget {
           text: 'npub1${profileData.pubkey.substring(0, 8)}...',
           colorPair: colorPair,
         ),
-      );
-    }
+      ),
+      StorageError() || StorageData(models: []) => GestureDetector(
+        onTap: onProfileTap != null
+            ? () => onProfileTap!(profileData.pubkey)
+            : null,
+        child: _AnimatedLoadingChip(
+          text: 'npub1${profileData.pubkey.substring(0, 8)}...',
+          colorPair: colorPair,
+        ),
+      ),
+      StorageData(:final models) => _buildProfileWidget(
+        context,
+        models.first,
+      ),
+    };
+  }
 
-    final profile = profileAsync.value;
-    final displayName =
-        profile?.nameOrNpub ?? '${profileData.pubkey.substring(0, 8)}...';
+  Widget _buildProfileWidget(BuildContext context, Profile profile) {
+    final displayName = profile.nameOrNpub;
 
     return GestureDetector(
       onTap: onProfileTap != null

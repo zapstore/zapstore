@@ -3,22 +3,15 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:go_router/go_router.dart';
-import 'pill_widget.dart';
 import 'rounded_image.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 import 'package:auto_size_text/auto_size_text.dart';
 import '../utils/extensions.dart';
 import '../utils/url_utils.dart';
-import '../services/profile_service.dart';
 import '../theme.dart';
 
-/// App Pack Container
-/// Shows horizontally scrollable pills for different app packs
-/// Each pill represents a curated collection of apps (e.g. "Nostr by franzap", "Utilities by franzap")
-/// When a pill is tapped, it shows the apps from that pack below
-/// Design: Horizontal scroll with colored pills, selected state changes pill color
-/// Usage: Featured at top of search screen, allows users to browse curated app collections
+/// App Pack Container - horizontally scrollable pills with app collections
 class AppPackContainer extends HookConsumerWidget {
   const AppPackContainer({super.key, this.showSkeleton = false});
 
@@ -26,11 +19,8 @@ class AppPackContainer extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final scrollController = useScrollController();
-
-    // If showing skeleton, return skeleton state immediately
     if (showSkeleton) {
-      return _buildLoadingState(context);
+      return _buildSkeleton(context);
     }
 
     final appPacksState = ref.watch(
@@ -51,348 +41,266 @@ class AppPackContainer extends HookConsumerWidget {
       ),
     );
 
-    return switch (appPacksState) {
-      StorageLoading() => _buildLoadingState(context),
-      StorageError(:final exception) => _buildErrorState(context, exception),
-      StorageData(:final models) when models.isEmpty => const SizedBox.shrink(),
-      StorageData(:final models) => _buildLoadedState(
-        context,
-        ref,
-        models,
-        scrollController,
-      ),
+    final packs = switch (appPacksState) {
+      StorageData(:final models) => models
+          .where((p) => p.identifier != kAppBookmarksIdentifier)
+          .where((p) => p.apps.toList().any((a) => a.name != null || a.identifier.isNotEmpty))
+          .toList()
+        ..sort((a, b) => b.event.createdAt.compareTo(a.event.createdAt)),
+      _ => <AppPack>[],
     };
-  }
 
-  static Widget _buildLoadingState(BuildContext context) {
+    if (packs.isEmpty) {
+      return _buildSkeleton(context);
+    }
+
+    final selectedId = useState(packs.first.id);
+    final selectedPack = packs.firstWhere(
+      (p) => p.id == selectedId.value,
+      orElse: () => packs.first,
+    );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Skeleton pills - match actual pill structure with "by (author)" section
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12.0),
-            child: SkeletonizerConfig(
-              data: AppColors.getSkeletonizerConfig(
-                Theme.of(context).brightness,
-              ),
-              child: Skeletonizer(
-                enabled: true,
-                child: Row(
-                  children: List.generate(
-                    3,
-                    (index) => _buildSkeletonPill(context),
-                  ),
-                ),
-              ),
-            ),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            children: packs.map((pack) => _PackPill(
+              pack: pack,
+              isSelected: selectedId.value == pack.id,
+              onTap: () => selectedId.value = pack.id,
+            )).toList(),
           ),
         ),
-
-        // Skeleton grid - match actual spacing (16, not 24)
         const SizedBox(height: 16),
-        _buildSelectedAppsGrid(context, []), // Empty list shows skeletons
+        _AppsGrid(
+          apps: selectedPack.apps.toList()
+              .where((a) => a.name != null || a.identifier.isNotEmpty)
+              .toList(),
+        ),
       ],
     );
   }
 
-  /// Skeleton pill that matches actual pill dimensions including "by (author)" section
-  static Widget _buildSkeletonPill(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 16),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        decoration: BoxDecoration(
-          color: Theme.of(
-            context,
-          ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.8),
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
+  Widget _buildSkeleton(BuildContext context) {
+    return SkeletonizerConfig(
+      data: AppColors.getSkeletonizerConfig(Theme.of(context).brightness),
+      child: Skeletonizer(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Pack name skeleton
-            Container(
-              height: 16,
-              width: 50,
-              decoration: BoxDecoration(
-                color: AppColors.darkSkeletonBase,
-                borderRadius: BorderRadius.circular(4),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                children: List.generate(3, (_) => _SkeletonPill()),
               ),
             ),
-            // "by" text skeleton
-            const SizedBox(width: 4),
-            Container(
-              height: 14,
-              width: 16,
-              decoration: BoxDecoration(
-                color: AppColors.darkSkeletonBase,
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-            const SizedBox(width: 6),
-            // Author avatar skeleton
-            Container(
-              width: 18,
-              height: 18,
-              decoration: BoxDecoration(
-                color: AppColors.darkSkeletonBase,
-                borderRadius: BorderRadius.circular(9),
-              ),
-            ),
-            const SizedBox(width: 6),
-            // Author name skeleton
-            Container(
-              height: 14,
-              width: 50,
-              decoration: BoxDecoration(
-                color: AppColors.darkSkeletonBase,
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
+            const SizedBox(height: 16),
+            const _AppsGrid(apps: []),
           ],
         ),
       ),
     );
   }
+}
 
-  Widget _buildErrorState(BuildContext context, Object exception) {
+/// Skeleton pill matching actual pill dimensions
+class _SkeletonPill extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-      child: PillWidget(
-        const TextSpan(text: 'Error loading collections'),
-        color: Colors.red[700]!,
+      padding: const EdgeInsets.only(right: 16),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.8),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(height: 16, width: 50, color: AppColors.darkSkeletonBase),
+            const SizedBox(width: 4),
+            Container(height: 14, width: 16, color: AppColors.darkSkeletonBase),
+            const SizedBox(width: 6),
+            Container(width: 18, height: 18, decoration: BoxDecoration(
+              color: AppColors.darkSkeletonBase,
+              borderRadius: BorderRadius.circular(9),
+            )),
+            const SizedBox(width: 6),
+            Container(height: 14, width: 50, color: AppColors.darkSkeletonBase),
+          ],
+        ),
       ),
     );
-  }
-
-  Widget _buildLoadedState(
-    BuildContext context,
-    WidgetRef ref,
-    List<AppPack> appPacks,
-    ScrollController scrollController,
-  ) {
-    // Filter out empty app packs, packs where apps don't have basic data,
-    // and the private bookmarks pack
-    final nonEmptyPacks = appPacks.where((pack) {
-      // Exclude private bookmarks pack
-      if (pack.identifier == kAppBookmarksIdentifier) {
-        return false;
-      }
-      // Check if pack has at least one app with name or identifier
-      final hasValidApps = pack.apps.toList().any(
-        (app) => app.name != null || app.identifier.isNotEmpty,
-      );
-      return hasValidApps;
-    }).toList();
-
-    // If no packs with apps, show loading state
-    if (nonEmptyPacks.isEmpty) {
-      return _buildLoadingState(context);
-    }
-
-    // Show newest packs first (also drives default selection)
-    final sortedPacks = _sortPacksNewestFirst(nonEmptyPacks);
-
-    // Fetch author profiles for all app packs (batch fetch like latest_releases)
-    useEffect(() {
-      final authorPubkeys = sortedPacks.map((p) => p.event.pubkey).toSet();
-      if (authorPubkeys.isNotEmpty) {
-        ref.read(profileServiceProvider).fetchProfiles(authorPubkeys);
-      }
-      return null;
-    }, [sortedPacks.map((p) => p.id).join(',')]);
-
-    // Default to the newest available pack
-    final defaultSelection = sortedPacks.first.id;
-
-    final selectedAppPack = useState<String?>(defaultSelection);
-
-    // Find the selected app pack
-    final selectedPack = sortedPacks
-        .where((pack) => pack.id == selectedAppPack.value)
-        .firstOrNull;
-
-    // Controller for the horizontal apps grid
-    final gridController = useScrollController();
-    // Rebuild when the grid scrolls to adjust left padding dynamically
-    useListenable(gridController);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          controller: scrollController,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12.0),
-            child: Row(
-              children: [
-                _buildPackPills(
-                  context,
-                  ref,
-                  sortedPacks,
-                  selectedAppPack.value,
-                  (id) => selectedAppPack.value = id,
-                ),
-              ],
-            ),
-          ),
-        ),
-
-        // Show apps from selected pack with professional spacing
-        if (selectedPack != null) ...[
-          const SizedBox(height: 16),
-          _buildSelectedAppsGrid(
-            context,
-            // Filter apps that have basic data (name or identifier)
-            selectedPack.apps
-                .toList()
-                .where((app) => app.name != null || app.identifier.isNotEmpty)
-                .toList(),
-            controller: gridController,
-            padding: EdgeInsets.only(
-              left: gridController.hasClients && gridController.offset > 0
-                  ? 0
-                  : 12,
-              right: 12,
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildPackPills(
-    BuildContext context,
-    WidgetRef ref,
-    List<AppPack> appPacks,
-    String? selectedId,
-    Function(String?) onSelect,
-  ) {
-    return Row(
-      children: appPacks.map((appPack) {
-        final isSelected = selectedId == appPack.id;
-        // Load author via profileProvider with caching
-        final authorAsync = ref.watch(profileProvider(appPack.event.pubkey));
-        final author = authorAsync.value;
-
-        return Padding(
-          padding: const EdgeInsets.only(right: 16),
-          child: GestureDetector(
-            onTap: () => onSelect(appPack.id),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              decoration: BoxDecoration(
-                color: isSelected
-                    ? Theme.of(
-                        context,
-                      ).colorScheme.primary.withValues(alpha: 0.15)
-                    : Theme.of(context).colorScheme.surfaceContainerHighest
-                          .withValues(alpha: 0.8),
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Text(
-                    appPack.name ?? appPack.identifier,
-                    style: context.textTheme.labelLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: Theme.of(context).colorScheme.onSurface,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  if (author != null) ...[
-                    Text(
-                      ' by ',
-                      style: context.textTheme.labelLarge?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    _InlineAuthorWidget(author: author, isSelected: isSelected),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        );
-      }).toList(),
-    );
-  }
-
-  static Widget _buildSelectedAppsGrid(
-    BuildContext context,
-    List<App> apps, {
-    ScrollController? controller,
-    EdgeInsets? padding,
-  }) {
-    return SizedBox(
-      height: 220, // Slightly reduced from 240 to remove extra space
-      child: GridView.builder(
-        controller: controller,
-        padding: padding ?? const EdgeInsets.symmetric(horizontal: 12.0),
-        scrollDirection: Axis.horizontal,
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          childAspectRatio: 0.8, // Made smaller (less tall)
-          crossAxisSpacing: 2,
-          mainAxisSpacing: 2,
-        ),
-        itemCount: apps.isEmpty ? 6 : apps.length,
-        itemBuilder: (context, index) {
-          if (apps.isEmpty) {
-            return const _AppGridCard(isLoading: true);
-          }
-          return _AppGridCard(app: apps[index]);
-        },
-      ),
-    );
-  }
-
-  static List<AppPack> _sortPacksNewestFirst(List<AppPack> appPacks) {
-    final sortedPacks = [...appPacks];
-    sortedPacks.sort((a, b) => b.event.createdAt.compareTo(a.event.createdAt));
-    return sortedPacks;
   }
 }
 
-class _AppGridCard extends ConsumerWidget {
-  const _AppGridCard({this.app, this.isLoading = false});
+/// Individual pack pill - watches its own author reactively
+class _PackPill extends ConsumerWidget {
+  const _PackPill({
+    required this.pack,
+    required this.isSelected,
+    required this.onTap,
+  });
 
-  final App? app;
-  final bool isLoading;
+  final AppPack pack;
+  final bool isSelected;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (isLoading || app == null) {
-      return _buildSkeleton(context);
+    final authorState = ref.watch(query<Profile>(
+      authors: {pack.event.pubkey},
+      source: const LocalAndRemoteSource(relays: {'social', 'vertex'}, cachedFor: Duration(hours: 2)),
+    ));
+    final author = switch (authorState) {
+      StorageData(:final models) => models.firstOrNull,
+      _ => null,
+    };
+
+    return Padding(
+      padding: const EdgeInsets.only(right: 16),
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.15)
+                : Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.8),
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                pack.name ?? pack.identifier,
+                style: context.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              if (author != null) ...[
+                Text(
+                  ' by ',
+                  style: context.textTheme.labelLarge?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                Container(
+                  width: 18,
+                  height: 18,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(9),
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
+                      width: 1,
+                    ),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: RoundedImage(url: author.pictureUrl, size: 18),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  author.nameOrNpub,
+                  style: context.textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w500,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Horizontally scrolling apps grid
+class _AppsGrid extends StatelessWidget {
+  const _AppsGrid({required this.apps});
+
+  final List<App> apps;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = apps.isEmpty ? List.generate(6, (_) => null) : apps;
+
+    return SizedBox(
+      height: 220,
+      child: GridView.builder(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        scrollDirection: Axis.horizontal,
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          childAspectRatio: 0.8,
+          crossAxisSpacing: 2,
+          mainAxisSpacing: 2,
+        ),
+        itemCount: items.length,
+        itemBuilder: (context, index) => _AppCard(app: items[index]),
+      ),
+    );
+  }
+}
+
+/// Individual app card with original styling
+class _AppCard extends ConsumerWidget {
+  const _AppCard({this.app});
+
+  final App? app;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (app == null) {
+      return Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: AppColors.darkSkeletonBase,
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              height: 10,
+              width: 40,
+              decoration: BoxDecoration(
+                color: AppColors.darkSkeletonBase,
+                borderRadius: BorderRadius.circular(5),
+              ),
+            ),
+          ],
+        ),
+      );
     }
 
     final iconUrl = firstValidHttpUrl(app!.icons);
 
     return GestureDetector(
       onTap: () {
-        // Trigger loading of latestRelease relationship if not available (async, no wait)
         if (app!.latestRelease.value == null) {
-          final request = app!.latestRelease.req;
-          if (request != null) {
-            ref.storage
-                .query(
-                  request,
-                  source: const LocalAndRemoteSource(stream: false),
-                )
-                .catchError((e) {
-                  // Failed to load latest release
-                  return <Release>[];
-                });
+          final req = app!.latestRelease.req;
+          if (req != null) {
+            ref.storage.query(req, source: const LocalAndRemoteSource(stream: false));
           }
         }
-
-        // Navigate immediately with the app (detail screen will handle loading states)
         final segments = GoRouterState.of(context).uri.pathSegments;
         final first = segments.isNotEmpty ? segments.first : 'search';
         context.push('/$first/app/${app!.id}', extra: app!);
@@ -413,7 +321,6 @@ class _AppGridCard extends ConsumerWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Smaller app icon to make room for text
                 Container(
                   width: 40,
                   height: 40,
@@ -435,27 +342,17 @@ class _AppGridCard extends ConsumerWidget {
                             fit: BoxFit.cover,
                             fadeInDuration: const Duration(milliseconds: 500),
                             fadeOutDuration: const Duration(milliseconds: 200),
-                            placeholder: (_, url) => const SizedBox.shrink(),
-                            errorWidget: (_, error, stackTrace) => Center(
-                              child: Icon(
-                                Icons.broken_image_outlined,
-                                size: 16,
-                                color: Colors.grey[400],
-                              ),
-                            ),
-                          )
-                        : Center(
-                            child: Icon(
-                              Icons.apps_outlined,
+                            placeholder: (_, __) => const SizedBox.shrink(),
+                            errorWidget: (_, __, ___) => Icon(
+                              Icons.broken_image_outlined,
                               size: 16,
                               color: Colors.grey[400],
                             ),
-                          ),
+                          )
+                        : Icon(Icons.apps_outlined, size: 16, color: Colors.grey[400]),
                   ),
                 ),
                 const SizedBox(height: 12),
-
-                // Auto-sizing app name to prevent cutoff
                 AutoSizeText(
                   app!.name ?? app!.identifier,
                   style: context.textTheme.labelMedium?.copyWith(
@@ -474,83 +371,6 @@ class _AppGridCard extends ConsumerWidget {
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildSkeleton(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(
-        14,
-      ), // Slightly more padding to center within grid cell
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // App icon skeleton - simple rounded square
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: AppColors.darkSkeletonBase,
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          // App name skeleton - single centered bar
-          Container(
-            height: 10,
-            width: 40,
-            decoration: BoxDecoration(
-              color: AppColors.darkSkeletonBase,
-              borderRadius: BorderRadius.circular(5),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Inline author widget for showing profile in pills
-class _InlineAuthorWidget extends StatelessWidget {
-  const _InlineAuthorWidget({required this.author, this.isSelected = false});
-
-  final Profile author;
-  final bool isSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 18,
-          height: 18,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(9),
-            border: Border.all(
-              color: Theme.of(
-                context,
-              ).colorScheme.outline.withValues(alpha: 0.3),
-              width: 1,
-            ),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: RoundedImage(url: author.pictureUrl, size: 18),
-          ),
-        ),
-        const SizedBox(width: 6),
-        Text(
-          author.nameOrNpub,
-          style: context.textTheme.labelLarge?.copyWith(
-            fontWeight: FontWeight.w500,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-      ],
     );
   }
 }

@@ -3,7 +3,6 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
-import 'package:zapstore/services/profile_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/author_container.dart';
 import 'package:zapstore/widgets/common/base_dialog.dart';
@@ -18,9 +17,15 @@ class InstallAlertDialog extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Use profileProvider with fallback to relationship
-    final publisherAsync = ref.watch(profileProvider(app.pubkey));
-    final publisher = publisherAsync.value ?? app.author.value;
+    // Query publisher profile (app.pubkey is always present)
+    final publisherState = ref.watch(query<Profile>(
+      authors: {app.pubkey},
+      source: const LocalAndRemoteSource(relays: {'social', 'vertex'}, cachedFor: Duration(hours: 2)),
+    ));
+    final publisher = switch (publisherState) {
+      StorageData(:final models) => models.firstOrNull,
+      _ => null,
+    };
     if (publisher == null) {
       return const SizedBox.shrink();
     }

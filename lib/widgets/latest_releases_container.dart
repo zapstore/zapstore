@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:async_button_builder/async_button_builder.dart';
-import 'package:zapstore/services/profile_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'app_card.dart';
 
@@ -302,19 +301,9 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
   }
 
   /// Fetch authors for a page of apps (used during pagination)
+  /// Note: Profiles are now loaded reactively via query<Profile> in individual widgets
   Future<void> _loadRelationshipsFor(List<App> appsPage) async {
-    final releases = appsPage
-        .map((a) => a.latestRelease.value)
-        .whereType<Release>()
-        .toList();
-
-    if (releases.isEmpty) return;
-
-    // Only need to query release authors from 'social' group (different relay group)
-    final authorPubkeys = releases.map((r) => r.event.pubkey).toSet();
-    if (authorPubkeys.isNotEmpty) {
-      await ref.read(profileServiceProvider).fetchProfiles(authorPubkeys);
-    }
+    // No-op: profiles are now loaded reactively via query<Profile> with caching
   }
 
   Future<void> loadMore() async {
