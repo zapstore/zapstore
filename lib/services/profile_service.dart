@@ -183,7 +183,7 @@ final profileProvider = AutoDisposeProvider.family<AsyncValue<Profile?>, String>
         authors: {pubkey},
         source: LocalAndRemoteSource(
           relays: {'social', 'vertex'},
-          stream: true,
+          stream: false,
           background: true, // Don't block on remote
         ),
       ),
