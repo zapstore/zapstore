@@ -45,6 +45,7 @@ class DownloadInfo {
     this.progress = 0.0,
     this.isInstalling = false,
     this.isReadyToInstall = false,
+    this.skipVerificationOnInstall = false,
     this.errorDetails,
   });
 
@@ -55,6 +56,7 @@ class DownloadInfo {
   final double progress;
   final bool isInstalling;
   final bool isReadyToInstall; // Downloaded but installation failed/canceled
+  final bool skipVerificationOnInstall;
   final String? errorDetails; // Store error details for display
 
   String get taskId => task.taskId;
@@ -79,6 +81,7 @@ class DownloadInfo {
     double? progress,
     bool? isInstalling,
     bool? isReadyToInstall,
+    bool? skipVerificationOnInstall,
     String? errorDetails,
   }) {
     return DownloadInfo(
@@ -89,6 +92,8 @@ class DownloadInfo {
       progress: progress ?? this.progress,
       isInstalling: isInstalling ?? this.isInstalling,
       isReadyToInstall: isReadyToInstall ?? this.isReadyToInstall,
+      skipVerificationOnInstall:
+          skipVerificationOnInstall ?? this.skipVerificationOnInstall,
       errorDetails: errorDetails ?? this.errorDetails,
     );
   }
@@ -121,6 +126,13 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
     final wasBackground = !_isAppInForeground;
     _isAppInForeground = inForeground;
 
+    // Notify native side of foreground state change
+    // This allows InstallResultReceiver to decide whether to launch dialogs immediately
+    final packageManager = ref.read(packageManagerProvider.notifier);
+    if (packageManager is AndroidPackageManager) {
+      await packageManager.setAppForegroundState(inForeground);
+    }
+
     // When returning to foreground, handle stalled installations and process pending
     if (inForeground && wasBackground) {
       await _handleReturnToForeground();
@@ -142,10 +154,29 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
       // Try to re-launch the pending install prompt
       // This re-uses the existing Android session instead of creating a new one
       if (packageManager is AndroidPackageManager) {
-        final relaunched = await packageManager.retryPendingInstall(appId);
-        if (relaunched) {
-          // Successfully re-launched the prompt, keep isInstalling: true
-          // The existing await in _processInstallQueue will complete when user confirms
+        final retry = await packageManager.retryPendingInstall(appId);
+
+        // If there's a pending prompt/session, DO NOT reset the install state.
+        // - promptAlreadyShown: system dialog is/was already on screen (relaunching causes double prompts)
+        // - relaunched: we just re-launched a deferred prompt
+        if (retry.hasPending &&
+            (retry.relaunched || retry.promptAlreadyShown)) {
+          continue;
+        }
+
+        // If the system still has a session but we no longer have the confirm intent, the user must
+        // re-trigger install (we can't safely recover the intent). Mark ready-to-install.
+        if (retry.hasPending && retry.sessionPending) {
+          final downloadInfo = state[appId];
+          if (downloadInfo != null) {
+            state = {
+              ...state,
+              appId: downloadInfo.copyWith(
+                isInstalling: false,
+                isReadyToInstall: true,
+              ),
+            };
+          }
           continue;
         }
       }
@@ -695,6 +726,7 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
             filePath,
             expectedHash: fileMetadata.hash,
             expectedSize: fileMetadata.size ?? 0,
+            skipVerification: downloadInfo.skipVerificationOnInstall,
           );
 
           // Installation succeeded - clean up downloaded file
@@ -717,6 +749,21 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
         } catch (e) {
           // Installation failed for this app - continue with others
           final errorMessage = e.toString();
+
+          // Another install session already exists (typically from a previous UI path).
+          // Do NOT advance the queue or delete the APK: keep state as installing and stop.
+          if (errorMessage.contains('INSTALL_ALREADY_IN_PROGRESS')) {
+            // Put it back so we can retry when the existing session resolves.
+            _installQueue.insert(0, appId);
+            state = {
+              ...state,
+              appId: downloadInfo.copyWith(
+                isInstalling: true,
+                isReadyToInstall: false,
+              ),
+            };
+            break;
+          }
 
           // Detect certificate mismatch
           final isCertificateMismatch =
@@ -855,16 +902,23 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
     }
   }
 
-  /// Mark download as installing (for reckless mode retry)
-  void markInstalling(String appId) {
+  /// Explicitly mark a downloaded file as ready to install.
+  ///
+  /// Used by flows where the user explicitly chooses to proceed (e.g. "reckless" override)
+  /// and we want to drive installation through the single install queue.
+  void markReadyToInstall(
+    String appId, {
+    bool skipVerificationOnInstall = false,
+  }) {
     final downloadInfo = state[appId];
     if (downloadInfo != null) {
       state = {
         ...state,
         appId: downloadInfo.copyWith(
-          isInstalling: true,
-          isReadyToInstall: false,
-          errorDetails: null,
+          isInstalling: false,
+          isReadyToInstall: true,
+          skipVerificationOnInstall: skipVerificationOnInstall,
+          errorDetails: null, // clear previous error to avoid confusing UI
         ),
       };
     }
@@ -885,8 +939,14 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
         return;
       }
 
-      // Update state to mark as no longer ready to install (about to install)
-      state = {...state, appId: downloadInfo.copyWith(isReadyToInstall: false)};
+      // Update state to mark as no longer ready to install (queued for install)
+      state = {
+        ...state,
+        appId: downloadInfo.copyWith(
+          isReadyToInstall: false,
+          errorDetails: null,
+        ),
+      };
 
       // Add to installation queue instead of installing directly
       if (!_installQueue.contains(appId)) {

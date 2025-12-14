@@ -616,30 +616,16 @@ class InstallButton extends ConsumerWidget {
                 '⚠️ Proceed anyway (RECKLESS)',
                 () async {
                   // Retry installation with skipVerification=true
-                  final filePath = await downloadInfo.task.filePath();
-                  final packageManager = ref.read(
-                    packageManagerProvider.notifier,
-                  );
-
                   // Update download state to show installing
                   final downloadService = ref.read(
                     downloadServiceProvider.notifier,
                   );
-                  downloadService.markInstalling(app.identifier);
-
-                  try {
-                    await packageManager.install(
-                      app.identifier,
-                      filePath,
-                      expectedHash: downloadInfo.fileMetadata.hash,
-                      expectedSize: downloadInfo.fileMetadata.size ?? 0,
-                      skipVerification: true, // SKIP VERIFICATION
-                    );
-                  } catch (e) {
-                    if (context.mounted) {
-                      context.showError('Installation failed: $e');
-                    }
-                  }
+                  // Explicitly allow install for this override flow and install via the queue.
+                  downloadService.markReadyToInstall(
+                    app.identifier,
+                    skipVerificationOnInstall: true,
+                  );
+                  await downloadService.installFromDownloaded(app.identifier);
                 },
               ),
             ]
@@ -771,23 +757,13 @@ class InstallButton extends ConsumerWidget {
           throw Exception('Download not found');
         }
 
-        final filePath = await downloadInfo.task.filePath();
-        final fileMetadata = downloadInfo.fileMetadata;
-
         downloadService.clearError(app.identifier);
 
         await packageManager.uninstall(app.identifier);
 
-        downloadService.markInstalling(app.identifier);
-
-        await packageManager.install(
-          app.identifier,
-          filePath,
-          expectedHash: fileMetadata.hash,
-          expectedSize: fileMetadata.size ?? 0,
-        );
-
-        downloadService.cancelDownload(app.identifier);
+        // Queue install through DownloadService (single source of truth for installs).
+        downloadService.markReadyToInstall(app.identifier);
+        await downloadService.installFromDownloaded(app.identifier);
       } catch (e) {
         final message = e.toString();
         if (context.mounted && !message.contains('cancelled')) {

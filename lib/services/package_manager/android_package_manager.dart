@@ -34,23 +34,22 @@ final class AndroidPackageManager extends PackageManager {
       throw Exception('APK file not found: $filePath');
     }
 
-    final result = await _channel
-        .invokeMethod<Map<Object?, Object?>>('install', {
-          'filePath': filePath,
-          'packageName': appId,
-          'expectedHash': expectedHash,
-          'expectedSize': expectedSize,
-          'skipVerification': skipVerification,
-        })
-        .timeout(
-          const Duration(minutes: 5),
-          onTimeout: () => {
-            'isSuccess': false,
-            'errorMessage': 'Installation timed out - user did not respond',
-          },
-        );
+    final result = await _channel.invokeMethod<Map<Object?, Object?>>('install', {
+      'filePath': filePath,
+      'packageName': appId,
+      'expectedHash': expectedHash,
+      'expectedSize': expectedSize,
+      'skipVerification': skipVerification,
+    });
 
     final resultMap = Map<String, dynamic>.from(result ?? {});
+
+    // If installation is already in progress, do NOT treat this call as success.
+    // Returning silently would cause callers to delete APK files / advance queues while the
+    // original session is still active, which can lead to "session files in use" races.
+    if (resultMap['alreadyInProgress'] == true) {
+      throw Exception('INSTALL_ALREADY_IN_PROGRESS');
+    }
 
     if (!(resultMap['isSuccess'] == true)) {
       final error = resultMap['errorMessage'] ?? 'Installation failed';
@@ -187,8 +186,8 @@ final class AndroidPackageManager extends PackageManager {
   }
   
   /// Re-launch a pending install prompt that was backgrounded.
-  /// Returns true if there was a pending prompt and it was re-launched.
-  Future<bool> retryPendingInstall(String appId) async {
+  /// Returns structured info so callers can avoid double-prompts and bad state resets.
+  Future<RetryPendingInstallResult> retryPendingInstall(String appId) async {
     try {
       final result = await _channel
           .invokeMethod<Map<Object?, Object?>>('retryPendingInstall', {
@@ -196,9 +195,26 @@ final class AndroidPackageManager extends PackageManager {
           });
 
       final resultMap = Map<String, dynamic>.from(result ?? {});
-      return resultMap['hasPending'] == true && resultMap['isSuccess'] == true;
+      return RetryPendingInstallResult.fromMap(resultMap);
     } catch (e) {
-      return false;
+      return const RetryPendingInstallResult(
+        hasPending: false,
+        relaunched: false,
+        sessionPending: false,
+        promptAlreadyShown: false,
+      );
+    }
+  }
+
+  /// Set app foreground state on the native side.
+  /// Called from DownloadService when app lifecycle changes.
+  Future<void> setAppForegroundState(bool foreground) async {
+    try {
+      await _channel.invokeMethod('setAppForegroundState', {
+        'foreground': foreground,
+      });
+    } catch (e) {
+      // Ignore errors - best effort
     }
   }
 
@@ -267,4 +283,27 @@ final class AndroidPackageManager extends PackageManager {
       throw Exception('Unable to request install permission: $e');
     }
   }
+}
+
+final class RetryPendingInstallResult {
+  const RetryPendingInstallResult({
+    required this.hasPending,
+    required this.relaunched,
+    required this.sessionPending,
+    required this.promptAlreadyShown,
+  });
+
+  factory RetryPendingInstallResult.fromMap(Map<String, dynamic> map) {
+    return RetryPendingInstallResult(
+      hasPending: map['hasPending'] == true,
+      relaunched: map['relaunched'] == true,
+      sessionPending: map['sessionPending'] == true,
+      promptAlreadyShown: map['promptAlreadyShown'] == true,
+    );
+  }
+
+  final bool hasPending;
+  final bool relaunched;
+  final bool sessionPending;
+  final bool promptAlreadyShown;
 }

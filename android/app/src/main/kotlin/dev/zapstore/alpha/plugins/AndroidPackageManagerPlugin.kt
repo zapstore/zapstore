@@ -50,20 +50,72 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler {
         // Store pending install results keyed by sessionId - completed when broadcast arrives
         private val pendingInstallResults = mutableMapOf<Int, Result>()
         
+        // Map sessionId to packageName for reverse lookup
+        private val sessionToPackage = mutableMapOf<Int, String>()
+        
         // Store pending user action intents keyed by packageName - for re-launching after foreground
         private val pendingUserActionIntents = mutableMapOf<String, Intent>()
+
+        // Track whether the pending user action prompt was deferred (app backgrounded or launch failed).
+        // Only deferred prompts should be re-launched on app resume to avoid double system dialogs.
+        private val pendingUserActionDeferred = mutableMapOf<String, Boolean>()
+        
+        // Track app foreground state - set by Dart via setAppForegroundState
+        private var isAppInForeground = true
+        
+        // Reference to context for static methods (set during onAttachedToEngine)
+        private var appContext: Context? = null
+        
+        /**
+         * Set the app's foreground state. Called from Dart when lifecycle changes.
+         */
+        fun setAppForegroundState(foreground: Boolean) {
+            isAppInForeground = foreground
+            Log.d(TAG, "App foreground state: $foreground")
+        }
+        
+        /**
+         * Check if the app is currently in foreground.
+         */
+        fun isAppInForeground(): Boolean = isAppInForeground
+        
+        /**
+         * Check if we're already waiting for a result for this package.
+         */
+        fun hasPendingResultForPackage(packageName: String): Boolean {
+            return sessionToPackage.containsValue(packageName)
+        }
         
         /**
          * Called by InstallResultReceiver when installation completes/fails.
          * Completes the pending method channel result so Dart await finishes.
          */
-        fun completeInstallResult(sessionId: Int, resultMap: Map<String, Any?>) {
+        fun completeInstallResult(sessionId: Int, resultMap: Map<String, Any?>, context: Context? = null) {
             val result = pendingInstallResults.remove(sessionId)
-            // Also clear any pending user action intent for this package
-            val packageName = resultMap["packageName"] as? String
+            val packageName = resultMap["packageName"] as? String ?: sessionToPackage[sessionId]
+            
+            // Clear all tracking for this session/package
+            sessionToPackage.remove(sessionId)
             if (packageName != null) {
                 pendingUserActionIntents.remove(packageName)
+                pendingUserActionDeferred.remove(packageName)
+                Log.d(TAG, "Cleared all tracking for $packageName (session $sessionId)")
             }
+            
+            // For failed/cancelled installs, try to abandon the session to clean up
+            val isSuccess = resultMap["isSuccess"] as? Boolean ?: false
+            val ctx = context ?: appContext
+            if (!isSuccess && ctx != null) {
+                try {
+                    val packageInstaller = ctx.packageManager.packageInstaller
+                    packageInstaller.abandonSession(sessionId)
+                    Log.d(TAG, "Abandoned failed session $sessionId")
+                } catch (e: Exception) {
+                    // Session might already be abandoned or completed
+                    Log.d(TAG, "Could not abandon session $sessionId: ${e.message}")
+                }
+            }
+            
             if (result != null) {
                 Log.d(TAG, "Completing install result for session $sessionId: $resultMap")
                 result.success(resultMap)
@@ -80,18 +132,22 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler {
         }
         
         /**
-         * Store a pending user action intent for later re-launch
+         * Store a pending user action intent for later re-launch.
          */
         fun storePendingUserActionIntent(packageName: String, intent: Intent) {
             pendingUserActionIntents[packageName] = intent
             Log.d(TAG, "Stored pending user action intent for $packageName")
         }
-        
+
         /**
-         * Get and remove a pending user action intent
+         * Mark whether a pending user action prompt was deferred.
+         *
+         * - deferred=true: prompt was NOT shown (or failed to show). Safe to re-launch on resume.
+         * - deferred=false: prompt was shown while in foreground. Do NOT re-launch on resume.
          */
-        fun getPendingUserActionIntent(packageName: String): Intent? {
-            return pendingUserActionIntents.remove(packageName)
+        fun setPendingUserActionDeferred(packageName: String, deferred: Boolean) {
+            pendingUserActionDeferred[packageName] = deferred
+            Log.d(TAG, "Pending user action deferred for $packageName: $deferred")
         }
         
         /**
@@ -106,8 +162,89 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler {
         channel = MethodChannel(flutterPluginBinding.binaryMessenger, "android_package_manager")
         channel.setMethodCallHandler(this)
         context = flutterPluginBinding.applicationContext
+        appContext = context
+        
+        // Clean up ALL existing sessions on startup - start fresh
+        abandonAllSessions()
         
         Log.d(TAG, "AndroidPackageManagerPlugin initialized")
+    }
+    
+    /**
+     * Abandon ALL PackageInstaller sessions owned by this app.
+     * Called on startup to ensure clean state.
+     */
+    private fun abandonAllSessions() {
+        try {
+            val packageInstaller = context.packageManager.packageInstaller
+            val mySessions = packageInstaller.mySessions
+            var abandonedCount = 0
+            
+            for (session in mySessions) {
+                // Never abandon active sessions: doing so can cause "session files in use" and/or
+                // break in-progress installs when the engine re-attaches.
+                if (session.isActive) {
+                    Log.d(TAG, "Startup cleanup: skipping active session ${session.sessionId} for ${session.appPackageName}")
+                    continue
+                }
+                Log.d(TAG, "Abandoning startup session ${session.sessionId} for ${session.appPackageName}")
+                try {
+                    packageInstaller.abandonSession(session.sessionId)
+                    abandonedCount++
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to abandon session ${session.sessionId}", e)
+                }
+            }
+            
+            // Clear all in-memory state
+            pendingInstallResults.clear()
+            sessionToPackage.clear()
+            pendingUserActionIntents.clear()
+            pendingUserActionDeferred.clear()
+            
+            if (abandonedCount > 0) {
+                Log.d(TAG, "Startup cleanup: abandoned $abandonedCount sessions")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to cleanup sessions on startup", e)
+        }
+    }
+    
+    /**
+     * Find an existing session for a package, if any.
+     * Returns the session info or null if no session exists.
+     */
+    private fun findExistingSession(packageName: String): PackageInstaller.SessionInfo? {
+        return try {
+            val packageInstaller = context.packageManager.packageInstaller
+            packageInstaller.mySessions.find { it.appPackageName == packageName }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to check existing sessions", e)
+            null
+        }
+    }
+    
+    /**
+     * Abandon any existing session for a package.
+     * Returns true if a session was abandoned.
+     */
+    private fun abandonExistingSession(packageName: String): Boolean {
+        val existingSession = findExistingSession(packageName)
+        if (existingSession != null) {
+            try {
+                val packageInstaller = context.packageManager.packageInstaller
+                packageInstaller.abandonSession(existingSession.sessionId)
+                pendingInstallResults.remove(existingSession.sessionId)
+                sessionToPackage.remove(existingSession.sessionId)
+                pendingUserActionIntents.remove(packageName)
+                pendingUserActionDeferred.remove(packageName)
+                Log.d(TAG, "Abandoned existing session ${existingSession.sessionId} for $packageName")
+                return true
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to abandon session for $packageName", e)
+            }
+        }
+        return false
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
@@ -167,6 +304,11 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler {
                     return
                 }
                 retryPendingInstall(packageName, result)
+            }
+            "setAppForegroundState" -> {
+                val foreground = call.argument<Boolean>("foreground") ?: true
+                setAppForegroundState(foreground)
+                result.success(null)
             }
             else -> {
                 result.notImplemented()
@@ -474,6 +616,43 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler {
             false
         }
         
+        // CRITICAL: Check if we're already waiting for a result for this package
+        // This prevents double-prompts and "session files in use" errors
+        if (hasPendingResultForPackage(packageName)) {
+            Log.d(TAG, "Already have pending result for $packageName")
+            
+            // Only re-show the dialog if the prompt was actually deferred.
+            // If the prompt was already shown in the foreground, re-launching it causes double prompts.
+            val pendingIntent = pendingUserActionIntents[packageName]
+            val deferred = pendingUserActionDeferred[packageName] == true
+            if (pendingIntent != null && deferred && isAppInForeground()) {
+                Log.d(TAG, "Re-launching deferred dialog for $packageName")
+                try {
+                    pendingIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    context.startActivity(pendingIntent)
+                    pendingUserActionDeferred[packageName] = false
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to re-launch dialog", e)
+                }
+            }
+            
+            // Tell Dart that installation is already in progress - don't start a new one
+            result.success(mapOf(
+                "isSuccess" to false,
+                "errorMessage" to "Installation already in progress",
+                "packageName" to packageName,
+                "alreadyInProgress" to true
+            ))
+            return
+        }
+        
+        // Check for orphaned system session (no pending result, but session exists)
+        val existingSession = findExistingSession(packageName)
+        if (existingSession != null) {
+            Log.d(TAG, "Found orphaned session ${existingSession.sessionId} for $packageName, abandoning it")
+            abandonExistingSession(packageName)
+        }
+        
         Log.d(TAG, "Installing $packageName (update=$isUpdate)")
         
         // Match Accrescent's session setup exactly
@@ -492,6 +671,8 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler {
         
         val sessionId = packageInstaller.createSession(sessionParams)
         val session = packageInstaller.openSession(sessionId)
+        
+        Log.d(TAG, "Created new session $sessionId for $packageName")
         
         // Transfer the APK file - match Accrescent's approach exactly
         FileInputStream(apkFile).use { fileInputStream ->
@@ -512,7 +693,8 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler {
         
         // Store pending result BEFORE committing - will be completed by InstallResultReceiver
         pendingInstallResults[sessionId] = result
-        Log.d(TAG, "Stored pending result for session $sessionId, awaiting broadcast...")
+        sessionToPackage[sessionId] = packageName
+        Log.d(TAG, "Stored pending result for session $sessionId ($packageName), awaiting broadcast...")
         
         // Create pending intent for installation result
         val intent = Intent(context.applicationContext, InstallResultReceiver::class.java).apply {
@@ -520,7 +702,7 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler {
             putExtra("packageName", packageName)
             putExtra("isUpdate", isUpdate)
         }
-        val pendingIntent = PendingIntent.getBroadcast(
+        val pendingIntentForBroadcast = PendingIntent.getBroadcast(
             context.applicationContext,
             sessionId,  // Use sessionId as requestCode for uniqueness
             intent,
@@ -529,7 +711,7 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler {
         
         // Commit the session - result will be delivered via broadcast to InstallResultReceiver
         // which will call completeInstallResult() to finish the method channel call
-        session.commit(pendingIntent.intentSender)
+        session.commit(pendingIntentForBroadcast.intentSender)
         session.close()
         
         // DO NOT call result.success() here - wait for InstallResultReceiver broadcast
@@ -688,33 +870,72 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler {
     }
     
     /**
-     * Re-launch a pending install prompt that was stored when app was backgrounded.
-     * This allows the user to see the install confirmation dialog again.
+     * Launch a pending install prompt when app returns to foreground.
+     * Called from Dart after setAppForegroundState(true).
+     * 
+     * Returns success if:
+     * - There's a pending user action intent (stored when app was backgrounded)
+     * - OR there's an active session in the system
      */
     private fun retryPendingInstall(packageName: String, result: Result) {
-        val pendingIntent = getPendingUserActionIntent(packageName)
+        // First check if we have a stored user action intent
+        val pendingIntent = pendingUserActionIntents[packageName]
         if (pendingIntent != null) {
-            try {
-                pendingIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                context.startActivity(pendingIntent)
-                result.success(mapOf(
-                    "isSuccess" to true,
-                    "hasPending" to true,
-                    "packageName" to packageName
-                ))
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to re-launch install prompt for $packageName", e)
+            val deferred = pendingUserActionDeferred[packageName] == true
+            if (!deferred) {
+                // Prompt was already shown while app was in foreground.
+                // Do not re-launch it on resume (prevents double system dialogs).
                 result.success(mapOf(
                     "isSuccess" to false,
                     "hasPending" to true,
-                    "errorMessage" to "Failed to launch install prompt: ${e.message}"
+                    "relaunched" to false,
+                    "promptAlreadyShown" to true,
+                    "packageName" to packageName
                 ))
+                return
             }
+
+            Log.d(TAG, "Re-launching deferred user action for $packageName")
+            try {
+                pendingIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                context.startActivity(pendingIntent)
+                pendingUserActionDeferred[packageName] = false
+                result.success(mapOf(
+                    "isSuccess" to true,
+                    "hasPending" to true,
+                    "relaunched" to true,
+                    "promptAlreadyShown" to false,
+                    "packageName" to packageName
+                ))
+                return
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to launch install prompt for $packageName", e)
+                // Clear the stale intent
+                pendingUserActionIntents.remove(packageName)
+                pendingUserActionDeferred.remove(packageName)
+            }
+        }
+        
+        // Check if there's a system session waiting
+        val existingSession = findExistingSession(packageName)
+        if (existingSession != null) {
+            Log.d(TAG, "Found system session ${existingSession.sessionId} for $packageName but no user action intent")
+            // Session exists but we don't have the intent - user needs to re-trigger install
+            result.success(mapOf(
+                "isSuccess" to false,
+                "hasPending" to true,
+                "sessionPending" to true,
+                "relaunched" to false,
+                "promptAlreadyShown" to false,
+                "packageName" to packageName
+            ))
         } else {
-            // No pending intent found - installation might have completed or was never started
+            // No pending intent and no active session
             result.success(mapOf(
                 "isSuccess" to false,
                 "hasPending" to false,
+                "relaunched" to false,
+                "promptAlreadyShown" to false,
                 "packageName" to packageName
             ))
         }

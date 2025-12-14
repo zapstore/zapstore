@@ -19,8 +19,11 @@ private const val TAG = "InstallResultReceiver"
  * This receiver completes the pending method channel Result stored in 
  * AndroidPackageManagerPlugin, allowing Dart's await to finish.
  * 
- * For STATUS_PENDING_USER_ACTION (installer takeover prompt), we launch the
- * confirmation dialog but DON'T complete the Result yet - we wait for the
+ * For STATUS_PENDING_USER_ACTION (installer takeover prompt):
+ * - If app is in foreground: launch confirmation dialog immediately
+ * - If app is backgrounded: store intent for later launch via retryPendingInstall
+ * 
+ * We DON'T complete the Result for pending user action - we wait for the
  * actual success/failure that follows after user confirms/cancels.
  */
 class InstallResultReceiver : BroadcastReceiver() {
@@ -40,7 +43,7 @@ class InstallResultReceiver : BroadcastReceiver() {
             PackageInstaller.STATUS_PENDING_USER_ACTION -> {
                 Log.d(TAG, "User confirmation required for $packageName (installer takeover)")
                 
-                // Launch confirmation dialog - user needs to approve
+                // Extract confirmation dialog intent
                 val confirmIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
                 } else {
@@ -48,15 +51,25 @@ class InstallResultReceiver : BroadcastReceiver() {
                     intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
                 }
                 if (confirmIntent != null) {
-                    // Store the intent so it can be re-launched if app is backgrounded
+                    // Always store the intent for potential re-launch from retryPendingInstall
                     AndroidPackageManagerPlugin.storePendingUserActionIntent(packageName, confirmIntent)
                     
-                    confirmIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    try {
-                        context.startActivity(confirmIntent)
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Failed to launch confirmation dialog", e)
-                        showUserActionNotification(context, sessionId, confirmIntent, packageName)
+                    // Only launch dialog if app is in foreground
+                    if (AndroidPackageManagerPlugin.isAppInForeground()) {
+                        confirmIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                        try {
+                            context.startActivity(confirmIntent)
+                            // Prompt was shown while in foreground: do NOT re-launch on resume.
+                            AndroidPackageManagerPlugin.setPendingUserActionDeferred(packageName, false)
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Failed to launch confirmation dialog", e)
+                            // Launch failed -> treat as deferred so it can be re-launched later.
+                            AndroidPackageManagerPlugin.setPendingUserActionDeferred(packageName, true)
+                            showUserActionNotification(context, sessionId, confirmIntent, packageName)
+                        }
+                    } else {
+                        Log.d(TAG, "App backgrounded, deferring user action for $packageName")
+                        AndroidPackageManagerPlugin.setPendingUserActionDeferred(packageName, true)
                     }
                 }
                 
@@ -82,7 +95,7 @@ class InstallResultReceiver : BroadcastReceiver() {
                     "isSuccess" to false,
                     "errorMessage" to (message ?: "Installation failed"),
                     "packageName" to packageName
-                ))
+                ), context)
             }
             
             PackageInstaller.STATUS_FAILURE_ABORTED -> {
@@ -92,7 +105,7 @@ class InstallResultReceiver : BroadcastReceiver() {
                     "errorMessage" to "Installation was cancelled by user",
                     "packageName" to packageName,
                     "cancelled" to true
-                ))
+                ), context)
             }
             
             PackageInstaller.STATUS_FAILURE_BLOCKED -> {
@@ -101,7 +114,7 @@ class InstallResultReceiver : BroadcastReceiver() {
                     "isSuccess" to false,
                     "errorMessage" to (message ?: "Installation blocked by device policy"),
                     "packageName" to packageName
-                ))
+                ), context)
             }
             
             PackageInstaller.STATUS_FAILURE_CONFLICT -> {
@@ -110,7 +123,7 @@ class InstallResultReceiver : BroadcastReceiver() {
                     "isSuccess" to false,
                     "errorMessage" to (message ?: "Installation conflicts with existing package"),
                     "packageName" to packageName
-                ))
+                ), context)
             }
             
             PackageInstaller.STATUS_FAILURE_INCOMPATIBLE -> {
@@ -119,7 +132,7 @@ class InstallResultReceiver : BroadcastReceiver() {
                     "isSuccess" to false,
                     "errorMessage" to (message ?: "Package is incompatible with this device"),
                     "packageName" to packageName
-                ))
+                ), context)
             }
             
             PackageInstaller.STATUS_FAILURE_INVALID -> {
@@ -128,7 +141,7 @@ class InstallResultReceiver : BroadcastReceiver() {
                     "isSuccess" to false,
                     "errorMessage" to (message ?: "Invalid installation package"),
                     "packageName" to packageName
-                ))
+                ), context)
             }
             
             PackageInstaller.STATUS_FAILURE_STORAGE -> {
@@ -137,7 +150,7 @@ class InstallResultReceiver : BroadcastReceiver() {
                     "isSuccess" to false,
                     "errorMessage" to (message ?: "Insufficient storage space"),
                     "packageName" to packageName
-                ))
+                ), context)
             }
             
             else -> {
@@ -146,7 +159,7 @@ class InstallResultReceiver : BroadcastReceiver() {
                     "isSuccess" to false,
                     "errorMessage" to (message ?: "Installation failed with status $status"),
                     "packageName" to packageName
-                ))
+                ), context)
             }
         }
     }
