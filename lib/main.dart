@@ -14,7 +14,6 @@ import 'package:zapstore/services/app_restart_service.dart';
 import 'package:zapstore/services/background_update_service.dart';
 import 'package:zapstore/services/download_service.dart';
 import 'package:zapstore/router.dart';
-import 'package:zapstore/services/error_reporting_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/services/updates_service.dart';
 import 'package:zapstore/theme.dart';
@@ -231,6 +230,7 @@ final appInitializationProvider = FutureProvider<void>((ref) async {
           },
           'vertex': {'wss://relay.vertexlab.io'},
         },
+        responseTimeout: Duration(seconds: 4),
       ),
     ).future,
   );

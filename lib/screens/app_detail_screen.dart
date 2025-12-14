@@ -271,51 +271,48 @@ class _AppDetailView extends HookConsumerWidget {
                       ),
                     ),
 
-                    if (!currentApp.isInstalled || currentApp.hasUpdate)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const SizedBox(height: 12),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 12),
 
-                            // Latest release title
-                            Text(
-                              'Latest release',
-                              style: context.textTheme.headlineMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
+                          // Latest release title
+                          Text(
+                            'Latest release',
+                            style: context.textTheme.headlineMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+
+                          const SizedBox(height: 8),
+
+                          // Latest version info
+                          Row(
+                            children: [
+                              VersionPillWidget(
+                                app: currentApp,
+                                forceVersion: latestMetadata.version,
                               ),
-                            ),
-
-                            const SizedBox(height: 8),
-
-                            // Latest version info
-                            Row(
-                              children: [
-                                VersionPillWidget(
-                                  app: currentApp,
-                                  forceVersion: latestMetadata.version,
+                              const SizedBox(width: 12),
+                              Text(
+                                formatDate(latestMetadata.createdAt),
+                                style: context.textTheme.bodyMedium?.copyWith(
+                                  color: Theme.of(context).colorScheme.onSurface
+                                      .withValues(alpha: 0.6),
                                 ),
-                                const SizedBox(width: 12),
-                                Text(
-                                  formatDate(latestMetadata.createdAt),
-                                  style: context.textTheme.bodyMedium?.copyWith(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurface
-                                        .withValues(alpha: 0.6),
-                                  ),
-                                ),
-                              ],
-                            ),
+                              ),
+                            ],
+                          ),
 
-                            Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 20),
-                              child: ReleaseNotes(release: latestRelease),
-                            ),
-                          ],
-                        ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 20),
+                            child: ReleaseNotes(release: latestRelease),
+                          ),
+                        ],
                       ),
+                    ),
 
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
