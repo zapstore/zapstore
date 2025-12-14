@@ -13,18 +13,14 @@ import 'package:zapstore/widgets/pill_widget.dart';
 import 'package:zapstore/theme.dart';
 
 class CommentsSection extends HookConsumerWidget {
-  const CommentsSection({super.key, this.fileMetadata});
+  const CommentsSection({super.key, required this.app, this.fileMetadata});
 
+  final App app;
   final FileMetadata? fileMetadata;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     if (fileMetadata == null) {
-      return const SizedBox.shrink();
-    }
-
-    final app = fileMetadata!.release.value?.app.value;
-    if (app == null) {
       return const SizedBox.shrink();
     }
 

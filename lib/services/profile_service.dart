@@ -15,11 +15,6 @@ final _profileFetchTimesProvider = StateProvider<Map<String, DateTime>>(
   (ref) => {},
 );
 
-/// Tracks profile update timestamps to trigger reactivity
-final _profileUpdateTriggerProvider = StateProvider<Map<String, DateTime>>(
-  (ref) => {},
-);
-
 /// Service for managing profile fetches with cache awareness and debounced batching
 class ProfileService {
   ProfileService(this.ref);
@@ -54,9 +49,22 @@ class ProfileService {
   Future<void> _executeBatchFetch() async {
     if (_pendingPubkeys.isEmpty) return;
 
-    // Move pending to in-flight
-    final pubkeysToFetch = Set<String>.from(_pendingPubkeys);
+    // Move pending to local var
+    final pubkeysToCheck = Set<String>.from(_pendingPubkeys);
     _pendingPubkeys.clear();
+
+    final fetchTimes = ref.read(_profileFetchTimesProvider);
+    final now = DateTime.now();
+
+    // Filter out profiles that are already fresh
+    final pubkeysToFetch = pubkeysToCheck.where((pubkey) {
+      final lastFetch = fetchTimes[pubkey];
+      return lastFetch == null ||
+          now.difference(lastFetch) > kProfileCacheDuration;
+    }).toSet();
+
+    if (pubkeysToFetch.isEmpty) return;
+
     _inFlightPubkeys.addAll(pubkeysToFetch);
 
     try {
@@ -93,15 +101,6 @@ class ProfileService {
       // Save to local storage so they're available for LocalSource queries
       if (profiles.isNotEmpty) {
         await storage.save(profiles.toSet());
-
-        // Trigger reactivity by updating timestamp for each profile
-        ref.read(_profileUpdateTriggerProvider.notifier).update((state) {
-          final updated = {...state};
-          for (final profile in profiles) {
-            updated[profile.event.pubkey] = DateTime.now();
-          }
-          return updated;
-        });
       }
 
       // Update fetch times for all requested pubkeys (even if not found)
@@ -174,18 +173,15 @@ final profileServiceProvider = Provider((ref) => ProfileService(ref));
 /// - Streams updates when profile data changes
 final profileProvider = AutoDisposeProvider.family<AsyncValue<Profile?>, String>(
   (ref, pubkey) {
-    // Watch update trigger to react when profiles are saved by fetchProfiles()
-    ref.watch(_profileUpdateTriggerProvider.select((state) => state[pubkey]));
+    // Request fetch if needed (will be debounced and cache-checked)
+    ref.read(profileServiceProvider).requestProfile(pubkey);
 
-    // Use query with LocalAndRemoteSource for reactive updates
+    // Use query with LocalSource for reactive updates from DB only
+    // This avoids keeping open relay subscriptions while still updating UI
     final profileState = ref.watch(
       query<Profile>(
         authors: {pubkey},
-        source: LocalAndRemoteSource(
-          relays: {'social', 'vertex'},
-          stream: false,
-          background: true, // Don't block on remote
-        ),
+        source: LocalSource(),
       ),
     );
 

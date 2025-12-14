@@ -322,7 +322,7 @@ class _AppDetailView extends HookConsumerWidget {
                       ),
                     ),
 
-                    CommentsSection(fileMetadata: latestMetadata),
+                    CommentsSection(app: currentApp, fileMetadata: latestMetadata),
 
                     // Debug section - only visible for specific pubkey
                     if (showDebugSections)
