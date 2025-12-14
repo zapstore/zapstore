@@ -58,11 +58,12 @@ void main() {
 /// Global error handler that reports errors via NIP-44 encrypted DMs
 void _errorHandler(Object exception, StackTrace? stack) {
   // Report error asynchronously (fire and forget)
-  unawaited(
-    _providerContainer
-        .read(errorReportingServiceProvider)
-        .reportError(exception, stack),
-  );
+  // TODO: Disabled until careful review
+  // unawaited(
+  //   _providerContainer
+  //       .read(errorReportingServiceProvider)
+  //       .reportError(exception, stack),
+  // );
 }
 
 class ZapstoreApp extends HookConsumerWidget {
@@ -218,6 +219,7 @@ final appInitializationProvider = FutureProvider<void>((ref) async {
     initializationProvider(
       StorageConfiguration(
         databasePath: dbPath,
+        defaultQuerySource: LocalAndRemoteSource(relays: 'AppCatalog'),
         defaultRelays: {
           'bootstrap': {'wss://purplepag.es', 'wss://relay.zapstore.dev'},
           'AppCatalog': {'wss://relay.zapstore.dev'},
@@ -282,12 +284,12 @@ class _AppLifecycleObserver with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final downloadService = _ref.read(downloadServiceProvider.notifier);
-    
+
     if (state == AppLifecycleState.resumed) {
       // Notify download service that app is in foreground
       // This will process any pending installations
       unawaited(downloadService.setAppForeground(true));
-      
+
       // App regained focus - re-sync installed packages from Android system
       // This will detect any apps installed/uninstalled outside of Zapstore
       unawaited(
@@ -302,10 +304,10 @@ class _AppLifecycleObserver with WidgetsBindingObserver {
           _ref.read(storageNotifierProvider.notifier)
               as PurplebaseStorageNotifier;
       notifier.ensureConnected();
-    } else if (state == AppLifecycleState.paused || 
-               state == AppLifecycleState.inactive ||
-               state == AppLifecycleState.detached ||
-               state == AppLifecycleState.hidden) {
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.hidden) {
       // Notify download service that app is in background
       unawaited(downloadService.setAppForeground(false));
     }

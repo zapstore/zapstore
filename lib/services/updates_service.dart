@@ -174,42 +174,8 @@ final categorizedAppsProvider =
     );
 
 /// Provider that calculates the total number of apps with available updates
-/// Uses LocalSource since categorizedAppsProvider already fetches from relays
 final updateCountProvider = Provider<int>((ref) {
-  // Watch package manager for installed state changes
-  final packages = ref.watch(packageManagerProvider);
-  final installedIds = packages.map((p) => p.appId).toSet();
-  final platform = ref.read(packageManagerProvider.notifier).platform;
-
-  if (installedIds.isEmpty) {
-    return 0;
-  }
-
-  // Query apps from local storage only - data is already fetched by categorizedAppsProvider
-  final state = ref.watch(
-    query<App>(
-      tags: {
-        '#d': installedIds,
-        '#f': {platform},
-      },
-      and: (app) => {
-        app.latestRelease,
-        // Load nested FileMetadata - critical for hasUpdate to work
-        if (app.latestRelease.value != null)
-          app.latestRelease.value!.latestMetadata,
-      },
-      source: const LocalSource(),
-      subscriptionPrefix: 'update-count',
-    ),
-  );
-
-  int updateCount = 0;
-
-  for (final app in state.models) {
-    if (app.hasUpdate) {
-      updateCount++;
-    }
-  }
-
-  return updateCount;
+  final categorized = ref.watch(categorizedAppsProvider);
+  if (categorized.isLoading) return 0;
+  return categorized.automaticUpdates.length + categorized.manualUpdates.length;
 });

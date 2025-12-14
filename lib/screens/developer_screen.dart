@@ -29,6 +29,31 @@ class DeveloperScreen extends HookConsumerWidget {
     final profileAsync = ref.watch(profileProvider(pubkey));
     final profile = profileAsync.value;
 
+    // Shared developer apps query (AppCatalog)
+    final developerAppsState = ref.watch(
+      query<App>(
+        authors: {pubkey},
+        tags: {
+          '#f': {'android-arm64-v8a'},
+        },
+        limit: 20,
+        and: (app) => {
+          app.latestRelease,
+          app.latestRelease.value?.latestMetadata,
+        },
+        source: const LocalAndRemoteSource(
+          relays: 'AppCatalog',
+          stream: true,
+          background: true,
+        ),
+        andSource: const LocalAndRemoteSource(
+          relays: 'AppCatalog',
+          stream: false,
+        ),
+        subscriptionPrefix: 'developer-apps',
+      ),
+    );
+
     return Scaffold(
       body: SafeArea(
         child: Column(
@@ -41,7 +66,7 @@ class DeveloperScreen extends HookConsumerWidget {
             ),
 
             // Zaps list for all developer's apps
-            _DeveloperZapsList(pubkey: pubkey),
+            _DeveloperZapsList(pubkey: pubkey, appsState: developerAppsState),
 
             // Tabs for apps and info
             Expanded(
@@ -61,6 +86,7 @@ class DeveloperScreen extends HookConsumerWidget {
                           _DeveloperAppsTab(
                             pubkey: pubkey,
                             scrollController: scrollController,
+                            appsState: developerAppsState,
                           ),
                           _DeveloperAboutTab(
                             profile: profile,
@@ -107,26 +133,15 @@ class _DeveloperAppsTab extends HookConsumerWidget {
   const _DeveloperAppsTab({
     required this.pubkey,
     required this.scrollController,
+    required this.appsState,
   });
 
   final String pubkey;
   final ScrollController scrollController;
+  final StorageState<App> appsState;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Query apps by this specific developer
-    final appsState = ref.watch(
-      query<App>(
-        authors: {pubkey}, // Filter by developer pubkey
-        limit: 100,
-        tags: {
-          '#f': {'android-arm64-v8a'},
-        },
-        and: (app) => {app.latestRelease},
-        subscriptionPrefix: 'developer-apps',
-      ),
-    );
-
     // Query author profile from 'social' relay group
     final authorAsync = ref.watch(profileProvider(pubkey));
     final author = authorAsync.value;
@@ -142,11 +157,10 @@ class _DeveloperAppsTab extends HookConsumerWidget {
               itemCount: 5,
               itemBuilder: (context, index) => AppCard(isLoading: true),
             ),
-            StorageError() => _buildErrorState(
+            StorageError() => _buildErrorState(context, appsState.toString()),
+            StorageData(:final models) when models.isEmpty => _buildEmptyState(
               context,
-              appsState.toString(),
             ),
-            StorageData(:final models) when models.isEmpty => _buildEmptyState(context),
             StorageData(:final models) => _buildAppsList(
               context,
               models,
@@ -202,11 +216,7 @@ class _DeveloperAppsTab extends HookConsumerWidget {
     );
   }
 
-  Widget _buildAppsList(
-    BuildContext context,
-    List<App> apps,
-    Profile? author,
-  ) {
+  Widget _buildAppsList(BuildContext context, List<App> apps, Profile? author) {
     return ListView.builder(
       padding: const EdgeInsets.all(16),
       itemCount: apps.length,
@@ -222,26 +232,13 @@ class _DeveloperAppsTab extends HookConsumerWidget {
 }
 
 class _DeveloperZapsList extends HookConsumerWidget {
-  const _DeveloperZapsList({required this.pubkey});
+  const _DeveloperZapsList({required this.pubkey, required this.appsState});
 
   final String pubkey;
+  final StorageState<App> appsState;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Query all apps by this developer with their latest metadata
-    final appsState = ref.watch(
-      query<App>(
-        authors: {pubkey},
-        tags: {
-          '#f': {'android-arm64-v8a'},
-        },
-        limit: 100,
-        and: (app) => {app.latestRelease},
-        source: LocalAndRemoteSource(stream: false, background: true),
-        subscriptionPrefix: 'developer-all-apps',
-      ),
-    );
-
     // Get all apps
     final apps = appsState is StorageData ? appsState.models : <App>[];
 
@@ -269,36 +266,27 @@ class _DeveloperZapsList extends HookConsumerWidget {
       }
     }
 
-    // Query zaps on app addressable IDs
-    final zapsOnAppsState = ref.watch(
+    final zapTags = <String, Set<String>>{
+      ...allAppTags,
+      if (metadataIds.isNotEmpty) '#e': metadataIds,
+    };
+
+    if (zapTags.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    // Single zap query across app addressable IDs and metadata
+    final zapsState = ref.watch(
       query<Zap>(
-        tags: allAppTags,
-        source: LocalAndRemoteSource(relays: 'social'),
+        tags: zapTags,
+        source: const LocalAndRemoteSource(relays: 'social'),
         and: (zap) => {zap.author, zap.zapRequest},
-        andSource: LocalAndRemoteSource(relays: 'social', stream: false),
-        subscriptionPrefix: 'developer-zaps-apps',
+        andSource: const LocalAndRemoteSource(relays: 'social', stream: false),
+        subscriptionPrefix: 'developer-zaps',
       ),
     );
 
-    // Query zaps on file metadata
-    final zapsOnMetadataState = metadataIds.isNotEmpty
-        ? ref.watch(
-            query<Zap>(
-              tags: {'#e': metadataIds},
-              source: LocalAndRemoteSource(relays: 'social'),
-              and: (zap) => {zap.author, zap.zapRequest},
-              andSource: LocalAndRemoteSource(relays: 'social', stream: false),
-              subscriptionPrefix: 'developer-zaps-metadata',
-            ),
-          )
-        : null;
-
-    // Combine all zaps
-    final allZaps = <Zap>{
-      if (zapsOnAppsState is StorageData) ...zapsOnAppsState.models,
-      if (zapsOnMetadataState != null && zapsOnMetadataState is StorageData)
-        ...zapsOnMetadataState.models,
-    };
+    final allZaps = zapsState is StorageData ? zapsState.models : const <Zap>[];
 
     if (allZaps.isEmpty) {
       return const SizedBox.shrink();

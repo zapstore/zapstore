@@ -195,6 +195,15 @@ class AppPackContainer extends HookConsumerWidget {
     // Show newest packs first (also drives default selection)
     final sortedPacks = _sortPacksNewestFirst(nonEmptyPacks);
 
+    // Fetch author profiles for all app packs (batch fetch like latest_releases)
+    useEffect(() {
+      final authorPubkeys = sortedPacks.map((p) => p.event.pubkey).toSet();
+      if (authorPubkeys.isNotEmpty) {
+        ref.read(profileServiceProvider).fetchProfiles(authorPubkeys);
+      }
+      return null;
+    }, [sortedPacks.map((p) => p.id).join(',')]);
+
     // Default to the newest available pack
     final defaultSelection = sortedPacks.first.id;
 

@@ -24,7 +24,7 @@ final bookmarksProvider = FutureProvider<Set<String>>((ref) async {
       source: const LocalAndRemoteSource(
         relays: 'social',
         stream: false,
-        background: true, // Don't block on relay response
+        background: false, // Single fetch; no live streaming
       ),
       subscriptionPrefix: 'user-bookmarks',
     ),

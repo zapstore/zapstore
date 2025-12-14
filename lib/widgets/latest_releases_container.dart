@@ -268,8 +268,7 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
         and: (app) => {
           app.latestRelease,
           // Load nested FileMetadata from latestRelease (same relay group)
-          if (app.latestRelease.value != null)
-            app.latestRelease.value!.latestMetadata,
+          app.latestRelease.value?.latestMetadata,
         },
         // NOTE: It must stream=true
         source: const LocalAndRemoteSource(
@@ -291,14 +290,6 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
               .where((a) => !liveIds.contains(a.id))
               .toList();
           state = state.copyWith(storage: next, olderApps: filteredOlder);
-
-          final newApps = next.models;
-
-          // For new apps, one-off fetch their relationships
-          // TODO: Not needed - should be dealt with by and/andSource
-          if (newApps.isNotEmpty) {
-            await _fetchRelationshipsForNewApps(newApps);
-          }
         } else {
           state = state.copyWith(storage: next);
         }
@@ -309,41 +300,6 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
       },
       fireImmediately: true,
     );
-  }
-
-  /// One-off fetch of Release and FileMetadata for newly received apps
-  Future<void> _fetchRelationshipsForNewApps(List<App> newApps) async {
-    if (newApps.isEmpty) return;
-
-    // One-off fetch: Get releases for these apps from remote
-    final releases = await ref.storage.query(
-      Request<Release>(
-        newApps
-            .map((app) => app.latestRelease.req?.filters.firstOrNull)
-            .nonNulls
-            .toList(),
-      ),
-      source: const RemoteSource(stream: false),
-    );
-
-    // One-off fetch: Get file metadata for the releases from remote
-    if (releases.isNotEmpty) {
-      await ref.storage.query(
-        Request<FileMetadata>(
-          releases
-              .map((r) => r.latestMetadata.req?.filters.firstOrNull)
-              .nonNulls
-              .toList(),
-        ),
-        source: const RemoteSource(stream: false),
-      );
-    }
-
-    // One-off fetch: Get release author profiles from 'social' relay group
-    final authorPubkeys = releases.map((r) => r.event.pubkey).toSet();
-    if (authorPubkeys.isNotEmpty) {
-      await ref.read(profileServiceProvider).fetchProfiles(authorPubkeys);
-    }
   }
 
   /// Fetch authors for a page of apps (used during pagination)

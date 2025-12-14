@@ -39,9 +39,7 @@ class SearchScreen extends HookConsumerWidget {
               },
               and: (app) => {
                 app.latestRelease,
-                // Load nested FileMetadata from latestRelease (same relay group)
-                if (app.latestRelease.value != null)
-                  app.latestRelease.value!.latestMetadata,
+                app.latestRelease.value?.latestMetadata,
               },
               // Force the search to hit the default relay group (relay.zapstore.dev)
               // so a connection appears in Debug Info when searching.
