@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:amber_signer/amber_signer.dart';
 import 'package:zapstore/services/app_restart_service.dart';
+import 'package:zapstore/services/background_update_service.dart';
 import 'package:zapstore/services/download_service.dart';
 import 'package:zapstore/router.dart';
 import 'package:zapstore/services/error_reporting_service.dart';
@@ -238,6 +239,10 @@ final appInitializationProvider = FutureProvider<void>((ref) async {
   final packageManager = ref.read(packageManagerProvider.notifier);
   await packageManager.syncInstalledPackages();
 
+  // Initialize background update service (WorkManager + notifications)
+  final backgroundService = ref.read(backgroundUpdateServiceProvider);
+  await backgroundService.initialize();
+
   // Initialize market intent handling (for market:// URIs)
   await ref.read(marketIntentServiceProvider).initialize();
 
@@ -265,12 +270,14 @@ Future<void> onSignInSuccess(dynamic ref) async {
   final storage =
       ref.read(storageNotifierProvider.notifier) as PurplebaseStorageNotifier;
 
-  await storage.query(
-    RequestFilter<AppCatalogRelayList>(authors: {pubkey}).toRequest(),
-    source: const RemoteSource(
-      relays: 'bootstrap',
-      background: false,
-      stream: false,
+  unawaited(
+    storage.query(
+      RequestFilter<AppCatalogRelayList>(authors: {pubkey}).toRequest(),
+      source: const RemoteSource(
+        relays: 'bootstrap',
+        background: false,
+        stream: false,
+      ),
     ),
   );
 }

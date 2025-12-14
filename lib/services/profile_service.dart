@@ -172,31 +172,32 @@ final profileServiceProvider = Provider((ref) => ProfileService(ref));
 /// - Returns local data immediately if available
 /// - Reacts to profile updates from batch fetches via trigger mechanism
 /// - Streams updates when profile data changes
-final profileProvider =
-    AutoDisposeProvider.family<AsyncValue<Profile?>, String>((ref, pubkey) {
-      // Watch update trigger to react when profiles are saved by fetchProfiles()
-      ref.watch(_profileUpdateTriggerProvider.select((state) => state[pubkey]));
+final profileProvider = AutoDisposeProvider.family<AsyncValue<Profile?>, String>(
+  (ref, pubkey) {
+    // Watch update trigger to react when profiles are saved by fetchProfiles()
+    ref.watch(_profileUpdateTriggerProvider.select((state) => state[pubkey]));
 
-      // Use query with LocalAndRemoteSource for reactive updates
-      final profileState = ref.watch(
-        query<Profile>(
-          authors: {pubkey},
-          source: LocalAndRemoteSource(
-            relays: {'social', 'vertex'},
-            stream: true,
-            background: true, // Don't block on remote
-          ),
+    // Use query with LocalAndRemoteSource for reactive updates
+    final profileState = ref.watch(
+      query<Profile>(
+        authors: {pubkey},
+        source: LocalAndRemoteSource(
+          relays: {'social', 'vertex'},
+          stream: true,
+          background: true, // Don't block on remote
         ),
-      );
+      ),
+    );
 
-      return switch (profileState) {
-        StorageLoading() => const AsyncValue.loading(),
-        StorageError(:final exception) => AsyncValue.error(
-          exception,
-          StackTrace.current,
-        ),
-        StorageData(:final models) => AsyncValue.data(
-          models.isNotEmpty ? models.first : null,
-        ),
-      };
-    });
+    return switch (profileState) {
+      StorageLoading() => const AsyncValue.loading(),
+      StorageError(:final exception) => AsyncValue.error(
+        exception,
+        StackTrace.current,
+      ),
+      StorageData(:final models) => AsyncValue.data(
+        models.isNotEmpty ? models.first : null,
+      ),
+    };
+  },
+);
