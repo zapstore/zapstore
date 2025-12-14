@@ -85,7 +85,6 @@ class SocialActionsRow extends HookConsumerWidget {
     final isPrivatelySaved = bookmarkedIds.contains(appAddressableId);
 
     // Query public packs for the dialog
-    // TODO: Why are app packs queried remotely here too?
     final publicPacksState = isSignedIn
         ? ref.watch(
             query<AppPack>(
@@ -93,7 +92,7 @@ class SocialActionsRow extends HookConsumerWidget {
               and: (pack) => {pack.apps},
               source: const LocalAndRemoteSource(
                 relays: 'social',
-                stream: true,
+                stream: false,
               ),
               andSource: const LocalSource(),
               subscriptionPrefix: 'user-packs',

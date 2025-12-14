@@ -267,7 +267,6 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
         },
         and: (app) => {
           app.latestRelease,
-          // Load nested FileMetadata from latestRelease (same relay group)
           app.latestRelease.value?.latestMetadata,
         },
         // NOTE: It must stream=true

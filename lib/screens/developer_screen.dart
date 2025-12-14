@@ -43,12 +43,8 @@ class DeveloperScreen extends HookConsumerWidget {
         },
         source: const LocalAndRemoteSource(
           relays: 'AppCatalog',
-          stream: true,
-          background: true,
-        ),
-        andSource: const LocalAndRemoteSource(
-          relays: 'AppCatalog',
           stream: false,
+          background: true,
         ),
         subscriptionPrefix: 'developer-apps',
       ),

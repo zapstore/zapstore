@@ -40,9 +40,8 @@ class AppPackContainer extends HookConsumerWidget {
         source: const LocalAndRemoteSource(
           stream: true,
           background: true,
-          relays: 'social', // Load from social relay group
+          relays: 'social',
         ),
-        // App relationships should come from default/zapstore relay
         andSource: const LocalAndRemoteSource(
           relays: 'AppCatalog',
           stream: false,
@@ -105,8 +104,9 @@ class AppPackContainer extends HookConsumerWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest
-              .withValues(alpha: 0.8),
+          color: Theme.of(
+            context,
+          ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.8),
           borderRadius: BorderRadius.circular(18),
         ),
         child: Row(
@@ -355,9 +355,7 @@ class AppPackContainer extends HookConsumerWidget {
 
   static List<AppPack> _sortPacksNewestFirst(List<AppPack> appPacks) {
     final sortedPacks = [...appPacks];
-    sortedPacks.sort(
-      (a, b) => b.event.createdAt.compareTo(a.event.createdAt),
-    );
+    sortedPacks.sort((a, b) => b.event.createdAt.compareTo(a.event.createdAt));
     return sortedPacks;
   }
 }
