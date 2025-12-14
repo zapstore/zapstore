@@ -134,9 +134,17 @@ class _UpdatesTab extends HookConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              '🎉',
-              style: TextStyle(fontSize: 48),
+            ColorFiltered(
+              colorFilter: const ColorFilter.matrix(<double>[
+                0.2126, 0.7152, 0.0722, 0, 0,
+                0.2126, 0.7152, 0.0722, 0, 0,
+                0.2126, 0.7152, 0.0722, 0, 0,
+                0, 0, 0, 1, 0,
+              ]),
+              child: const Text(
+                '🎉',
+                style: TextStyle(fontSize: 48),
+              ),
             ),
             const SizedBox(height: 12),
             Text(
