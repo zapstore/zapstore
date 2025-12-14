@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
@@ -8,7 +7,7 @@ import '../widgets/common/profile_avatar.dart';
 import '../theme.dart';
 
 /// Main scaffold with bottom navigation that adapts to screen size
-class MainScaffold extends HookWidget {
+class MainScaffold extends StatelessWidget {
   const MainScaffold({super.key, required this.navigationShell});
 
   final StatefulNavigationShell navigationShell;
@@ -35,15 +34,11 @@ class MainScaffold extends HookWidget {
   Widget build(BuildContext context) {
     final router = GoRouter.of(context);
 
-    // Listen to router changes to keep canPop in sync with navigation state
-    useListenable(router.routerDelegate);
-
     return PopScope(
-      canPop: !router.canPop(), // Allow app to close only when router can't pop
+      canPop: false, // Never let system close the app via back gesture
       onPopInvokedWithResult: (didPop, result) {
         if (!didPop && router.canPop()) {
-          // If we couldn't pop but router has history, pop from router
-          router.pop();
+          router.pop(); // Go back if possible, otherwise do nothing
         }
       },
       child: LayoutBuilder(
