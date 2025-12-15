@@ -37,8 +37,14 @@ class MainScaffold extends StatelessWidget {
     return PopScope(
       canPop: false, // Never let system close the app via back gesture
       onPopInvokedWithResult: (didPop, result) {
-        if (!didPop && router.canPop()) {
-          router.pop(); // Go back if possible, otherwise do nothing
+        if (!didPop) {
+          if (router.canPop()) {
+            router.pop(); // Go back if possible
+          } else if (navigationShell.currentIndex != 0) {
+            // At root of non-home tab, go to home (search) tab
+            navigationShell.goBranch(0);
+          }
+          // At home tab root, do nothing (don't close the app)
         }
       },
       child: LayoutBuilder(
