@@ -42,11 +42,16 @@ class AppPackContainer extends HookConsumerWidget {
     );
 
     final packs = switch (appPacksState) {
-      StorageData(:final models) => models
-          .where((p) => p.identifier != kAppBookmarksIdentifier)
-          .where((p) => p.apps.toList().any((a) => a.name != null || a.identifier.isNotEmpty))
-          .toList()
-        ..sort((a, b) => b.event.createdAt.compareTo(a.event.createdAt)),
+      StorageData(:final models) =>
+        models
+            .where((p) => p.identifier != kAppBookmarksIdentifier)
+            .where(
+              (p) => p.apps.toList().any(
+                (a) => a.name != null || a.identifier.isNotEmpty,
+              ),
+            )
+            .toList()
+          ..sort((a, b) => b.event.createdAt.compareTo(a.event.createdAt)),
       _ => <AppPack>[],
     };
 
@@ -60,23 +65,97 @@ class AppPackContainer extends HookConsumerWidget {
       orElse: () => packs.first,
     );
 
+    // Scroll controller and hint visibility state
+    final scrollController = useScrollController();
+    final showRightHint = useState(true);
+    final hasScrolledOnce = useState(false);
+
+    // Listen to scroll position to hide hint when near end
+    useEffect(() {
+      void listener() {
+        if (!scrollController.hasClients) return;
+        final maxScroll = scrollController.position.maxScrollExtent;
+        final currentScroll = scrollController.offset;
+
+        // Hide hint when scrolled past 20px or near the end
+        if (currentScroll > 20) {
+          hasScrolledOnce.value = true;
+        }
+        showRightHint.value =
+            !hasScrolledOnce.value && currentScroll < maxScroll - 20;
+      }
+
+      // Check initial state after first frame
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (scrollController.hasClients) {
+          final maxScroll = scrollController.position.maxScrollExtent;
+          // Hide hint if content doesn't overflow
+          showRightHint.value = maxScroll > 20;
+        }
+      });
+
+      scrollController.addListener(listener);
+      return () => scrollController.removeListener(listener);
+    }, [scrollController]);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Row(
-            children: packs.map((pack) => _PackPill(
-              pack: pack,
-              isSelected: selectedId.value == pack.id,
-              onTap: () => selectedId.value = pack.id,
-            )).toList(),
+        SizedBox(
+          height: 48,
+          child: Stack(
+            children: [
+              SingleChildScrollView(
+                controller: scrollController,
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.only(left: 12, right: 52),
+                child: Row(
+                  children: packs
+                      .map(
+                        (pack) => _PackPill(
+                          pack: pack,
+                          isSelected: selectedId.value == pack.id,
+                          onTap: () => selectedId.value = pack.id,
+                        ),
+                      )
+                      .toList(),
+                ),
+              ),
+              // Right fade gradient with animated chevron
+              if (showRightHint.value)
+                Positioned(
+                  right: 0,
+                  top: 0,
+                  bottom: 0,
+                  width: 56,
+                  child: IgnorePointer(
+                    child: Container(
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                          colors: [
+                            Colors.transparent,
+                            AppColors.darkBackground,
+                            AppColors.darkBackground,
+                          ],
+                          stops: [0.0, 0.5, 1.0],
+                        ),
+                      ),
+                      child: const Align(
+                        alignment: Alignment(0.6, -0.1),
+                        child: _AnimatedScrollHint(),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
         const SizedBox(height: 16),
         _AppsGrid(
-          apps: selectedPack.apps.toList()
+          apps: selectedPack.apps
+              .toList()
               .where((a) => a.name != null || a.identifier.isNotEmpty)
               .toList(),
         ),
@@ -94,9 +173,7 @@ class AppPackContainer extends HookConsumerWidget {
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Row(
-                children: List.generate(3, (_) => _SkeletonPill()),
-              ),
+              child: Row(children: List.generate(3, (_) => _SkeletonPill())),
             ),
             const SizedBox(height: 16),
             const _AppsGrid(apps: []),
@@ -116,7 +193,9 @@ class _SkeletonPill extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.8),
+          color: Theme.of(
+            context,
+          ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.8),
           borderRadius: BorderRadius.circular(18),
         ),
         child: Row(
@@ -126,13 +205,92 @@ class _SkeletonPill extends StatelessWidget {
             const SizedBox(width: 4),
             Container(height: 14, width: 16, color: AppColors.darkSkeletonBase),
             const SizedBox(width: 6),
-            Container(width: 18, height: 18, decoration: BoxDecoration(
-              color: AppColors.darkSkeletonBase,
-              borderRadius: BorderRadius.circular(9),
-            )),
+            Container(
+              width: 18,
+              height: 18,
+              decoration: BoxDecoration(
+                color: AppColors.darkSkeletonBase,
+                borderRadius: BorderRadius.circular(9),
+              ),
+            ),
             const SizedBox(width: 6),
             Container(height: 14, width: 50, color: AppColors.darkSkeletonBase),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Animated chevron hint for horizontal scroll discovery
+class _AnimatedScrollHint extends StatefulWidget {
+  const _AnimatedScrollHint();
+
+  @override
+  State<_AnimatedScrollHint> createState() => _AnimatedScrollHintState();
+}
+
+class _AnimatedScrollHintState extends State<_AnimatedScrollHint>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _offsetAnimation;
+  late Animation<double> _opacityAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 900),
+      vsync: this,
+    )..repeat(reverse: true);
+
+    _offsetAnimation = Tween<double>(
+      begin: 0,
+      end: 6,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+
+    _opacityAnimation = Tween<double>(
+      begin: 0.7,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) => Transform.translate(
+        offset: Offset(_offsetAnimation.value, 0),
+        child: Opacity(
+          opacity: _opacityAnimation.value,
+          // Stack icons with slight offsets to create bold effect
+          child: SizedBox(
+            width: 20,
+            height: 20,
+            child: Stack(
+              children: [
+                Positioned(
+                  left: 0.5,
+                  child: Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    color: Colors.white.withValues(alpha: 0.7),
+                    size: 20,
+                  ),
+                ),
+                const Icon(
+                  Icons.arrow_forward_ios_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -153,10 +311,15 @@ class _PackPill extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final authorState = ref.watch(query<Profile>(
-      authors: {pack.event.pubkey},
-      source: const LocalAndRemoteSource(relays: {'social', 'vertex'}, cachedFor: Duration(hours: 2)),
-    ));
+    final authorState = ref.watch(
+      query<Profile>(
+        authors: {pack.event.pubkey},
+        source: const LocalAndRemoteSource(
+          relays: {'social', 'vertex'},
+          cachedFor: Duration(hours: 2),
+        ),
+      ),
+    );
     final author = switch (authorState) {
       StorageData(:final models) => models.firstOrNull,
       _ => null,
@@ -171,7 +334,9 @@ class _PackPill extends ConsumerWidget {
           decoration: BoxDecoration(
             color: isSelected
                 ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.15)
-                : Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.8),
+                : Theme.of(
+                    context,
+                  ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.8),
             borderRadius: BorderRadius.circular(18),
           ),
           child: Row(
@@ -199,7 +364,9 @@ class _PackPill extends ConsumerWidget {
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(9),
                     border: Border.all(
-                      color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.outline.withValues(alpha: 0.3),
                       width: 1,
                     ),
                   ),
@@ -298,7 +465,10 @@ class _AppCard extends ConsumerWidget {
         if (app!.latestRelease.value == null) {
           final req = app!.latestRelease.req;
           if (req != null) {
-            ref.storage.query(req, source: const LocalAndRemoteSource(stream: false));
+            ref.storage.query(
+              req,
+              source: const LocalAndRemoteSource(stream: false),
+            );
           }
         }
         final segments = GoRouterState.of(context).uri.pathSegments;
@@ -349,7 +519,11 @@ class _AppCard extends ConsumerWidget {
                               color: Colors.grey[400],
                             ),
                           )
-                        : Icon(Icons.apps_outlined, size: 16, color: Colors.grey[400]),
+                        : Icon(
+                            Icons.apps_outlined,
+                            size: 16,
+                            color: Colors.grey[400],
+                          ),
                   ),
                 ),
                 const SizedBox(height: 12),
