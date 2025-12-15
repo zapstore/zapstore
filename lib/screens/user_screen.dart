@@ -3,7 +3,6 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
-import 'package:zapstore/constants/app_constants.dart';
 import 'package:zapstore/utils/extensions.dart';
 
 import '../theme.dart';
@@ -22,13 +21,15 @@ class UserScreen extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // Load user profile
-    final profileState = ref.watch(query<Profile>(
-      authors: {pubkey},
-      source: const LocalAndRemoteSource(
-        relays: {'social', 'vertex'},
-        cachedFor: Duration(hours: 2),
+    final profileState = ref.watch(
+      query<Profile>(
+        authors: {pubkey},
+        source: const LocalAndRemoteSource(
+          relays: {'social', 'vertex'},
+          cachedFor: Duration(hours: 2),
+        ),
       ),
-    ));
+    );
     final profile = profileState.models.firstOrNull;
 
     // Query user's apps
@@ -51,7 +52,7 @@ class UserScreen extends HookConsumerWidget {
         subscriptionPrefix: 'user-apps',
       ),
     );
-    
+
     // For Zapstore pubkey, only show Zapstore's own apps (not relay-signed ones)
     final apps = pubkey == kZapstorePubkey
         ? userAppsState.models.where((a) => a.isZapstoreApp).toList()
@@ -76,14 +77,16 @@ class UserScreen extends HookConsumerWidget {
         subscriptionPrefix: 'user-packs',
       ),
     );
-    final packs = appPacksState.models
-        .where((p) => p.identifier != kAppBookmarksIdentifier)
-        .where(
-          (p) =>
-              p.apps.toList().any((a) => a.name != null || a.identifier.isNotEmpty),
-        )
-        .toList()
-      ..sort((a, b) => b.event.createdAt.compareTo(a.event.createdAt));
+    final packs =
+        appPacksState.models
+            .where((p) => p.identifier != kAppBookmarksIdentifier)
+            .where(
+              (p) => p.apps.toList().any(
+                (a) => a.name != null || a.identifier.isNotEmpty,
+              ),
+            )
+            .toList()
+          ..sort((a, b) => b.event.createdAt.compareTo(a.event.createdAt));
 
     return Scaffold(
       body: SafeArea(
@@ -98,15 +101,11 @@ class UserScreen extends HookConsumerWidget {
             ),
 
             // Zaps widget
-            SliverToBoxAdapter(
-              child: _UserZapsList(apps: apps),
-            ),
+            SliverToBoxAdapter(child: _UserZapsList(apps: apps)),
 
             // Bio section with max height
             if (profile?.about != null && profile!.about!.isNotEmpty)
-              SliverToBoxAdapter(
-                child: _UserBio(profile: profile),
-              ),
+              SliverToBoxAdapter(child: _UserBio(profile: profile)),
 
             // Apps section - only show if apps exist
             if (apps.isNotEmpty) ...[
@@ -122,17 +121,14 @@ class UserScreen extends HookConsumerWidget {
                 ),
               ),
               SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) {
-                    final app = apps[index];
-                    return AppCard(
-                      app: app,
-                      author: profile,
-                      showSignedBy: false,
-                    );
-                  },
-                  childCount: apps.length,
-                ),
+                delegate: SliverChildBuilderDelegate((context, index) {
+                  final app = apps[index];
+                  return AppCard(
+                    app: app,
+                    author: profile,
+                    showSignedBy: false,
+                  );
+                }, childCount: apps.length),
               ),
             ],
 
@@ -161,9 +157,7 @@ class UserScreen extends HookConsumerWidget {
               ],
 
             // Bottom padding
-            const SliverToBoxAdapter(
-              child: SizedBox(height: 32),
-            ),
+            const SliverToBoxAdapter(child: SizedBox(height: 32)),
           ],
         ),
       ),
@@ -172,10 +166,7 @@ class UserScreen extends HookConsumerWidget {
 }
 
 class _UserHeader extends StatelessWidget {
-  const _UserHeader({
-    required this.profile,
-    required this.pubkey,
-  });
+  const _UserHeader({required this.profile, required this.pubkey});
 
   final Profile? profile;
   final String pubkey;
@@ -214,9 +205,12 @@ class _UserHeader extends StatelessWidget {
                       Expanded(
                         child: Text(
                           profile!.nip05!,
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -376,9 +370,13 @@ class _UserBio extends HookWidget {
           Center(
             child: FilledButton(
               style: FilledButton.styleFrom(
-                backgroundColor:
-                    Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                backgroundColor: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.08),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 minimumSize: Size.zero,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
