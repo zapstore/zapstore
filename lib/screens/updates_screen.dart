@@ -615,7 +615,7 @@ class _TabLabelWithBadge extends StatelessWidget {
     return DefaultTextStyle.merge(
       style: textStyle,
       child: Padding(
-        padding: const EdgeInsets.only(right: 10),
+        padding: const EdgeInsets.only(right: 16),
         child: Stack(
           clipBehavior: Clip.none,
           alignment: Alignment.centerLeft,
@@ -624,7 +624,7 @@ class _TabLabelWithBadge extends StatelessWidget {
             if (count > 0)
               Positioned(
                 top: -6,
-                right: -10,
+                right: -18,
                 child: _CountBadge(count: count),
               ),
           ],
@@ -646,7 +646,7 @@ class _CountBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: AppColors.darkPillBackground.withValues(alpha: 0.8),
+        color: Colors.red.withValues(alpha: 0.4),
         borderRadius: BorderRadius.circular(9),
       ),
       constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
