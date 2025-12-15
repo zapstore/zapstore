@@ -43,10 +43,18 @@ class InstallButton extends ConsumerWidget {
           next.errorDetails != null &&
           previous?.errorDetails != next.errorDetails) {
         if (context.mounted) {
-          final errorMessage = next.errorDetails == 'CERTIFICATE_MISMATCH'
-              ? 'Installation failed: Certificate mismatch detected'
-              : 'Installation failed: ${next.errorDetails}';
-          context.showError(errorMessage);
+          if (next.errorDetails == 'CERTIFICATE_MISMATCH') {
+            context.showError(
+              'Installation failed',
+              description:
+                  'Certificate mismatch detected. The app signature does not match the expected developer.',
+            );
+          } else {
+            context.showError(
+              'Installation failed',
+              description: next.errorDetails,
+            );
+          }
         }
       }
     });
@@ -211,7 +219,11 @@ class InstallButton extends ConsumerWidget {
         ),
         onError: () {
           if (context.mounted) {
-            context.showError('Installation failed. Please try again.');
+            context.showError(
+              'Installation failed',
+              description:
+                  'The package could not be installed. Check storage space and try again.',
+            );
           }
         },
       ),
@@ -579,7 +591,11 @@ class InstallButton extends ConsumerWidget {
       await packageManager.launchApp(app.identifier);
     } catch (e) {
       if (!context.mounted) return;
-      context.showError('Failed to launch ${app.name ?? app.identifier}: $e');
+      context.showError(
+        'Failed to launch ${app.name ?? app.identifier}',
+        description:
+            'The app may have been uninstalled or moved. Try reinstalling.\n\n$e',
+      );
     }
   }
 
@@ -653,7 +669,7 @@ class InstallButton extends ConsumerWidget {
         // Don't show error for user cancellation
         final message = e.toString();
         if (!message.contains('cancelled')) {
-          context.showError('Uninstall failed: $e');
+          context.showError('Uninstall failed', description: '$e');
         }
       }
     }
@@ -767,7 +783,7 @@ class InstallButton extends ConsumerWidget {
       } catch (e) {
         final message = e.toString();
         if (context.mounted && !message.contains('cancelled')) {
-          context.showError('Force update failed: $e');
+          context.showError('Force update failed', description: '$e');
         }
       }
     }

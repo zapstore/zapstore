@@ -41,7 +41,11 @@ class SignInPromptDialog extends HookConsumerWidget {
               }
             } catch (e) {
               if (context.mounted) {
-                context.showError('Sign-in failed: $e');
+                context.showError(
+                  'Sign-in failed',
+                  description:
+                      'Amber could not complete the sign-in. Make sure Amber is installed and try again.\n\n$e',
+                );
               }
             }
           },

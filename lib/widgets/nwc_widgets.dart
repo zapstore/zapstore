@@ -222,11 +222,17 @@ class NWCConnectionCard extends HookConsumerWidget {
         await secureStorage.clearNWCString();
         nwcStatus.value = NWCStatus.disconnected;
         if (context.mounted) {
-          context.showInfo('Wallet connection removed');
+          context.showInfo(
+            'Wallet disconnected',
+            description: 'You can reconnect anytime from Settings.',
+          );
         }
       } catch (e) {
         if (context.mounted) {
-          context.showError('Failed to remove connection: $e');
+          context.showError(
+            'Failed to disconnect wallet',
+            description: '$e',
+          );
         }
       }
     }
@@ -320,13 +326,19 @@ class NWCConnectionDialog extends HookWidget {
     ValueNotifier<bool> isLoading,
   ) async {
     if (nwcString.trim().isEmpty) {
-      context.showError('Please enter a valid NWC connection string');
+      context.showError(
+        'Missing connection string',
+        description:
+            'Get a NWC connection string from your Lightning wallet (e.g., Alby, Zeus, Coinos).',
+      );
       return;
     }
 
     if (!nwcString.trim().startsWith('nostr+walletconnect://')) {
       context.showError(
-        'Invalid NWC format. Should start with nostr+walletconnect://',
+        'Invalid NWC format',
+        description:
+            'Connection string should start with nostr+walletconnect://',
       );
       return;
     }
@@ -343,7 +355,11 @@ class NWCConnectionDialog extends HookWidget {
       }
     } catch (e) {
       if (context.mounted) {
-        context.showError('Connection failed: $e');
+        context.showError(
+          'Wallet connection failed',
+          description:
+              'Could not connect to the wallet. Verify the connection string and try again.\n\n$e',
+        );
       }
     } finally {
       isLoading.value = false;

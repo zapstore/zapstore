@@ -397,7 +397,10 @@ class _CommentComposer extends HookConsumerWidget {
       final signer = ref.read(Signer.activeSignerProvider);
       if (signer == null) {
         if (context.mounted) {
-          context.showError('Please sign in to comment');
+          context.showError(
+            'Sign in required',
+            description: 'You need to sign in with Amber to post comments.',
+          );
         }
         return;
       }
@@ -405,7 +408,10 @@ class _CommentComposer extends HookConsumerWidget {
       final app = fileMetadata.release.value?.app.value;
       if (app == null) {
         if (context.mounted) {
-          context.showError('App information not available');
+          context.showError(
+            'Unable to comment',
+            description: 'App information is not available. Try again later.',
+          );
         }
         return;
       }
@@ -434,7 +440,7 @@ class _CommentComposer extends HookConsumerWidget {
       }
     } catch (e) {
       if (context.mounted) {
-        context.showError('Failed to post comment: $e');
+        context.showError('Failed to post comment', description: '$e');
       }
     }
   }

@@ -323,7 +323,9 @@ class ZapAmountDialog extends HookConsumerWidget {
                     // Navigate to Amber app page
                     if (context.mounted) {
                       context.showInfo(
-                        'Install Amber to sign in and unlock zapping features',
+                        'Amber required',
+                        description:
+                            'Install Amber to sign in and unlock zapping features.',
                       );
                       context.push(
                         '/profile/apps/naddr1qqdkxmmd9enhyet9deshyaphvvejumn0wd68yumfvahx2uszyp6hjpmdntls5n8aa7n7ypzlyjrv0ewch33ml3452wtjx0smhl93jqcyqqq8uzcgpp6ky',
@@ -336,7 +338,11 @@ class ZapAmountDialog extends HookConsumerWidget {
                       // because pubkey will no longer be null
                     } catch (e) {
                       if (context.mounted) {
-                        context.showError('Sign-in failed: $e');
+                        context.showError(
+                          'Sign-in failed',
+                          description:
+                              'Amber could not complete the sign-in. Make sure Amber is installed and try again.\n\n$e',
+                        );
                       }
                     }
                   }
@@ -550,7 +556,7 @@ class ZapAmountDialog extends HookConsumerWidget {
                     }
                   } catch (e) {
                     if (context.mounted) {
-                      context.showError('Zap failed: $e');
+                      context.showError('Zap failed', description: '$e');
                       Navigator.of(context).pop(false);
                     }
                   }
@@ -705,13 +711,17 @@ class NWCConnectionDialogInline extends HookConsumerWidget {
                   final nwcString = controller.text;
                   if (nwcString.trim().isEmpty) {
                     context.showError(
-                      'Please enter a valid NWC connection string',
+                      'Missing connection string',
+                      description:
+                          'Get a NWC connection string from your Lightning wallet (e.g., Alby, Zeus, Coinos).',
                     );
                     return;
                   }
                   if (!nwcString.trim().startsWith('nostr+walletconnect://')) {
                     context.showError(
-                      'Invalid NWC format. Should start with nostr+walletconnect://',
+                      'Invalid NWC format',
+                      description:
+                          'Connection string should start with nostr+walletconnect://',
                     );
                     return;
                   }
@@ -726,7 +736,11 @@ class NWCConnectionDialogInline extends HookConsumerWidget {
                     }
                   } catch (e) {
                     if (context.mounted) {
-                      context.showError('Connection failed: $e');
+                      context.showError(
+                        'Wallet connection failed',
+                        description:
+                            'Could not connect to the wallet. Verify the connection string and try again.\n\n$e',
+                      );
                     }
                   } finally {
                     isLoading.value = false;

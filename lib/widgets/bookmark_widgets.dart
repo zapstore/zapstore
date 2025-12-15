@@ -101,7 +101,10 @@ class BookmarkDialog extends HookConsumerWidget {
 
       if (signer == null || signedInPubkey == null) {
         if (context.mounted) {
-          context.showError('You must be signed in to save apps');
+          context.showError(
+            'Sign in required',
+            description: 'You need to sign in to save apps to your bookmarks.',
+          );
         }
         return;
       }
@@ -165,7 +168,7 @@ class BookmarkDialog extends HookConsumerWidget {
       }
     } catch (e) {
       if (context.mounted) {
-        context.showError('Failed to update bookmark: $e');
+        context.showError('Failed to update bookmark', description: '$e');
       }
     }
   }
@@ -448,7 +451,10 @@ class AddToPackDialog extends HookConsumerWidget {
       final signer = ref.read(Signer.activeSignerProvider);
       if (signer == null) {
         if (context.mounted) {
-          context.showError('You must be signed in');
+          context.showError(
+            'Sign in required',
+            description: 'You need to sign in to manage app packs.',
+          );
         }
         return;
       }
@@ -548,7 +554,7 @@ class AddToPackDialog extends HookConsumerWidget {
       }
     } catch (e) {
       if (context.mounted) {
-        context.showError('Failed to save: $e');
+        context.showError('Failed to save', description: '$e');
       }
     }
   }

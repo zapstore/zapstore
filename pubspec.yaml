@@ -47,7 +47,6 @@ dependencies:
   intl: ^0.20.2
   collection: ^1.19.1
   qr_flutter: ^4.1.0
-  toastification: ^3.0.3
   share_plus: ^12.0.0
   background_downloader: ^9.2.6
   connectivity_plus: ^7.0.0

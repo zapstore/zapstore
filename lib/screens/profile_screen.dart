@@ -224,7 +224,7 @@ class _AuthenticationSection extends ConsumerWidget {
       await ref.read(amberSignerProvider).signOut();
     } catch (e) {
       if (context.mounted) {
-        context.showError('Sign out failed: $e');
+        context.showError('Sign out failed', description: '$e');
       }
     }
   }
@@ -760,7 +760,7 @@ class _DebugMessagesSection extends HookConsumerWidget {
                       if (log.exception != null) 'Error: ${log.exception}',
                     ].where((e) => e.isNotEmpty).join(' | ');
                     Clipboard.setData(ClipboardData(text: text));
-                    context.showInfo('Copied');
+                    context.showInfo('Debug info copied');
                   },
                 ),
               ],
@@ -839,7 +839,10 @@ class _DebugMessagesSection extends HookConsumerWidget {
                 constraints: const BoxConstraints(),
                 onPressed: () {
                   Clipboard.setData(ClipboardData(text: req));
-                  context.showInfo('REQ copied');
+                  context.showInfo(
+                    'REQ filter copied',
+                    description: 'Paste into a Nostr client to debug this query.',
+                  );
                 },
               ),
             ],
@@ -1093,7 +1096,7 @@ class _DataManagementSection extends ConsumerWidget {
     } catch (e) {
       if (context.mounted) {
         Navigator.of(context, rootNavigator: true).pop();
-        context.showError('Failed to restart: ${e.toString()}');
+        context.showError('Restart failed', description: '${e.toString()}');
       }
     }
   }
