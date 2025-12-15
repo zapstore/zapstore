@@ -228,7 +228,7 @@ class _AppDetailView extends HookConsumerWidget {
                                       ? segments.first
                                       : 'search';
                                   context.push(
-                                    '/$first/developer/${author.pubkey}',
+                                    '/$first/user/${author.pubkey}',
                                   );
                                 },
                               )

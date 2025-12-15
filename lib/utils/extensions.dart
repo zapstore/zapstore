@@ -18,10 +18,18 @@ extension ContextExt on BuildContext {
   TextTheme get textTheme => Theme.of(this).textTheme;
 }
 
+/// Zapstore's own app identifiers
+const kZapstoreAppIdentifiers = {'dev.zapstore.app', 'dev.zapstore.alpha'};
+
 extension AppExt on App {
-  bool get isRelaySigned =>
-      author.value?.pubkey == kZapstorePubkey &&
-      identifier != kZapstoreAppIdentifier;
+  /// Whether this app is one of Zapstore's own apps
+  bool get isZapstoreApp => kZapstoreAppIdentifiers.contains(identifier);
+
+  /// Whether this app is signed by Zapstore pubkey
+  bool get isSignedByZapstore => pubkey == kZapstorePubkey;
+
+  /// Whether this app is "relay signed" - indexed by Zapstore but not a Zapstore app itself
+  bool get isRelaySigned => isSignedByZapstore && !isZapstoreApp;
 
   /// Returns PackageInfo if installed, otherwise null
   PackageInfo? get installedPackage =>

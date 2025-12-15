@@ -153,7 +153,7 @@ class AppPackContainer extends HookConsumerWidget {
           ),
         ),
         const SizedBox(height: 16),
-        _AppsGrid(
+        AppsGrid(
           apps: selectedPack.apps
               .toList()
               .where((a) => a.name != null || a.identifier.isNotEmpty)
@@ -176,7 +176,7 @@ class AppPackContainer extends HookConsumerWidget {
               child: Row(children: List.generate(3, (_) => _SkeletonPill())),
             ),
             const SizedBox(height: 16),
-            const _AppsGrid(apps: []),
+            const AppsGrid(apps: []),
           ],
         ),
       ),
@@ -358,32 +358,50 @@ class _PackPill extends ConsumerWidget {
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
-                Container(
-                  width: 18,
-                  height: 18,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(9),
-                    border: Border.all(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.outline.withValues(alpha: 0.3),
-                      width: 1,
-                    ),
+                GestureDetector(
+                  onTap: isSelected
+                      ? () {
+                          final segments = GoRouterState.of(
+                            context,
+                          ).uri.pathSegments;
+                          final first = segments.isNotEmpty
+                              ? segments.first
+                              : 'search';
+                          context.push('/$first/user/${pack.event.pubkey}');
+                        }
+                      : null,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 18,
+                        height: 18,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(9),
+                          border: Border.all(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.outline.withValues(alpha: 0.3),
+                            width: 1,
+                          ),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: RoundedImage(url: author.pictureUrl, size: 18),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        author.nameOrNpub,
+                        style: context.textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w500,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: RoundedImage(url: author.pictureUrl, size: 18),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  author.nameOrNpub,
-                  style: context.textTheme.labelLarge?.copyWith(
-                    fontWeight: FontWeight.w500,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ],
@@ -394,9 +412,9 @@ class _PackPill extends ConsumerWidget {
   }
 }
 
-/// Horizontally scrolling apps grid
-class _AppsGrid extends StatelessWidget {
-  const _AppsGrid({required this.apps});
+/// Horizontally scrolling apps grid - reusable widget for displaying apps in a 2-row grid
+class AppsGrid extends StatelessWidget {
+  const AppsGrid({super.key, required this.apps});
 
   final List<App> apps;
 
@@ -416,15 +434,15 @@ class _AppsGrid extends StatelessWidget {
           mainAxisSpacing: 2,
         ),
         itemCount: items.length,
-        itemBuilder: (context, index) => _AppCard(app: items[index]),
+        itemBuilder: (context, index) => AppGridCard(app: items[index]),
       ),
     );
   }
 }
 
-/// Individual app card with original styling
-class _AppCard extends ConsumerWidget {
-  const _AppCard({this.app});
+/// Individual app card with original styling - reusable widget for grid display
+class AppGridCard extends ConsumerWidget {
+  const AppGridCard({super.key, this.app});
 
   final App? app;
 

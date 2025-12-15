@@ -5,6 +5,7 @@ import 'package:background_downloader/background_downloader.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
+import 'package:zapstore/services/secure_storage_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 
 import '../services/package_manager/android_package_manager.dart';
@@ -656,6 +657,17 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
       // Update state to show ready-to-install
       state = {...state, appId: downloadInfo.copyWith(isReadyToInstall: true)};
       return;
+    }
+
+    // Check if permission explainer dialog needs to be shown (Android only, non-silent, first time)
+    if (Platform.isAndroid && !canSilent) {
+      final secureStorage = ref.read(secureStorageServiceProvider);
+      final hasSeenDialog = await secureStorage.hasSeenInstallPermissionDialog();
+      if (!hasSeenDialog) {
+        // Mark as ready-to-install so user interaction shows the dialog first
+        state = {...state, appId: downloadInfo.copyWith(isReadyToInstall: true)};
+        return;
+      }
     }
 
     // App is in foreground OR this is a silent install - proceed normally

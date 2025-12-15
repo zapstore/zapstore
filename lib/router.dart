@@ -3,7 +3,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/screens/main_scaffold.dart';
 import 'package:zapstore/screens/app_detail_screen.dart';
-import 'package:zapstore/screens/developer_screen.dart';
+import 'package:zapstore/screens/user_screen.dart';
 import 'package:zapstore/screens/search_screen.dart';
 import 'package:zapstore/screens/updates_screen.dart';
 import 'package:zapstore/screens/profile_screen.dart';
@@ -21,13 +21,13 @@ GoRoute _appDetailRoute() {
   );
 }
 
-/// Helper to build developer route
-GoRoute _developerRoute() {
+/// Helper to build user route
+GoRoute _userRoute() {
   return GoRoute(
-    path: 'developer/:pubkey',
+    path: 'user/:pubkey',
     builder: (context, state) {
       final pubkey = state.pathParameters['pubkey']!;
-      return DeveloperScreen(pubkey: pubkey);
+      return UserScreen(pubkey: pubkey);
     },
   );
 }
@@ -82,7 +82,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                 builder: (context, state) => const SearchScreen(),
                 routes: [
                   _appDetailRoute(),
-                  _developerRoute(),
+                  _userRoute(),
                 ],
               ),
             ],
@@ -95,7 +95,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                 builder: (context, state) => const UpdatesScreen(),
                 routes: [
                   _appDetailRoute(),
-                  _developerRoute(),
+                  _userRoute(),
                 ],
               ),
             ],
@@ -108,7 +108,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                 builder: (context, state) => const ProfileScreen(),
                 routes: [
                   _appDetailRoute(),
-                  _developerRoute(),
+                  _userRoute(),
                 ],
               ),
             ],

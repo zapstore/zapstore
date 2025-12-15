@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:async_button_builder/async_button_builder.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
@@ -6,12 +8,14 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/services/download_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
+import 'package:zapstore/services/secure_storage_service.dart';
 import 'package:zapstore/services/trust_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/author_container.dart';
 import 'package:zapstore/widgets/common/base_dialog.dart';
 import 'package:zapstore/widgets/install_alert_dialog.dart';
 import 'package:zapstore/widgets/install_button_state.dart';
+import 'package:zapstore/widgets/install_permission_dialog.dart';
 import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/theme.dart';
 
@@ -35,7 +39,7 @@ class InstallButton extends ConsumerWidget {
         .where((p) => p.appId == app.identifier)
         .firstOrNull;
 
-    // Listen for installation failures and show errors
+    // Listen for download completion to show permission dialog and auto-install
     ref.listen(downloadInfoProvider(app.identifier), (previous, next) {
       // Installation just failed - show error
       if (next != null &&
@@ -56,6 +60,15 @@ class InstallButton extends ConsumerWidget {
             );
           }
         }
+        return;
+      }
+
+      // Download just completed and ready to install (no error) - show permission dialog if needed
+      if (next != null &&
+          next.isReadyToInstall &&
+          next.errorDetails == null &&
+          previous?.isReadyToInstall != true) {
+        _showPermissionDialogAndInstall(context, ref);
       }
     });
 
@@ -196,7 +209,7 @@ class InstallButton extends ConsumerWidget {
 
       // Downloaded, ready to install
       DownloadedReadyToInstall(:final isUpdate) => AsyncButtonBuilder(
-        onPressed: () => _installFromDownloaded(ref),
+        onPressed: () => _showPermissionDialogAndInstall(context, ref),
         builder: (context, child, callback, buttonState) {
           return _buildSimpleButton(
             context,
@@ -325,6 +338,7 @@ class InstallButton extends ConsumerWidget {
                   }
                 }
               }
+
               try {
                 await onPressed();
               } catch (e) {
@@ -552,12 +566,39 @@ class InstallButton extends ConsumerWidget {
     await downloadService.downloadApp(app, release!);
   }
 
-  Future<void> _installFromDownloaded(WidgetRef ref) async {
+  /// Shows permission dialog (if needed) and triggers installation
+  Future<void> _showPermissionDialogAndInstall(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    // Show permission explainer for first-time install (Android only)
+    if (Platform.isAndroid) {
+      final secureStorage = ref.read(secureStorageServiceProvider);
+      final hasSeenDialog = await secureStorage.hasSeenInstallPermissionDialog();
+
+      if (!hasSeenDialog) {
+        if (!context.mounted) return;
+        final shouldContinue = await showBaseDialog<bool>(
+          context: context,
+          dialog: const InstallPermissionDialog(),
+        );
+        if (shouldContinue != true) return;
+        await secureStorage.setHasSeenInstallPermissionDialog();
+      }
+    }
+
+    if (!context.mounted) return;
+    
     try {
       final downloadService = ref.read(downloadServiceProvider.notifier);
       await downloadService.installFromDownloaded(app.identifier);
-    } catch (_) {
-      rethrow;
+    } catch (e) {
+      if (context.mounted) {
+        context.showError(
+          'Installation failed',
+          description: 'The package could not be installed. Check storage space and try again.',
+        );
+      }
     }
   }
 
