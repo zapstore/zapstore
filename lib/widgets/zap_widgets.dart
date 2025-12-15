@@ -2,14 +2,12 @@ import 'package:async_button_builder/async_button_builder.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
-import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
-import 'package:zapstore/main.dart';
 import 'package:zapstore/services/notification_service.dart';
-import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/services/secure_storage_service.dart';
 import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/widgets/auth_widgets.dart';
 import 'package:zapstore/widgets/common/base_dialog.dart';
 import 'package:zapstore/widgets/common/profile_avatar.dart';
 
@@ -307,112 +305,12 @@ class ZapAmountDialog extends HookConsumerWidget {
             ],
 
             if (pubkey == null) ...[
-              InkWell(
-                onTap: () async {
-                  final packageManager = ref.read(packageManagerProvider);
-                  const amberPackageId = 'com.greenart7c3.nostrsigner';
-                  final isAmberInstalled = packageManager.any(
-                    (p) => p.appId == amberPackageId,
-                  );
-
-                  if (!isAmberInstalled) {
-                    // Close the zap dialog first
-                    if (context.mounted) {
-                      Navigator.of(context).pop();
-                    }
-                    // Navigate to Amber app page
-                    if (context.mounted) {
-                      context.showInfo(
-                        'Amber required',
-                        description:
-                            'Install Amber to sign in and unlock zapping features.',
-                      );
-                      context.push(
-                        '/profile/apps/naddr1qqdkxmmd9enhyet9deshyaphvvejumn0wd68yumfvahx2uszyp6hjpmdntls5n8aa7n7ypzlyjrv0ewch33ml3452wtjx0smhl93jqcyqqq8uzcgpp6ky',
-                      );
-                    }
-                  } else {
-                    try {
-                      await ref.read(amberSignerProvider).signIn();
-                      // After successful sign-in, the dialog will update automatically
-                      // because pubkey will no longer be null
-                    } catch (e) {
-                      if (context.mounted) {
-                        context.showError(
-                          'Sign-in failed',
-                          description:
-                              'Amber could not complete the sign-in. Make sure Amber is installed and try again.\n\n$e',
-                        );
-                      }
-                    }
-                  }
-                },
-                borderRadius: BorderRadius.circular(8),
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Icon(
-                          Icons.info_outline,
-                          size: 20,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Zapping anonymously. Tap to sign in.',
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              const SignInPrompt(
+                message: 'Zapping anonymously. Sign in to zap with your identity.',
               ),
               const SizedBox(height: 12),
             ],
 
-            if (!hasWalletConnection.value) ...[
-              InkWell(
-                onTap: () async {
-                  final connected = await showBaseDialog<bool>(
-                    context: context,
-                    dialog: const NWCConnectionDialogInline(),
-                  );
-                  if (connected == true) {
-                    hasWalletConnection.value = true;
-                  }
-                },
-                borderRadius: BorderRadius.circular(8),
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Icon(
-                          Icons.info_outline,
-                          size: 20,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Tap to connect NWC for zapping, otherwise an invoice will be copied to the clipboard.',
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-            ],
 
             // Quick amount buttons (always visible)
             Wrap(
@@ -519,39 +417,52 @@ class ZapAmountDialog extends HookConsumerWidget {
 
                     if (nwcString != null && nwcString.isNotEmpty) {
                       final amount = selectedAmount.value;
-                      // Capture ScaffoldMessenger before popping (survives navigation)
-                      final messenger = ScaffoldMessenger.maybeOf(context);
 
-                      // Optimistic UX: show success immediately, pop, fire payment
-                      context.showInfo('⚡ Zap sent! $amount sats');
-                      navigator.pop(true);
-
-                      // Fire payment in background - errors shown via ScaffoldMessenger
-                      // ignore: unawaited_futures
-                      _executeZapPayment(
-                        signedZapRequest,
-                        nwcString,
-                        ref.ref,
-                      ).then(
-                        (_) {},
-                        onError: (Object e, StackTrace st) {
-                          if (messenger != null) {
-                            messenger.showSnackBar(
-                              SnackBar(
-                                content: Text('Zap failed: $e'),
-                                backgroundColor: Colors.red,
-                                duration: const Duration(seconds: 5),
-                              ),
-                            );
-                          }
-                        },
-                      );
+                      // Execute payment and wait for result
+                      try {
+                        await _executeZapPayment(
+                          signedZapRequest,
+                          nwcString,
+                          ref.ref,
+                        );
+                        if (context.mounted) {
+                          context.showInfo('⚡ Zap sent! $amount sats');
+                          navigator.pop(true);
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          context.showError('Zap failed', description: '$e');
+                          navigator.pop(false);
+                        }
+                      }
                     } else {
                       final invoice = await signedZapRequest.getInvoice();
-                      await Clipboard.setData(ClipboardData(text: invoice));
                       if (context.mounted) {
-                        context.showInfo('Invoice copied to clipboard');
                         navigator.pop(true);
+                        context.showInfo(
+                          'Lightning invoice ready',
+                          description:
+                              'Copy the invoice and pay with your Lightning wallet. Setup NWC to zap directly from the app.',
+                          actions: [
+                            (
+                              'Copy Invoice',
+                              () async {
+                                await Clipboard.setData(
+                                  ClipboardData(text: invoice),
+                                );
+                              },
+                            ),
+                            (
+                              'Setup NWC',
+                              () async {
+                                await showBaseDialog<bool>(
+                                  context: context,
+                                  dialog: const NWCConnectionDialogInline(),
+                                );
+                              },
+                            ),
+                          ],
+                        );
                       }
                     }
                   } catch (e) {

@@ -1,6 +1,7 @@
 /// Debug utilities for development and testing
 library;
 
+import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 
 /// Check if the current user is in debug mode based on their pubkey
@@ -29,3 +30,7 @@ bool isDebugMode(String? pubkey) {
 
   return false;
 }
+
+/// Provider that exposes a Ref for use in functions that need consistent Ref type
+/// Usage: ref.read(refProvider) to get a Ref from WidgetRef context
+final refProvider = Provider<Ref>((ref) => ref);

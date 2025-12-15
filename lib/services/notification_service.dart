@@ -1,20 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:zapstore/theme.dart';
 
 extension ContextX on BuildContext {
   ThemeData get theme => Theme.of(this);
 
-  void showInfo(String title, {String? description, IconData? icon}) {
-    _showCustomToast(
-      context: this,
-      title: title,
-      description: description,
-      icon: icon ?? Icons.info_outline_rounded,
-      type: _ToastType.info,
-    );
-  }
-
-  void showError(
+  void showInfo(
     String title, {
     String? description,
     IconData? icon,
@@ -24,9 +15,34 @@ extension ContextX on BuildContext {
       context: this,
       title: title,
       description: description,
+      icon: icon ?? Icons.info_outline_rounded,
+      type: _ToastType.info,
+      actions: actions,
+    );
+  }
+
+  void showError(
+    String title, {
+    String? description,
+    IconData? icon,
+    List<(String, Future<void> Function())> actions = const [],
+  }) {
+    // Always add Copy action for errors with description
+    final allActions = <(String, Future<void> Function())>[
+      ...actions,
+      if (description != null)
+        ('Copy', () async {
+          await Clipboard.setData(ClipboardData(text: '$title\n\n$description'));
+        }),
+    ];
+    
+    _showCustomToast(
+      context: this,
+      title: title,
+      description: description,
       icon: icon ?? Icons.error_outline_rounded,
       type: _ToastType.error,
-      actions: actions,
+      actions: allActions,
     );
   }
 }
@@ -122,9 +138,13 @@ class _ToastOverlayState extends State<_ToastOverlay>
   }
 
   void _startAutoClose() {
-    final duration = widget.type == _ToastType.error
-        ? const Duration(seconds: 6)
-        : const Duration(seconds: 4);
+    // Longer duration when there are actions, or for errors
+    final hasActions = widget.actions.isNotEmpty;
+    final duration = hasActions
+        ? const Duration(seconds: 10)
+        : widget.type == _ToastType.error
+            ? const Duration(seconds: 8)
+            : const Duration(seconds: 6);
 
     Future.delayed(duration, () {
       if (mounted && !_isHovered) {
@@ -152,22 +172,18 @@ class _ToastOverlayState extends State<_ToastOverlay>
 
     final isError = widget.type == _ToastType.error;
 
-    // Colors
+    // Colors - info: darker light blue, error: red
     final backgroundColor = isError
-        ? const Color(0xFF1A1215) // Dark reddish-black
-        : const Color(0xFF111827); // Dark blue-black
+        ? const Color(0xFFDC2626) // Red
+        : const Color(0xFF0284C7); // Darker light blue (sky-600)
 
     final borderColor = isError
-        ? const Color(0xFF7F1D1D).withValues(alpha: 0.6) // Dark red border
-        : AppColors.darkPrimary.withValues(alpha: 0.4);
+        ? const Color(0xFFB91C1C).withValues(alpha: 0.8) // Darker red border
+        : const Color(0xFF0369A1).withValues(alpha: 0.8); // Even darker blue border (sky-700)
 
-    final accentColor = isError
-        ? const Color(0xFFEF4444) // Red
-        : AppColors.darkPrimary;
+    final accentColor = Colors.white;
 
-    final iconBgColor = isError
-        ? const Color(0xFF7F1D1D).withValues(alpha: 0.3)
-        : AppColors.darkPrimary.withValues(alpha: 0.15);
+    final iconBgColor = Colors.white.withValues(alpha: 0.2);
 
     return Positioned(
       top: topPadding + 8,
@@ -283,95 +299,108 @@ class _ToastContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
+    final hasExtraContent = description != null || actions.isNotEmpty;
+    
+    // Use Stack to position X at top-right always
+    return Stack(
       children: [
-        // Icon
-        Container(
-          width: 38,
-          height: 38,
-          decoration: BoxDecoration(
-            color: iconBgColor,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Icon(
-            icon,
-            color: accentColor,
-            size: 20,
-          ),
-        ),
-        const SizedBox(width: 14),
-        // Text content
-        Expanded(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+        // Main content with padding for X button
+        Padding(
+          padding: const EdgeInsets.only(right: 36), // Space for X button
+          child: Row(
+            // Center align when no description, top align when there's extra content
+            crossAxisAlignment: hasExtraContent 
+                ? CrossAxisAlignment.start 
+                : CrossAxisAlignment.center,
             children: [
-              // Title
-              Text(
-                title,
-                style: const TextStyle(
-                  fontFamily: kFontFamily,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white,
-                  height: 1.35,
+              // Icon
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: iconBgColor,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  icon,
+                  color: accentColor,
+                  size: 20,
                 ),
               ),
-              // Description
-              if (description != null) ...[
-                const SizedBox(height: 6),
-                Flexible(
-                  child: SingleChildScrollView(
-                    child: Text(
-                      description!,
-                      style: TextStyle(
+              const SizedBox(width: 14),
+              // Text content
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Title
+                    Text(
+                      title,
+                      style: const TextStyle(
                         fontFamily: kFontFamily,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w400,
-                        color: Colors.white.withValues(alpha: 0.7),
-                        height: 1.45,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                        height: 1.35,
                       ),
                     ),
-                  ),
+                    // Description
+                    if (description != null) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        description!,
+                        style: TextStyle(
+                          fontFamily: kFontFamily,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w400,
+                          color: Colors.white.withValues(alpha: 0.7),
+                          height: 1.45,
+                        ),
+                      ),
+                    ],
+                    // Actions
+                    if (actions.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: actions
+                            .map((action) => _ToastActionButton(
+                                  label: action.$1,
+                                  onPressed: () async {
+                                    await action.$2();
+                                    onDismiss();
+                                  },
+                                  accentColor: accentColor,
+                                ))
+                            .toList(),
+                      ),
+                    ],
+                  ],
                 ),
-              ],
-              // Actions
-              if (actions.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: actions
-                      .map((action) => _ToastActionButton(
-                            label: action.$1,
-                            onPressed: () async {
-                              await action.$2();
-                              onDismiss();
-                            },
-                            accentColor: accentColor,
-                          ))
-                      .toList(),
-                ),
-              ],
+              ),
             ],
           ),
         ),
-        // Close button
-        const SizedBox(width: 8),
-        GestureDetector(
-          onTap: onDismiss,
-          child: Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Icon(
-              Icons.close_rounded,
-              size: 16,
-              color: Colors.white.withValues(alpha: 0.5),
+        // Close button - always top-right
+        Positioned(
+          top: 0,
+          right: 0,
+          child: GestureDetector(
+            onTap: onDismiss,
+            child: Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Icon(
+                Icons.close_rounded,
+                size: 16,
+                color: Colors.white.withValues(alpha: 0.5),
+              ),
             ),
           ),
         ),

@@ -263,8 +263,7 @@ Future<void> _attemptAutoSignIn(Ref ref) async {
 }
 
 /// Query AppCatalogRelayList after successful sign-in
-/// TODO: Fix ref type
-Future<void> onSignInSuccess(dynamic ref) async {
+Future<void> onSignInSuccess(Ref ref) async {
   final pubkey = ref.read(Signer.activePubkeyProvider);
   if (pubkey == null) return;
 

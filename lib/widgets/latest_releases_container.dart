@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:async_button_builder/async_button_builder.dart';
+import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'app_card.dart';
 
@@ -131,6 +132,14 @@ class LatestReleasesContainer extends HookConsumerWidget {
               ),
             ),
             onPressed: isLoadingMore ? null : onLoadMore,
+            onError: () {
+              if (context.mounted) {
+                context.showError(
+                  'Failed to load more apps',
+                  description: 'Please check your connection and try again.',
+                );
+              }
+            },
             builder: (context, child, callback, state) {
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -301,9 +310,9 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
   }
 
   /// Fetch authors for a page of apps (used during pagination)
-  /// Note: Profiles are now loaded reactively via query<Profile> in individual widgets
+  /// Note: Profiles are now loaded reactively via `query<Profile>` in individual widgets
   Future<void> _loadRelationshipsFor(List<App> appsPage) async {
-    // No-op: profiles are now loaded reactively via query<Profile> with caching
+    // No-op: profiles are now loaded reactively via `query<Profile>` with caching
   }
 
   Future<void> loadMore() async {
@@ -371,8 +380,9 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
       } else {
         state = state.copyWith(isLoadingMore: false, hasMore: false);
       }
-    } catch (_) {
+    } catch (e) {
       state = state.copyWith(isLoadingMore: false);
+      rethrow;
     }
   }
 

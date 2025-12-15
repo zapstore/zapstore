@@ -1,74 +1,100 @@
-import 'package:async_button_builder/async_button_builder.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_hooks/flutter_hooks.dart';
+import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:zapstore/main.dart';
 import 'package:zapstore/services/notification_service.dart';
-import 'package:zapstore/widgets/common/base_dialog.dart';
+import 'package:zapstore/services/package_manager/package_manager.dart';
+import 'package:zapstore/utils/debug_utils.dart';
 
-/// Dialog prompting user to sign in for bookmark features
-class SignInPromptDialog extends HookConsumerWidget {
-  const SignInPromptDialog({super.key});
+const _amberPackageId = 'com.greenart7c3.nostrsigner';
+const _amberNaddr =
+    'naddr1qqdkxmmd9enhyet9deshyaphvvejumn0wd68yumfvahx2uszyp6hjpmdntls5n8aa7n7ypzlyjrv0ewch33ml3452wtjx0smhl93jqcyqqq8uzcgpp6ky';
+
+/// Reusable sign-in prompt widget for dialogs and bottom sheets.
+/// Displays a styled tappable message prompting the user to sign in.
+class SignInPrompt extends HookConsumerWidget {
+  const SignInPrompt({super.key, required this.message});
+
+  /// Description of what signing in enables
+  final String message;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return BaseDialog(
-      titleIcon: const Icon(Icons.bookmark),
-      title: Text(
-        'Sign in to bookmark',
-        style: Theme.of(context).textTheme.headlineSmall,
-      ),
-      content: BaseDialogContent(
-        children: [
-          const SizedBox(height: 8),
-          Text(
-            'Sign in to bookmark apps and create app packs.',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-        ],
-      ),
-      actions: [
-        BaseDialogAction(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        AsyncButtonBuilder(
-          onPressed: () async {
-            try {
-              await ref.read(amberSignerProvider).signIn();
-              onSignInSuccess(ref);
-              if (context.mounted) {
-                Navigator.pop(context);
-              }
-            } catch (e) {
-              if (context.mounted) {
-                context.showError(
-                  'Sign-in failed',
-                  description:
-                      'Amber could not complete the sign-in. Make sure Amber is installed and try again.\n\n$e',
-                );
-              }
-            }
-          },
-          builder: (context, child, callback, buttonState) {
-            return FilledButton.icon(
-              onPressed: buttonState.maybeWhen(
-                loading: () => null,
-                orElse: () => callback,
-              ),
-              icon: buttonState.maybeWhen(
-                loading: () => const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-                orElse: () => const Icon(Icons.login, size: 18),
-              ),
-              label: const Text('Sign in'),
+    final theme = Theme.of(context);
+    final packageManager = ref.watch(packageManagerProvider);
+    final isAmberInstalled = packageManager.any(
+      (p) => p.appId == _amberPackageId,
+    );
+    final isLoading = useState(false);
+
+    Future<void> handleSignIn() async {
+      if (isLoading.value) return;
+
+      if (!isAmberInstalled) {
+        context.showInfo('Install Amber to sign in with your Nostr identity');
+        context.push('/profile/apps/$_amberNaddr');
+      } else {
+        isLoading.value = true;
+        try {
+          await ref.read(amberSignerProvider).signIn();
+          onSignInSuccess(ref.read(refProvider));
+        } catch (e) {
+          if (context.mounted) {
+            context.showError(
+              'Sign-in failed',
+              description:
+                  'Amber could not complete the sign-in. Make sure Amber is installed and try again.\n\n$e',
             );
-          },
-          child: const SizedBox.shrink(),
+          }
+        } finally {
+          if (context.mounted) {
+            isLoading.value = false;
+          }
+        }
+      }
+    }
+
+    return Material(
+      color: theme.colorScheme.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: handleSignIn,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              if (isLoading.value)
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: theme.colorScheme.primary,
+                  ),
+                )
+              else
+                Icon(Icons.login, size: 20, color: theme.colorScheme.primary),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  message,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(
+                Icons.chevron_right,
+                size: 20,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+              ),
+            ],
+          ),
         ),
-      ],
+      ),
     );
   }
 }

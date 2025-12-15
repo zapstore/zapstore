@@ -171,7 +171,7 @@ class InstallButton extends ConsumerWidget {
         progress: progress,
         text: _formatDownloadProgress(progress, totalSizeMb),
         fontSize: fontSize,
-        onTap: () => _pauseDownload(ref),
+        onTap: () => _pauseDownload(context, ref),
       ),
 
       // Download paused
@@ -182,7 +182,7 @@ class InstallButton extends ConsumerWidget {
           progress: progress,
           text: _formatDownloadProgress(progress, totalSizeMb, paused: true),
           fontSize: fontSize,
-          onTap: () => _resumeDownload(ref),
+          onTap: () => _resumeDownload(context, ref),
         ),
 
       // Download enqueued
@@ -409,7 +409,7 @@ class InstallButton extends ConsumerWidget {
     );
 
     return FilledButton(
-      onPressed: onTap ?? () => _cancelDownload(ref),
+      onPressed: onTap ?? () => _cancelDownload(context, ref),
       style: FilledButton.styleFrom(
         backgroundColor: Colors.transparent,
         disabledBackgroundColor: Colors.transparent,
@@ -561,26 +561,36 @@ class InstallButton extends ConsumerWidget {
     }
   }
 
-  Future<void> _resumeDownload(WidgetRef ref) async {
-    final downloadService = ref.read(downloadServiceProvider.notifier);
-    await downloadService.resumeDownload(app.identifier);
+  Future<void> _resumeDownload(BuildContext context, WidgetRef ref) async {
+    try {
+      final downloadService = ref.read(downloadServiceProvider.notifier);
+      await downloadService.resumeDownload(app.identifier);
+    } catch (e) {
+      if (context.mounted) {
+        context.showError('Failed to resume download', description: '$e');
+      }
+    }
   }
 
-  Future<void> _pauseDownload(WidgetRef ref) async {
+  Future<void> _pauseDownload(BuildContext context, WidgetRef ref) async {
     try {
       final downloadService = ref.read(downloadServiceProvider.notifier);
       await downloadService.pauseDownload(app.identifier);
     } catch (e) {
-      // Failed to pause download
+      if (context.mounted) {
+        context.showError('Failed to pause download', description: '$e');
+      }
     }
   }
 
-  Future<void> _cancelDownload(WidgetRef ref) async {
+  Future<void> _cancelDownload(BuildContext context, WidgetRef ref) async {
     try {
       final downloadService = ref.read(downloadServiceProvider.notifier);
       await downloadService.cancelDownload(app.identifier);
     } catch (e) {
-      // Failed to cancel download
+      if (context.mounted) {
+        context.showError('Failed to cancel download', description: '$e');
+      }
     }
   }
 

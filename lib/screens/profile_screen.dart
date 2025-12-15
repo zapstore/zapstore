@@ -841,7 +841,8 @@ class _DebugMessagesSection extends HookConsumerWidget {
                   Clipboard.setData(ClipboardData(text: req));
                   context.showInfo(
                     'REQ filter copied',
-                    description: 'Paste into a Nostr client to debug this query.',
+                    description:
+                        'Paste into a Nostr client to debug this query.',
                   );
                 },
               ),
@@ -1096,7 +1097,7 @@ class _DataManagementSection extends ConsumerWidget {
     } catch (e) {
       if (context.mounted) {
         Navigator.of(context, rootNavigator: true).pop();
-        context.showError('Restart failed', description: '${e.toString()}');
+        context.showError('Restart failed', description: e.toString());
       }
     }
   }

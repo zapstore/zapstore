@@ -12,7 +12,6 @@ import 'package:zapstore/services/download_service.dart';
 import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/theme.dart';
 import 'package:zapstore/utils/extensions.dart';
-import 'package:zapstore/widgets/auth_widgets.dart';
 import 'package:zapstore/widgets/bookmark_widgets.dart';
 import 'package:zapstore/widgets/common/base_dialog.dart';
 import 'package:zapstore/widgets/expandable_markdown.dart';
@@ -84,29 +83,6 @@ class SocialActionsRow extends HookConsumerWidget {
         '${app.event.kind}:${app.pubkey}:${app.identifier}';
     final isPrivatelySaved = bookmarkedIds.contains(appAddressableId);
 
-    // Query public packs for the dialog
-    final publicPacksState = isSignedIn
-        ? ref.watch(
-            query<AppPack>(
-              authors: {signedInPubkey},
-              and: (pack) => {pack.apps},
-              source: const LocalAndRemoteSource(
-                relays: 'social',
-                stream: false,
-              ),
-              andSource: const LocalSource(),
-              subscriptionPrefix: 'user-packs',
-            ),
-          )
-        : null;
-
-    final allPacks = publicPacksState?.models ?? [];
-
-    // Split packs for dialog (exclude the bookmark pack)
-    final publicPacks = allPacks
-        .where((pack) => pack.identifier != kAppBookmarksIdentifier)
-        .toList();
-
     // Query zaps for zappers list
     final latestMetadata = app.latestFileMetadata;
     final zapsState = latestMetadata != null
@@ -157,13 +133,8 @@ class SocialActionsRow extends HookConsumerWidget {
               Expanded(
                 flex: 16,
                 child: FilledButton(
-                  onPressed: () {
-                    if (isSignedIn) {
-                      _showBookmarkDialog(context, ref, app, isPrivatelySaved);
-                    } else {
-                      _showSignInPrompt(context, ref);
-                    }
-                  },
+                  onPressed: () =>
+                      _showBookmarkDialog(context, ref, app, isPrivatelySaved),
                   style: FilledButton.styleFrom(
                     padding: EdgeInsets.zero,
                     backgroundColor: isPrivatelySaved && isSignedIn
@@ -193,13 +164,7 @@ class SocialActionsRow extends HookConsumerWidget {
               Expanded(
                 flex: 16,
                 child: FilledButton(
-                  onPressed: () {
-                    if (isSignedIn) {
-                      _showAddToPackDialog(context, ref, app, publicPacks);
-                    } else {
-                      _showSignInPrompt(context, ref);
-                    }
-                  },
+                  onPressed: () => _showAddToPackDialog(context, app),
                   style: FilledButton.styleFrom(
                     padding: EdgeInsets.zero,
                     backgroundColor:
@@ -219,7 +184,7 @@ class SocialActionsRow extends HookConsumerWidget {
               Expanded(
                 flex: 16,
                 child: FilledButton(
-                  onPressed: () => _shareApp(app),
+                  onPressed: () => _shareApp(context, app),
                   style: FilledButton.styleFrom(
                     padding: EdgeInsets.zero,
                     backgroundColor:
@@ -262,17 +227,15 @@ class SocialActionsRow extends HookConsumerWidget {
 
   Future<void> _showAddToPackDialog(
     BuildContext context,
-    WidgetRef ref,
     App app,
-    List<AppPack> publicPacks,
   ) async {
     await showBaseDialog(
       context: context,
-      dialog: AddToPackDialog(app: app, publicPacks: publicPacks),
+      dialog: AddToPackDialog(app: app),
     );
   }
 
-  void _shareApp(App app) {
+  void _shareApp(BuildContext context, App app) {
     try {
       // Generate naddr for the app
       final naddr = Utils.encodeShareableIdentifier(
@@ -288,12 +251,10 @@ class SocialActionsRow extends HookConsumerWidget {
       // Share using Android's share sheet
       SharePlus.instance.share(ShareParams(text: shareUrl));
     } catch (e) {
-      // Failed to share app
+      if (context.mounted) {
+        context.showError('Failed to share app', description: '$e');
+      }
     }
-  }
-
-  Future<void> _showSignInPrompt(BuildContext context, WidgetRef ref) async {
-    await showBaseDialog(context: context, dialog: const SignInPromptDialog());
   }
 }
 

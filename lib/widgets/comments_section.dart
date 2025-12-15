@@ -1,15 +1,15 @@
+import 'package:async_button_builder/async_button_builder.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:models/models.dart';
-import 'package:async_button_builder/async_button_builder.dart';
-import 'package:zapstore/utils/extensions.dart';
-import 'package:zapstore/widgets/common/profile_avatar.dart';
 import 'package:intl/intl.dart';
-import 'package:zapstore/widgets/sign_in_button.dart';
+import 'package:models/models.dart';
 import 'package:zapstore/services/notification_service.dart';
-import 'package:zapstore/widgets/pill_widget.dart';
 import 'package:zapstore/theme.dart';
+import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/widgets/auth_widgets.dart';
+import 'package:zapstore/widgets/common/profile_avatar.dart';
+import 'package:zapstore/widgets/pill_widget.dart';
 
 class CommentsSection extends HookConsumerWidget {
   const CommentsSection({super.key, required this.app, this.fileMetadata});
@@ -245,37 +245,12 @@ class _AddCommentButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final signer = ref.watch(Signer.activeSignerProvider);
-
-    if (signer == null) {
-      return SizedBox(
-        width: double.infinity,
-        child: Theme(
-          data: Theme.of(context).copyWith(
-            filledButtonTheme: FilledButtonThemeData(
-              style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(
-                  context,
-                ).colorScheme.surfaceContainerHighest,
-                foregroundColor: Theme.of(context).colorScheme.onSurface,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-            ),
-          ),
-          child: SignInButton(label: 'Sign in to comment', minimal: false),
-        ),
-      );
-    }
-
     return SizedBox(
       width: double.infinity,
       child: FilledButton.icon(
         onPressed: () => _showCommentComposer(context),
         icon: const Icon(Icons.add_comment),
-        label: Text('Add Comment'),
+        label: const Text('Add Comment'),
         style: FilledButton.styleFrom(
           backgroundColor: Theme.of(
             context,
@@ -304,6 +279,7 @@ class _CommentComposer extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isSignedIn = ref.watch(Signer.activePubkeyProvider) != null;
     final textController = useTextEditingController();
     // Rebuild on text changes so the Post button enables/disables correctly
     useListenable(textController);
@@ -339,30 +315,39 @@ class _CommentComposer extends HookConsumerWidget {
               ],
             ),
             const SizedBox(height: 16),
-            TextField(
-              controller: textController,
-              decoration: InputDecoration(
-                hintText:
-                    'Share your thoughts about $appName $versionToComment...',
-                border: const OutlineInputBorder(),
+            if (!isSignedIn) ...[
+              const SignInPrompt(
+                message: 'Sign in to share your thoughts and help others discover great apps.',
               ),
-              maxLines: 4,
-              autofocus: true,
-            ),
+            ] else ...[
+              TextField(
+                controller: textController,
+                decoration: InputDecoration(
+                  hintText:
+                      'Share your thoughts about $appName $versionToComment...',
+                  border: const OutlineInputBorder(),
+                ),
+                maxLines: 4,
+                autofocus: true,
+              ),
+            ],
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
               child: AsyncButtonBuilder(
-                child: Text('Post Comment'),
+                child: const Text('Post Comment'),
                 onPressed: () =>
                     _publishComment(ref, textController.text, context),
                 builder: (context, child, callback, buttonState) {
                   return FilledButton(
-                    onPressed: buttonState.maybeWhen(
-                      loading: () => null,
-                      orElse: () =>
-                          textController.text.trim().isEmpty ? null : callback,
-                    ),
+                    onPressed: !isSignedIn
+                        ? null
+                        : buttonState.maybeWhen(
+                            loading: () => null,
+                            orElse: () => textController.text.trim().isEmpty
+                                ? null
+                                : callback,
+                          ),
                     child: buttonState.maybeWhen(
                       loading: () => const SizedBox(
                         width: 20,

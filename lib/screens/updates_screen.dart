@@ -136,15 +136,28 @@ class _UpdatesTab extends HookConsumerWidget {
           children: [
             ColorFiltered(
               colorFilter: const ColorFilter.matrix(<double>[
-                0.2126, 0.7152, 0.0722, 0, 0,
-                0.2126, 0.7152, 0.0722, 0, 0,
-                0.2126, 0.7152, 0.0722, 0, 0,
-                0, 0, 0, 1, 0,
+                0.2126,
+                0.7152,
+                0.0722,
+                0,
+                0,
+                0.2126,
+                0.7152,
+                0.0722,
+                0,
+                0,
+                0.2126,
+                0.7152,
+                0.0722,
+                0,
+                0,
+                0,
+                0,
+                0,
+                1,
+                0,
               ]),
-              child: const Text(
-                '🎉',
-                style: TextStyle(fontSize: 48),
-              ),
+              child: const Text('🎉', style: TextStyle(fontSize: 48)),
             ),
             const SizedBox(height: 12),
             Text(
@@ -449,15 +462,39 @@ class _UpdatesTab extends HookConsumerWidget {
               ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Text(
-              'Confirming the Android system prompt is required',
-              style: context.textTheme.bodyMedium?.copyWith(
-                color: Theme.of(
-                  context,
-                ).colorScheme.onSurface.withValues(alpha: 0.6),
-              ),
+          Container(
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Icon(
+                    Icons.info_outline,
+                    size: 18,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.6),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Apps not installed or updated by the latest Zapstore will show here '
+                    'and require manual confirmation of the Android system prompt once per app.',
+                    style: context.textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.6),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           ...manualUpdates.map(
@@ -622,11 +659,7 @@ class _TabLabelWithBadge extends StatelessWidget {
           children: [
             Text(label),
             if (count > 0)
-              Positioned(
-                top: -6,
-                right: -18,
-                child: _CountBadge(count: count),
-              ),
+              Positioned(top: -6, right: -18, child: _CountBadge(count: count)),
           ],
         ),
       ),

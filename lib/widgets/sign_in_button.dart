@@ -5,6 +5,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:zapstore/main.dart';
 import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
+import 'package:zapstore/utils/debug_utils.dart';
 
 const _amberPackageId = 'com.greenart7c3.nostrsigner';
 const _amberNaddr =
@@ -37,7 +38,7 @@ class SignInButton extends ConsumerWidget {
         } else {
           try {
             await ref.read(amberSignerProvider).signIn();
-            onSignInSuccess(ref);
+            onSignInSuccess(ref.read(refProvider));
           } catch (e) {
             if (context.mounted) {
               context.showError('Sign-in failed: $e');
