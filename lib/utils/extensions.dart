@@ -4,9 +4,7 @@ import 'package:models/models.dart';
 import 'package:zapstore/constants/app_constants.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/utils/version_utils.dart';
-import 'package:collection/collection.dart';
 
-// Re-export constants for backwards compatibility
 export 'package:zapstore/constants/app_constants.dart';
 
 extension WidgetExt on WidgetRef {
@@ -76,47 +74,6 @@ extension AppExt on App {
 
   /// Whether the installed app is up to date (installed and no update)
   bool get isUpdated => isInstalled && !hasUpdate;
-}
-
-extension AppsExt on Iterable<App> {
-  Future<void> loadMetadata({bool withAuthors = true}) async {
-    if (isEmpty) return;
-    final ref = first.ref;
-
-    final releases = await ref.storage.query(
-      Request(
-        map(
-          (app) => app.latestRelease.req?.filters.firstOrNull,
-        ).nonNulls.toList(),
-      ),
-    );
-
-    if (releases.isEmpty) return;
-
-    await ref.storage.query(
-      Request<FileMetadata>(
-        releases
-            .map((r) => r.latestMetadata.req?.filters.firstOrNull)
-            .nonNulls
-            .toList(),
-      ),
-      source: const LocalAndRemoteSource(stream: false),
-    );
-
-    if (withAuthors) {
-      await ref.storage.query(
-        Request<Profile>(
-          map(
-            (a) => a.author.req?.filters.firstOrNull,
-          ).nonNulls.toSet().toList(),
-        ),
-        source: const LocalAndRemoteSource(
-          relays: 'vertex',
-          stream: false,
-        ),
-      );
-    }
-  }
 }
 
 extension WidgetRefExt on WidgetRef {

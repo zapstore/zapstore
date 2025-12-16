@@ -178,14 +178,11 @@ class _AppDetailView extends HookConsumerWidget {
         body: SafeArea(
           child: Stack(
             children: [
-              RefreshIndicator(
-                onRefresh: () => [app].loadMetadata(),
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.only(top: 16, bottom: 80),
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: AppDetailSkeleton(),
-                  ),
+              SingleChildScrollView(
+                padding: const EdgeInsets.only(top: 16, bottom: 80),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16),
+                  child: AppDetailSkeleton(),
                 ),
               ),
               InstallButton(app: currentApp, release: latestRelease),
@@ -200,14 +197,12 @@ class _AppDetailView extends HookConsumerWidget {
         child: Stack(
           children: [
             // Main scrollable content
-            RefreshIndicator(
-              onRefresh: () => [app].loadMetadata(),
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.only(
-                  top: 16,
-                  bottom: 80,
-                ), // Horizontal padding applied per-section to allow screenshots to be full-bleed
-                child: Column(
+            SingleChildScrollView(
+              padding: const EdgeInsets.only(
+                top: 16,
+                bottom: 80,
+              ), // Horizontal padding applied per-section to allow screenshots to be full-bleed
+              child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // App header with icon, name, version, and author (always show app info)
@@ -364,7 +359,6 @@ class _AppDetailView extends HookConsumerWidget {
                   ],
                 ),
               ),
-            ),
 
             // Sticky install/uninstall row (show even if release is loading)
             InstallButton(app: currentApp, release: latestRelease),
