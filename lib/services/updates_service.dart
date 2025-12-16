@@ -79,12 +79,10 @@ class CategorizedAppsNotifier extends StateNotifier<CategorizedApps> {
         },
         source: const LocalAndRemoteSource(
           relays: 'AppCatalog',
-          background: true,
           stream: true,
         ),
         andSource: const LocalAndRemoteSource(
           relays: 'AppCatalog',
-          background: true,
           stream: false,
         ),
         subscriptionPrefix: 'updates',
@@ -113,7 +111,6 @@ class CategorizedAppsNotifier extends StateNotifier<CategorizedApps> {
         RequestFilter<Profile>(authors: authorPubkeys).toRequest(),
         source: const RemoteSource(
           relays: 'social',
-          background: false,
           stream: false,
         ),
       );

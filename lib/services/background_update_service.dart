@@ -92,7 +92,6 @@ Future<bool> _checkForUpdatesInBackground() async {
         source: const RemoteSource(
           relays: 'AppCatalog',
           stream: false,
-          background: false,
         ),
       );
 
@@ -107,7 +106,6 @@ Future<bool> _checkForUpdatesInBackground() async {
           source: const LocalAndRemoteSource(
             relays: 'AppCatalog',
             stream: false,
-            background: false,
           ),
         );
       }

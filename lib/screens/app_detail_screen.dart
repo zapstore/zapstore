@@ -48,14 +48,32 @@ class _AppLoaderView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final platform = ref.read(packageManagerProvider.notifier).platform;
 
+    // Check if appId is an naddr and decode it
+    String? identifier;
+    String? author;
+    
+    if (appId.startsWith('naddr1')) {
+      try {
+        final decoded = Utils.decodeShareableIdentifier(appId);
+        if (decoded is AddressData) {
+          identifier = decoded.identifier;
+          author = decoded.author;
+        }
+      } catch (e) {
+        // Invalid naddr, fall through to use appId as-is
+      }
+    }
+    
+    // If we decoded an naddr, query by author/identifier, otherwise by #d tag
     final appsState = ref.watch(
       query<App>(
+        authors: author != null ? {author} : null,
         tags: {
-          '#d': {appId},
+          '#d': {identifier ?? appId},
           '#f': {platform},
         },
         limit: 1,
-        source: const LocalAndRemoteSource(stream: false, background: true),
+        source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
         subscriptionPrefix: 'app-detail-loader',
       ),
     );
@@ -79,7 +97,10 @@ class _AppLoaderView extends ConsumerWidget {
     // Loading state
     return const Scaffold(
       body: SafeArea(
-        child: Padding(padding: EdgeInsets.all(16), child: AppDetailSkeleton()),
+        child: SingleChildScrollView(
+          padding: EdgeInsets.all(16),
+          child: AppDetailSkeleton(),
+        ),
       ),
     );
   }
@@ -125,20 +146,22 @@ class _AppDetailView extends HookConsumerWidget {
     final appState = ref.watch(
       model<App>(
         app,
-        and: (a) => {
-          a.latestRelease,
-          if (a.latestRelease.value != null)
-            a.latestRelease.value!.latestMetadata,
-        },
+        and: (a) => {a.latestRelease, a.latestRelease.value?.latestMetadata},
         source: LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
+        subscriptionPrefix: 'app-detail',
       ),
     );
 
     // Query author profile from social relays
-    final authorState = ref.watch(query<Profile>(
-      authors: {app.pubkey},
-      source: const LocalAndRemoteSource(relays: {'social', 'vertex'}, cachedFor: Duration(hours: 2)),
-    ));
+    final authorState = ref.watch(
+      query<Profile>(
+        authors: {app.pubkey},
+        source: const LocalAndRemoteSource(
+          relays: {'social', 'vertex'},
+          cachedFor: Duration(hours: 2),
+        ),
+      ),
+    );
     final author = switch (authorState) {
       StorageData(:final models) => models.firstOrNull,
       _ => null,
@@ -227,9 +250,7 @@ class _AppDetailView extends HookConsumerWidget {
                                   final first = segments.isNotEmpty
                                       ? segments.first
                                       : 'search';
-                                  context.push(
-                                    '/$first/user/${author.pubkey}',
-                                  );
+                                  context.push('/$first/user/${author.pubkey}');
                                 },
                               )
                             : const AuthorSkeleton(),
@@ -327,7 +348,10 @@ class _AppDetailView extends HookConsumerWidget {
                       ),
                     ),
 
-                    CommentsSection(app: currentApp, fileMetadata: latestMetadata),
+                    CommentsSection(
+                      app: currentApp,
+                      fileMetadata: latestMetadata,
+                    ),
 
                     // Debug section - only visible for specific pubkey
                     if (showDebugSections)

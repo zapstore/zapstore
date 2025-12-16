@@ -100,7 +100,7 @@ extension AppsExt on Iterable<App> {
             .nonNulls
             .toList(),
       ),
-      source: const LocalAndRemoteSource(stream: false, background: true),
+      source: const LocalAndRemoteSource(stream: false),
     );
 
     if (withAuthors) {
@@ -113,7 +113,6 @@ extension AppsExt on Iterable<App> {
         source: const LocalAndRemoteSource(
           relays: 'vertex',
           stream: false,
-          background: true,
         ),
       );
     }

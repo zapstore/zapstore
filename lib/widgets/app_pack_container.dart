@@ -29,13 +29,11 @@ class AppPackContainer extends HookConsumerWidget {
         and: (pack) => {pack.apps},
         source: const LocalAndRemoteSource(
           stream: true,
-          background: true,
           relays: 'social',
         ),
         andSource: const LocalAndRemoteSource(
           relays: 'AppCatalog',
           stream: false,
-          background: true,
         ),
         subscriptionPrefix: 'app-pack',
       ),

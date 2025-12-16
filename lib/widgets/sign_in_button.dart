@@ -2,14 +2,11 @@ import 'package:async_button_builder/async_button_builder.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:zapstore/constants/app_constants.dart';
 import 'package:zapstore/main.dart';
 import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/utils/debug_utils.dart';
-
-const _amberPackageId = 'com.greenart7c3.nostrsigner';
-const _amberNaddr =
-    'naddr1qqdkxmmd9enhyet9deshyaphvvejumn0wd68yumfvahx2uszyp6hjpmdntls5n8aa7n7ypzlyjrv0ewch33ml3452wtjx0smhl93jqcyqqq8uzcgpp6ky';
 
 class SignInButton extends ConsumerWidget {
   const SignInButton({
@@ -27,14 +24,18 @@ class SignInButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final packageManager = ref.watch(packageManagerProvider);
     final isAmberInstalled = packageManager.any(
-      (p) => p.appId == _amberPackageId,
+      (p) => p.appId == kAmberPackageId,
     );
 
     return AsyncButtonBuilder(
       onPressed: () async {
         if (!isAmberInstalled) {
-          context.showInfo('Install Amber to sign in with your Nostr identity');
-          context.push('/profile/apps/$_amberNaddr');
+          context.showInfo(
+            'Install Amber to sign in with your Nostr identity',
+            actions: [
+              ('Open Amber', () async => context.push('/search/app/$kAmberNaddr')),
+            ],
+          );
         } else {
           try {
             await ref.read(amberSignerProvider).signIn();

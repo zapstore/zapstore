@@ -44,11 +44,7 @@ class UserScreen extends HookConsumerWidget {
           app.latestRelease,
           app.latestRelease.value?.latestMetadata,
         },
-        source: const LocalAndRemoteSource(
-          relays: 'AppCatalog',
-          stream: false,
-          background: true,
-        ),
+        source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
         subscriptionPrefix: 'user-apps',
       ),
     );
@@ -64,15 +60,10 @@ class UserScreen extends HookConsumerWidget {
         authors: {pubkey},
         limit: 20,
         and: (pack) => {pack.apps},
-        source: const LocalAndRemoteSource(
-          stream: false,
-          background: true,
-          relays: 'social',
-        ),
+        source: const LocalAndRemoteSource(stream: false, relays: 'social'),
         andSource: const LocalAndRemoteSource(
           relays: 'AppCatalog',
           stream: false,
-          background: true,
         ),
         subscriptionPrefix: 'user-packs',
       ),

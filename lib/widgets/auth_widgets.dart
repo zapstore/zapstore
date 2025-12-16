@@ -2,14 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:zapstore/constants/app_constants.dart';
 import 'package:zapstore/main.dart';
 import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/utils/debug_utils.dart';
-
-const _amberPackageId = 'com.greenart7c3.nostrsigner';
-const _amberNaddr =
-    'naddr1qqdkxmmd9enhyet9deshyaphvvejumn0wd68yumfvahx2uszyp6hjpmdntls5n8aa7n7ypzlyjrv0ewch33ml3452wtjx0smhl93jqcyqqq8uzcgpp6ky';
 
 /// Reusable sign-in prompt widget for dialogs and bottom sheets.
 /// Displays a styled tappable message prompting the user to sign in.
@@ -24,7 +21,7 @@ class SignInPrompt extends HookConsumerWidget {
     final theme = Theme.of(context);
     final packageManager = ref.watch(packageManagerProvider);
     final isAmberInstalled = packageManager.any(
-      (p) => p.appId == _amberPackageId,
+      (p) => p.appId == kAmberPackageId,
     );
     final isLoading = useState(false);
 
@@ -32,8 +29,12 @@ class SignInPrompt extends HookConsumerWidget {
       if (isLoading.value) return;
 
       if (!isAmberInstalled) {
-        context.showInfo('Install Amber to sign in with your Nostr identity');
-        context.push('/profile/apps/$_amberNaddr');
+        context.showInfo(
+          'Install Amber to sign in with your Nostr identity',
+          actions: [
+            ('Open Amber', () async => context.push('/search/app/$kAmberNaddr')),
+          ],
+        );
       } else {
         isLoading.value = true;
         try {

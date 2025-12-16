@@ -36,27 +36,6 @@ final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: '/search',
     routes: [
-      // Top-level deep link route: /apps/:naddr
-      // Redirect to search branch to show with nav bar
-      GoRoute(
-        path: '/apps/:naddr',
-        redirect: (context, state) {
-          final naddr = state.pathParameters['naddr'];
-          if (naddr == null || naddr.isEmpty) {
-            return '/search';
-          }
-          // Decode naddr to get app identifier
-          try {
-            final decoded = Utils.decodeShareableIdentifier(naddr);
-            if (decoded is AddressData && decoded.identifier.isNotEmpty) {
-              return '/search/app/${decoded.identifier}';
-            }
-          } catch (_) {
-            // Invalid naddr
-          }
-          return '/search';
-        },
-      ),
       // Top-level route for market:// intents
       // Redirect to search branch to show with nav bar
       GoRoute(
@@ -80,10 +59,7 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: '/search',
                 builder: (context, state) => const SearchScreen(),
-                routes: [
-                  _appDetailRoute(),
-                  _userRoute(),
-                ],
+                routes: [_appDetailRoute(), _userRoute()],
               ),
             ],
           ),
@@ -93,10 +69,7 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: '/updates',
                 builder: (context, state) => const UpdatesScreen(),
-                routes: [
-                  _appDetailRoute(),
-                  _userRoute(),
-                ],
+                routes: [_appDetailRoute(), _userRoute()],
               ),
             ],
           ),
@@ -106,10 +79,7 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: '/profile',
                 builder: (context, state) => const ProfileScreen(),
-                routes: [
-                  _appDetailRoute(),
-                  _userRoute(),
-                ],
+                routes: [_appDetailRoute(), _userRoute()],
               ),
             ],
           ),

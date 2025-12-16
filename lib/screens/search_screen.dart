@@ -46,7 +46,6 @@ class SearchScreen extends HookConsumerWidget {
               source: const RemoteSource(
                 relays: 'AppCatalog',
                 stream: false,
-                background: false,
               ),
               subscriptionPrefix: 'search-results',
             ),

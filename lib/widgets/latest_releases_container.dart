@@ -281,7 +281,6 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
         source: const LocalAndRemoteSource(
           relays: 'AppCatalog',
           stream: true,
-          background: true,
         ),
         andSource: const LocalAndRemoteSource(
           relays: 'AppCatalog',
@@ -337,7 +336,7 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
             '#f': {'android-arm64-v8a'},
           },
         ).toRequest(),
-        source: const LocalAndRemoteSource(stream: false, background: false),
+        source: const LocalAndRemoteSource(stream: false),
       );
 
       if (olderPage.isNotEmpty) {

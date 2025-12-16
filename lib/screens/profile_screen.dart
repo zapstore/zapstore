@@ -177,9 +177,8 @@ class _AuthenticationSection extends ConsumerWidget {
 
   Widget _buildSignInOptions(BuildContext context, WidgetRef ref) {
     final packageManager = ref.watch(packageManagerProvider);
-    const amberPackageId = 'com.greenart7c3.nostrsigner';
     final isAmberInstalled = packageManager.any(
-      (p) => p.appId == amberPackageId,
+      (p) => p.appId == kAmberPackageId,
     );
 
     return Column(
@@ -241,10 +240,7 @@ class _SignInButtonWithAmberCheck extends ConsumerWidget {
     return AsyncButtonBuilder(
       onPressed: () async {
         if (!isAmberInstalled) {
-          // Navigate to Amber app page (within profile tab to keep bottom nav)
-          context.push(
-            '/profile/apps/naddr1qqdkxmmd9enhyet9deshyaphvvejumn0wd68yumfvahx2uszyp6hjpmdntls5n8aa7n7ypzlyjrv0ewch33ml3452wtjx0smhl93jqcyqqq8uzcgpp6ky',
-          );
+          context.push('/profile/app/$kAmberNaddr');
         } else {
           await ref.read(amberSignerProvider).signIn();
         }

@@ -30,7 +30,6 @@ class CommentsSection extends HookConsumerWidget {
         },
         source: LocalAndRemoteSource(
           stream: true,
-          background: true,
           relays: 'social',
         ),
         subscriptionPrefix: 'app-comments',

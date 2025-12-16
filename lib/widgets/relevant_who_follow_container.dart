@@ -193,7 +193,6 @@ final relevantWhoFollowProvider = FutureProvider.autoDispose
           source: const LocalAndRemoteSource(
             relays: 'social',
             stream: false,
-            background: false,
           ),
         );
         return profiles;

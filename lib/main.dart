@@ -275,7 +275,6 @@ Future<void> onSignInSuccess(Ref ref) async {
       RequestFilter<AppCatalogRelayList>(authors: {pubkey}).toRequest(),
       source: const RemoteSource(
         relays: 'bootstrap',
-        background: false,
         stream: false,
       ),
     ),

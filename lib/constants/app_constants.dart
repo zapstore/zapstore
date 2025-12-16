@@ -11,3 +11,10 @@ const kFranzapPubkey =
 
 /// Identifier for storing user bookmarks
 const kAppBookmarksIdentifier = 'zapstore-bookmarks';
+
+/// Amber signer package ID
+const kAmberPackageId = 'com.greenart7c3.nostrsigner';
+
+/// Amber signer naddr
+const kAmberNaddr =
+    'naddr1qqdkxmmd9enhyet9deshyaphvvejumn0wd68yumfvahx2uszyp6hjpmdntls5n8aa7n7ypzlyjrv0ewch33ml3452wtjx0smhl93jqcyqqq8uzcgpp6ky';
