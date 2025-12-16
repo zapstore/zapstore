@@ -86,6 +86,22 @@ class _UpdatesTab extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final categorized = ref.watch(categorizedAppsProvider);
+
+    if (categorized.isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    return _UpdatesContent(categorized: categorized);
+  }
+}
+
+class _UpdatesContent extends HookConsumerWidget {
+  const _UpdatesContent({required this.categorized});
+
+  final CategorizedApps categorized;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
     final automaticUpdates = categorized.automaticUpdates;
     final manualUpdates = categorized.manualUpdates;
 
@@ -519,7 +535,13 @@ class _UpToDateTab extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final upToDateApps = ref.watch(categorizedAppsProvider).upToDateApps;
+    final categorized = ref.watch(categorizedAppsProvider);
+
+    if (categorized.isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final upToDateApps = categorized.upToDateApps;
 
     if (upToDateApps.isEmpty) {
       return Center(

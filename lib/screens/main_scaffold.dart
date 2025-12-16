@@ -82,7 +82,9 @@ class MobileScaffold extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final pubkey = ref.watch(Signer.activePubkeyProvider);
     final profile = ref.watch(Signer.activeProfileProvider(LocalSource()));
+    final categorized = ref.watch(categorizedAppsProvider);
     final updateCount = ref.watch(updateCountProvider);
+    final isLoadingUpdates = categorized.isLoading;
 
     return Scaffold(
       body: Container(
@@ -169,7 +171,30 @@ class MobileScaffold extends ConsumerWidget {
                   clipBehavior: Clip.none,
                   children: [
                     const Icon(Icons.update),
-                    if (updateCount > 0)
+                    if (isLoadingUpdates)
+                      Positioned(
+                        right: -8,
+                        top: -8,
+                        child: Container(
+                          width: 18,
+                          height: 18,
+                          decoration: BoxDecoration(
+                            color: Colors.red.withValues(alpha: 0.4),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Center(
+                            child: SizedBox(
+                              width: 8,
+                              height: 8,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                      )
+                    else if (updateCount > 0)
                       Positioned(
                         right: -8,
                         top: -8,
@@ -255,7 +280,9 @@ class DesktopScaffold extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final pubkey = ref.watch(Signer.activePubkeyProvider);
     final profile = ref.watch(Signer.activeProfileProvider(LocalSource()));
+    final categorized = ref.watch(categorizedAppsProvider);
     final updateCount = ref.watch(updateCountProvider);
+    final isLoadingUpdates = categorized.isLoading;
 
     return Scaffold(
       body: Container(
@@ -293,7 +320,30 @@ class DesktopScaffold extends ConsumerWidget {
                         clipBehavior: Clip.none,
                         children: [
                           const Icon(Icons.update),
-                          if (updateCount > 0)
+                          if (isLoadingUpdates)
+                            Positioned(
+                              right: -8,
+                              top: -8,
+                              child: Container(
+                                width: 18,
+                                height: 18,
+                                decoration: BoxDecoration(
+                                  color: Colors.red.withValues(alpha: 0.4),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Center(
+                                  child: SizedBox(
+                                    width: 8,
+                                    height: 8,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            )
+                          else if (updateCount > 0)
                             Positioned(
                               right: -8,
                               top: -8,

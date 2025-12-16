@@ -968,12 +968,16 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler {
                 ""
             }
             
+            // Check if we can silently update this package (we are the installer)
+            val canSilentlyUpdate = canInstallSilently(bundleId)
+            
             out.add(mapOf(
                 "name" to name,
                 "bundleId" to bundleId,
                 "versionName" to versionName,
                 "versionCode" to versionCode,
                 "signatureHash" to signatureHash,
+                "canInstallSilently" to canSilentlyUpdate,
             ))
         }
         return out

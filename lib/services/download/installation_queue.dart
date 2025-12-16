@@ -8,10 +8,8 @@ import '../secure_storage_service.dart';
 import 'download_info.dart';
 
 /// Callback to update state in the main service
-typedef StateUpdater = void Function(
-  String appId,
-  DownloadInfo Function(DownloadInfo) updater,
-);
+typedef StateUpdater =
+    void Function(String appId, DownloadInfo Function(DownloadInfo) updater);
 
 /// Callback to remove from state
 typedef StateRemover = void Function(String appId);
@@ -65,8 +63,10 @@ class InstallationQueue {
     final downloadInfo = _getState(appId);
     if (downloadInfo == null) return;
 
-    final packageManager = _ref.read(packageManagerProvider.notifier);
-    final canSilent = await packageManager.canInstallSilently(appId);
+    // Check silent install from PackageInfo (computed during syncInstalledPackages)
+    final packages = _ref.read(packageManagerProvider);
+    final packageInfo = packages.where((p) => p.appId == appId).firstOrNull;
+    final canSilent = packageInfo?.canInstallSilently ?? false;
 
     // If backgrounded and not silent install, defer
     if (!_isAppInForeground && !canSilent) {
@@ -78,7 +78,8 @@ class InstallationQueue {
     // Check if permission dialog needs to be shown (Android, non-silent, first time)
     if (Platform.isAndroid && !canSilent) {
       final secureStorage = _ref.read(secureStorageServiceProvider);
-      final hasSeenDialog = await secureStorage.hasSeenInstallPermissionDialog();
+      final hasSeenDialog = await secureStorage
+          .hasSeenInstallPermissionDialog();
       if (!hasSeenDialog) {
         _updateState(appId, (info) => info.copyWith(isReadyToInstall: true));
         return;
@@ -122,24 +123,26 @@ class InstallationQueue {
       if (packageManager is AndroidPackageManager) {
         final retry = await packageManager.retryPendingInstall(appId);
 
-        if (retry.hasPending && (retry.relaunched || retry.promptAlreadyShown)) {
+        if (retry.hasPending &&
+            (retry.relaunched || retry.promptAlreadyShown)) {
           continue;
         }
 
         if (retry.hasPending && retry.sessionPending) {
-          _updateState(appId, (info) => info.copyWith(
-            isInstalling: false,
-            isReadyToInstall: true,
-          ));
+          _updateState(
+            appId,
+            (info) =>
+                info.copyWith(isInstalling: false, isReadyToInstall: true),
+          );
           continue;
         }
       }
 
       // No pending prompt - mark ready to install
-      _updateState(appId, (info) => info.copyWith(
-        isInstalling: false,
-        isReadyToInstall: true,
-      ));
+      _updateState(
+        appId,
+        (info) => info.copyWith(isInstalling: false, isReadyToInstall: true),
+      );
     }
 
     // Reset lock if there were stalled apps without prompts
@@ -171,10 +174,11 @@ class InstallationQueue {
         try {
           final filePath = await downloadInfo.task.filePath();
 
-          _updateState(appId, (info) => info.copyWith(
-            isInstalling: true,
-            isReadyToInstall: false,
-          ));
+          _updateState(
+            appId,
+            (info) =>
+                info.copyWith(isInstalling: true, isReadyToInstall: false),
+          );
 
           final packageManager = _ref.read(packageManagerProvider.notifier);
           await packageManager.install(
@@ -207,14 +211,18 @@ class InstallationQueue {
     }
   }
 
-  void _handleInstallError(String appId, DownloadInfo downloadInfo, String errorMessage) {
+  void _handleInstallError(
+    String appId,
+    DownloadInfo downloadInfo,
+    String errorMessage,
+  ) {
     // Already in progress - put back and stop
     if (errorMessage.contains('INSTALL_ALREADY_IN_PROGRESS')) {
       _queue.insert(0, appId);
-      _updateState(appId, (info) => info.copyWith(
-        isInstalling: true,
-        isReadyToInstall: false,
-      ));
+      _updateState(
+        appId,
+        (info) => info.copyWith(isInstalling: true, isReadyToInstall: false),
+      );
       return;
     }
 
@@ -228,14 +236,16 @@ class InstallationQueue {
     if (wasCancelled) {
       _removeFromState(appId);
     } else {
-      _updateState(appId, (info) => info.copyWith(
-        isInstalling: false,
-        isReadyToInstall: true,
-        errorDetails: isCertMismatch
-            ? 'CERTIFICATE_MISMATCH'
-            : errorMessage.replaceFirst('Exception: ', ''),
-      ));
+      _updateState(
+        appId,
+        (info) => info.copyWith(
+          isInstalling: false,
+          isReadyToInstall: true,
+          errorDetails: isCertMismatch
+              ? 'CERTIFICATE_MISMATCH'
+              : errorMessage.replaceFirst('Exception: ', ''),
+        ),
+      );
     }
   }
 }
-

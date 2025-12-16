@@ -6,6 +6,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:workmanager/workmanager.dart';
 import 'package:zapstore/services/package_manager/android_package_manager.dart';
@@ -87,7 +88,6 @@ Future<bool> _performWeeklyCleanup() async {
           // Remove from database
           await downloader.database.deleteRecordWithId(task.taskId);
         } catch (_) {}
-
       }
     }
 
@@ -173,10 +173,7 @@ Future<bool> _checkForUpdatesInBackground() async {
             '#f': {packageManager.platform},
           },
         ).toRequest(),
-        source: const RemoteSource(
-          relays: 'AppCatalog',
-          stream: false,
-        ),
+        source: const RemoteSource(relays: 'AppCatalog', stream: false),
       );
 
       // Load releases for hasUpdate check
@@ -326,8 +323,16 @@ class BackgroundUpdateService {
     );
   }
 
-  /// Initialize local notifications plugin
+  /// Initialize local notifications plugin and request permission
   Future<void> _initializeNotifications() async {
+    // Request notification permission on Android 13+ (API 33+)
+    if (Platform.isAndroid) {
+      final status = await Permission.notification.status;
+      if (!status.isGranted) {
+        await Permission.notification.request();
+      }
+    }
+
     final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
     const initializationSettingsAndroid = AndroidInitializationSettings(
@@ -346,11 +351,10 @@ class BackgroundUpdateService {
     );
 
     // Create notification channel on Android
-    final androidPlugin =
-        flutterLocalNotificationsPlugin
-            .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin
-            >();
+    final androidPlugin = flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
 
     if (androidPlugin != null) {
       await androidPlugin.createNotificationChannel(
@@ -376,6 +380,51 @@ class BackgroundUpdateService {
       kBackgroundUpdateTaskName,
       constraints: Constraints(networkType: NetworkType.connected),
     );
+  }
+
+  /// Show a test notification directly (bypasses WorkManager, for debugging)
+  /// Returns true if notification was shown, false if permission denied
+  Future<bool> showTestNotification() async {
+    // Request notification permission if not granted
+    if (Platform.isAndroid) {
+      final status = await Permission.notification.status;
+      if (!status.isGranted) {
+        final result = await Permission.notification.request();
+        if (!result.isGranted) {
+          return false;
+        }
+      }
+    }
+
+    final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+
+    const initializationSettingsAndroid = AndroidInitializationSettings(
+      '@mipmap/ic_launcher',
+    );
+    const initializationSettings = InitializationSettings(
+      android: initializationSettingsAndroid,
+    );
+    await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+
+    const androidDetails = AndroidNotificationDetails(
+      kUpdateNotificationChannelId,
+      kUpdateNotificationChannelName,
+      channelDescription: kUpdateNotificationChannelDescription,
+      importance: Importance.defaultImportance,
+      priority: Priority.defaultPriority,
+      showWhen: true,
+      autoCancel: true,
+    );
+
+    const notificationDetails = NotificationDetails(android: androidDetails);
+
+    await flutterLocalNotificationsPlugin.show(
+      99, // Test notification ID
+      'Test notification',
+      'This is a test notification from Zapstore',
+      notificationDetails,
+    );
+    return true;
   }
 }
 

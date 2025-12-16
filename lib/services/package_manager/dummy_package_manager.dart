@@ -88,12 +88,6 @@ final class DummyPackageManager extends PackageManager {
   bool get supportsSilentInstall => false;
 
   @override
-  Future<bool> canInstallSilently(String appId) async {
-    // Mock implementation - always returns false for dummy manager
-    return false;
-  }
-
-  @override
   Future<void> syncInstalledPackages() async {
     // No-op for dummy implementation
   }

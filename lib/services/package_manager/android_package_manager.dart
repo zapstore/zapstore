@@ -34,13 +34,14 @@ final class AndroidPackageManager extends PackageManager {
       throw Exception('APK file not found: $filePath');
     }
 
-    final result = await _channel.invokeMethod<Map<Object?, Object?>>('install', {
-      'filePath': filePath,
-      'packageName': appId,
-      'expectedHash': expectedHash,
-      'expectedSize': expectedSize,
-      'skipVerification': skipVerification,
-    });
+    final result = await _channel
+        .invokeMethod<Map<Object?, Object?>>('install', {
+          'filePath': filePath,
+          'packageName': appId,
+          'expectedHash': expectedHash,
+          'expectedSize': expectedSize,
+          'skipVerification': skipVerification,
+        });
 
     final resultMap = Map<String, dynamic>.from(result ?? {});
 
@@ -62,9 +63,10 @@ final class AndroidPackageManager extends PackageManager {
 
   @override
   Future<void> uninstall(String appId) async {
-    final result = await _channel.invokeMethod<Map<Object?, Object?>>('uninstall', {
-      'packageName': appId,
-    });
+    final result = await _channel.invokeMethod<Map<Object?, Object?>>(
+      'uninstall',
+      {'packageName': appId},
+    );
 
     final resultMap = Map<String, dynamic>.from(result ?? {});
 
@@ -127,21 +129,6 @@ final class AndroidPackageManager extends PackageManager {
     return _supportsSilentInstall;
   }
 
-  /// Check if we can silently install/update a specific package
-  @override
-  Future<bool> canInstallSilently(String appId) async {
-    try {
-      final result =
-          await _channel.invokeMethod<bool>('canInstallSilently', {
-            'packageName': appId,
-          }) ??
-          false;
-      return result;
-    } catch (e) {
-      return false;
-    }
-  }
-
   /// Install an update silently if possible, otherwise fall back to user confirmation
   Future<void> installUpdate(
     String appId,
@@ -184,15 +171,15 @@ final class AndroidPackageManager extends PackageManager {
       throw Exception('Failed to launch app: $e');
     }
   }
-  
+
   /// Re-launch a pending install prompt that was backgrounded.
   /// Returns structured info so callers can avoid double-prompts and bad state resets.
   Future<RetryPendingInstallResult> retryPendingInstall(String appId) async {
     try {
-      final result = await _channel
-          .invokeMethod<Map<Object?, Object?>>('retryPendingInstall', {
-            'packageName': appId,
-          });
+      final result = await _channel.invokeMethod<Map<Object?, Object?>>(
+        'retryPendingInstall',
+        {'packageName': appId},
+      );
 
       final resultMap = Map<String, dynamic>.from(result ?? {});
       return RetryPendingInstallResult.fromMap(resultMap);
@@ -222,11 +209,12 @@ final class AndroidPackageManager extends PackageManager {
   Future<void> syncInstalledPackages() async {
     try {
       // Check and cache silent install capability (general check)
-      final canInstallSilently =
+      final canInstallSilentlyGeneral =
           await _channel.invokeMethod<bool>('canInstallSilently') ?? false;
-      _supportsSilentInstall = canInstallSilently;
+      _supportsSilentInstall = canInstallSilentlyGeneral;
 
       // Get installed apps via method channel, excluding system apps
+      // Each app includes per-package canInstallSilently status
       final installedApps =
           await _channel.invokeMethod<List<Object?>>('getInstalledApps', {
             'includeSystemApps': false,
@@ -242,6 +230,7 @@ final class AndroidPackageManager extends PackageManager {
         final version = app['versionName'] as String? ?? '0.0.0';
         final versionCode = app['versionCode'] as int?;
         final signatureHash = app['signatureHash'] as String? ?? '';
+        final canInstallSilently = app['canInstallSilently'] as bool? ?? false;
 
         if (appId.isNotEmpty) {
           packages.add(
@@ -251,6 +240,7 @@ final class AndroidPackageManager extends PackageManager {
               versionCode: versionCode,
               installTime: null, // Method channel doesn't provide install time
               signatureHash: signatureHash,
+              canInstallSilently: canInstallSilently,
             ),
           );
         }

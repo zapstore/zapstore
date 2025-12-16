@@ -14,6 +14,7 @@ class PackageInfo extends Equatable {
     required this.versionCode,
     required this.signatureHash,
     this.installTime,
+    this.canInstallSilently = false,
   });
 
   /// The application identifier (bundle ID)
@@ -31,6 +32,9 @@ class PackageInfo extends Equatable {
   /// When the app was installed
   final DateTime? installTime;
 
+  /// Whether this package can be silently updated (we are the installer)
+  final bool canInstallSilently;
+
   @override
   List<Object?> get props => [
     appId,
@@ -38,6 +42,7 @@ class PackageInfo extends Equatable {
     versionCode,
     signatureHash,
     installTime,
+    canInstallSilently,
   ];
 }
 
@@ -102,10 +107,6 @@ abstract class PackageManager extends StateNotifier<List<PackageInfo>> {
 
   /// Whether the platform supports silent installation
   bool get supportsSilentInstall;
-
-  /// Check if a specific package can be silently installed/updated
-  /// Returns false if not supported or if the package requires user confirmation
-  Future<bool> canInstallSilently(String appId);
 
   /// Target platform identifier used to filter file metadata (e.g., '#f' tag)
   /// Example: 'android-arm64-v8a' for Android arm64 builds

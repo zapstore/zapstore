@@ -15,7 +15,6 @@ import 'package:zapstore/services/background_update_service.dart';
 import 'package:zapstore/services/download/download_service.dart';
 import 'package:zapstore/router.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
-import 'package:zapstore/services/updates_service.dart';
 import 'package:zapstore/theme.dart';
 import 'package:zapstore/services/package_manager/android_package_manager.dart';
 import 'package:zapstore/services/package_manager/dummy_package_manager.dart';
@@ -78,10 +77,6 @@ class ZapstoreApp extends HookConsumerWidget {
 
     // Watch initialization state for error overlay display
     final initState = ref.watch(appInitializationProvider);
-
-    // Keep categorizedAppsProvider alive for badge count updates
-    // Using listen instead of watch since we don't use the value directly
-    ref.listen(categorizedAppsProvider, (_, __) {});
 
     // Listen to app lifecycle and check for updates when app regains focus
     useEffect(() {
