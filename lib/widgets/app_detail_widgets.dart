@@ -8,7 +8,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:zapstore/services/bookmarks_service.dart';
-import 'package:zapstore/services/download_service.dart';
+import 'package:zapstore/services/download/download_service.dart';
 import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/theme.dart';
 import 'package:zapstore/utils/extensions.dart';

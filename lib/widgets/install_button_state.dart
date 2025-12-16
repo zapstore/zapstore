@@ -1,6 +1,6 @@
 import 'package:background_downloader/background_downloader.dart';
 import 'package:models/models.dart';
-import 'package:zapstore/services/download_service.dart';
+import 'package:zapstore/services/download/download_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/utils/extensions.dart';
 

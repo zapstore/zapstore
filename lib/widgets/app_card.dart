@@ -9,7 +9,7 @@ import 'package:skeletonizer/skeletonizer.dart';
 import 'package:background_downloader/background_downloader.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/url_utils.dart';
-import 'package:zapstore/services/download_service.dart';
+import 'package:zapstore/services/download/download_service.dart';
 import 'package:zapstore/widgets/zap_widgets.dart';
 
 import 'author_container.dart';

@@ -1,5 +1,6 @@
-import 'dart:io' show Platform;
+import 'dart:io' show Directory, Platform;
 
+import 'package:background_downloader/background_downloader.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
@@ -15,14 +16,23 @@ import 'package:zapstore/utils/extensions.dart';
 /// Unique task name for background update checking
 const kBackgroundUpdateTaskName = 'dev.zapstore.backgroundUpdateCheck';
 
+/// Unique task name for weekly cleanup
+const kWeeklyCleanupTaskName = 'dev.zapstore.weeklyCleanup';
+
 /// Unique task identifier
 const kBackgroundUpdateTaskId = 'backgroundUpdateCheck';
+
+/// Unique task identifier for weekly cleanup
+const kWeeklyCleanupTaskId = 'weeklyCleanup';
 
 /// Notification channel for update notifications
 const kUpdateNotificationChannelId = 'zapstore_updates';
 const kUpdateNotificationChannelName = 'App Updates';
 const kUpdateNotificationChannelDescription =
     'Notifications for available app updates';
+
+/// Stale download threshold for cleanup
+const _staleDownloadThreshold = Duration(days: 7);
 
 /// The entry point for WorkManager background tasks.
 /// This MUST be a top-level function (not a class method).
@@ -32,10 +42,84 @@ void callbackDispatcher() {
     switch (task) {
       case kBackgroundUpdateTaskName:
         return await _checkForUpdatesInBackground();
+      case kWeeklyCleanupTaskName:
+        return await _performWeeklyCleanup();
       default:
         return Future.value(false);
     }
   });
+}
+
+/// Perform weekly cleanup of stale downloads
+Future<bool> _performWeeklyCleanup() async {
+  try {
+    final downloader = FileDownloader();
+
+    // Get all tracked records from background_downloader's database
+    final trackedRecords = await downloader.database.allRecords(
+      group: FileDownloader.defaultGroup,
+    );
+
+    for (final record in trackedRecords) {
+      final task = record.task;
+      if (task is! DownloadTask) continue;
+
+      final taskAge = DateTime.now().difference(record.task.creationTime);
+      if (taskAge > _staleDownloadThreshold) {
+        try {
+          // Cancel if active
+          await downloader.cancelTaskWithId(task.taskId);
+        } catch (_) {}
+
+        try {
+          // Delete the file if it exists
+          final filePath = await task.filePath();
+          final file = Directory(filePath).parent.listSync().firstWhere(
+            (f) => f.path.endsWith(task.filename),
+            orElse: () => Directory(''),
+          );
+          if (file.path.isNotEmpty) {
+            await file.delete();
+          }
+        } catch (_) {}
+
+        try {
+          // Remove from database
+          await downloader.database.deleteRecordWithId(task.taskId);
+        } catch (_) {}
+
+      }
+    }
+
+    // Also clean up orphaned APK files in download directory
+    try {
+      final cacheDir = await getApplicationCacheDirectory();
+      final downloadDir = Directory(
+        path.join(cacheDir.path, 'flutter_background_downloader'),
+      );
+
+      if (await downloadDir.exists()) {
+        final files = downloadDir.listSync();
+        final cutoff = DateTime.now().subtract(_staleDownloadThreshold);
+
+        for (final file in files) {
+          if (file is! Directory) {
+            final stat = await file.stat();
+            if (stat.modified.isBefore(cutoff)) {
+              await file.delete();
+            }
+          }
+        }
+      }
+    } catch (_) {
+      // Ignore cleanup failures for orphaned files
+    }
+
+    return true;
+  } catch (e) {
+    // Cleanup failed - return false for retry
+    return false;
+  }
 }
 
 /// Background update check logic - runs in a separate isolate
@@ -225,6 +309,20 @@ class BackgroundUpdateService {
       existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
       backoffPolicy: BackoffPolicy.exponential,
       initialDelay: const Duration(minutes: 15),
+    );
+
+    // Register weekly cleanup task
+    await Workmanager().registerPeriodicTask(
+      kWeeklyCleanupTaskId,
+      kWeeklyCleanupTaskName,
+      frequency: const Duration(days: 7),
+      constraints: Constraints(
+        requiresBatteryNotLow: true,
+        requiresCharging: true, // Only run when charging for cleanup
+      ),
+      existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
+      backoffPolicy: BackoffPolicy.exponential,
+      initialDelay: const Duration(hours: 24), // Start first cleanup after 24h
     );
   }
 
