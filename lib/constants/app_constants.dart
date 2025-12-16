@@ -12,6 +12,33 @@ const kFranzapPubkey =
 /// Identifier for storing user bookmarks
 const kAppBookmarksIdentifier = 'zapstore-bookmarks';
 
+/// Event filter for app packs - excludes bookmarks and packs with zero App references
+bool appPackEventFilter(Map<String, dynamic> event) {
+  final tags = event['tags'] as List<dynamic>?;
+  if (tags == null) return false;
+
+  // Check for bookmarks identifier in 'd' tag
+  for (final tag in tags) {
+    if (tag is List && tag.isNotEmpty && tag[0] == 'd') {
+      if (tag.length > 1 && tag[1] == kAppBookmarksIdentifier) {
+        return false;
+      }
+    }
+  }
+
+  // Check for at least one 'a' tag starting with '32267:' (App kind)
+  for (final tag in tags) {
+    if (tag is List && tag.isNotEmpty && tag[0] == 'a') {
+      if (tag.length > 1 && tag[1] is String && tag[1].startsWith('32267:')) {
+        return true;
+      }
+    }
+  }
+
+  // No valid App references found
+  return false;
+}
+
 /// Amber signer package ID
 const kAmberPackageId = 'com.greenart7c3.nostrsigner';
 

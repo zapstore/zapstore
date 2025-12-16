@@ -27,9 +27,10 @@ class AppPackContainer extends HookConsumerWidget {
       query<AppPack>(
         limit: 20,
         and: (pack) => {pack.apps},
-        source: const LocalAndRemoteSource(
+        source: LocalAndRemoteSource(
           stream: true,
           relays: 'social',
+          eventFilter: appPackEventFilter,
         ),
         andSource: const LocalAndRemoteSource(
           relays: 'AppCatalog',
@@ -41,15 +42,7 @@ class AppPackContainer extends HookConsumerWidget {
 
     final packs = switch (appPacksState) {
       StorageData(:final models) =>
-        models
-            .where((p) => p.identifier != kAppBookmarksIdentifier)
-            .where(
-              (p) => p.apps.toList().any(
-                (a) => a.name != null || a.identifier.isNotEmpty,
-              ),
-            )
-            .toList()
-          ..sort((a, b) => b.event.createdAt.compareTo(a.event.createdAt)),
+        models..sort((a, b) => b.event.createdAt.compareTo(a.event.createdAt)),
       _ => <AppPack>[],
     };
 

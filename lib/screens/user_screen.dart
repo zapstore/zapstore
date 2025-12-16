@@ -60,7 +60,11 @@ class UserScreen extends HookConsumerWidget {
         authors: {pubkey},
         limit: 20,
         and: (pack) => {pack.apps},
-        source: const LocalAndRemoteSource(stream: false, relays: 'social'),
+        source: LocalAndRemoteSource(
+          stream: false,
+          relays: 'social',
+          eventFilter: appPackEventFilter,
+        ),
         andSource: const LocalAndRemoteSource(
           relays: 'AppCatalog',
           stream: false,
@@ -68,16 +72,8 @@ class UserScreen extends HookConsumerWidget {
         subscriptionPrefix: 'user-packs',
       ),
     );
-    final packs =
-        appPacksState.models
-            .where((p) => p.identifier != kAppBookmarksIdentifier)
-            .where(
-              (p) => p.apps.toList().any(
-                (a) => a.name != null || a.identifier.isNotEmpty,
-              ),
-            )
-            .toList()
-          ..sort((a, b) => b.event.createdAt.compareTo(a.event.createdAt));
+    final packs = appPacksState.models
+      ..sort((a, b) => b.event.createdAt.compareTo(a.event.createdAt));
 
     return Scaffold(
       body: SafeArea(
