@@ -203,16 +203,16 @@ class ZapAmountDialog extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final selectedAmount = useState<int>(210);
+    final selectedAmount = useState<int>(2100);
     final commentController = useTextEditingController();
     final customAmount = useState<int?>(null);
     final quickAmounts = useMemoized(
       () => [
-        (label: '🤙 210', value: 210),
-        (label: '💜 2100', value: 2100),
-        (label: '🤩 4200', value: 4200),
-        (label: '🚀 21k', value: 21000),
-        (label: '💯 100k', value: 100000),
+        (label: '🤙 2100', value: 2100),
+        (label: '💜 10k', value: 10_000),
+        (label: '🤩 21k', value: 21_000),
+        (label: '🏃 42k', value: 42_000),
+        (label: '💯 100k', value: 100_000),
       ],
     );
     final pubkey = ref.watch(Signer.activePubkeyProvider);
@@ -306,11 +306,11 @@ class ZapAmountDialog extends HookConsumerWidget {
 
             if (pubkey == null) ...[
               const SignInPrompt(
-                message: 'Zapping anonymously. Sign in to zap with your identity.',
+                message:
+                    'Zapping anonymously. Sign in to zap with your identity.',
               ),
               const SizedBox(height: 12),
             ],
-
 
             // Quick amount buttons (always visible)
             Wrap(
