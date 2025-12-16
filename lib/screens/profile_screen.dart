@@ -76,11 +76,22 @@ class _AuthenticationSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final pubkey = ref.watch(Signer.activePubkeyProvider);
-    final profile = ref.watch(
-      Signer.activeProfileProvider(
-        LocalAndRemoteSource(relays: 'vertex', stream: false),
-      ),
-    );
+    final profileState = pubkey != null
+        ? ref.watch(
+            query<Profile>(
+              authors: {pubkey},
+              limit: 1,
+              and: (profile) => {
+                profile.contactList,
+              },
+              source: const LocalAndRemoteSource(
+                relays: {'social', 'vertex'},
+                stream: false,
+              ),
+            ),
+          )
+        : null;
+    final profile = profileState?.models.firstOrNull;
     final isSignedIn = pubkey != null;
 
     return Card(
