@@ -81,9 +81,7 @@ class _AuthenticationSection extends ConsumerWidget {
             query<Profile>(
               authors: {pubkey},
               limit: 1,
-              and: (profile) => {
-                profile.contactList,
-              },
+              and: (profile) => {profile.contactList},
               source: const LocalAndRemoteSource(
                 relays: {'social', 'vertex'},
                 stream: false,
@@ -308,6 +306,7 @@ class _DebugMessagesSection extends HookConsumerWidget {
     final now = useState(DateTime.now());
     final expandedSubs = useState<Set<String>>({});
 
+    // Used to refresh the "time ago" labels
     useEffect(() {
       final timer = Timer.periodic(const Duration(seconds: 1), (_) {
         now.value = DateTime.now();
@@ -439,9 +438,7 @@ class _DebugMessagesSection extends HookConsumerWidget {
                     Icon(
                       sub.stream ? Icons.stream : Icons.download,
                       size: 16,
-                      color: allEose
-                          ? Colors.green
-                          : Colors.amber.shade700,
+                      color: allEose ? Colors.green : Colors.amber.shade700,
                     ),
                     const SizedBox(width: 6),
                     Expanded(

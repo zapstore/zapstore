@@ -73,7 +73,6 @@ class ZapstoreApp extends HookConsumerWidget {
     final notifier =
         ref.read(storageNotifierProvider.notifier) as PurplebaseStorageNotifier;
     final title = 'Zapstore';
-    final theme = ref.watch(themeProvider);
 
     // Watch initialization state for error overlay display
     final initState = ref.watch(appInitializationProvider);
@@ -106,7 +105,7 @@ class ZapstoreApp extends HookConsumerWidget {
     // Always show the main app UI, even during initialization
     return MaterialApp.router(
       title: title,
-      theme: theme,
+      theme: darkTheme,
       routerConfig: ref.watch(routerProvider),
       debugShowCheckedModeBanner: false,
       builder: (context, child) {

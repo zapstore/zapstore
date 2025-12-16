@@ -1,13 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 
 /// Font family used throughout the app
 const kFontFamily = 'Inter';
-
-// Theme provider - always returns dark theme
-final themeProvider = Provider<ThemeData>((ref) => darkTheme);
 
 // Professional color constants (dark theme only)
 class AppColors {

@@ -12,7 +12,8 @@ class SecureStorageService {
   static const _storage = FlutterSecureStorage();
 
   static const _nwcKey = 'nwc_connection_string';
-  static const _installPermissionDialogKey = 'has_seen_install_permission_dialog';
+  static const _installPermissionDialogKey =
+      'has_seen_install_permission_dialog';
 
   /// Get the stored NWC connection string
   Future<String?> getNWCString() async {
@@ -52,3 +53,11 @@ final secureStorageServiceProvider = Provider<SecureStorageService>(
   (ref) => SecureStorageService(),
 );
 
+/// Whether an NWC connection string is currently stored.
+///
+/// Use `ref.invalidate(hasNwcStringProvider)` after updating or clearing the
+/// stored string to refresh UI.
+final hasNwcStringProvider = FutureProvider.autoDispose<bool>((ref) async {
+  final secureStorage = ref.watch(secureStorageServiceProvider);
+  return secureStorage.hasNWCString();
+});

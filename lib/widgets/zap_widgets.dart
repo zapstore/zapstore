@@ -217,14 +217,8 @@ class ZapAmountDialog extends HookConsumerWidget {
     );
     final pubkey = ref.watch(Signer.activePubkeyProvider);
     final secureStorage = ref.watch(secureStorageServiceProvider);
-    final hasWalletConnection = useState<bool>(false);
-    useEffect(() {
-      secureStorage
-          .hasNWCString()
-          .then((hasNwc) => hasWalletConnection.value = hasNwc)
-          .catchError((_) => hasWalletConnection.value = false);
-      return null;
-    }, []);
+    final hasNwc = ref.watch(hasNwcStringProvider);
+    final knownHasNwc = hasNwc.valueOrNull;
 
     return BaseDialog(
       titleIcon: const Text('⚡️'),
@@ -388,7 +382,9 @@ class ZapAmountDialog extends HookConsumerWidget {
                     }
 
                     // Read NWC from secure storage
-                    final nwcString = await secureStorage.getNWCString();
+                    final nwcString = (knownHasNwc == false)
+                        ? null
+                        : await secureStorage.getNWCString();
 
                     // Build zap request
                     final latestMetadata = app.latestFileMetadata;
