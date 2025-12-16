@@ -47,6 +47,7 @@ class UpdatesScreen extends HookConsumerWidget {
                   label: 'Updates',
                   count: updatesCount,
                   textStyle: tabLabelStyle,
+                  badgeColor: Colors.red.withValues(alpha: 0.4),
                 ),
               ),
               Tab(
@@ -54,6 +55,7 @@ class UpdatesScreen extends HookConsumerWidget {
                   label: 'Up to date',
                   count: upToDateCount,
                   textStyle: tabLabelStyle,
+                  badgeColor: Colors.blue.shade700.withValues(alpha: 0.4),
                 ),
               ),
               Tab(
@@ -61,6 +63,7 @@ class UpdatesScreen extends HookConsumerWidget {
                   label: 'Bookmarks',
                   count: bookmarksCount,
                   textStyle: tabLabelStyle,
+                  badgeColor: Colors.blue.shade700.withValues(alpha: 0.4),
                 ),
               ),
             ],
@@ -641,11 +644,13 @@ class _TabLabelWithBadge extends StatelessWidget {
     required this.label,
     required this.count,
     this.textStyle,
+    this.badgeColor,
   });
 
   final String label;
   final int count;
   final TextStyle? textStyle;
+  final Color? badgeColor;
 
   @override
   Widget build(BuildContext context) {
@@ -659,7 +664,11 @@ class _TabLabelWithBadge extends StatelessWidget {
           children: [
             Text(label),
             if (count > 0)
-              Positioned(top: -6, right: -18, child: _CountBadge(count: count)),
+              Positioned(
+                top: -6,
+                right: -18,
+                child: _CountBadge(count: count, color: badgeColor),
+              ),
           ],
         ),
       ),
@@ -668,9 +677,10 @@ class _TabLabelWithBadge extends StatelessWidget {
 }
 
 class _CountBadge extends StatelessWidget {
-  const _CountBadge({required this.count});
+  const _CountBadge({required this.count, this.color});
 
   final int count;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
@@ -679,7 +689,7 @@ class _CountBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: Colors.red.withValues(alpha: 0.4),
+        color: color ?? Colors.red.withValues(alpha: 0.4),
         borderRadius: BorderRadius.circular(9),
       ),
       constraints: const BoxConstraints(minWidth: 18, minHeight: 18),

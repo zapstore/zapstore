@@ -75,14 +75,16 @@ class VersionPillWidget extends HookConsumerWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         // Current version pill (muted colors for installed version)
-        _buildVersionPill(
-          context,
-          ref,
-          installedPackages,
-          installedVersion,
-          Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
-          Theme.of(context).colorScheme.onSurface,
-          isInstalledVersion: true,
+        Flexible(
+          child: _buildVersionPill(
+            context,
+            ref,
+            installedPackages,
+            installedVersion,
+            Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
+            Theme.of(context).colorScheme.onSurface,
+            isInstalledVersion: true,
+          ),
         ),
 
         // Arrow icon (always arrow, forbidden icon is in the pill itself)
@@ -95,18 +97,20 @@ class VersionPillWidget extends HookConsumerWidget {
           ),
         ),
 
-        _buildVersionPill(
-          context,
-          ref,
-          installedPackages,
-          availableVersion,
-          isDowngrade
-              ? Theme.of(context).colorScheme.outline.withValues(alpha: 0.3)
-              : AppColors.darkPillBackground,
-          isDowngrade
-              ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5)
-              : Colors.white,
-          isDowngrade: isDowngrade,
+        Flexible(
+          child: _buildVersionPill(
+            context,
+            ref,
+            installedPackages,
+            availableVersion,
+            isDowngrade
+                ? Theme.of(context).colorScheme.outline.withValues(alpha: 0.3)
+                : AppColors.darkPillBackground,
+            isDowngrade
+                ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5)
+                : Colors.white,
+            isDowngrade: isDowngrade,
+          ),
         ),
       ],
     );
@@ -168,15 +172,16 @@ class VersionPillWidget extends HookConsumerWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            displayVersion,
-            maxLines: null,
-            overflow: TextOverflow.visible,
-            softWrap: true,
-            style: context.textTheme.labelMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: finalTextColor,
-              fontSize: 11.5,
+          Flexible(
+            child: Text(
+              displayVersion,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: context.textTheme.labelMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: finalTextColor,
+                fontSize: 11.5,
+              ),
             ),
           ),
           if (statusIcon != null) ...[

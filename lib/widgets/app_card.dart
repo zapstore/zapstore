@@ -121,7 +121,6 @@ class AppCard extends HookConsumerWidget {
                   ] else ...[
                     // Default: name and version in same row
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Expanded(
                           child: Text(
@@ -135,9 +134,11 @@ class AppCard extends HookConsumerWidget {
                           ),
                         ),
                         const SizedBox(width: 12),
-                        VersionPillWidget(
-                          app: app!,
-                          showUpdateArrow: showUpdateArrow,
+                        Flexible(
+                          child: VersionPillWidget(
+                            app: app!,
+                            showUpdateArrow: showUpdateArrow,
+                          ),
                         ),
                       ],
                     ),
