@@ -97,12 +97,12 @@ class ZapstoreApp extends HookConsumerWidget {
 
       // Check initial connectivity state
       connectivity.checkConnectivity().then((results) {
-        notifier.ensureConnected();
+        notifier.connect();
       });
 
       // Listen to connectivity changes
       subscription = connectivity.onConnectivityChanged.listen((results) {
-        notifier.ensureConnected();
+        notifier.connect();
       });
 
       return () => subscription?.cancel();
@@ -273,10 +273,7 @@ Future<void> onSignInSuccess(Ref ref) async {
   unawaited(
     storage.query(
       RequestFilter<AppCatalogRelayList>(authors: {pubkey}).toRequest(),
-      source: const RemoteSource(
-        relays: 'bootstrap',
-        stream: false,
-      ),
+      source: const RemoteSource(relays: 'bootstrap', stream: false),
     ),
   );
 }
@@ -290,14 +287,15 @@ class _AppLifecycleObserver with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final downloadService = _ref.read(downloadServiceProvider.notifier);
+    final notifier =
+        _ref.read(storageNotifierProvider.notifier)
+            as PurplebaseStorageNotifier;
 
     if (state == AppLifecycleState.resumed) {
-      // Notify download service that app is in foreground
-      // This will process any pending installations
+      // Process any pending installations
       unawaited(downloadService.setAppForeground(true));
 
-      // App regained focus - re-sync installed packages from Android system
-      // This will detect any apps installed/uninstalled outside of Zapstore
+      // Re-sync installed packages from Android system
       unawaited(
         _ref.read(packageManagerProvider.notifier).syncInstalledPackages(),
       );
@@ -306,16 +304,11 @@ class _AppLifecycleObserver with WidgetsBindingObserver {
 
       // Force immediate health check on storage/relay connections
       // This detects stale connections after system sleep and triggers reconnection
-      final notifier =
-          _ref.read(storageNotifierProvider.notifier)
-              as PurplebaseStorageNotifier;
-      notifier.ensureConnected();
-    } else if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.detached ||
-        state == AppLifecycleState.hidden) {
-      // Notify download service that app is in background
+      notifier.connect();
+    } else if (state == AppLifecycleState.paused) {
+      // Note: paused corresponds to Android's `onStop`
       unawaited(downloadService.setAppForeground(false));
+      notifier.disconnect();
     }
   }
 }

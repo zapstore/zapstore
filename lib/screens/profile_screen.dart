@@ -293,7 +293,6 @@ class _DebugMessagesSection extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final poolState = ref.watch(poolStateProvider);
-    final isExpanded = useState(true);
     final selectedTab = useState(0); // 0=Subscriptions, 1=Logs
     final now = useState(DateTime.now());
     final expandedSubs = useState<Set<String>>({});
@@ -307,45 +306,6 @@ class _DebugMessagesSection extends HookConsumerWidget {
 
     final subscriptions = poolState?.subscriptions ?? {};
     final logs = poolState?.logs ?? const [];
-
-    // Aggregate relay status across all subscriptions
-    final allRelayUrls = <String>[];
-    final relayDebugEntries =
-        <
-          ({
-            String url,
-            String shortUrl,
-            RelaySubPhase phase,
-            String? lastError,
-            String subscriptionId,
-          })
-        >[];
-    final connectedRelayUrls = <String>{};
-    for (final subEntry in subscriptions.entries) {
-      final subscriptionId = subEntry.key;
-      final sub = subEntry.value;
-      for (final entry in sub.relays.entries) {
-        final url = entry.key;
-        final relay = entry.value;
-        final phase = relay.phase;
-        final shortUrl = url
-            .replaceAll('wss://', '')
-            .replaceAll('ws://', '')
-            .replaceAll(RegExp(r'/$'), '');
-        allRelayUrls.add(url);
-        relayDebugEntries.add((
-          url: url,
-          shortUrl: shortUrl,
-          phase: phase,
-          lastError: relay.lastError,
-          subscriptionId: subscriptionId,
-        ));
-        if (phase == RelaySubPhase.streaming ||
-            phase == RelaySubPhase.loading) {
-          connectedRelayUrls.add(url);
-        }
-      }
-    }
 
     void toggleSubscription(String id) {
       final next = {...expandedSubs.value};
@@ -362,64 +322,53 @@ class _DebugMessagesSection extends HookConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Header
-            InkWell(
-              onTap: () => isExpanded.value = !isExpanded.value,
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.bug_report,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Debug Info',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+            Row(
+              children: [
+                Icon(
+                  Icons.bug_report,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Debug Info',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Icon(
-                    isExpanded.value ? Icons.expand_less : Icons.expand_more,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                ],
-              ),
-            ),
-
-            if (isExpanded.value) ...[
-              const SizedBox(height: 10),
-
-              // Tab selector
-              Row(
-                children: [
-                  _TabButton(
-                    label: 'Subscriptions (${subscriptions.length})',
-                    isSelected: selectedTab.value == 0,
-                    onTap: () => selectedTab.value = 0,
-                  ),
-                  const SizedBox(width: 8),
-                  _TabButton(
-                    label: 'Log (${logs.length})',
-                    isSelected: selectedTab.value == 1,
-                    onTap: () => selectedTab.value = 1,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-
-              // Tab content
-              if (selectedTab.value == 0)
-                _buildSubscriptionsTab(
-                  context,
-                  subscriptions,
-                  now.value,
-                  expandedSubs.value,
-                  toggleSubscription,
                 ),
-              if (selectedTab.value == 1) _buildLogsTab(context, logs),
-            ],
+              ],
+            ),
+            const SizedBox(height: 10),
+
+            // Tab selector
+            Row(
+              children: [
+                _TabButton(
+                  label: 'Subscriptions (${subscriptions.length})',
+                  isSelected: selectedTab.value == 0,
+                  onTap: () => selectedTab.value = 0,
+                ),
+                const SizedBox(width: 8),
+                _TabButton(
+                  label: 'Log (${logs.length})',
+                  isSelected: selectedTab.value == 1,
+                  onTap: () => selectedTab.value = 1,
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // Tab content
+            if (selectedTab.value == 0)
+              _buildSubscriptionsTab(
+                context,
+                subscriptions,
+                now.value,
+                expandedSubs.value,
+                toggleSubscription,
+              ),
+            if (selectedTab.value == 1) _buildLogsTab(context, logs),
           ],
         ),
       ),
@@ -428,7 +377,7 @@ class _DebugMessagesSection extends HookConsumerWidget {
 
   Widget _buildSubscriptionsTab(
     BuildContext context,
-    Map<String, Subscription> subscriptions,
+    Map<String, RelaySubscription> subscriptions,
     DateTime now,
     Set<String> expandedSubs,
     void Function(String id) onToggleSub,
@@ -481,7 +430,7 @@ class _DebugMessagesSection extends HookConsumerWidget {
                       size: 16,
                       color: allEose
                           ? Colors.green
-                          : Theme.of(context).colorScheme.primary,
+                          : Colors.amber.shade700,
                     ),
                     const SizedBox(width: 6),
                     Expanded(
@@ -495,6 +444,19 @@ class _DebugMessagesSection extends HookConsumerWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
+                    const SizedBox(width: 8),
+                    _StatusChip(
+                      icon: Icons.event,
+                      label: '${sub.eventCount}',
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    const SizedBox(width: 6),
+                    _StatusChip(
+                      icon: Icons.cloud_done,
+                      label: '$activeRelays/$totalRelays',
+                      color: allEose ? Colors.green : Colors.amber.shade700,
+                    ),
+                    const SizedBox(width: 6),
                     Icon(
                       isExpanded ? Icons.expand_less : Icons.expand_more,
                       size: 16,
@@ -502,30 +464,6 @@ class _DebugMessagesSection extends HookConsumerWidget {
                         context,
                       ).colorScheme.onSurface.withValues(alpha: 0.6),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  children: [
-                    _StatusChip(
-                      icon: Icons.cloud_done,
-                      label: '$activeRelays/$totalRelays',
-                      color: allEose ? Colors.green : Colors.blue,
-                    ),
-                    if (allEose)
-                      _StatusChip(
-                        icon: Icons.check_circle,
-                        label: 'EOSE',
-                        color: Colors.green,
-                      ),
-                    if (sub.stream)
-                      _StatusChip(
-                        icon: Icons.wifi_tethering,
-                        label: 'Streaming',
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
                   ],
                 ),
                 if (relayEntries.isNotEmpty) ...[
@@ -792,7 +730,7 @@ class _DebugMessagesSection extends HookConsumerWidget {
     return hours > 0 ? '${days}d ${hours}h' : '${days}d';
   }
 
-  Widget _buildRequestView(BuildContext context, Subscription sub) {
+  Widget _buildRequestView(BuildContext context, RelaySubscription sub) {
     final req = _formatReq(sub);
     return Container(
       margin: const EdgeInsets.only(top: 10),
@@ -858,7 +796,7 @@ class _DebugMessagesSection extends HookConsumerWidget {
     );
   }
 
-  String _formatReq(Subscription sub) {
+  String _formatReq(RelaySubscription sub) {
     final payload = ['REQ', sub.id, ...sub.request.toMaps()];
     try {
       return const JsonEncoder.withIndent('  ').convert(payload);
