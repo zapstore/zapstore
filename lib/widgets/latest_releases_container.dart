@@ -278,10 +278,7 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
           app.latestRelease.value?.latestMetadata,
         },
         // NOTE: It must stream=true
-        source: const LocalAndRemoteSource(
-          relays: 'AppCatalog',
-          stream: true,
-        ),
+        source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: true),
         andSource: const LocalAndRemoteSource(
           relays: 'AppCatalog',
           stream: false,
