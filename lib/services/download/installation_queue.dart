@@ -4,7 +4,6 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../package_manager/android_package_manager.dart';
 import '../package_manager/package_manager.dart';
-import '../secure_storage_service.dart';
 import 'download_info.dart';
 
 /// Callback to update state in the main service
@@ -73,17 +72,6 @@ class InstallationQueue {
       _pendingInstallations.add(appId);
       _updateState(appId, (info) => info.copyWith(isReadyToInstall: true));
       return;
-    }
-
-    // Check if permission dialog needs to be shown (Android, non-silent, first time)
-    if (Platform.isAndroid && !canSilent) {
-      final secureStorage = _ref.read(secureStorageServiceProvider);
-      final hasSeenDialog = await secureStorage
-          .hasSeenInstallPermissionDialog();
-      if (!hasSeenDialog) {
-        _updateState(appId, (info) => info.copyWith(isReadyToInstall: true));
-        return;
-      }
     }
 
     // Add to queue and process

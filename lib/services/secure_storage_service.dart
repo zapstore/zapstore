@@ -12,8 +12,6 @@ class SecureStorageService {
   static const _storage = FlutterSecureStorage();
 
   static const _nwcKey = 'nwc_connection_string';
-  static const _installPermissionDialogKey =
-      'has_seen_install_permission_dialog';
 
   /// Get the stored NWC connection string
   Future<String?> getNWCString() async {
@@ -38,15 +36,6 @@ class SecureStorageService {
   }
 
   /// Check if the install permission dialog has been shown
-  Future<bool> hasSeenInstallPermissionDialog() async {
-    final value = await _storage.read(key: _installPermissionDialogKey);
-    return value == 'true';
-  }
-
-  /// Mark the install permission dialog as shown
-  Future<void> setHasSeenInstallPermissionDialog() async {
-    await _storage.write(key: _installPermissionDialogKey, value: 'true');
-  }
 }
 
 final secureStorageServiceProvider = Provider<SecureStorageService>(
