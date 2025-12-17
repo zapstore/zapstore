@@ -123,6 +123,7 @@ Future<bool> _performWeeklyCleanup() async {
 }
 
 /// Background update check logic - runs in a separate isolate
+// TODO: Can this be reused from foreground update logic?
 Future<bool> _checkForUpdatesInBackground() async {
   try {
     // Create a fresh provider container for background work
@@ -380,51 +381,6 @@ class BackgroundUpdateService {
       kBackgroundUpdateTaskName,
       constraints: Constraints(networkType: NetworkType.connected),
     );
-  }
-
-  /// Show a test notification directly (bypasses WorkManager, for debugging)
-  /// Returns true if notification was shown, false if permission denied
-  Future<bool> showTestNotification() async {
-    // Request notification permission if not granted
-    if (Platform.isAndroid) {
-      final status = await Permission.notification.status;
-      if (!status.isGranted) {
-        final result = await Permission.notification.request();
-        if (!result.isGranted) {
-          return false;
-        }
-      }
-    }
-
-    final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
-
-    const initializationSettingsAndroid = AndroidInitializationSettings(
-      '@mipmap/ic_launcher',
-    );
-    const initializationSettings = InitializationSettings(
-      android: initializationSettingsAndroid,
-    );
-    await flutterLocalNotificationsPlugin.initialize(initializationSettings);
-
-    const androidDetails = AndroidNotificationDetails(
-      kUpdateNotificationChannelId,
-      kUpdateNotificationChannelName,
-      channelDescription: kUpdateNotificationChannelDescription,
-      importance: Importance.defaultImportance,
-      priority: Priority.defaultPriority,
-      showWhen: true,
-      autoCancel: true,
-    );
-
-    const notificationDetails = NotificationDetails(android: androidDetails);
-
-    await flutterLocalNotificationsPlugin.show(
-      99, // Test notification ID
-      'Test notification',
-      'This is a test notification from Zapstore',
-      notificationDetails,
-    );
-    return true;
   }
 }
 

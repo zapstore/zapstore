@@ -65,7 +65,7 @@ class ErrorReportingService {
       final signedDm = await dm.signWith(signer);
       await ref.read(storageNotifierProvider.notifier).publish({
         signedDm,
-      }, source: const RemoteSource(relays: 'social', stream: false));
+      }, source: const RemoteSource(relays: 'social'));
 
       // Update rate limiting
       _reportedErrors[errorHash] = DateTime.now();

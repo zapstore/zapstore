@@ -7,8 +7,8 @@ import 'package:models/models.dart';
 const String kTrustedSignersIdentifier = 'trusted-signers';
 
 /// Simple helper service to manage trusted signers persisted via CustomData
-class TrustService {
-  const TrustService(this.ref);
+class TrustedSignersService {
+  const TrustedSignersService(this.ref);
 
   final Ref ref;
 
@@ -76,4 +76,6 @@ class TrustService {
   }
 }
 
-final trustServiceProvider = Provider<TrustService>((ref) => TrustService(ref));
+final trustServiceProvider = Provider<TrustedSignersService>(
+  (ref) => TrustedSignersService(ref),
+);
