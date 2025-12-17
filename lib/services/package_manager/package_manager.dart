@@ -119,9 +119,6 @@ abstract class PackageManager extends StateNotifier<List<PackageInfo>> {
   /// Refresh the internal state of installed packages
   Future<void> syncInstalledPackages();
 
-  /// Get all installed packages (returns current state)
-  List<PackageInfo> getInstalledPackages() => state;
-
   /// Check if a package is installed
   bool isInstalled(String appId) {
     return state.any((p) => p.appId == appId);
@@ -141,8 +138,3 @@ final packageManagerProvider =
     StateNotifierProvider<PackageManager, List<PackageInfo>>(
       DummyPackageManager.new,
     );
-
-extension FileMetadataExt on FileMetadata {
-  bool get canUpdate =>
-      ref.read(packageManagerProvider.notifier).canUpdate(this);
-}

@@ -34,6 +34,19 @@ class DownloadInfo {
   String get taskId => task.taskId;
   String get fileName => task.filename;
 
+  /// True when this download is actively progressing, queued, paused, retrying,
+  /// or currently installing.
+  bool get isActiveOrInstalling {
+    if (isInstalling) return true;
+    return switch (status) {
+      TaskStatus.running ||
+      TaskStatus.enqueued ||
+      TaskStatus.paused ||
+      TaskStatus.waitingToRetry => true,
+      _ => false,
+    };
+  }
+
   DownloadInfo copyWith({
     TaskStatus? status,
     double? progress,
@@ -69,4 +82,3 @@ class QueuedDownload {
     required this.fileMetadata,
   });
 }
-

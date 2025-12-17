@@ -6,7 +6,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:markdown/markdown.dart' as md;
 import 'package:skeletonizer/skeletonizer.dart';
-import 'package:background_downloader/background_downloader.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/url_utils.dart';
 import 'package:zapstore/services/download/download_service.dart';
@@ -19,7 +18,6 @@ import '../theme.dart';
 
 class AppCard extends HookConsumerWidget {
   final App? app;
-  final Profile? author;
   final bool isLoading;
   final bool showUpdateArrow;
   final bool showSignedBy;
@@ -29,7 +27,6 @@ class AppCard extends HookConsumerWidget {
   const AppCard({
     super.key,
     this.app,
-    this.author,
     this.isLoading = false,
     this.showUpdateArrow = false,
     this.showSignedBy = true,
@@ -44,22 +41,24 @@ class AppCard extends HookConsumerWidget {
       return _buildSkeleton(context);
     }
 
-    // Query author profile (always present via app.event.pubkey)
-    final authorState = ref.watch(
-      query<Profile>(
-        authors: {app!.event.pubkey},
-        source: const LocalAndRemoteSource(
-          relays: {'social', 'vertex'},
-          cachedFor: Duration(hours: 2),
-        ),
-      ),
-    );
-    final actualAuthor =
-        author ??
-        switch (authorState) {
-          StorageData(:final models) => models.firstOrNull,
-          _ => null,
-        };
+    final needsPublisher = showSignedBy || showZapEncouragement;
+    final publisherState = needsPublisher
+        ? ref.watch(
+            query<Profile>(
+              authors: {app!.event.pubkey},
+              source: const LocalAndRemoteSource(
+                relays: {'social', 'vertex'},
+                cachedFor: Duration(hours: 2),
+              ),
+            ),
+          )
+        : null;
+    final publisher = publisherState == null
+        ? null
+        : switch (publisherState) {
+            StorageData(:final models) => models.firstOrNull,
+            _ => null,
+          };
     final descriptionStyle = context.textTheme.bodyMedium?.copyWith(
       height: 1.5,
       color: AppColors.darkOnSurfaceSecondary,
@@ -155,7 +154,7 @@ class AppCard extends HookConsumerWidget {
                   ),
 
                   // Author signature (only if app has publisher)
-                  if (showSignedBy && actualAuthor != null) ...[
+                  if (showSignedBy && publisher != null) ...[
                     Gap(14),
                     Theme(
                       data: Theme.of(context).copyWith(
@@ -166,7 +165,7 @@ class AppCard extends HookConsumerWidget {
                         ),
                       ),
                       child: AuthorContainer(
-                        profile: actualAuthor,
+                        profile: publisher,
                         beforeText: 'Published by',
                         size: context.textTheme.bodyMedium!.fontSize!,
                         oneLine: true,
@@ -211,20 +210,11 @@ class AppCard extends HookConsumerWidget {
                           downloadInfoProvider(app!.identifier),
                         );
 
-                        // Show during download OR installation (including paused)
                         final isActive =
-                            downloadInfo != null &&
-                            (downloadInfo.isInstalling ||
-                                downloadInfo.status == TaskStatus.running ||
-                                downloadInfo.status == TaskStatus.enqueued ||
-                                downloadInfo.status == TaskStatus.paused ||
-                                downloadInfo.status ==
-                                    TaskStatus.waitingToRetry);
-
-                        final actualAuthor = author ?? app!.author.value;
+                            downloadInfo?.isActiveOrInstalling ?? false;
                         final hasLud16 =
-                            actualAuthor?.lud16?.trim().isNotEmpty ?? false;
-                        final canZap = actualAuthor != null && hasLud16;
+                            publisher?.lud16?.trim().isNotEmpty ?? false;
+                        final canZap = publisher != null && hasLud16;
                         final shouldShow =
                             isActive && !app!.isRelaySigned && canZap;
 
@@ -235,7 +225,7 @@ class AppCard extends HookConsumerWidget {
                             Gap(12),
                             _ZapEncouragementInCard(
                               app: app!,
-                              author: actualAuthor,
+                              author: publisher,
                             ),
                           ],
                         );

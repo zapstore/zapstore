@@ -144,12 +144,7 @@ class AppPackContainer extends HookConsumerWidget {
           ),
         ),
         const SizedBox(height: 16),
-        AppsGrid(
-          apps: selectedPack.apps
-              .toList()
-              .where((a) => a.name != null || a.identifier.isNotEmpty)
-              .toList(),
-        ),
+        AppsGrid(apps: selectedPack.apps.toList()),
       ],
     );
   }

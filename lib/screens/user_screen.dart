@@ -110,11 +110,7 @@ class UserScreen extends HookConsumerWidget {
               SliverList(
                 delegate: SliverChildBuilderDelegate((context, index) {
                   final app = apps[index];
-                  return AppCard(
-                    app: app,
-                    author: profile,
-                    showSignedBy: false,
-                  );
+                  return AppCard(app: app, showSignedBy: false);
                 }, childCount: apps.length),
               ),
             ],
@@ -133,14 +129,7 @@ class UserScreen extends HookConsumerWidget {
                     ),
                   ),
                 ),
-                SliverToBoxAdapter(
-                  child: AppsGrid(
-                    apps: pack.apps
-                        .toList()
-                        .where((a) => a.name != null || a.identifier.isNotEmpty)
-                        .toList(),
-                  ),
-                ),
+                SliverToBoxAdapter(child: AppsGrid(apps: pack.apps.toList())),
               ],
 
             // Bottom padding

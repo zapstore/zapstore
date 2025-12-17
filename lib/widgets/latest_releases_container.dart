@@ -108,12 +108,7 @@ class LatestReleasesContainer extends HookConsumerWidget {
     return Column(
       children: [
         ...apps.map((app) {
-          final releaseAuthor = app.latestRelease.value?.author.value;
-          return AppCard(
-            app: app,
-            author: releaseAuthor,
-            showUpdateArrow: app.hasUpdate,
-          );
+          return AppCard(app: app, showUpdateArrow: app.hasUpdate);
         }),
 
         const SizedBox(height: 10),
