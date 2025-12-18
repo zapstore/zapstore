@@ -86,7 +86,7 @@ class ScreenshotsGallery extends HookWidget {
       MultiImageProvider(imageProviders, initialIndex: initialIndex),
       onPageChanged: (page) {},
       onViewerDismissed: (page) {},
-      swipeDismissible: true,
+      swipeDismissible: false,
       doubleTapZoomable: true,
       immersive: false,
       useSafeArea: true,
@@ -111,7 +111,11 @@ class _LocalShimmerEffect extends HookWidget {
       [controller],
     );
 
-    const shimmerColors = [Color(0xFF2A2A2A), Color(0xFF3A3A3A), Color(0xFF2A2A2A)];
+    const shimmerColors = [
+      Color(0xFF2A2A2A),
+      Color(0xFF3A3A3A),
+      Color(0xFF2A2A2A),
+    ];
 
     return AnimatedBuilder(
       animation: animation,
