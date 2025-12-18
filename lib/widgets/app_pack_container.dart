@@ -27,15 +27,12 @@ class AppPackContainer extends HookConsumerWidget {
       query<AppPack>(
         limit: 20,
         and: (pack) => {pack.apps},
-        source: LocalAndRemoteSource(
-          stream: true,
-          relays: 'social',
-          eventFilter: appPackEventFilter,
-        ),
+        source: LocalAndRemoteSource(stream: true, relays: 'social'),
         andSource: const LocalAndRemoteSource(
           relays: 'AppCatalog',
           stream: false,
         ),
+        schemaFilter: appPackEventFilter,
         subscriptionPrefix: 'app-pack',
       ),
     );

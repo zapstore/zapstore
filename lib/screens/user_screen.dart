@@ -60,15 +60,12 @@ class UserScreen extends HookConsumerWidget {
         authors: {pubkey},
         limit: 20,
         and: (pack) => {pack.apps},
-        source: LocalAndRemoteSource(
-          stream: false,
-          relays: 'social',
-          eventFilter: appPackEventFilter,
-        ),
+        source: LocalAndRemoteSource(stream: false, relays: 'social'),
         andSource: const LocalAndRemoteSource(
           relays: 'AppCatalog',
           stream: false,
         ),
+        schemaFilter: appPackEventFilter,
         subscriptionPrefix: 'user-packs',
       ),
     );
