@@ -248,9 +248,9 @@ class InstallButton extends ConsumerWidget {
       ),
 
       // Installing
-      Installing() => _buildSimpleButton(
+      Installing(:final isSilent) => _buildSimpleButton(
         context,
-        'Requesting installation',
+        isSilent ? 'Installing...' : 'Requesting installation',
         null,
         isPrimary: true,
         showSpinner: true,

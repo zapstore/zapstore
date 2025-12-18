@@ -41,24 +41,8 @@ class AppCard extends HookConsumerWidget {
       return _buildSkeleton(context);
     }
 
+    final currentApp = app!;
     final needsPublisher = showSignedBy || showZapEncouragement;
-    final publisherState = needsPublisher
-        ? ref.watch(
-            query<Profile>(
-              authors: {app!.event.pubkey},
-              source: const LocalAndRemoteSource(
-                relays: {'social', 'vertex'},
-                cachedFor: Duration(hours: 2),
-              ),
-            ),
-          )
-        : null;
-    final publisher = publisherState == null
-        ? null
-        : switch (publisherState) {
-            StorageData(:final models) => models.firstOrNull,
-            _ => null,
-          };
     final descriptionStyle = context.textTheme.bodyMedium?.copyWith(
       height: 1.5,
       color: AppColors.darkOnSurfaceSecondary,
@@ -67,7 +51,7 @@ class AppCard extends HookConsumerWidget {
         ? _stripMarkdown(app!.description)
         : 'No description available';
 
-    return GestureDetector(
+    Widget buildCard(Profile? publisher) => GestureDetector(
       onTap: () {
         final segments = GoRouterState.of(context).uri.pathSegments;
         final first = segments.isNotEmpty ? segments.first : 'search';
@@ -175,69 +159,43 @@ class AppCard extends HookConsumerWidget {
                   ],
 
                   // Update button (for apps with updates or currently downloading/installing)
-                  if (showUpdateButton) ...[
-                    Builder(
-                      builder: (context) {
-                        final downloadInfo = ref.watch(
-                          downloadInfoProvider(app!.identifier),
-                        );
-                        final hasDownload = downloadInfo != null;
-                        final shouldShow = app!.hasUpdate || hasDownload;
-
-                        if (!shouldShow) return const SizedBox.shrink();
-
-                        return Column(
-                          children: [
-                            Gap(12),
-                            SizedBox(
-                              height: 38,
-                              child: _CompactInstallButton(
-                                app: app!,
-                                release: app!.latestRelease.value,
-                              ),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                  ],
+                  if (showUpdateButton) _AppCardUpdateButtonSection(app: app!),
 
                   // Zap encouragement (only for downloading/installing developer-signed apps)
-                  if (showZapEncouragement) ...[
-                    Builder(
-                      builder: (context) {
-                        final downloadInfo = ref.watch(
-                          downloadInfoProvider(app!.identifier),
-                        );
-
-                        final isActive =
-                            downloadInfo?.isActiveOrInstalling ?? false;
-                        final hasLud16 =
-                            publisher?.lud16?.trim().isNotEmpty ?? false;
-                        final canZap = publisher != null && hasLud16;
-                        final shouldShow =
-                            isActive && !app!.isRelaySigned && canZap;
-
-                        if (!shouldShow) return const SizedBox.shrink();
-
-                        return Column(
-                          children: [
-                            Gap(12),
-                            _ZapEncouragementInCard(
-                              app: app!,
-                              author: publisher,
-                            ),
-                          ],
-                        );
-                      },
+                  if (showZapEncouragement)
+                    _AppCardZapEncouragementSection(
+                      app: app!,
+                      publisher: publisher,
                     ),
-                  ],
                 ],
               ),
             ),
           ],
         ),
       ),
+    );
+
+    if (!needsPublisher) return buildCard(null);
+
+    return Consumer(
+      builder: (context, ref, _) {
+        final publisherState = ref.watch(
+          query<Profile>(
+            authors: {currentApp.event.pubkey},
+            source: const LocalAndRemoteSource(
+              relays: {'social', 'vertex'},
+              cachedFor: Duration(hours: 2),
+            ),
+          ),
+        );
+
+        final publisher = switch (publisherState) {
+          StorageData(:final models) => models.firstOrNull,
+          _ => null,
+        };
+
+        return buildCard(publisher);
+      },
     );
   }
 
@@ -450,6 +408,63 @@ class AppCard extends HookConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _AppCardUpdateButtonSection extends ConsumerWidget {
+  const _AppCardUpdateButtonSection({required this.app});
+
+  final App app;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final downloadInfo = ref.watch(downloadInfoProvider(app.identifier));
+    final hasDownload = downloadInfo != null;
+    final shouldShow = app.hasUpdate || hasDownload;
+
+    if (!shouldShow) return const SizedBox.shrink();
+
+    return Column(
+      children: [
+        const Gap(12),
+        SizedBox(
+          height: 38,
+          child: _CompactInstallButton(
+            app: app,
+            release: app.latestRelease.value,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AppCardZapEncouragementSection extends ConsumerWidget {
+  const _AppCardZapEncouragementSection({
+    required this.app,
+    required this.publisher,
+  });
+
+  final App app;
+  final Profile? publisher;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final downloadInfo = ref.watch(downloadInfoProvider(app.identifier));
+
+    final isActive = downloadInfo?.isActiveOrInstalling ?? false;
+    final hasLud16 = publisher?.lud16?.trim().isNotEmpty ?? false;
+    final canZap = publisher != null && hasLud16;
+    final shouldShow = isActive && !app.isRelaySigned && canZap;
+
+    if (!shouldShow) return const SizedBox.shrink();
+
+    return Column(
+      children: [
+        const Gap(12),
+        _ZapEncouragementInCard(app: app, author: publisher),
+      ],
     );
   }
 }

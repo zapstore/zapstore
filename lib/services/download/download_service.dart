@@ -45,19 +45,20 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
           (Config.resourceTimeout, const Duration(minutes: 30)),
           (Config.checkAvailableSpace, Config.never),
         ],
-        androidConfig: [
-          (Config.useCacheDir, false),
-        ],
+        androidConfig: [(Config.useCacheDir, false)],
       );
     } catch (_) {}
 
     // Configure notifications
     _downloader.configureNotificationForGroup(
       FileDownloader.defaultGroup,
-      running: const TaskNotification('Downloading {filename}', 'File: {filename}'),
-      complete: const TaskNotification('Download complete', 'File: {filename}'),
-      error: const TaskNotification('Download failed', 'File: {filename}'),
-      paused: const TaskNotification('Download paused', 'File: {filename}'),
+      running: const TaskNotification(
+        'Downloading {displayName}',
+        '{progress}%',
+      ),
+      complete: const TaskNotification('Download complete', '{displayName}'),
+      error: const TaskNotification('Download failed', '{displayName}'),
+      paused: const TaskNotification('Download paused', '{displayName}'),
       progressBar: true,
     );
 
@@ -162,11 +163,13 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
     // Check concurrent limit
     final activeCount = _countActiveDownloads();
     if (activeCount >= maxConcurrentDownloads) {
-      _downloadQueue.add(QueuedDownload(
-        appId: appId,
-        appName: app.name ?? appId,
-        fileMetadata: fileMetadata,
-      ));
+      _downloadQueue.add(
+        QueuedDownload(
+          appId: appId,
+          appName: app.name ?? appId,
+          fileMetadata: fileMetadata,
+        ),
+      );
       return;
     }
 
@@ -234,7 +237,10 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
   }
 
   /// Mark a download as ready to install (for reckless mode)
-  void markReadyToInstall(String appId, {bool skipVerificationOnInstall = false}) {
+  void markReadyToInstall(
+    String appId, {
+    bool skipVerificationOnInstall = false,
+  }) {
     final info = state[appId];
     if (info == null) return;
 
@@ -281,11 +287,13 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
     // Check concurrent limit
     final activeCount = _countActiveDownloads();
     if (activeCount >= maxConcurrentDownloads) {
-      _downloadQueue.add(QueuedDownload(
-        appId: appId,
-        appName: appName,
-        fileMetadata: fileMetadata,
-      ));
+      _downloadQueue.add(
+        QueuedDownload(
+          appId: appId,
+          appName: appName,
+          fileMetadata: fileMetadata,
+        ),
+      );
       return;
     }
 
@@ -295,10 +303,14 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
   // ============ Internal ============
 
   int _countActiveDownloads() {
-    return state.values.where((info) =>
-        info.status == TaskStatus.running ||
-        info.status == TaskStatus.enqueued ||
-        info.status == TaskStatus.waitingToRetry).length;
+    return state.values
+        .where(
+          (info) =>
+              info.status == TaskStatus.running ||
+              info.status == TaskStatus.enqueued ||
+              info.status == TaskStatus.waitingToRetry,
+        )
+        .length;
   }
 
   Future<void> _startDownload(
@@ -321,7 +333,8 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
     final metaData = DownloadPersistence.encodeMetadata(appId, fileMetadata.id);
 
     final task = DownloadTask(
-      taskId: '${appId}_${DateTime.now().millisecondsSinceEpoch}_${UniqueKey()}',
+      taskId:
+          '${appId}_${DateTime.now().millisecondsSinceEpoch}_${UniqueKey()}',
       url: downloadUrl,
       filename: fileName,
       updates: Updates.statusAndProgress,
@@ -380,7 +393,11 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
     }
   }
 
-  void _handleStatusUpdate(String appId, DownloadInfo current, TaskStatusUpdate update) {
+  void _handleStatusUpdate(
+    String appId,
+    DownloadInfo current,
+    TaskStatusUpdate update,
+  ) {
     switch (update.status) {
       case TaskStatus.failed:
         String error = 'Download failed';
@@ -388,7 +405,10 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
           error = update.exception.toString();
           if (error.length > 200) error = '${error.substring(0, 197)}...';
         }
-        state = {...state, appId: current.copyWith(status: update.status, errorDetails: error)};
+        state = {
+          ...state,
+          appId: current.copyWith(status: update.status, errorDetails: error),
+        };
         _startNextQueuedDownload();
 
       case TaskStatus.canceled:
@@ -405,9 +425,15 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
     }
   }
 
-  void _handleProgressUpdate(String appId, DownloadInfo current, TaskProgressUpdate update) {
+  void _handleProgressUpdate(
+    String appId,
+    DownloadInfo current,
+    TaskProgressUpdate update,
+  ) {
     double progress = current.progress;
-    if (update.progress.isFinite && !update.progress.isNaN && update.progress >= 0.0) {
+    if (update.progress.isFinite &&
+        !update.progress.isNaN &&
+        update.progress >= 0.0) {
       progress = update.progress.clamp(0.0, 1.0);
     }
     state = {...state, appId: current.copyWith(progress: progress)};
@@ -421,7 +447,9 @@ final downloadServiceProvider =
     );
 
 /// Provider for getting download info for a specific app
-final downloadInfoProvider = Provider.family<DownloadInfo?, String>((ref, appId) {
+final downloadInfoProvider = Provider.family<DownloadInfo?, String>((
+  ref,
+  appId,
+) {
   return ref.watch(downloadServiceProvider)[appId];
 });
-

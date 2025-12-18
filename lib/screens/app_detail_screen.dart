@@ -51,7 +51,7 @@ class _AppLoaderView extends ConsumerWidget {
     // Check if appId is an naddr and decode it
     String? identifier;
     String? author;
-    
+
     if (appId.startsWith('naddr1')) {
       try {
         final decoded = Utils.decodeShareableIdentifier(appId);
@@ -63,7 +63,7 @@ class _AppLoaderView extends ConsumerWidget {
         // Invalid naddr, fall through to use appId as-is
       }
     }
-    
+
     // If we decoded an naddr, query by author/identifier, otherwise by #d tag
     final appsState = ref.watch(
       query<App>(
@@ -167,31 +167,73 @@ class _AppDetailView extends HookConsumerWidget {
       _ => null,
     };
 
-    // Use loaded version from state
-    final currentApp = appState.models.firstOrNull ?? app;
-    final latestRelease = currentApp.latestRelease.value;
-    final latestMetadata = currentApp.latestFileMetadata;
-
-    // Show skeleton while loading essential relationships
-    if (latestRelease == null || latestMetadata == null) {
-      return Scaffold(
-        body: SafeArea(
-          child: Stack(
-            children: [
-              SingleChildScrollView(
-                padding: const EdgeInsets.only(top: 16, bottom: 80),
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 16),
-                  child: AppDetailSkeleton(),
+    // Handle loading and error states for app relationships
+    switch (appState) {
+      case StorageLoading():
+        return Scaffold(
+          body: SafeArea(
+            child: Stack(
+              children: [
+                const SingleChildScrollView(
+                  padding: EdgeInsets.only(top: 16, bottom: 80),
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16),
+                    child: AppDetailSkeleton(),
+                  ),
                 ),
-              ),
-              InstallButton(app: currentApp, release: latestRelease),
-            ],
+                InstallButton(app: app, release: null),
+              ],
+            ),
           ),
-        ),
-      );
-    }
+        );
+      case StorageError(:final exception):
+        return _ErrorScaffold(message: exception.toString());
+      case StorageData(:final models):
+        final currentApp = models.firstOrNull ?? app;
+        final latestRelease = currentApp.latestRelease.value;
+        final latestMetadata = currentApp.latestFileMetadata;
 
+        // Relationships loaded but null - show skeleton with app info
+        if (latestRelease == null || latestMetadata == null) {
+          return Scaffold(
+            body: SafeArea(
+              child: Stack(
+                children: [
+                  const SingleChildScrollView(
+                    padding: EdgeInsets.only(top: 16, bottom: 80),
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16),
+                      child: AppDetailSkeleton(),
+                    ),
+                  ),
+                  InstallButton(app: currentApp, release: latestRelease),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return _buildDetailContent(
+          context,
+          ref,
+          currentApp: currentApp,
+          latestRelease: latestRelease,
+          latestMetadata: latestMetadata,
+          author: author,
+          showDebugSections: showDebugSections,
+        );
+    }
+  }
+
+  Widget _buildDetailContent(
+    BuildContext context,
+    WidgetRef ref, {
+    required App currentApp,
+    required Release latestRelease,
+    required FileMetadata latestMetadata,
+    required Profile? author,
+    required bool showDebugSections,
+  }) {
     return Scaffold(
       body: SafeArea(
         child: Stack(
@@ -203,162 +245,163 @@ class _AppDetailView extends HookConsumerWidget {
                 bottom: 80,
               ), // Horizontal padding applied per-section to allow screenshots to be full-bleed
               child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // App header with icon, name, version, and author (always show app info)
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // App header with icon, name, version, and author (always show app info)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: AppHeader(app: currentApp),
+                  ),
+
+                  // Published by / Released at section
+                  if (currentApp.isRelaySigned)
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: AppHeader(app: currentApp),
+                      padding: const EdgeInsets.only(
+                        left: 16,
+                        right: 16,
+                        bottom: 8,
+                      ),
+                      child: DownloadTextContainer(
+                        url: latestMetadata.urls.first,
+                        size: 14,
+                      ),
+                    )
+                  else
+                    Padding(
+                      padding: const EdgeInsets.only(
+                        left: 16,
+                        right: 16,
+                        bottom: 8,
+                      ),
+                      child: author != null
+                          ? AuthorContainer(
+                              profile: author,
+                              beforeText: 'Published by',
+                              oneLine: true,
+                              size: 14,
+                              app: currentApp,
+                              onTap: () {
+                                final segments = GoRouterState.of(
+                                  context,
+                                ).uri.pathSegments;
+                                final first = segments.isNotEmpty
+                                    ? segments.first
+                                    : 'search';
+                                context.push('/$first/user/${author.pubkey}');
+                              },
+                            )
+                          : const AuthorSkeleton(),
                     ),
 
-                    // Published by / Released at section
-                    if (app.isRelaySigned)
-                      Padding(
-                        padding: const EdgeInsets.only(
-                          left: 16,
-                          right: 16,
-                          bottom: 8,
-                        ),
-                        child: DownloadTextContainer(
-                          url: latestMetadata.urls.first,
-                          size: 14,
-                        ),
-                      )
-                    else
-                      Padding(
-                        padding: const EdgeInsets.only(
-                          left: 16,
-                          right: 16,
-                          bottom: 8,
-                        ),
-                        child: author != null
-                            ? AuthorContainer(
-                                profile: author,
-                                beforeText: 'Published by',
-                                oneLine: true,
-                                size: 14,
-                                app: app,
-                                onTap: () {
-                                  final segments = GoRouterState.of(
-                                    context,
-                                  ).uri.pathSegments;
-                                  final first = segments.isNotEmpty
-                                      ? segments.first
-                                      : 'search';
-                                  context.push('/$first/user/${author.pubkey}');
-                                },
-                              )
-                            : const AuthorSkeleton(),
-                      ),
+                  // Screenshots gallery
+                  if (currentApp.images.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: ScreenshotsGallery(app: currentApp),
+                    ),
 
-                    // Screenshots gallery
-                    if (currentApp.images.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: ScreenshotsGallery(app: currentApp),
+                  // App description (always available from app)
+                  if (currentApp.description.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(
+                        left: 20,
+                        right: 20,
+                        top: 8,
                       ),
-
-                    // App description (always available from app)
-                    if (app.description.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(
-                          left: 20,
-                          right: 20,
-                          top: 8,
-                        ),
-                        child: ExpandableMarkdown(
-                          data: app.description,
-                          styleSheet:
-                              MarkdownStyleSheet.fromTheme(
-                                Theme.of(context),
-                              ).copyWith(
-                                p: context.textTheme.bodyLarge?.copyWith(
-                                  height: 1.6,
-                                ),
+                      child: ExpandableMarkdown(
+                        data: currentApp.description,
+                        styleSheet:
+                            MarkdownStyleSheet.fromTheme(
+                              Theme.of(context),
+                            ).copyWith(
+                              p: context.textTheme.bodyLarge?.copyWith(
+                                height: 1.6,
                               ),
-                        ),
-                      ),
-
-                    // Social action buttons (Zap + Share + Save)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const SizedBox(height: 16),
-                          SocialActionsRow(app: currentApp, author: author),
-                          const SizedBox(height: 16),
-                        ],
-                      ),
-                    ),
-
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const SizedBox(height: 12),
-
-                          // Latest release title
-                          Text(
-                            'Latest release',
-                            style: context.textTheme.headlineMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
                             ),
-                          ),
-
-                          const SizedBox(height: 8),
-
-                          // Latest version info
-                          Row(
-                            children: [
-                              VersionPillWidget(
-                                app: currentApp,
-                                forceVersion: latestMetadata.version,
-                              ),
-                              const SizedBox(width: 12),
-                              Text(
-                                formatDate(latestMetadata.createdAt),
-                                style: context.textTheme.bodyMedium?.copyWith(
-                                  color: Theme.of(context).colorScheme.onSurface
-                                      .withValues(alpha: 0.6),
-                                ),
-                              ),
-                            ],
-                          ),
-
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 20),
-                            child: ReleaseNotes(release: latestRelease),
-                          ),
-                        ],
                       ),
                     ),
 
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: AppInfoTable(
-                        app: currentApp,
-                        fileMetadata: latestMetadata,
-                      ),
+                  // Social action buttons (Zap + Share + Save)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 16),
+                        SocialActionsRow(app: currentApp, author: author),
+                        const SizedBox(height: 16),
+                      ],
                     ),
+                  ),
 
-                    CommentsSection(
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 12),
+
+                        // Latest release title
+                        Text(
+                          'Latest release',
+                          style: context.textTheme.headlineMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+
+                        const SizedBox(height: 8),
+
+                        // Latest version info
+                        Row(
+                          children: [
+                            VersionPillWidget(
+                              app: currentApp,
+                              forceVersion: latestMetadata.version,
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              formatDate(latestMetadata.createdAt),
+                              style: context.textTheme.bodyMedium?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.6),
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 20),
+                          child: ReleaseNotes(release: latestRelease),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: AppInfoTable(
                       app: currentApp,
                       fileMetadata: latestMetadata,
                     ),
+                  ),
 
-                    // Debug section - only visible for specific pubkey
-                    if (showDebugSections)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: DebugVersionsSection(app: currentApp),
-                      ),
+                  CommentsSection(
+                    app: currentApp,
+                    fileMetadata: latestMetadata,
+                  ),
 
-                    const SizedBox(height: 100), // Space for install button
-                  ],
-                ),
+                  // Debug section - only visible for specific pubkey
+                  if (showDebugSections)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: DebugVersionsSection(app: currentApp),
+                    ),
+
+                  const SizedBox(height: 100), // Space for install button
+                ],
               ),
+            ),
 
             // Sticky install/uninstall row (show even if release is loading)
             InstallButton(app: currentApp, release: latestRelease),

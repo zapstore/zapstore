@@ -28,10 +28,7 @@ class CommentsSection extends HookConsumerWidget {
         tags: {
           '#A': {app.id},
         },
-        source: LocalAndRemoteSource(
-          stream: true,
-          relays: 'social',
-        ),
+        source: LocalAndRemoteSource(stream: true, relays: 'social'),
         subscriptionPrefix: 'app-comments',
       ),
     );
@@ -316,7 +313,8 @@ class _CommentComposer extends HookConsumerWidget {
             const SizedBox(height: 16),
             if (!isSignedIn) ...[
               const SignInPrompt(
-                message: 'Sign in to share your thoughts and help others discover great apps.',
+                message:
+                    'Sign in to share your thoughts and help others discover great apps.',
               ),
             ] else ...[
               TextField(
@@ -420,7 +418,6 @@ class _CommentComposer extends HookConsumerWidget {
 
       if (context.mounted) {
         Navigator.pop(context);
-        context.showInfo('Comment posted!');
       }
     } catch (e) {
       if (context.mounted) {

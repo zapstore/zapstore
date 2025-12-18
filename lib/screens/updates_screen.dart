@@ -128,17 +128,43 @@ class _UpdatesContent extends HookConsumerWidget {
         .where((entry) => entry.value.isActiveOrInstalling)
         .map((entry) => entry.key)
         .toSet();
+    if (installingAppIds.isEmpty) {
+      return _UpdatesListBody(
+        automaticUpdates: automaticUpdates,
+        manualUpdates: manualUpdates,
+        installingApps: const [],
+      );
+    }
 
-    final installingAppsState = installingAppIds.isNotEmpty
-        ? ref.watch(
-            query<App>(
-              tags: {'#d': installingAppIds},
-              and: (app) => {app.latestRelease},
-              source: const LocalAndRemoteSource(relays: 'AppCatalog'),
-              subscriptionPrefix: 'installing-apps',
-            ),
-          )
-        : StorageData<App>(const []);
+    return _UpdatesListBodyWithInstallingAppIds(
+      installingAppIds: installingAppIds,
+      automaticUpdates: automaticUpdates,
+      manualUpdates: manualUpdates,
+    );
+  }
+}
+
+class _UpdatesListBodyWithInstallingAppIds extends ConsumerWidget {
+  const _UpdatesListBodyWithInstallingAppIds({
+    required this.installingAppIds,
+    required this.automaticUpdates,
+    required this.manualUpdates,
+  });
+
+  final Set<String> installingAppIds;
+  final List<App> automaticUpdates;
+  final List<App> manualUpdates;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final installingAppsState = ref.watch(
+      query<App>(
+        tags: {'#d': installingAppIds},
+        and: (app) => {app.latestRelease},
+        source: const LocalAndRemoteSource(relays: 'AppCatalog'),
+        subscriptionPrefix: 'installing-apps',
+      ),
+    );
 
     final updateAppIds = {
       ...automaticUpdates.map((a) => a.identifier),
@@ -153,6 +179,27 @@ class _UpdatesContent extends HookConsumerWidget {
         )
         .toList();
 
+    return _UpdatesListBody(
+      automaticUpdates: automaticUpdates,
+      manualUpdates: manualUpdates,
+      installingApps: installingApps,
+    );
+  }
+}
+
+class _UpdatesListBody extends StatelessWidget {
+  const _UpdatesListBody({
+    required this.automaticUpdates,
+    required this.manualUpdates,
+    required this.installingApps,
+  });
+
+  final List<App> automaticUpdates;
+  final List<App> manualUpdates;
+  final List<App> installingApps;
+
+  @override
+  Widget build(BuildContext context) {
     if (automaticUpdates.isEmpty &&
         manualUpdates.isEmpty &&
         installingApps.isEmpty) {
@@ -532,50 +579,77 @@ class _BookmarksTab extends HookConsumerWidget {
             })
             .whereType<String>()
             .toSet();
-
-        final bookmarkedAppsState = identifiers.isNotEmpty
-            ? ref.watch(
-                query<App>(
-                  tags: {'#d': identifiers},
-                  and: (app) => {app.latestRelease},
-                  source: const LocalSource(),
-                  subscriptionPrefix: 'bookmark-apps',
-                ),
-              )
-            : StorageData<App>(const []);
-
-        final savedApps = bookmarkedAppsState.models.toList()
-          ..sort(
-            (a, b) => (a.name ?? a.identifier).toLowerCase().compareTo(
-              (b.name ?? b.identifier).toLowerCase(),
-            ),
-          );
-
-        if (savedApps.isEmpty) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(
-                'No bookmarked apps yet',
-                style: context.textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.onSurface.withValues(alpha: 0.5),
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
-            ),
-          );
-        }
-
-        return ListView.builder(
-          padding: EdgeInsets.zero,
-          itemCount: savedApps.length,
-          itemBuilder: (context, index) {
-            return AppCard(app: savedApps[index], showUpdateArrow: false);
-          },
-        );
+        return _BookmarkedAppsSection(identifiers: identifiers);
       },
+    );
+  }
+}
+
+class _BookmarkedAppsSection extends StatelessWidget {
+  const _BookmarkedAppsSection({required this.identifiers});
+
+  final Set<String> identifiers;
+
+  @override
+  Widget build(BuildContext context) {
+    if (identifiers.isEmpty) return const _NoBookmarkedAppsEmptyState();
+    return _BookmarkedAppsSectionWithIds(identifiers: identifiers);
+  }
+}
+
+class _BookmarkedAppsSectionWithIds extends ConsumerWidget {
+  const _BookmarkedAppsSectionWithIds({required this.identifiers});
+
+  final Set<String> identifiers;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final bookmarkedAppsState = ref.watch(
+      query<App>(
+        tags: {'#d': identifiers},
+        and: (app) => {app.latestRelease},
+        source: const LocalSource(),
+        subscriptionPrefix: 'bookmark-apps',
+      ),
+    );
+
+    final savedApps = bookmarkedAppsState.models.toList()
+      ..sort(
+        (a, b) => (a.name ?? a.identifier).toLowerCase().compareTo(
+          (b.name ?? b.identifier).toLowerCase(),
+        ),
+      );
+
+    if (savedApps.isEmpty) return const _NoBookmarkedAppsEmptyState();
+
+    return ListView.builder(
+      padding: EdgeInsets.zero,
+      itemCount: savedApps.length,
+      itemBuilder: (context, index) {
+        return AppCard(app: savedApps[index], showUpdateArrow: false);
+      },
+    );
+  }
+}
+
+class _NoBookmarkedAppsEmptyState extends StatelessWidget {
+  const _NoBookmarkedAppsEmptyState();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text(
+          'No bookmarked apps yet',
+          style: context.textTheme.bodyMedium?.copyWith(
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.5),
+            fontStyle: FontStyle.italic,
+          ),
+        ),
+      ),
     );
   }
 }

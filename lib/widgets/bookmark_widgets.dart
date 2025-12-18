@@ -184,26 +184,94 @@ class AddToPackDialog extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
-    final isSignedIn = signedInPubkey != null;
+    if (signedInPubkey == null) {
+      return _AddToPackDialogSignedOut(app: app);
+    }
+    return _AddToPackDialogSignedIn(app: app, signedInPubkey: signedInPubkey);
+  }
+}
+
+class _AddToPackDialogSignedOut extends StatelessWidget {
+  const _AddToPackDialogSignedOut({required this.app});
+
+  final App app;
+
+  @override
+  Widget build(BuildContext context) {
+    return BaseDialog(
+      titleIcon: const Icon(Icons.apps),
+      title: Text(
+        'Manage App Packs',
+        style: Theme.of(context).textTheme.headlineSmall,
+      ),
+      content: BaseDialogContent(
+        children: [
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(
+                Icons.public,
+                size: 16,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Add or remove ${app.name} from public app packs',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          const SignInPrompt(
+            message: 'Sign in to create and manage your public app packs.',
+          ),
+        ],
+      ),
+      actions: [
+        BaseDialogAction(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton.icon(
+          onPressed: null,
+          icon: const Icon(Icons.save, size: 18),
+          label: const Text('Save'),
+        ),
+      ],
+    );
+  }
+}
+
+class _AddToPackDialogSignedIn extends HookConsumerWidget {
+  const _AddToPackDialogSignedIn({
+    required this.app,
+    required this.signedInPubkey,
+  });
+
+  final App app;
+  final String signedInPubkey;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
     final newPackNameController = useTextEditingController();
 
-    // Query public packs when signed in
-    final publicPacksState = isSignedIn
-        ? ref.watch(
-            query<AppPack>(
-              authors: {signedInPubkey},
-              and: (pack) => {pack.apps},
-              source: const LocalAndRemoteSource(
-                relays: 'social',
-                stream: false,
-              ),
-              andSource: const LocalSource(),
-              subscriptionPrefix: 'user-packs-dialog',
-            ),
-          )
-        : null;
+    final publicPacksState = ref.watch(
+      query<AppPack>(
+        authors: {signedInPubkey},
+        and: (pack) => {pack.apps},
+        source: const LocalAndRemoteSource(relays: 'social', stream: false),
+        andSource: const LocalSource(),
+        subscriptionPrefix: 'user-packs-dialog',
+      ),
+    );
 
-    final publicPacks = (publicPacksState?.models ?? [])
+    final publicPacks = publicPacksState.models
         .where((pack) => pack.identifier != kAppBookmarksIdentifier)
         .toList();
 
@@ -264,150 +332,139 @@ class AddToPackDialog extends HookConsumerWidget {
           ),
           const SizedBox(height: 16),
 
-          if (!isSignedIn) ...[
-            const SignInPrompt(
-              message: 'Sign in to create and manage your public app packs.',
-            ),
-          ] else ...[
-            // Show existing packs and newly created packs as selectable chips
-            if (publicPacks.isNotEmpty || newPackNames.value.isNotEmpty) ...[
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  // Existing packs
-                  ...publicPacks.map((pack) {
-                    final isSelected = selectedCollections.value.contains(
-                      pack.identifier,
-                    );
-                    final displayName = pack.name ?? pack.identifier;
-                    return FilterChip(
-                      label: Text(displayName),
-                      selected: isSelected,
-                      onSelected: (selected) {
-                        if (selected) {
-                          selectedCollections.value = {
-                            ...selectedCollections.value,
-                            pack.identifier,
-                          };
-                        } else {
-                          selectedCollections.value = {
-                            ...selectedCollections.value,
-                          }..remove(pack.identifier);
-                        }
-                      },
-                      backgroundColor: isSelected
-                          ? Theme.of(context).colorScheme.primary
-                          : Theme.of(
-                              context,
-                            ).colorScheme.surfaceContainerHighest,
-                      selectedColor: Theme.of(context).colorScheme.primary,
-                      labelStyle: TextStyle(
-                        color: isSelected
-                            ? Theme.of(context).colorScheme.onPrimary
-                            : Theme.of(context).colorScheme.onSurface,
-                        fontSize: 13,
+          // Show existing packs and newly created packs as selectable chips
+          if (publicPacks.isNotEmpty || newPackNames.value.isNotEmpty) ...[
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                // Existing packs
+                ...publicPacks.map((pack) {
+                  final isSelected = selectedCollections.value.contains(
+                    pack.identifier,
+                  );
+                  final displayName = pack.name ?? pack.identifier;
+                  return FilterChip(
+                    label: Text(displayName),
+                    selected: isSelected,
+                    onSelected: (selected) {
+                      if (selected) {
+                        selectedCollections.value = {
+                          ...selectedCollections.value,
+                          pack.identifier,
+                        };
+                      } else {
+                        selectedCollections.value = {
+                          ...selectedCollections.value,
+                        }..remove(pack.identifier);
+                      }
+                    },
+                    backgroundColor: isSelected
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).colorScheme.surfaceContainerHighest,
+                    selectedColor: Theme.of(context).colorScheme.primary,
+                    labelStyle: TextStyle(
+                      color: isSelected
+                          ? Theme.of(context).colorScheme.onPrimary
+                          : Theme.of(context).colorScheme.onSurface,
+                      fontSize: 13,
+                    ),
+                    labelPadding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 0,
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 4,
+                      vertical: 6,
+                    ),
+                    side: BorderSide.none,
+                  );
+                }),
+                // Newly created packs not yet in publicPacks
+                ...newPackNames.value.entries
+                    .where(
+                      (entry) => !publicPacks.any(
+                        (pack) => pack.identifier == entry.key,
                       ),
-                      labelPadding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 0,
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 4,
-                        vertical: 6,
-                      ),
-                      side: BorderSide.none,
-                    );
-                  }),
-                  // Newly created packs not yet in publicPacks
-                  ...newPackNames.value.entries
-                      .where(
-                        (entry) => !publicPacks.any(
-                          (pack) => pack.identifier == entry.key,
+                    )
+                    .map((entry) {
+                      final identifier = entry.key;
+                      final name = entry.value;
+                      final isSelected = selectedCollections.value.contains(
+                        identifier,
+                      );
+                      return FilterChip(
+                        label: Text(name),
+                        selected: isSelected,
+                        onSelected: (selected) {
+                          if (selected) {
+                            selectedCollections.value = {
+                              ...selectedCollections.value,
+                              identifier,
+                            };
+                          } else {
+                            selectedCollections.value = {
+                              ...selectedCollections.value,
+                            }..remove(identifier);
+                            // Also remove from newPackNames if deselected
+                            final updatedNames = Map<String, String>.from(
+                              newPackNames.value,
+                            )..remove(identifier);
+                            newPackNames.value = updatedNames;
+                          }
+                        },
+                        backgroundColor: isSelected
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(
+                                context,
+                              ).colorScheme.surfaceContainerHighest,
+                        selectedColor: Theme.of(context).colorScheme.primary,
+                        labelStyle: TextStyle(
+                          color: isSelected
+                              ? Theme.of(context).colorScheme.onPrimary
+                              : Theme.of(context).colorScheme.onSurface,
+                          fontSize: 13,
                         ),
-                      )
-                      .map((entry) {
-                        final identifier = entry.key;
-                        final name = entry.value;
-                        final isSelected = selectedCollections.value.contains(
-                          identifier,
-                        );
-                        return FilterChip(
-                          label: Text(name),
-                          selected: isSelected,
-                          onSelected: (selected) {
-                            if (selected) {
-                              selectedCollections.value = {
-                                ...selectedCollections.value,
-                                identifier,
-                              };
-                            } else {
-                              selectedCollections.value = {
-                                ...selectedCollections.value,
-                              }..remove(identifier);
-                              // Also remove from newPackNames if deselected
-                              final updatedNames = Map<String, String>.from(
-                                newPackNames.value,
-                              )..remove(identifier);
-                              newPackNames.value = updatedNames;
-                            }
-                          },
-                          backgroundColor: isSelected
-                              ? Theme.of(context).colorScheme.primary
-                              : Theme.of(
-                                  context,
-                                ).colorScheme.surfaceContainerHighest,
-                          selectedColor: Theme.of(context).colorScheme.primary,
-                          labelStyle: TextStyle(
-                            color: isSelected
-                                ? Theme.of(context).colorScheme.onPrimary
-                                : Theme.of(context).colorScheme.onSurface,
-                            fontSize: 13,
-                          ),
-                          labelPadding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 0,
-                          ),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 4,
-                            vertical: 6,
-                          ),
-                          side: BorderSide.none,
-                        );
-                      }),
-                ],
-              ),
-              const SizedBox(height: 16),
-            ],
-
-            // Input for new pack
-            TextField(
-              controller: newPackNameController,
-              maxLength: 20,
-              decoration: const InputDecoration(
-                labelText: 'Add to new app pack',
-                hintText: 'e.g., Favorite Apps',
-                border: OutlineInputBorder(),
-              ),
-              onSubmitted: (text) {
-                final name = text.trim();
-                final identifier = slugify(name);
-                if (name.isNotEmpty &&
-                    identifier.isNotEmpty &&
-                    !selectedCollections.value.contains(identifier)) {
-                  selectedCollections.value = {
-                    ...selectedCollections.value,
-                    identifier,
-                  };
-                  newPackNames.value = {
-                    ...newPackNames.value,
-                    identifier: name,
-                  };
-                  newPackNameController.clear();
-                }
-              },
+                        labelPadding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 0,
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 6,
+                        ),
+                        side: BorderSide.none,
+                      );
+                    }),
+              ],
             ),
+            const SizedBox(height: 16),
           ],
+
+          // Input for new pack
+          TextField(
+            controller: newPackNameController,
+            maxLength: 20,
+            decoration: const InputDecoration(
+              labelText: 'Add to new app pack',
+              hintText: 'e.g., Favorite Apps',
+              border: OutlineInputBorder(),
+            ),
+            onSubmitted: (text) {
+              final name = text.trim();
+              final identifier = slugify(name);
+              if (name.isNotEmpty &&
+                  identifier.isNotEmpty &&
+                  !selectedCollections.value.contains(identifier)) {
+                selectedCollections.value = {
+                  ...selectedCollections.value,
+                  identifier,
+                };
+                newPackNames.value = {...newPackNames.value, identifier: name};
+                newPackNameController.clear();
+              }
+            },
+          ),
         ],
       ),
       actions: [
@@ -447,12 +504,10 @@ class AddToPackDialog extends HookConsumerWidget {
           },
           builder: (context, child, callback, buttonState) {
             return FilledButton.icon(
-              onPressed: !isSignedIn
-                  ? null
-                  : buttonState.maybeWhen(
-                      loading: () => null,
-                      orElse: () => callback,
-                    ),
+              onPressed: buttonState.maybeWhen(
+                loading: () => null,
+                orElse: () => callback,
+              ),
               icon: buttonState.maybeWhen(
                 loading: () => const SizedBox(
                   width: 16,

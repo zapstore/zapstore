@@ -76,21 +76,6 @@ class _AuthenticationSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final pubkey = ref.watch(Signer.activePubkeyProvider);
-    final profileState = pubkey != null
-        ? ref.watch(
-            query<Profile>(
-              authors: {pubkey},
-              limit: 1,
-              and: (profile) => {profile.contactList},
-              source: const LocalAndRemoteSource(
-                relays: {'social', 'vertex'},
-                stream: false,
-              ),
-            ),
-          )
-        : null;
-    final profile = profileState?.models.firstOrNull;
-    final isSignedIn = pubkey != null;
 
     return Card(
       child: Padding(
@@ -98,13 +83,26 @@ class _AuthenticationSection extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (isSignedIn) ...[
-              // Signed In - Show Profile
-              _buildSignedInProfile(context, ref, pubkey, profile),
-            ] else ...[
-              // Not Signed In - Show Sign In Options
+            if (pubkey != null)
+              Consumer(
+                builder: (context, ref, _) {
+                  final profileState = ref.watch(
+                    query<Profile>(
+                      authors: {pubkey},
+                      limit: 1,
+                      and: (profile) => {profile.contactList},
+                      source: const LocalAndRemoteSource(
+                        relays: {'social', 'vertex'},
+                        stream: false,
+                      ),
+                    ),
+                  );
+                  final profile = profileState.models.firstOrNull;
+                  return _buildSignedInProfile(context, ref, pubkey, profile);
+                },
+              )
+            else
               _buildSignInOptions(context, ref),
-            ],
           ],
         ),
       ),

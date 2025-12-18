@@ -65,7 +65,8 @@ class ForceUpdateRequired extends InstallButtonState {
 
 /// Installation is in progress
 class Installing extends InstallButtonState {
-  const Installing();
+  final bool isSilent;
+  const Installing({this.isSilent = false});
 }
 
 /// Download or installation failed
@@ -93,6 +94,7 @@ InstallButtonState determineInstallButtonState({
   final hasUpdate = app.hasUpdate;
   final hasDowngrade = app.hasDowngrade;
   final hasRelease = release != null;
+  final canInstallSilently = installedPackage?.canInstallSilently ?? false;
 
   // PRIORITY 1: Check active download states first
   if (downloadInfo != null) {
@@ -107,7 +109,7 @@ InstallButtonState determineInstallButtonState({
 
     // Installation in progress
     if (downloadInfo.isInstalling) {
-      return const Installing();
+      return Installing(isSilent: canInstallSilently);
     }
 
     // Check task status
@@ -136,7 +138,7 @@ InstallButtonState determineInstallButtonState({
             downloadInfo.errorDetails ?? 'Download failed. Please try again.';
         final isHashError =
             errorMessage.contains('Hash verification failed') &&
-                !errorMessage.contains('Invalid APK file');
+            !errorMessage.contains('Invalid APK file');
         return Failed(
           errorMessage: errorMessage,
           canRetryReckless: isHashError,
@@ -168,4 +170,3 @@ InstallButtonState determineInstallButtonState({
   // PRIORITY 3: Not installed, no active download
   return ReadyToInstall(hasRelease: hasRelease);
 }
-

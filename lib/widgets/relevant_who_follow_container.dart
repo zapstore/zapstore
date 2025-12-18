@@ -38,32 +38,16 @@ class RelevantWhoFollowContainer extends HookConsumerWidget {
 
     // Get signed-in user's pubkey and contact list
     final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
-    final contactListState = signedInPubkey != null
-        ? ref.watch(
-            query<ContactList>(
-              authors: {signedInPubkey},
-              limit: 1,
-              source: LocalAndRemoteSource(relays: 'social', stream: false),
-              subscriptionPrefix: 'user-contacts',
-            ),
-          )
-        : null;
 
     final data = ref.watch(relevantWhoFollowProvider((to: toNpub)));
 
-    return switch (data) {
+    Widget buildBody(bool userFollowsTarget) => switch (data) {
       AsyncData<List<Profile>>(value: final users) => Builder(
         builder: (context) {
           // Find relevant who follow, remove the target that comes included
           final relevantWhoFollow = users
               .where((u) => u.pubkey.encodeShareable(type: 'npub') != toNpub)
               .toList();
-
-          // Check if signed-in user follows the target
-          final targetPubkey = toNpub.decodeShareable();
-          final contactList = contactListState?.models.firstOrNull;
-          final userFollowsTarget =
-              contactList?.followingPubkeys.contains(targetPubkey) ?? false;
 
           if (relevantWhoFollow.isEmpty && !userFollowsTarget) {
             return Text(
@@ -136,6 +120,28 @@ class RelevantWhoFollowContainer extends HookConsumerWidget {
         ),
       ),
     };
+
+    if (signedInPubkey == null) return buildBody(false);
+
+    return Consumer(
+      builder: (context, ref, _) {
+        final contactListState = ref.watch(
+          query<ContactList>(
+            authors: {signedInPubkey},
+            limit: 1,
+            source: LocalAndRemoteSource(relays: 'social', stream: false),
+            subscriptionPrefix: 'user-contacts',
+          ),
+        );
+
+        final targetPubkey = toNpub.decodeShareable();
+        final contactList = contactListState.models.firstOrNull;
+        final userFollowsTarget =
+            contactList?.followingPubkeys.contains(targetPubkey) ?? false;
+
+        return buildBody(userFollowsTarget);
+      },
+    );
   }
 
   Widget _buildViewProfileLink(
@@ -190,10 +196,7 @@ final relevantWhoFollowProvider = FutureProvider.autoDispose
         final storage = ref.read(storageNotifierProvider.notifier);
         final profiles = await storage.query(
           Request<Profile>([RequestFilter<Profile>(authors: response.pubkeys)]),
-          source: const LocalAndRemoteSource(
-            relays: 'social',
-            stream: false,
-          ),
+          source: const LocalAndRemoteSource(relays: 'social', stream: false),
         );
         return profiles;
       }

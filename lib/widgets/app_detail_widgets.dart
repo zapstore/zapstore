@@ -83,38 +83,6 @@ class SocialActionsRow extends HookConsumerWidget {
         '${app.event.kind}:${app.pubkey}:${app.identifier}';
     final isPrivatelySaved = bookmarkedIds.contains(appAddressableId);
 
-    // Query zaps for zappers list
-    final latestMetadata = app.latestFileMetadata;
-    final zapsState = latestMetadata != null
-        ? ref.watch(
-            query<Zap>(
-              tags: app.event.addressableIdTagMap,
-              source: LocalAndRemoteSource(relays: 'social'),
-              and: (zap) => {zap.author},
-              andSource: LocalAndRemoteSource(relays: 'social', stream: false),
-              subscriptionPrefix: 'app-zaps',
-            ),
-          )
-        : null;
-
-    final zapsOnMetadataState = latestMetadata != null
-        ? ref.watch(
-            query<Zap>(
-              tags: {
-                '#e': {latestMetadata.id},
-              },
-              and: (zap) => {zap.author},
-              source: LocalAndRemoteSource(relays: 'social'),
-              andSource: LocalAndRemoteSource(relays: 'social', stream: false),
-              subscriptionPrefix: 'metadata-zaps',
-            ),
-          )
-        : null;
-
-    final zaps = zapsState != null && zapsOnMetadataState != null
-        ? {...zapsState.models, ...zapsOnMetadataState.models}
-        : <Zap>{};
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -203,12 +171,8 @@ class SocialActionsRow extends HookConsumerWidget {
           ),
         ),
 
-        // Zappers list - only show for apps with zaps
-        if (zaps.isNotEmpty && !app.isRelaySigned)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: ZappersHorizontalList(zaps: zaps.toList()),
-          ),
+        // Zappers list
+        if (!app.isRelaySigned) _ZappersListSection(app: app),
       ],
     );
   }
@@ -225,10 +189,7 @@ class SocialActionsRow extends HookConsumerWidget {
     );
   }
 
-  Future<void> _showAddToPackDialog(
-    BuildContext context,
-    App app,
-  ) async {
+  Future<void> _showAddToPackDialog(BuildContext context, App app) async {
     await showBaseDialog(
       context: context,
       dialog: AddToPackDialog(app: app),
@@ -255,6 +216,66 @@ class SocialActionsRow extends HookConsumerWidget {
         context.showError('Failed to share app', description: '$e');
       }
     }
+  }
+}
+
+class _ZappersListSection extends StatelessWidget {
+  const _ZappersListSection({required this.app});
+
+  final App app;
+
+  @override
+  Widget build(BuildContext context) {
+    final latestMetadata = app.latestFileMetadata;
+    if (latestMetadata == null) return const SizedBox.shrink();
+
+    return _ZappersListSectionWithMetadata(
+      app: app,
+      metadataId: latestMetadata.id,
+    );
+  }
+}
+
+class _ZappersListSectionWithMetadata extends ConsumerWidget {
+  const _ZappersListSectionWithMetadata({
+    required this.app,
+    required this.metadataId,
+  });
+
+  final App app;
+  final String metadataId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final zapsState = ref.watch(
+      query<Zap>(
+        tags: app.event.addressableIdTagMap,
+        source: LocalAndRemoteSource(relays: 'social'),
+        and: (zap) => {zap.author},
+        andSource: LocalAndRemoteSource(relays: 'social', stream: false),
+        subscriptionPrefix: 'app-zaps',
+      ),
+    );
+
+    final zapsOnMetadataState = ref.watch(
+      query<Zap>(
+        tags: {
+          '#e': {metadataId},
+        },
+        and: (zap) => {zap.author},
+        source: LocalAndRemoteSource(relays: 'social'),
+        andSource: LocalAndRemoteSource(relays: 'social', stream: false),
+        subscriptionPrefix: 'metadata-zaps',
+      ),
+    );
+
+    final zaps = {...zapsState.models, ...zapsOnMetadataState.models};
+    if (zaps.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: ZappersHorizontalList(zaps: zaps.toList()),
+    );
   }
 }
 

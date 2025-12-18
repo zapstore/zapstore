@@ -27,28 +27,6 @@ class SearchScreen extends HookConsumerWidget {
     // Get platform from package manager
     final platform = ref.read(packageManagerProvider.notifier).platform;
 
-    // Use reactive query instead of manual search
-    // Query system handles relay connectivity internally
-    final searchResultsState = searchQuery.value.trim().isNotEmpty
-        ? ref.watch(
-            query<App>(
-              search: searchQuery.value.trim(),
-              limit: 20,
-              tags: {
-                '#f': {platform},
-              },
-              and: (app) => {
-                app.latestRelease,
-                app.latestRelease.value?.latestMetadata,
-              },
-              // Force the search to hit the default relay group (relay.zapstore.dev)
-              // so a connection appears in Debug Info when searching.
-              source: const RemoteSource(relays: 'AppCatalog', stream: false),
-              subscriptionPrefix: 'search-results',
-            ),
-          )
-        : null;
-
     // Function to perform search
     final performSearch = useCallback((String query) {
       if (query.trim().isEmpty) {
@@ -58,35 +36,7 @@ class SearchScreen extends HookConsumerWidget {
       searchQuery.value = query.trim();
     }, []);
 
-    // Auto-scroll to top when search results change from loading to data
-    useEffect(() {
-      if (searchResultsState is StorageData && scrollController.hasClients) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          scrollController.animateTo(
-            0,
-            duration: const Duration(milliseconds: 100),
-            curve: Curves.easeInOut,
-          );
-        });
-      }
-      return null;
-    }, [searchResultsState]);
-
-    // Extract search results and states
-    final searchResults = searchResultsState is StorageData
-        ? (searchResultsState as StorageData<App>).models
-        : <App>[];
-    final isSearching = searchResultsState is StorageLoading;
-    final searchError = searchResultsState is StorageError
-        ? (searchResultsState as StorageError<App>).exception.toString()
-        : null;
-
-    // Show search results (query system handles relay connectivity internally)
-    final effectiveResults = searchResults;
-    // Show loading if: query exists and either loading or query hasn't started yet
-    final effectiveIsSearching =
-        searchQuery.value.trim().isNotEmpty &&
-        (isSearching || searchResultsState == null);
+    final trimmedQuery = searchQuery.value.trim();
 
     // Authors are now loaded via profileProvider in individual AppCards with caching
 
@@ -156,13 +106,11 @@ class SearchScreen extends HookConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Search Results Section
-                  if (searchQuery.value.isNotEmpty)
-                    _buildSearchResults(
-                      context,
-                      searchQuery.value,
-                      effectiveResults,
-                      effectiveIsSearching,
-                      searchError,
+                  if (trimmedQuery.isNotEmpty)
+                    _SearchResultsSection(
+                      searchQuery: trimmedQuery,
+                      platform: platform,
+                      scrollController: scrollController,
                     ),
 
                   // App Curation Container with professional spacing
@@ -188,81 +136,117 @@ class SearchScreen extends HookConsumerWidget {
       ),
     );
   }
+}
 
-  Widget _buildSearchResults(
-    BuildContext context,
-    String query,
-    List<App> results,
-    bool isSearching,
-    String? error,
-  ) {
+class _SearchResultsSection extends HookConsumerWidget {
+  const _SearchResultsSection({
+    required this.searchQuery,
+    required this.platform,
+    required this.scrollController,
+  });
+
+  final String searchQuery;
+  final String platform;
+  final ScrollController scrollController;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final searchResultsState = ref.watch(
+      query<App>(
+        search: searchQuery,
+        limit: 20,
+        tags: {
+          '#f': {platform},
+        },
+        and: (app) => {
+          app.latestRelease,
+          app.latestRelease.value?.latestMetadata,
+        },
+        // Force the search to hit the default relay group (relay.zapstore.dev)
+        // so a connection appears in Debug Info when searching.
+        source: const RemoteSource(relays: 'AppCatalog', stream: false),
+        subscriptionPrefix: 'search-results',
+      ),
+    );
+
+    // Auto-scroll to top when search results change from loading to data
+    useEffect(() {
+      if (searchResultsState is StorageData && scrollController.hasClients) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          scrollController.animateTo(
+            0,
+            duration: const Duration(milliseconds: 100),
+            curve: Curves.easeInOut,
+          );
+        });
+      }
+      return null;
+    }, [searchResultsState]);
+
+    final results = searchResultsState is StorageData
+        ? (searchResultsState as StorageData<App>).models
+        : <App>[];
+    final isSearching = searchResultsState is StorageLoading;
+    final error = searchResultsState is StorageError
+        ? (searchResultsState as StorageError<App>).exception.toString()
+        : null;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (isSearching)
           Column(
-            children: List.generate(3, (index) => AppCard(isLoading: true)),
+            children: List.generate(3, (_) => const AppCard(isLoading: true)),
           )
         else if (error != null)
-          _buildSearchErrorState(context, error)
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Center(
+              child: Column(
+                children: [
+                  Icon(Icons.error_outline, size: 48, color: Colors.red[400]),
+                  const SizedBox(height: 16),
+                  Text('Search Error', style: context.textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  Text(
+                    error,
+                    style: context.textTheme.bodySmall,
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          )
         else if (results.isEmpty)
-          _buildSearchEmptyState(context, query)
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Center(
+              child: Column(
+                children: [
+                  Icon(Icons.search_off, size: 48, color: Colors.grey[400]),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No results found',
+                    style: context.textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'No apps found for "$searchQuery"',
+                    style: context.textTheme.bodySmall,
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          )
         else
-          _buildSearchResultsList(context, results),
-
+          Column(
+            children: [
+              // App Cards - authors loaded via profileProvider in AppCard
+              ...results.map((app) => _SearchResultCard(app: app)),
+            ],
+          ),
         const SizedBox(height: 24),
-      ],
-    );
-  }
-
-  Widget _buildSearchErrorState(BuildContext context, String error) {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Center(
-        child: Column(
-          children: [
-            Icon(Icons.error_outline, size: 48, color: Colors.red[400]),
-            const SizedBox(height: 16),
-            Text('Search Error', style: context.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Text(
-              error,
-              style: context.textTheme.bodySmall,
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSearchEmptyState(BuildContext context, String query) {
-    // Show empty state when no results found
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Center(
-        child: Column(
-          children: [
-            Icon(Icons.search_off, size: 48, color: Colors.grey[400]),
-            const SizedBox(height: 16),
-            Text('No results found', style: context.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Text(
-              'No apps found for "$query"',
-              style: context.textTheme.bodySmall,
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSearchResultsList(BuildContext context, List<App> results) {
-    return Column(
-      children: [
-        // App Cards - authors loaded via profileProvider in AppCard
-        ...results.map((app) => _SearchResultCard(app: app)),
       ],
     );
   }
