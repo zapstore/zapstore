@@ -35,6 +35,9 @@ const kUpdateNotificationChannelDescription =
 /// Stale download threshold for cleanup
 const _staleDownloadThreshold = Duration(days: 7);
 
+/// Input data key for AppCatalog relay URLs
+const kAppCatalogRelaysKey = 'appCatalogRelays';
+
 /// The entry point for WorkManager background tasks.
 /// This MUST be a top-level function (not a class method).
 @pragma('vm:entry-point')
@@ -42,7 +45,10 @@ void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
     switch (task) {
       case kBackgroundUpdateTaskName:
-        return await _checkForUpdatesInBackground();
+        final relayUrls = (inputData?[kAppCatalogRelaysKey] as List<dynamic>?)
+            ?.cast<String>()
+            .toSet();
+        return await _checkForUpdatesInBackground(relayUrls);
       case kWeeklyCleanupTaskName:
         return await _performWeeklyCleanup();
       default:
@@ -122,10 +128,17 @@ Future<bool> _performWeeklyCleanup() async {
   }
 }
 
-/// Background update check logic - runs in a separate isolate
-// TODO: Can this be reused from foreground update logic?
-Future<bool> _checkForUpdatesInBackground() async {
+/// Background update check logic - runs in a separate isolate.
+/// Note: Cannot directly reuse [CategorizedAppsNotifier] since this runs
+/// in an isolated WorkManager context without the main app's Riverpod setup.
+///
+/// [appCatalogRelays] - Relay URLs resolved from main isolate. Falls back to
+/// default relay if not provided.
+Future<bool> _checkForUpdatesInBackground(Set<String>? appCatalogRelays) async {
   try {
+    // Use provided relays or fall back to default
+    final relays = appCatalogRelays ?? {'wss://relay.zapstore.dev'};
+
     // Create a fresh provider container for background work
     final container = ProviderContainer(
       overrides: [
@@ -147,9 +160,7 @@ Future<bool> _checkForUpdatesInBackground() async {
         initializationProvider(
           StorageConfiguration(
             databasePath: dbPath,
-            defaultRelays: {
-              'AppCatalog': {'wss://relay.zapstore.dev'},
-            },
+            defaultRelays: {'AppCatalog': relays},
           ),
         ).future,
       );
@@ -177,14 +188,13 @@ Future<bool> _checkForUpdatesInBackground() async {
         source: const RemoteSource(relays: 'AppCatalog', stream: false),
       );
 
-      // Load releases for hasUpdate check
-      for (final app in apps) {
+      // Load releases for all apps in a single query
+      if (apps.isNotEmpty) {
+        final addressableIds = apps
+            .map((app) => app.event.addressableId)
+            .toSet();
         await storage.query(
-          RequestFilter<Release>(
-            tags: {
-              '#a': {app.event.addressableId},
-            },
-          ).toRequest(),
+          RequestFilter<Release>(tags: {'#a': addressableIds}).toRequest(),
           source: const LocalAndRemoteSource(
             relays: 'AppCatalog',
             stream: false,
@@ -294,6 +304,11 @@ class BackgroundUpdateService {
     // Initialize local notifications
     await _initializeNotifications();
 
+    // Resolve AppCatalog relays from main isolate to pass to background task
+    final appCatalogRelays = await ref
+        .read(storageNotifierProvider.notifier)
+        .resolveRelays('AppCatalog');
+
     // Register periodic task (minimum 15 minutes on Android)
     // We use 6 hours for battery efficiency
     await Workmanager().registerPeriodicTask(
@@ -307,6 +322,7 @@ class BackgroundUpdateService {
       existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
       backoffPolicy: BackoffPolicy.exponential,
       initialDelay: const Duration(minutes: 15),
+      inputData: {kAppCatalogRelaysKey: appCatalogRelays.toList()},
     );
 
     // Register weekly cleanup task
@@ -376,10 +392,15 @@ class BackgroundUpdateService {
 
   /// Trigger an immediate background check (for testing)
   Future<void> triggerImmediateCheck() async {
+    final appCatalogRelays = await ref
+        .read(storageNotifierProvider.notifier)
+        .resolveRelays('AppCatalog');
+
     await Workmanager().registerOneOffTask(
       '${kBackgroundUpdateTaskId}_immediate',
       kBackgroundUpdateTaskName,
       constraints: Constraints(networkType: NetworkType.connected),
+      inputData: {kAppCatalogRelaysKey: appCatalogRelays.toList()},
     );
   }
 }
