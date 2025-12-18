@@ -439,6 +439,77 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler {
         }
     }
 
+    /**
+     * Result of APK verification (for background thread use)
+     */
+    private data class VerificationResult(
+        val isSuccess: Boolean,
+        val errorMessage: String = ""
+    )
+    
+    /**
+     * Verify APK on background thread - returns result instead of using Flutter Result
+     */
+    private fun verifyApkBackground(
+        apkFile: File,
+        expectedHash: String,
+        expectedSize: Long
+    ): VerificationResult {
+        val actualSize = apkFile.length()
+        
+        // First, verify this is a valid APK/ZIP file
+        if (!isValidApk(apkFile)) {
+            val errorMsg = """
+                Invalid APK file. The downloaded file is not a valid Android package.
+                This may indicate:
+                • Incomplete download
+                • Corrupted file
+                • Wrong file type
+                
+                File size: ${String.format("%.2f", actualSize / 1024.0 / 1024.0)} MB ($actualSize bytes)
+                Please try downloading again.
+            """.trimIndent()
+            
+            apkFile.delete()
+            return VerificationResult(false, errorMsg)
+        }
+        
+        Log.d(TAG, "APK file format validation passed")
+        
+        // Calculate SHA-256 hash for verification
+        val digest = MessageDigest.getInstance("SHA-256")
+        val buffer = ByteArray(8192)
+        FileInputStream(apkFile).use { fis ->
+            var bytesRead: Int
+            while (fis.read(buffer).also { bytesRead = it } != -1) {
+                digest.update(buffer, 0, bytesRead)
+            }
+        }
+        val actualHash = digest.digest().joinToString("") { "%02x".format(it) }
+        
+        if (actualHash.lowercase() != expectedHash.lowercase()) {
+            val expectedSizeMb = String.format("%.2f", expectedSize / 1024.0 / 1024.0)
+            val actualSizeMb = String.format("%.2f", actualSize / 1024.0 / 1024.0)
+            val sizeDiff = actualSize - expectedSize
+            val sizeDiffMb = String.format("%.2f", kotlin.math.abs(sizeDiff) / 1024.0 / 1024.0)
+            val sizeDiffSign = if (sizeDiff > 0) "+" else ""
+            
+            val errorMsg = """
+                Hash verification failed. File may be corrupted or tampered.
+                Expected hash: $expectedHash
+                Actual hash: $actualHash
+                Expected size: $expectedSizeMb MB ($expectedSize bytes)
+                Actual size: $actualSizeMb MB ($actualSize bytes)
+                Difference: $sizeDiffSign$sizeDiffMb MB ($sizeDiffSign$sizeDiff bytes)
+            """.trimIndent()
+            
+            return VerificationResult(false, errorMsg)
+        }
+        
+        Log.d(TAG, "APK verification successful: size=$actualSize bytes (expected $expectedSize), hash=$actualHash")
+        return VerificationResult(true)
+    }
+
     private fun isValidApk(apkFile: File): Boolean {
         // Check if file is a valid ZIP/APK by verifying ZIP magic bytes
         // APK files are ZIP archives, so they should start with PK\x03\x04 (0x504B0304)
@@ -470,78 +541,6 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler {
         }
     }
     
-    private fun verifyApk(
-        apkFile: File, 
-        expectedHash: String,
-        expectedSize: Long,
-        result: Result
-    ): Boolean {
-        val actualSize = apkFile.length()
-        
-        // First, verify this is a valid APK/ZIP file
-        if (!isValidApk(apkFile)) {
-            val errorMsg = """
-                Invalid APK file. The downloaded file is not a valid Android package.
-                This may indicate:
-                • Incomplete download
-                • Corrupted file
-                • Wrong file type
-                
-                File size: ${String.format("%.2f", actualSize / 1024.0 / 1024.0)} MB ($actualSize bytes)
-                Please try downloading again.
-            """.trimIndent()
-            
-            result.success(mapOf(
-                "isSuccess" to false,
-                "errorMessage" to errorMsg
-            ))
-            apkFile.delete()
-            return false
-        }
-        
-        Log.d(TAG, "APK file format validation passed")
-        
-        // Calculate SHA-256 hash for verification
-        // This is the primary integrity check - if hash matches, file is correct
-        val digest = MessageDigest.getInstance("SHA-256")
-        val buffer = ByteArray(8192)
-        FileInputStream(apkFile).use { fis ->
-            var bytesRead: Int
-            while (fis.read(buffer).also { bytesRead = it } != -1) {
-                digest.update(buffer, 0, bytesRead)
-            }
-        }
-        val actualHash = digest.digest().joinToString("") { "%02x".format(it) }
-        
-        if (actualHash.lowercase() != expectedHash.lowercase()) {
-            // Hash mismatch - include size information in error
-            val expectedSizeMb = String.format("%.2f", expectedSize / 1024.0 / 1024.0)
-            val actualSizeMb = String.format("%.2f", actualSize / 1024.0 / 1024.0)
-            val sizeDiff = actualSize - expectedSize
-            val sizeDiffMb = String.format("%.2f", kotlin.math.abs(sizeDiff) / 1024.0 / 1024.0)
-            val sizeDiffSign = if (sizeDiff > 0) "+" else ""
-            
-            val errorMsg = """
-                Hash verification failed. File may be corrupted or tampered.
-                Expected hash: $expectedHash
-                Actual hash: $actualHash
-                Expected size: $expectedSizeMb MB ($expectedSize bytes)
-                Actual size: $actualSizeMb MB ($actualSize bytes)
-                Difference: $sizeDiffSign$sizeDiffMb MB ($sizeDiffSign$sizeDiff bytes)
-            """.trimIndent()
-            
-            result.success(mapOf(
-                "isSuccess" to false,
-                "errorMessage" to errorMsg
-            ))
-            // Don't delete the file - user might want to proceed anyway
-            return false
-        }
-        
-        Log.d(TAG, "APK verification successful: size=$actualSize bytes (expected $expectedSize), hash=$actualHash")
-        return true
-    }
-
     private fun installApk(
         filePath: String, 
         expectedHash: String?,
@@ -562,14 +561,29 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler {
         if (skipVerification) {
             Log.w(TAG, "⚠️ RECKLESS MODE: APK verification SKIPPED by user request ⚠️")
             Log.w(TAG, "Installing APK without hash verification: $filePath")
+            proceedWithInstall(file, filePath, result)
         } else if (expectedHash != null && expectedSize != null) {
-            if (!verifyApk(file, expectedHash, expectedSize, result)) {
-                return  // Verification failed, error already sent
-            }
+            // Run hash verification on background thread to avoid UI jank
+            Thread {
+                val verificationResult = verifyApkBackground(file, expectedHash, expectedSize)
+                android.os.Handler(context.mainLooper).post {
+                    if (verificationResult.isSuccess) {
+                        proceedWithInstall(file, filePath, result)
+                    } else {
+                        result.success(mapOf(
+                            "isSuccess" to false,
+                            "errorMessage" to verificationResult.errorMessage
+                        ))
+                    }
+                }
+            }.start()
         } else {
             Log.w(TAG, "APK verification skipped - hash or size not provided")
+            proceedWithInstall(file, filePath, result)
         }
-
+    }
+    
+    private fun proceedWithInstall(file: File, filePath: String, result: Result) {
         try {
             installApp(file, result)
         } catch (e: SecurityException) {
