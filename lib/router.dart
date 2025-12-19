@@ -8,6 +8,9 @@ import 'package:zapstore/screens/search_screen.dart';
 import 'package:zapstore/screens/updates_screen.dart';
 import 'package:zapstore/screens/profile_screen.dart';
 
+/// Root paths for each navigation branch (used for back navigation handling)
+const kBranchRoots = ['/search', '/updates', '/profile'];
+
 typedef _ResolvedAppRoute = ({String identifier, String? author});
 
 _ResolvedAppRoute _resolveAppRouteId(String rawId) {

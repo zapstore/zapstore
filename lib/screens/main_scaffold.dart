@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
+import 'package:zapstore/router.dart';
 import 'package:zapstore/services/updates_service.dart';
 import 'package:zapstore/widgets/common/badges.dart';
 import '../widgets/common/profile_avatar.dart';
@@ -39,8 +40,15 @@ class MainScaffold extends StatelessWidget {
       canPop: false, // Never let system close the app via back gesture
       onPopInvokedWithResult: (didPop, result) {
         if (!didPop) {
-          if (router.canPop()) {
-            router.pop(); // Go back if possible
+          // Check if we can pop within the current shell branch
+          // canPop() may return true for shell-level navigation, so we need
+          // to verify we're not at a branch root before popping
+          final currentLocation =
+              router.routerDelegate.currentConfiguration.uri.path;
+          final isAtBranchRoot = kBranchRoots.contains(currentLocation);
+
+          if (!isAtBranchRoot && router.canPop()) {
+            router.pop(); // Go back within the branch
           } else if (navigationShell.currentIndex != 0) {
             // At root of non-home tab, go to home (search) tab
             navigationShell.goBranch(0);
