@@ -94,6 +94,7 @@ class _AuthenticationSection extends ConsumerWidget {
                       source: const LocalAndRemoteSource(
                         relays: {'social', 'vertex'},
                         stream: false,
+                        cachedFor: Duration(hours: 2),
                       ),
                     ),
                   );
