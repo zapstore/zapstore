@@ -192,6 +192,13 @@ class _CommentCard extends HookConsumerWidget {
                                   author?.nameOrNpub ?? '',
                                   style: context.textTheme.titleSmall?.copyWith(
                                     fontWeight: FontWeight.w600,
+                                    fontSize:
+                                        (context
+                                                .textTheme
+                                                .titleSmall
+                                                ?.fontSize ??
+                                            14) *
+                                        0.82,
                                   ),
                                 ),
                                 if (version != null) ...[
