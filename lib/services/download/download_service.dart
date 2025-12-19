@@ -54,7 +54,7 @@ class DownloadService extends StateNotifier<Map<String, DownloadInfo>> {
       FileDownloader.defaultGroup,
       running: const TaskNotification(
         'Downloading {displayName}',
-        '{progress}%',
+        '{progress}',
       ),
       complete: const TaskNotification('Download complete', '{displayName}'),
       error: const TaskNotification('Download failed', '{displayName}'),
