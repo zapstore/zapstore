@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
-import 'package:async_button_builder/async_button_builder.dart';
-import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'app_card.dart';
 
@@ -22,6 +21,23 @@ class LatestReleasesContainer extends HookConsumerWidget {
       return _buildSkeletonState(context);
     }
 
+    // Infinite scroll: trigger loadMore when near bottom
+    useEffect(() {
+      void onScroll() {
+        final state = ref.read(latestReleasesProvider);
+        if (state.isLoadingMore || !state.hasMore) return;
+
+        // Trigger load when 300px from bottom
+        if (scrollController.position.pixels >=
+            scrollController.position.maxScrollExtent - 300) {
+          ref.read(latestReleasesProvider.notifier).loadMore();
+        }
+      }
+
+      scrollController.addListener(onScroll);
+      return () => scrollController.removeListener(onScroll);
+    }, [scrollController]);
+
     final state = ref.watch(latestReleasesProvider);
     final storage = state.storage;
 
@@ -33,22 +49,9 @@ class LatestReleasesContainer extends HookConsumerWidget {
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Latest Releases', style: context.textTheme.headlineSmall),
-              if (storage.models.isNotEmpty)
-                TextButton(
-                  onPressed: () {
-                    scrollController.animateTo(
-                      scrollController.position.maxScrollExtent,
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeInOut,
-                    );
-                  },
-                  child: const Text('See more'),
-                ),
-            ],
+          child: Text(
+            'Latest Releases',
+            style: context.textTheme.headlineSmall,
           ),
         ),
 
@@ -66,11 +69,9 @@ class LatestReleasesContainer extends HookConsumerWidget {
         else
           _buildAppsList(
             context,
-            ref,
             combinedApps,
             state.isLoadingMore,
             state.hasMore,
-            ref.read(latestReleasesProvider.notifier).loadMore,
           ),
       ],
     );
@@ -99,11 +100,9 @@ class LatestReleasesContainer extends HookConsumerWidget {
 
   Widget _buildAppsList(
     BuildContext context,
-    WidgetRef ref,
     List<App> apps,
     bool isLoadingMore,
     bool hasMoreApps,
-    Future<void> Function() onLoadMore,
   ) {
     return Column(
       children: [
@@ -113,53 +112,22 @@ class LatestReleasesContainer extends HookConsumerWidget {
 
         const SizedBox(height: 10),
 
-        if (hasMoreApps)
-          AsyncButtonBuilder(
-            loadingWidget: SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(
-                strokeWidth: 3,
-                color: Theme.of(context).colorScheme.onSurface,
-                backgroundColor: Theme.of(
-                  context,
-                ).colorScheme.surfaceContainerHighest,
+        // Show loading indicator when fetching more
+        if (isLoadingMore)
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Center(
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
               ),
             ),
-            onPressed: isLoadingMore ? null : onLoadMore,
-            onError: () {
-              if (context.mounted) {
-                context.showError(
-                  'Failed to load more apps',
-                  description: 'Please check your connection and try again.',
-                );
-              }
-            },
-            builder: (context, child, callback, state) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: callback,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: Theme.of(
-                        context,
-                      ).colorScheme.surfaceContainerHighest,
-                      foregroundColor: Theme.of(context).colorScheme.onSurface,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    child: child,
-                  ),
-                ),
-              );
-            },
-            child: Text(isLoadingMore ? 'Loading...' : 'Load more'),
           )
-        else
+        else if (!hasMoreApps && apps.isNotEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Center(
@@ -183,20 +151,9 @@ class LatestReleasesContainer extends HookConsumerWidget {
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              // Match actual content: headlineSmall, not headlineMedium
-              Text('Latest Releases', style: context.textTheme.headlineSmall),
-              // Match actual content: show button but make it invisible to reserve space
-              Opacity(
-                opacity: 0,
-                child: TextButton(
-                  onPressed: null,
-                  child: const Text('See more'),
-                ),
-              ),
-            ],
+          child: Text(
+            'Latest Releases',
+            style: context.textTheme.headlineSmall,
           ),
         ),
         const SizedBox(height: 12),
