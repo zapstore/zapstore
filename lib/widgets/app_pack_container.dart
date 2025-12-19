@@ -474,7 +474,7 @@ class AppGridCard extends ConsumerWidget {
         }
         final segments = GoRouterState.of(context).uri.pathSegments;
         final first = segments.isNotEmpty ? segments.first : 'search';
-        context.push('/$first/app/${app!.id}', extra: app!);
+        context.push('/$first/app/${app!.identifier}');
       },
       child: Container(
         margin: const EdgeInsets.all(2),

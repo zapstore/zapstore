@@ -19,90 +19,52 @@ import 'package:zapstore/widgets/screenshots_gallery.dart';
 import 'package:zapstore/widgets/version_pill_widget.dart';
 
 class AppDetailScreen extends HookConsumerWidget {
-  const AppDetailScreen({super.key, this.app, this.appId})
-    : assert(app != null || appId != null);
+  const AppDetailScreen({super.key, required this.appId});
 
-  /// The app to display (if already loaded)
-  final App? app;
-
-  /// The app identifier to load (used for deep links / market:// intents)
-  final String? appId;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // If we only have appId, query for the app first
-    if (app == null && appId != null) {
-      return _AppLoaderView(appId: appId!);
-    }
-
-    return _AppDetailView(app: app!);
-  }
-}
-
-/// Internal view that loads an app by ID
-class _AppLoaderView extends ConsumerWidget {
   final String appId;
-  const _AppLoaderView({required this.appId});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final platform = ref.read(packageManagerProvider.notifier).platform;
 
-    // Check if appId is an naddr and decode it
-    String? identifier;
-    String? author;
-
-    if (appId.startsWith('naddr1')) {
-      try {
-        final decoded = Utils.decodeShareableIdentifier(appId);
-        if (decoded is AddressData) {
-          identifier = decoded.identifier;
-          author = decoded.author;
-        }
-      } catch (e) {
-        // Invalid naddr, fall through to use appId as-is
-      }
-    }
-
-    // If we decoded an naddr, query by author/identifier, otherwise by #d tag
-    final appsState = ref.watch(
+    // Query app with relationships
+    final appState = ref.watch(
       query<App>(
-        authors: author != null ? {author} : null,
         tags: {
-          '#d': {identifier ?? appId},
+          '#d': {appId},
           '#f': {platform},
         },
         limit: 1,
+        and: (a) => {a.latestRelease, a.latestRelease.value?.latestMetadata},
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
-        subscriptionPrefix: 'app-detail-loader',
+        subscriptionPrefix: 'app-detail',
       ),
     );
 
-    final app = appsState.models.firstOrNull;
+    final app = appState.models.firstOrNull;
 
+    // Show app detail once we have the app
     if (app != null) {
-      return _AppDetailView(app: app);
+      return _AppDetailContent(app: app, appState: appState);
     }
 
-    // Handle states
-    switch (appsState) {
-      case StorageError(:final exception):
-        return _ErrorScaffold(message: exception.toString());
-      case StorageData():
-        return _ErrorScaffold(message: 'App "$appId" not found in Zapstore.');
-      default:
-        break;
-    }
-
-    // Loading state
-    return const Scaffold(
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: EdgeInsets.all(16),
-          child: AppDetailSkeleton(),
+    // Handle loading/error states when app not yet available
+    return switch (appState) {
+      StorageError(:final exception) => _ErrorScaffold(
+        message: exception.toString(),
+      ),
+      StorageData() => _ErrorScaffold(
+        message: 'App "$appId" not found in Zapstore.',
+      ),
+      _ => const Scaffold(
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.all(16),
+            child: AppDetailSkeleton(),
+          ),
         ),
       ),
-    );
+    };
   }
 }
 
@@ -131,26 +93,17 @@ class _ErrorScaffold extends StatelessWidget {
   }
 }
 
-/// Internal view that displays app details (app already loaded)
-class _AppDetailView extends HookConsumerWidget {
+/// Internal widget that displays app details
+class _AppDetailContent extends HookConsumerWidget {
   final App app;
-  const _AppDetailView({required this.app});
+  final StorageState<App> appState;
+
+  const _AppDetailContent({required this.app, required this.appState});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Check if debug mode should be enabled
     final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
     final showDebugSections = isDebugMode(signedInPubkey);
-
-    // Watch the app for real-time updates using model provider
-    final appState = ref.watch(
-      model<App>(
-        app,
-        and: (a) => {a.latestRelease, a.latestRelease.value?.latestMetadata},
-        source: LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
-        subscriptionPrefix: 'app-detail',
-      ),
-    );
 
     // Query author profile from social relays
     final authorState = ref.watch(
@@ -167,94 +120,46 @@ class _AppDetailView extends HookConsumerWidget {
       _ => null,
     };
 
-    // Handle loading and error states for app relationships
-    switch (appState) {
-      case StorageLoading():
-        return Scaffold(
-          body: SafeArea(
-            child: Stack(
-              children: [
-                const SingleChildScrollView(
-                  padding: EdgeInsets.only(top: 16, bottom: 80),
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: AppDetailSkeleton(),
-                  ),
+    final latestRelease = app.latestRelease.value;
+    final latestMetadata = app.latestFileMetadata;
+
+    // Show skeleton while relationships are loading
+    if (latestRelease == null || latestMetadata == null) {
+      return Scaffold(
+        body: SafeArea(
+          child: Stack(
+            children: [
+              const SingleChildScrollView(
+                padding: EdgeInsets.only(top: 16, bottom: 80),
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16),
+                  child: AppDetailSkeleton(),
                 ),
-                InstallButton(app: app, release: null),
-              ],
-            ),
-          ),
-        );
-      case StorageError(:final exception):
-        return _ErrorScaffold(message: exception.toString());
-      case StorageData(:final models):
-        final currentApp = models.firstOrNull ?? app;
-        final latestRelease = currentApp.latestRelease.value;
-        final latestMetadata = currentApp.latestFileMetadata;
-
-        // Relationships loaded but null - show skeleton with app info
-        if (latestRelease == null || latestMetadata == null) {
-          return Scaffold(
-            body: SafeArea(
-              child: Stack(
-                children: [
-                  const SingleChildScrollView(
-                    padding: EdgeInsets.only(top: 16, bottom: 80),
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 16),
-                      child: AppDetailSkeleton(),
-                    ),
-                  ),
-                  InstallButton(app: currentApp, release: latestRelease),
-                ],
               ),
-            ),
-          );
-        }
-
-        return _buildDetailContent(
-          context,
-          ref,
-          currentApp: currentApp,
-          latestRelease: latestRelease,
-          latestMetadata: latestMetadata,
-          author: author,
-          showDebugSections: showDebugSections,
-        );
+              InstallButton(app: app, release: latestRelease),
+            ],
+          ),
+        ),
+      );
     }
-  }
 
-  Widget _buildDetailContent(
-    BuildContext context,
-    WidgetRef ref, {
-    required App currentApp,
-    required Release latestRelease,
-    required FileMetadata latestMetadata,
-    required Profile? author,
-    required bool showDebugSections,
-  }) {
     return Scaffold(
       body: SafeArea(
         child: Stack(
           children: [
-            // Main scrollable content
             SingleChildScrollView(
-              padding: const EdgeInsets.only(
-                top: 16,
-                bottom: 80,
-              ), // Horizontal padding applied per-section to allow screenshots to be full-bleed
+              padding: const EdgeInsets.only(top: 16, bottom: 80),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // App header with icon, name, version, and author (always show app info)
+                  // App header
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: AppHeader(app: currentApp),
+                    child: AppHeader(app: app),
                   ),
 
                   // Published by / Released at section
-                  if (currentApp.isRelaySigned)
+                  if (app.isRelaySigned)
                     Padding(
                       padding: const EdgeInsets.only(
                         left: 16,
@@ -279,7 +184,7 @@ class _AppDetailView extends HookConsumerWidget {
                               beforeText: 'Published by',
                               oneLine: true,
                               size: 14,
-                              app: currentApp,
+                              app: app,
                               onTap: () {
                                 final segments = GoRouterState.of(
                                   context,
@@ -294,14 +199,14 @@ class _AppDetailView extends HookConsumerWidget {
                     ),
 
                   // Screenshots gallery
-                  if (currentApp.images.isNotEmpty)
+                  if (app.images.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: ScreenshotsGallery(app: currentApp),
+                      child: ScreenshotsGallery(app: app),
                     ),
 
-                  // App description (always available from app)
-                  if (currentApp.description.isNotEmpty)
+                  // App description
+                  if (app.description.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(
                         left: 20,
@@ -309,7 +214,7 @@ class _AppDetailView extends HookConsumerWidget {
                         top: 8,
                       ),
                       child: ExpandableMarkdown(
-                        data: currentApp.description,
+                        data: app.description,
                         styleSheet:
                             MarkdownStyleSheet.fromTheme(
                               Theme.of(context),
@@ -321,41 +226,37 @@ class _AppDetailView extends HookConsumerWidget {
                       ),
                     ),
 
-                  // Social action buttons (Zap + Share + Save)
+                  // Social action buttons
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const SizedBox(height: 16),
-                        SocialActionsRow(app: currentApp, author: author),
+                        SocialActionsRow(app: app, author: author),
                         const SizedBox(height: 16),
                       ],
                     ),
                   ),
 
+                  // Latest release section
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const SizedBox(height: 12),
-
-                        // Latest release title
                         Text(
                           'Latest release',
                           style: context.textTheme.headlineMedium?.copyWith(
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-
                         const SizedBox(height: 8),
-
-                        // Latest version info
                         Row(
                           children: [
                             VersionPillWidget(
-                              app: currentApp,
+                              app: app,
                               forceVersion: latestMetadata.version,
                             ),
                             const SizedBox(width: 12),
@@ -369,7 +270,6 @@ class _AppDetailView extends HookConsumerWidget {
                             ),
                           ],
                         ),
-
                         Padding(
                           padding: const EdgeInsets.symmetric(vertical: 20),
                           child: ReleaseNotes(release: latestRelease),
@@ -380,31 +280,25 @@ class _AppDetailView extends HookConsumerWidget {
 
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: AppInfoTable(
-                      app: currentApp,
-                      fileMetadata: latestMetadata,
-                    ),
+                    child: AppInfoTable(app: app, fileMetadata: latestMetadata),
                   ),
 
-                  CommentsSection(
-                    app: currentApp,
-                    fileMetadata: latestMetadata,
-                  ),
+                  CommentsSection(app: app, fileMetadata: latestMetadata),
 
-                  // Debug section - only visible for specific pubkey
+                  // Debug section
                   if (showDebugSections)
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: DebugVersionsSection(app: currentApp),
+                      child: DebugVersionsSection(app: app),
                     ),
 
-                  const SizedBox(height: 100), // Space for install button
+                  const SizedBox(height: 100),
                 ],
               ),
             ),
 
-            // Sticky install/uninstall row (show even if release is loading)
-            InstallButton(app: currentApp, release: latestRelease),
+            // Sticky install button
+            InstallButton(app: app, release: latestRelease),
           ],
         ),
       ),
