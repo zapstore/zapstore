@@ -96,8 +96,8 @@ class InstallButton extends ConsumerWidget {
           child: Row(
             children: [
               Expanded(
-                child: SizedBox(
-                  height: 48,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 48),
                   child: _buildButtonForState(context, ref, state),
                 ),
               ),
@@ -836,8 +836,8 @@ class InstallButton extends ConsumerWidget {
     return Row(
       children: [
         Expanded(
-          child: RichText(
-            text: TextSpan(
+          child: Text.rich(
+            TextSpan(
               style: Theme.of(context).textTheme.bodyMedium,
               children: [
                 TextSpan(

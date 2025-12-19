@@ -75,14 +75,16 @@ class VersionPillWidget extends HookConsumerWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         // Current version pill (muted colors for installed version)
-        _buildVersionPill(
-          context,
-          ref,
-          installedPackages,
-          installedVersion,
-          Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
-          Theme.of(context).colorScheme.onSurface,
-          isInstalledVersion: true,
+        Flexible(
+          child: _buildVersionPill(
+            context,
+            ref,
+            installedPackages,
+            installedVersion,
+            Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
+            Theme.of(context).colorScheme.onSurface,
+            isInstalledVersion: true,
+          ),
         ),
 
         // Arrow icon (always arrow, forbidden icon is in the pill itself)
@@ -93,18 +95,20 @@ class VersionPillWidget extends HookConsumerWidget {
         ),
 
         // Available version pill (highlighted for update, greyed for downgrade)
-        _buildVersionPill(
-          context,
-          ref,
-          installedPackages,
-          availableVersion,
-          isDowngrade
-              ? Theme.of(context).colorScheme.outline.withValues(alpha: 0.3)
-              : AppColors.darkPillBackground,
-          isDowngrade
-              ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5)
-              : Colors.white,
-          isDowngrade: isDowngrade,
+        Flexible(
+          child: _buildVersionPill(
+            context,
+            ref,
+            installedPackages,
+            availableVersion,
+            isDowngrade
+                ? Theme.of(context).colorScheme.outline.withValues(alpha: 0.3)
+                : AppColors.darkPillBackground,
+            isDowngrade
+                ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5)
+                : Colors.white,
+            isDowngrade: isDowngrade,
+          ),
         ),
       ],
     );
@@ -166,14 +170,15 @@ class VersionPillWidget extends HookConsumerWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            displayVersion,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: context.textTheme.labelMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: finalTextColor,
-              fontSize: 11.5,
+          Flexible(
+            child: Text(
+              displayVersion,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: context.textTheme.labelSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: finalTextColor,
+              ),
             ),
           ),
           if (statusIcon != null) ...[
@@ -189,7 +194,8 @@ class VersionPillWidget extends HookConsumerWidget {
   }
 
   String _displayVersion(String version) {
-    return version.length > 10 ? '${version.substring(0, 9)}...' : version;
+    // Show full version - let Flexible + TextOverflow.ellipsis handle truncation only when needed
+    return version;
   }
 
   // No width enforcement; both pills share the same text style

@@ -8,17 +8,20 @@ import 'package:zapstore/screens/search_screen.dart';
 import 'package:zapstore/screens/updates_screen.dart';
 import 'package:zapstore/screens/profile_screen.dart';
 
-/// Extract app identifier from naddr or return as-is
-String _extractAppIdentifier(String rawId) {
+typedef _ResolvedAppRoute = ({String identifier, String? author});
+
+_ResolvedAppRoute _resolveAppRouteId(String rawId) {
   if (rawId.startsWith('naddr1')) {
     try {
       final decoded = Utils.decodeShareableIdentifier(rawId);
       if (decoded is AddressData) {
-        return decoded.identifier;
+        return (identifier: decoded.identifier, author: decoded.author);
       }
-    } catch (_) {}
+    } catch (_) {
+      // Fall back to treating it as a plain identifier.
+    }
   }
-  return rawId;
+  return (identifier: rawId, author: null);
 }
 
 /// Helper to build app detail route
@@ -27,8 +30,11 @@ GoRoute _appDetailRoute() {
     path: 'app/:id',
     builder: (context, state) {
       final rawId = state.pathParameters['id']!;
-      final appId = _extractAppIdentifier(rawId);
-      return AppDetailScreen(appId: appId);
+      final resolved = _resolveAppRouteId(rawId);
+      return AppDetailScreen(
+        appId: resolved.identifier,
+        authorPubkey: resolved.author,
+      );
     },
   );
 }

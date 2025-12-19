@@ -22,8 +22,8 @@ class PillWidget extends StatelessWidget {
         color: color,
         borderRadius: BorderRadius.circular(size * 1.1),
       ),
-      child: RichText(
-        text: TextSpan(
+      child: Text.rich(
+        TextSpan(
           style: TextStyle(
             color: Colors.white,
             fontSize: size,

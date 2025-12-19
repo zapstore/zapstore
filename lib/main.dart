@@ -113,7 +113,7 @@ class ZapstoreApp extends HookConsumerWidget {
         final mediaQuery = MediaQuery.of(context);
         final constrainedTextScale = mediaQuery.textScaler
             .scale(1.0)
-            .clamp(1.0, 1.3);
+            .clamp(1.0, 1.2);
         final constrainedTextScaler = TextScaler.linear(constrainedTextScale);
 
         // Show error overlay if initialization failed (do not block UI during loading)

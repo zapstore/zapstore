@@ -295,6 +295,7 @@ class _UpdatesListBody extends StatelessWidget {
               showUpdateArrow: false,
               showUpdateButton: true,
               showZapEncouragement: true,
+              showDescription: false,
             );
           case _UpdatesItemType.automaticHeader:
             return _UpdatesSectionHeader(
@@ -309,6 +310,7 @@ class _UpdatesListBody extends StatelessWidget {
               showUpdateArrow: true,
               showUpdateButton: true,
               showZapEncouragement: true,
+              showDescription: false,
             );
           case _UpdatesItemType.manualHeader:
             return _UpdatesSectionHeader(
@@ -325,6 +327,7 @@ class _UpdatesListBody extends StatelessWidget {
               showUpdateArrow: true,
               showUpdateButton: true,
               showZapEncouragement: true,
+              showDescription: false,
             );
         }
       },
@@ -526,7 +529,11 @@ class _UpToDateTab extends HookConsumerWidget {
     return ListView.builder(
       itemCount: upToDateApps.length,
       itemBuilder: (context, index) {
-        return AppCard(app: upToDateApps[index], showUpdateArrow: false);
+        return AppCard(
+          app: upToDateApps[index],
+          showUpdateArrow: false,
+          showDescription: false,
+        );
       },
     );
   }
@@ -626,7 +633,11 @@ class _BookmarkedAppsSectionWithIds extends ConsumerWidget {
       padding: EdgeInsets.zero,
       itemCount: savedApps.length,
       itemBuilder: (context, index) {
-        return AppCard(app: savedApps[index], showUpdateArrow: false);
+        return AppCard(
+          app: savedApps[index],
+          showUpdateArrow: false,
+          showDescription: false,
+        );
       },
     );
   }

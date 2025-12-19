@@ -61,8 +61,8 @@ class RelevantWhoFollowContainer extends HookConsumerWidget {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                RichText(
-                  text: TextSpan(
+                Text.rich(
+                  TextSpan(
                     text: 'You follow this publisher. ',
                     style: baseStyle,
                     children: [TextSpan(text: trailingText)],
@@ -149,8 +149,8 @@ class RelevantWhoFollowContainer extends HookConsumerWidget {
     String npub,
     TextStyle? baseStyle,
   ) {
-    return RichText(
-      text: TextSpan(
+    return Text.rich(
+      TextSpan(
         text: 'View profile on nostr',
         style: baseStyle?.copyWith(
           color: Colors.white,

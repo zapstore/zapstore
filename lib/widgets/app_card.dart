@@ -11,7 +11,7 @@ import 'package:zapstore/utils/url_utils.dart';
 import 'package:zapstore/services/download/download_service.dart';
 import 'package:zapstore/widgets/zap_widgets.dart';
 
-import 'author_container.dart';
+import 'common/profile_avatar.dart';
 import 'version_pill_widget.dart';
 import 'install_button.dart';
 import '../theme.dart';
@@ -23,6 +23,7 @@ class AppCard extends HookConsumerWidget {
   final bool showSignedBy;
   final bool showUpdateButton;
   final bool showZapEncouragement;
+  final bool showDescription;
 
   const AppCard({
     super.key,
@@ -32,6 +33,7 @@ class AppCard extends HookConsumerWidget {
     this.showSignedBy = true,
     this.showUpdateButton = false,
     this.showZapEncouragement = false,
+    this.showDescription = true,
   });
 
   @override
@@ -55,7 +57,18 @@ class AppCard extends HookConsumerWidget {
       onTap: () {
         final segments = GoRouterState.of(context).uri.pathSegments;
         final first = segments.isNotEmpty ? segments.first : 'search';
-        context.push('/$first/app/${app!.identifier}');
+        // Prefer naddr so the detail screen can uniquely identify the app
+        // (identifier + author) and not accidentally resolve to a different
+        // publisher's app with the same identifier.
+        final naddr = Utils.encodeShareableIdentifier(
+          AddressInput(
+            identifier: app!.identifier,
+            author: app!.pubkey,
+            kind: app!.event.kind,
+            relays: const [],
+          ),
+        );
+        context.push('/$first/app/$naddr');
       },
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -68,108 +81,69 @@ class AppCard extends HookConsumerWidget {
             width: 1,
           ),
         ),
-        child: Row(
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // App Icon (64px, radius 15 to match old design)
-            _buildAppIcon(context),
+            // Header row: Icon + Name/Version (icon matches header height)
+            LayoutBuilder(
+              builder: (context, constraints) {
+                // Icon takes max 20% of available width
+                final iconSize = (constraints.maxWidth * 0.20).clamp(
+                  48.0,
+                  64.0,
+                );
+                return IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // App Icon (stretches to match name + version height, max 20% width)
+                      _buildAppIcon(context, iconSize),
 
-            const SizedBox(width: 18),
+                      const SizedBox(width: 14),
 
-            // App Details with professional typography
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // App Name and Version
-                  if (showUpdateButton) ...[
-                    // When showing update button: name on top, version below
-                    Text(
-                      app!.name ?? app!.identifier,
-                      style: context.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 0.1,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
-                    ),
-                    const SizedBox(height: 6),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: VersionPillWidget(
-                        app: app!,
-                        showUpdateArrow: showUpdateArrow,
-                      ),
-                    ),
-                  ] else ...[
-                    // Default: name and version in same row
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            app!.name ?? app!.identifier,
-                            style: context.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 0.1,
+                      // App Name and Version (always stacked)
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            // App name with optional "by publisher" inline
+                            _buildAppNameWithPublisher(context, publisher),
+                            const SizedBox(height: 6),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: VersionPillWidget(
+                                app: app!,
+                                showUpdateArrow: showUpdateArrow,
+                              ),
                             ),
-                            overflow: TextOverflow.ellipsis,
-                            maxLines: 1,
-                          ),
+                          ],
                         ),
-                        const SizedBox(width: 12),
-                        VersionPillWidget(
-                          app: app!,
-                          showUpdateArrow: showUpdateArrow,
-                        ),
-                      ],
-                    ),
-                  ],
-
-                  const SizedBox(height: 12),
-
-                  // App Description rendered as plain text (markdown stripped)
-                  Text(
-                    descriptionText,
-                    style: descriptionStyle,
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 3,
-                    softWrap: true,
+                      ),
+                    ],
                   ),
-
-                  // Author signature (only if app has publisher)
-                  if (showSignedBy && publisher != null) ...[
-                    Gap(14),
-                    Theme(
-                      data: Theme.of(context).copyWith(
-                        textTheme: context.textTheme.copyWith(
-                          bodySmall: context.textTheme.bodySmall?.copyWith(
-                            color: AppColors.darkOnSurfaceSecondary,
-                          ),
-                        ),
-                      ),
-                      child: AuthorContainer(
-                        profile: publisher,
-                        beforeText: 'Published by',
-                        size: context.textTheme.bodyMedium!.fontSize!,
-                        oneLine: true,
-                        app: app,
-                      ),
-                    ),
-                  ],
-
-                  // Update button (for apps with updates or currently downloading/installing)
-                  if (showUpdateButton) _AppCardUpdateButtonSection(app: app!),
-
-                  // Zap encouragement (only for downloading/installing developer-signed apps)
-                  if (showZapEncouragement)
-                    _AppCardZapEncouragementSection(
-                      app: app!,
-                      publisher: publisher,
-                    ),
-                ],
-              ),
+                );
+              },
             ),
+
+            // App Description rendered as plain text (markdown stripped)
+            if (showDescription) ...[
+              const SizedBox(height: 12),
+              Text(
+                descriptionText,
+                style: descriptionStyle,
+                overflow: TextOverflow.ellipsis,
+                maxLines: 3,
+                softWrap: true,
+              ),
+            ],
+
+            // Update button (for apps with updates or currently downloading/installing)
+            if (showUpdateButton) _AppCardUpdateButtonSection(app: app!),
+
+            // Zap encouragement (only for downloading/installing developer-signed apps)
+            if (showZapEncouragement)
+              _AppCardZapEncouragementSection(app: app!, publisher: publisher),
           ],
         ),
       ),
@@ -199,47 +173,102 @@ class AppCard extends HookConsumerWidget {
     );
   }
 
-  Widget _buildAppIcon(BuildContext context) {
+  Widget _buildAppIcon(BuildContext context, double size) {
     final iconUrl = firstValidHttpUrl(app!.icons);
 
-    return Container(
-      width: 58,
-      height: 58,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+    return AspectRatio(
+      aspectRatio: 1,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: size, maxHeight: size),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.1),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
-        child: iconUrl != null
-            ? CachedNetworkImage(
-                imageUrl: iconUrl,
-                fit: BoxFit.cover,
-                fadeInDuration: const Duration(milliseconds: 500),
-                fadeOutDuration: const Duration(milliseconds: 200),
-                placeholder: (_, url) => const SizedBox.shrink(),
-                errorWidget: (context, url, error) => Center(
-                  child: Icon(
-                    Icons.broken_image_outlined,
-                    size: 32,
-                    color: Colors.grey[400],
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: iconUrl != null
+                ? CachedNetworkImage(
+                    imageUrl: iconUrl,
+                    fit: BoxFit.cover,
+                    fadeInDuration: const Duration(milliseconds: 500),
+                    fadeOutDuration: const Duration(milliseconds: 200),
+                    placeholder: (_, url) => const SizedBox.shrink(),
+                    errorWidget: (context, url, error) => Center(
+                      child: Icon(
+                        Icons.broken_image_outlined,
+                        size: 32,
+                        color: Colors.grey[400],
+                      ),
+                    ),
+                  )
+                : Center(
+                    child: Icon(
+                      Icons.apps_outlined,
+                      size: 32,
+                      color: Colors.grey[400],
+                    ),
                   ),
-                ),
-              )
-            : Center(
-                child: Icon(
-                  Icons.apps_outlined,
-                  size: 32,
-                  color: Colors.grey[400],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAppNameWithPublisher(BuildContext context, Profile? publisher) {
+    final appName = app!.name ?? app!.identifier;
+    final titleStyle = context.textTheme.titleMedium?.copyWith(
+      fontWeight: FontWeight.w900,
+      letterSpacing: 0.1,
+    );
+
+    // If no publisher or relay-signed, just show name
+    if (!showSignedBy || publisher == null || app!.isRelaySigned) {
+      return Text(
+        appName,
+        style: titleStyle,
+        overflow: TextOverflow.ellipsis,
+        maxLines: 1,
+      );
+    }
+
+    // Show "(app name) by (profile)" with wrapping
+    final byStyle = context.textTheme.bodyMedium?.copyWith(
+      color: AppColors.darkOnSurfaceSecondary,
+    );
+    final publisherStyle = byStyle?.copyWith(fontWeight: FontWeight.w600);
+    final avatarSize = context.textTheme.bodyMedium!.fontSize! * 1.4;
+
+    return Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(text: appName, style: titleStyle),
+          TextSpan(text: ' by ', style: byStyle),
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: SizedBox(
+                width: avatarSize,
+                height: avatarSize,
+                child: ProfileAvatar(
+                  profile: publisher,
+                  radius: avatarSize / 2,
                 ),
               ),
+            ),
+          ),
+          TextSpan(text: publisher.nameOrNpub, style: publisherStyle),
+        ],
       ),
+      softWrap: true,
+      overflow: TextOverflow.visible,
     );
   }
 
@@ -307,48 +336,58 @@ class AppCard extends HookConsumerWidget {
               width: 1,
             ),
           ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // App icon skeleton
-              Container(
-                width: 58,
-                height: 58,
-                decoration: BoxDecoration(
-                  color: AppColors.darkSkeletonBase,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              ),
-              const SizedBox(width: 18),
-              // App details skeleton
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // App name skeleton
-                    Row(
-                      children: [
-                        Container(
-                          height: 24,
-                          width: 150,
-                          decoration: BoxDecoration(
-                            color: AppColors.darkSkeletonBase,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final iconSize = (constraints.maxWidth * 0.20).clamp(48.0, 64.0);
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Header row: Icon + Name/Version
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // App icon skeleton
+                      Container(
+                        width: iconSize,
+                        height: iconSize,
+                        decoration: BoxDecoration(
+                          color: AppColors.darkSkeletonBase,
+                          borderRadius: BorderRadius.circular(14),
                         ),
-                        const Spacer(),
-                        Container(
-                          height: 20,
-                          width: 60,
-                          decoration: BoxDecoration(
-                            color: AppColors.darkSkeletonBase,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
+                      ),
+                      const SizedBox(width: 14),
+                      // App name and version skeleton (stacked)
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // App name skeleton (with "by publisher" space)
+                            Container(
+                              height: 20,
+                              width: 180,
+                              decoration: BoxDecoration(
+                                color: AppColors.darkSkeletonBase,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            // Version pill skeleton
+                            Container(
+                              height: 20,
+                              width: 60,
+                              decoration: BoxDecoration(
+                                color: AppColors.darkSkeletonBase,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
+                  ),
+                  // Description skeleton - 3 lines to match actual maxLines: 3
+                  if (showDescription) ...[
                     const SizedBox(height: 12),
-                    // Description skeleton - 3 lines to match actual maxLines: 3
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -380,31 +419,10 @@ class AppCard extends HookConsumerWidget {
                         ),
                       ],
                     ),
-                    // Author skeleton (only if showSignedBy is true) - match Gap(14) spacing
-                    if (showSignedBy) ...[
-                      const SizedBox(height: 14),
-                      Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 12,
-                            backgroundColor: AppColors.darkSkeletonBase,
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            height: 16,
-                            width: 120,
-                            decoration: BoxDecoration(
-                              color: AppColors.darkSkeletonBase,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
                   ],
-                ),
-              ),
-            ],
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -428,8 +446,8 @@ class _AppCardUpdateButtonSection extends ConsumerWidget {
     return Column(
       children: [
         const Gap(12),
-        SizedBox(
-          height: 38,
+        ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 38),
           child: _CompactInstallButton(
             app: app,
             release: app.latestRelease.value,
@@ -515,8 +533,8 @@ class _ZapEncouragementInCard extends HookConsumerWidget {
               ),
             ),
             const SizedBox(width: 8),
-            SizedBox(
-              height: 28,
+            ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 28),
               child: TextButton(
                 onPressed: () => showZapDialog(context, ref, app, author),
                 style: TextButton.styleFrom(
@@ -532,9 +550,12 @@ class _ZapEncouragementInCard extends HookConsumerWidget {
                     borderRadius: BorderRadius.circular(6),
                   ),
                 ),
-                child: const Text(
+                child: Text(
                   'Zap',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
                 ),
               ),
             ),

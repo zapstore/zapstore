@@ -19,9 +19,10 @@ import 'package:zapstore/widgets/screenshots_gallery.dart';
 import 'package:zapstore/widgets/version_pill_widget.dart';
 
 class AppDetailScreen extends HookConsumerWidget {
-  const AppDetailScreen({super.key, required this.appId});
+  const AppDetailScreen({super.key, required this.appId, this.authorPubkey});
 
   final String appId;
+  final String? authorPubkey;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -30,33 +31,32 @@ class AppDetailScreen extends HookConsumerWidget {
     // Query app with relationships
     final appState = ref.watch(
       query<App>(
+        authors: authorPubkey != null ? {authorPubkey!} : null,
         tags: {
           '#d': {appId},
           '#f': {platform},
         },
         limit: 1,
         and: (a) => {a.latestRelease, a.latestRelease.value?.latestMetadata},
+        // stream=true ensures cached/local results render immediately; remote
+        // results will merge in as they arrive.
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
-        subscriptionPrefix: 'app-detail',
+        subscriptionPrefix: authorPubkey != null
+            ? 'app-detail-${authorPubkey!}-$appId'
+            : 'app-detail-$appId',
       ),
     );
-
-    final app = appState.models.firstOrNull;
-
-    // Show app detail once we have the app
-    if (app != null) {
-      return _AppDetailContent(app: app, appState: appState);
-    }
 
     // Handle loading/error states when app not yet available
     return switch (appState) {
       StorageError(:final exception) => _ErrorScaffold(
         message: exception.toString(),
       ),
-      StorageData() => _ErrorScaffold(
-        message: 'App "$appId" not found in Zapstore.',
+      StorageData() => _AppDetailContent(
+        app: appState.models.firstOrNull,
+        appState: appState,
       ),
-      _ => const Scaffold(
+      StorageLoading() => const Scaffold(
         body: SafeArea(
           child: SingleChildScrollView(
             padding: EdgeInsets.all(16),
@@ -95,13 +95,18 @@ class _ErrorScaffold extends StatelessWidget {
 
 /// Internal widget that displays app details
 class _AppDetailContent extends HookConsumerWidget {
-  final App app;
+  final App? app;
   final StorageState<App> appState;
 
   const _AppDetailContent({required this.app, required this.appState});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final app = this.app;
+    if (app == null) {
+      return const _ErrorScaffold(message: 'App not found');
+    }
+
     final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
     final showDebugSections = isDebugMode(signedInPubkey);
 

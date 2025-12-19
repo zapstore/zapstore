@@ -474,7 +474,18 @@ class AppGridCard extends ConsumerWidget {
         }
         final segments = GoRouterState.of(context).uri.pathSegments;
         final first = segments.isNotEmpty ? segments.first : 'search';
-        context.push('/$first/app/${app!.identifier}');
+        // Prefer naddr so the detail screen can uniquely identify the app
+        // (identifier + author) and not accidentally resolve to a different
+        // publisher's app with the same identifier.
+        final naddr = Utils.encodeShareableIdentifier(
+          AddressInput(
+            identifier: app!.identifier,
+            author: app!.pubkey,
+            kind: app!.event.kind,
+            relays: const [],
+          ),
+        );
+        context.push('/$first/app/$naddr');
       },
       child: Container(
         margin: const EdgeInsets.all(2),

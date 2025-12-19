@@ -232,7 +232,7 @@ class NoteParser {
       return Text(content, style: textStyle);
     }
 
-    return RichText(text: TextSpan(children: spans));
+    return Text.rich(TextSpan(children: spans));
   }
 
   /// Checks if a URL is likely a media URL and returns the media type
@@ -386,10 +386,15 @@ class ProfileEntityWidget extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final profileState = ref.watch(query<Profile>(
-      authors: {profileData.pubkey},
-      source: const LocalAndRemoteSource(relays: {'social', 'vertex'}, cachedFor: Duration(hours: 2)),
-    ));
+    final profileState = ref.watch(
+      query<Profile>(
+        authors: {profileData.pubkey},
+        source: const LocalAndRemoteSource(
+          relays: {'social', 'vertex'},
+          cachedFor: Duration(hours: 2),
+        ),
+      ),
+    );
 
     // Show animated npub while profile is being loaded
     return switch (profileState) {
@@ -411,10 +416,7 @@ class ProfileEntityWidget extends ConsumerWidget {
           colorPair: colorPair,
         ),
       ),
-      StorageData(:final models) => _buildProfileWidget(
-        context,
-        models.first,
-      ),
+      StorageData(:final models) => _buildProfileWidget(context, models.first),
     };
   }
 
@@ -498,10 +500,9 @@ class EventEntityWidget extends StatelessWidget {
                   Text(
                     shortId,
                     style: context.textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withValues(alpha: 0.7),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.7),
                       fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
