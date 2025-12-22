@@ -2,7 +2,6 @@ import 'package:async_button_builder/async_button_builder.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
-import 'package:zapstore/services/bookmarks_service.dart';
 import 'package:zapstore/services/download/download_service.dart';
 import 'package:zapstore/services/updates_service.dart';
 import 'package:zapstore/theme.dart';
@@ -17,81 +16,19 @@ class UpdatesScreen extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final categorized = ref.watch(categorizedAppsProvider);
-    final updatesCount =
-        categorized.automaticUpdates.length + categorized.manualUpdates.length;
-    final upToDateCount = categorized.upToDateApps.length;
-    final savedAppsAsync = ref.watch(bookmarksProvider);
-    final savedAppsCount = savedAppsAsync.maybeWhen(
-      data: (ids) => ids.length,
-      orElse: () => 0,
-    );
-
-    final baseTabStyle = context.textTheme.titleMedium;
-    final tabLabelStyle = (baseTabStyle ?? const TextStyle()).copyWith(
-      fontSize: (baseTabStyle?.fontSize ?? 16) * 0.85,
-      fontWeight: FontWeight.bold,
-    );
-
-    return DefaultTabController(
-      length: 3,
-      child: Scaffold(
-        appBar: AppBar(
-          automaticallyImplyLeading: false,
-          toolbarHeight: 0,
-          bottom: TabBar(
-            labelStyle: tabLabelStyle,
-            unselectedLabelStyle: tabLabelStyle,
-            tabs: [
-              Tab(
-                child: _TabLabelWithBadge(
-                  label: 'Updates',
-                  count: updatesCount,
-                  textStyle: tabLabelStyle,
-                  badgeColor: Colors.red.withValues(alpha: 0.4),
-                ),
-              ),
-              Tab(
-                child: _TabLabelWithBadge(
-                  label: 'Up to date',
-                  count: upToDateCount,
-                  textStyle: tabLabelStyle,
-                  badgeColor: Colors.blue.shade700.withValues(alpha: 0.4),
-                ),
-              ),
-              Tab(
-                child: _TabLabelWithBadge(
-                  label: 'Saved',
-                  count: savedAppsCount,
-                  textStyle: tabLabelStyle,
-                  badgeColor: Colors.blue.shade700.withValues(alpha: 0.4),
-                ),
-              ),
-            ],
-          ),
-        ),
-        body: const Padding(
-          padding: EdgeInsets.only(top: 16),
-          child: TabBarView(
-            children: [_UpdatesTab(), _UpToDateTab(), _SavedAppsTab()],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _UpdatesTab extends HookConsumerWidget {
-  const _UpdatesTab();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final categorized = ref.watch(categorizedAppsProvider);
 
     if (categorized.isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
     }
 
-    return _UpdatesContent(categorized: categorized);
+    return Scaffold(
+      body: Padding(
+        padding: const EdgeInsets.only(top: 16),
+        child: _UpdatesContent(categorized: categorized),
+      ),
+    );
   }
 }
 
@@ -104,6 +41,8 @@ enum _UpdatesItemType {
   manualHeader,
   manualInfoBox,
   manualApp,
+  upToDateHeader,
+  upToDateApp,
 }
 
 class _UpdatesItem {
@@ -122,6 +61,7 @@ class _UpdatesContent extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final automaticUpdates = categorized.automaticUpdates;
     final manualUpdates = categorized.manualUpdates;
+    final upToDateApps = categorized.upToDateApps;
 
     final downloads = ref.watch(downloadServiceProvider);
     final installingAppIds = downloads.entries
@@ -133,6 +73,7 @@ class _UpdatesContent extends HookConsumerWidget {
         automaticUpdates: automaticUpdates,
         manualUpdates: manualUpdates,
         installingApps: const [],
+        upToDateApps: upToDateApps,
       );
     }
 
@@ -140,6 +81,7 @@ class _UpdatesContent extends HookConsumerWidget {
       installingAppIds: installingAppIds,
       automaticUpdates: automaticUpdates,
       manualUpdates: manualUpdates,
+      upToDateApps: upToDateApps,
     );
   }
 }
@@ -149,11 +91,13 @@ class _UpdatesListBodyWithInstallingAppIds extends ConsumerWidget {
     required this.installingAppIds,
     required this.automaticUpdates,
     required this.manualUpdates,
+    required this.upToDateApps,
   });
 
   final Set<String> installingAppIds;
   final List<App> automaticUpdates;
   final List<App> manualUpdates;
+  final List<App> upToDateApps;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -183,6 +127,7 @@ class _UpdatesListBodyWithInstallingAppIds extends ConsumerWidget {
       automaticUpdates: automaticUpdates,
       manualUpdates: manualUpdates,
       installingApps: installingApps,
+      upToDateApps: upToDateApps,
     );
   }
 }
@@ -192,17 +137,20 @@ class _UpdatesListBody extends StatelessWidget {
     required this.automaticUpdates,
     required this.manualUpdates,
     required this.installingApps,
+    required this.upToDateApps,
   });
 
   final List<App> automaticUpdates;
   final List<App> manualUpdates;
   final List<App> installingApps;
+  final List<App> upToDateApps;
 
   @override
   Widget build(BuildContext context) {
     if (automaticUpdates.isEmpty &&
         manualUpdates.isEmpty &&
-        installingApps.isEmpty) {
+        installingApps.isEmpty &&
+        upToDateApps.isEmpty) {
       final theme = Theme.of(context);
 
       return Center(
@@ -238,7 +186,7 @@ class _UpdatesListBody extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              'All apps are up to date',
+              'No apps installed yet',
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
@@ -246,7 +194,7 @@ class _UpdatesListBody extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              'Great job staying current!',
+              'Install some apps to get started!',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
               ),
@@ -279,6 +227,13 @@ class _UpdatesListBody extends StatelessWidget {
       items.add(const _UpdatesItem(_UpdatesItemType.manualInfoBox));
       for (final app in manualUpdates) {
         items.add(_UpdatesItem(_UpdatesItemType.manualApp, app));
+      }
+    }
+
+    if (upToDateApps.isNotEmpty) {
+      items.add(const _UpdatesItem(_UpdatesItemType.upToDateHeader));
+      for (final app in upToDateApps) {
+        items.add(_UpdatesItem(_UpdatesItemType.upToDateApp, app));
       }
     }
 
@@ -327,6 +282,14 @@ class _UpdatesListBody extends StatelessWidget {
               showUpdateArrow: true,
               showUpdateButton: true,
               showZapEncouragement: true,
+              showDescription: false,
+            );
+          case _UpdatesItemType.upToDateHeader:
+            return _UpToDateHeader(count: upToDateApps.length);
+          case _UpdatesItemType.upToDateApp:
+            return AppCard(
+              app: item.app,
+              showUpdateArrow: false,
               showDescription: false,
             );
         }
@@ -497,207 +460,30 @@ class _ManualUpdatesInfoBox extends StatelessWidget {
   }
 }
 
-class _UpToDateTab extends HookConsumerWidget {
-  const _UpToDateTab();
+class _UpToDateHeader extends StatelessWidget {
+  const _UpToDateHeader({required this.count});
 
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final categorized = ref.watch(categorizedAppsProvider);
-
-    if (categorized.isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    final upToDateApps = categorized.upToDateApps;
-
-    if (upToDateApps.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            'No up-to-date apps yet',
-            style: context.textTheme.bodyMedium?.copyWith(
-              color: Theme.of(
-                context,
-              ).colorScheme.onSurface.withValues(alpha: 0.6),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return ListView.builder(
-      itemCount: upToDateApps.length,
-      itemBuilder: (context, index) {
-        return AppCard(
-          app: upToDateApps[index],
-          showUpdateArrow: false,
-          showDescription: false,
-        );
-      },
-    );
-  }
-}
-
-class _SavedAppsTab extends HookConsumerWidget {
-  const _SavedAppsTab();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
-
-    if (signedInPubkey == null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            'Sign in to view saved apps',
-            style: context.textTheme.bodyMedium?.copyWith(
-              color: Theme.of(
-                context,
-              ).colorScheme.onSurface.withValues(alpha: 0.6),
-            ),
-          ),
-        ),
-      );
-    }
-
-    final savedAppsAsync = ref.watch(bookmarksProvider);
-
-    return savedAppsAsync.when(
-      loading: () => Center(
-        child: CircularProgressIndicator(
-          color: Theme.of(context).colorScheme.primary,
-        ),
-      ),
-      error: (_, __) => Center(
-        child: Text(
-          'Error loading saved apps',
-          style: context.textTheme.bodyMedium?.copyWith(
-            color: Theme.of(context).colorScheme.error,
-          ),
-        ),
-      ),
-      data: (addressableIds) {
-        final identifiers = addressableIds
-            .map((id) {
-              final parts = id.split(':');
-              return parts.length >= 3 ? parts[2] : null;
-            })
-            .whereType<String>()
-            .toSet();
-        return _SavedAppsSection(identifiers: identifiers);
-      },
-    );
-  }
-}
-
-class _SavedAppsSection extends StatelessWidget {
-  const _SavedAppsSection({required this.identifiers});
-
-  final Set<String> identifiers;
-
-  @override
-  Widget build(BuildContext context) {
-    if (identifiers.isEmpty) return const _NoSavedAppsEmptyState();
-    return _SavedAppsSectionWithIds(identifiers: identifiers);
-  }
-}
-
-class _SavedAppsSectionWithIds extends ConsumerWidget {
-  const _SavedAppsSectionWithIds({required this.identifiers});
-
-  final Set<String> identifiers;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final savedAppsState = ref.watch(
-      query<App>(
-        tags: {'#d': identifiers},
-        and: (app) => {app.latestRelease},
-        source: const LocalSource(),
-        subscriptionPrefix: 'saved-apps',
-      ),
-    );
-
-    final savedApps = savedAppsState.models.toList()
-      ..sort(
-        (a, b) => (a.name ?? a.identifier).toLowerCase().compareTo(
-          (b.name ?? b.identifier).toLowerCase(),
-        ),
-      );
-
-    if (savedApps.isEmpty) return const _NoSavedAppsEmptyState();
-
-    return ListView.builder(
-      padding: EdgeInsets.zero,
-      itemCount: savedApps.length,
-      itemBuilder: (context, index) {
-        return AppCard(
-          app: savedApps[index],
-          showUpdateArrow: false,
-          showDescription: false,
-        );
-      },
-    );
-  }
-}
-
-class _NoSavedAppsEmptyState extends StatelessWidget {
-  const _NoSavedAppsEmptyState();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Text(
-          'No saved apps yet',
-          style: context.textTheme.bodyMedium?.copyWith(
-            color: Theme.of(
-              context,
-            ).colorScheme.onSurface.withValues(alpha: 0.5),
-            fontStyle: FontStyle.italic,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _TabLabelWithBadge extends StatelessWidget {
-  const _TabLabelWithBadge({
-    required this.label,
-    required this.count,
-    this.textStyle,
-    this.badgeColor,
-  });
-
-  final String label;
   final int count;
-  final TextStyle? textStyle;
-  final Color? badgeColor;
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTextStyle.merge(
-      style: textStyle,
-      child: Padding(
-        padding: const EdgeInsets.only(right: 16),
-        child: Stack(
-          clipBehavior: Clip.none,
-          alignment: Alignment.centerLeft,
-          children: [
-            Text(label),
-            if (count > 0)
-              Positioned(
-                top: -6,
-                right: -18,
-                child: CountBadge(count: count, color: badgeColor),
-              ),
-          ],
-        ),
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Row(
+        children: [
+          Icon(Icons.check_circle, size: 20, color: AppColors.darkActionPrimary),
+          const SizedBox(width: 8),
+          Text(
+            'Up to date',
+            style: context.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(width: 8),
+          CountBadge(count: count, color: AppColors.darkPillBackground),
+        ],
       ),
     );
   }
 }
+

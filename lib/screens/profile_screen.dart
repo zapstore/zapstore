@@ -13,9 +13,11 @@ import 'package:zapstore/services/app_restart_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/main.dart';
+import 'package:zapstore/services/bookmarks_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/common/profile_avatar.dart';
+import 'package:zapstore/widgets/app_card.dart';
 import 'package:zapstore/theme.dart';
 import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/widgets/common/note_parser.dart';
@@ -35,6 +37,16 @@ class ProfileScreen extends ConsumerWidget {
         children: [
           // Authentication Section
           const _AuthenticationSection(),
+
+          const SizedBox(height: 24),
+
+          // Saved Apps Heading
+          const _SavedAppsHeading(),
+
+          const SizedBox(height: 16),
+
+          // Saved Apps Section
+          const _SavedAppsSection(),
 
           const SizedBox(height: 24),
 
@@ -1041,6 +1053,175 @@ class _DataManagementSection extends ConsumerWidget {
         context.showError('Restart failed', description: e.toString());
       }
     }
+  }
+}
+
+class _SavedAppsHeading extends ConsumerWidget {
+  const _SavedAppsHeading();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
+
+    if (signedInPubkey == null) {
+      return const SizedBox.shrink();
+    }
+
+    final savedAppsAsync = ref.watch(bookmarksProvider);
+
+    return savedAppsAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (addressableIds) {
+        if (addressableIds.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        final identifiers = addressableIds
+            .map((id) {
+              final parts = id.split(':');
+              return parts.length >= 3 ? parts[2] : null;
+            })
+            .whereType<String>()
+            .toSet();
+        
+        if (identifiers.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          child: Text('Saved Apps', style: context.textTheme.headlineSmall),
+        );
+      },
+    );
+  }
+}
+
+class _SavedAppsSection extends HookConsumerWidget {
+  const _SavedAppsSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
+    final hasLoadedOnce = useState(false);
+
+    if (signedInPubkey == null) {
+      return const SizedBox.shrink();
+    }
+
+    final savedAppsAsync = ref.watch(bookmarksProvider);
+
+    return savedAppsAsync.when(
+      loading: () => _SavedAppsLoadingCard(context),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (addressableIds) {
+        if (addressableIds.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        final identifiers = addressableIds
+            .map((id) {
+              final parts = id.split(':');
+              return parts.length >= 3 ? parts[2] : null;
+            })
+            .whereType<String>()
+            .toSet();
+        
+        if (identifiers.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        return _SavedAppsList(
+          identifiers: identifiers,
+          hasLoadedOnce: hasLoadedOnce,
+        );
+      },
+    );
+  }
+
+  Widget _SavedAppsLoadingCard(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Center(
+          child: CircularProgressIndicator(
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SavedAppsList extends ConsumerWidget {
+  const _SavedAppsList({
+    required this.identifiers,
+    required this.hasLoadedOnce,
+  });
+
+  final Set<String> identifiers;
+  final ValueNotifier<bool> hasLoadedOnce;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final savedAppsState = ref.watch(
+      query<App>(
+        tags: {'#d': identifiers},
+        and: (app) => {app.latestRelease},
+        source: const LocalSource(),
+        subscriptionPrefix: 'profile-saved-apps',
+      ),
+    );
+
+    final savedApps = savedAppsState.models.toList()
+      ..sort(
+        (a, b) => (a.name ?? a.identifier).toLowerCase().compareTo(
+          (b.name ?? b.identifier).toLowerCase(),
+        ),
+      );
+
+    // Check if we have loaded at least once - defer state update to after build
+    if (savedApps.isNotEmpty && !hasLoadedOnce.value) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        hasLoadedOnce.value = true;
+      });
+    }
+
+    // Show loading state only if we haven't loaded any apps yet
+    if (savedApps.isEmpty && !hasLoadedOnce.value) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Center(
+            child: CircularProgressIndicator(
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Hide if no apps after loading
+    if (savedApps.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: savedApps.map(
+            (app) => AppCard(
+              app: app,
+              showUpdateArrow: false,
+              showDescription: false,
+            ),
+          ).toList(),
+        ),
+      ),
+    );
   }
 }
 
