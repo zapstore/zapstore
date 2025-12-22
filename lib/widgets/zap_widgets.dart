@@ -111,6 +111,7 @@ class ZappersHorizontalList extends StatelessWidget {
         child: Row(
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Text(
                   '⚡️${formatSatsCompact(totalSats)}',
@@ -119,7 +120,12 @@ class ZappersHorizontalList extends StatelessWidget {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 6),
+                Text(
+                  'sats by',
+                  style: theme.textTheme.bodyMedium?.copyWith(color: color),
+                ),
+                const SizedBox(width: 12),
               ],
             ),
             for (final e in entries) ...[

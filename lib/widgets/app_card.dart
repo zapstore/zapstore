@@ -139,7 +139,28 @@ class AppCard extends HookConsumerWidget {
             ],
 
             // Update button (for apps with updates or currently downloading/installing)
-            if (showUpdateButton) _AppCardUpdateButtonSection(app: app!),
+            if (showUpdateButton)
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  // Match the text column start (icon width + spacing)
+                  final iconSize = (constraints.maxWidth * 0.20).clamp(
+                    48.0,
+                    64.0,
+                  );
+                  final leftInset = iconSize + 14;
+
+                  return Padding(
+                    padding: EdgeInsets.only(left: leftInset),
+                    child: SizedBox(
+                      width: (constraints.maxWidth - leftInset).clamp(
+                        0.0,
+                        constraints.maxWidth,
+                      ),
+                      child: _AppCardUpdateButtonSection(app: app!),
+                    ),
+                  );
+                },
+              ),
 
             // Zap encouragement (only for downloading/installing developer-signed apps)
             if (showZapEncouragement)
@@ -249,7 +270,7 @@ class AppCard extends HookConsumerWidget {
       TextSpan(
         children: [
           TextSpan(text: appName, style: titleStyle),
-          TextSpan(text: ' by ', style: byStyle),
+          TextSpan(text: '  by ', style: byStyle),
           WidgetSpan(
             alignment: PlaceholderAlignment.middle,
             child: Padding(
