@@ -1,9 +1,14 @@
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:zapstore/services/bookmarks_service.dart';
+import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/utils/debug_utils.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
@@ -11,7 +16,9 @@ import 'package:zapstore/widgets/app_detail_widgets.dart';
 import 'package:zapstore/widgets/app_header.dart';
 import 'package:zapstore/widgets/app_info_table.dart';
 import 'package:zapstore/widgets/author_container.dart';
+import 'package:zapstore/widgets/bookmark_widgets.dart';
 import 'package:zapstore/widgets/comments_section.dart';
+import 'package:zapstore/widgets/common/base_dialog.dart';
 import 'package:zapstore/widgets/download_text_container.dart';
 import 'package:zapstore/widgets/expandable_markdown.dart';
 import 'package:zapstore/widgets/install_button.dart';
@@ -128,6 +135,13 @@ class _AppDetailContent extends HookConsumerWidget {
     final latestRelease = app.latestRelease.value;
     final latestMetadata = app.latestFileMetadata;
 
+    // Check if app is installed for menu options
+    final installedPackage = ref
+        .watch(packageManagerProvider)
+        .where((p) => p.appId == app.identifier)
+        .firstOrNull;
+    final isInstalled = installedPackage != null;
+
     // Show skeleton while relationships are loading
     if (latestRelease == null || latestMetadata == null) {
       return Scaffold(
@@ -142,6 +156,7 @@ class _AppDetailContent extends HookConsumerWidget {
                 ),
               ),
               InstallButton(app: app, release: latestRelease),
+              _buildFloatingMenu(context, ref, app, isInstalled),
             ],
           ),
         ),
@@ -304,9 +319,252 @@ class _AppDetailContent extends HookConsumerWidget {
 
             // Sticky install button
             InstallButton(app: app, release: latestRelease),
+
+            // Floating three-dot menu
+            _buildFloatingMenu(context, ref, app, isInstalled),
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildFloatingMenu(
+    BuildContext context,
+    WidgetRef ref,
+    App app,
+    bool isInstalled,
+  ) {
+    return Positioned(
+      top: 8,
+      right: 8,
+      child: _buildOverflowMenu(context, ref, app, isInstalled),
+    );
+  }
+
+  Widget _buildOverflowMenu(
+    BuildContext context,
+    WidgetRef ref,
+    App app,
+    bool isInstalled,
+  ) {
+    // Watch saved apps to check if app is saved
+    final savedAppsAsync = ref.watch(bookmarksProvider);
+    final savedAppIds = savedAppsAsync.when(
+      data: (ids) => ids,
+      loading: () => <String>{},
+      error: (_, __) => <String>{},
+    );
+    final appAddressableId =
+        '${app.event.kind}:${app.pubkey}:${app.identifier}';
+    final isSaved = savedAppIds.contains(appAddressableId);
+
+    return PopupMenuButton<String>(
+      icon: const Icon(Icons.more_vert),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      onSelected: (value) {
+        switch (value) {
+          case 'share':
+            _shareApp(context, app);
+            break;
+          case 'copy_link':
+            _copyLink(context, app);
+            break;
+          case 'save_app':
+            _toggleSaveApp(context, ref, app, isSaved);
+            break;
+          case 'view_publisher':
+            _viewPublisher(context, app);
+            break;
+          case 'open_browser':
+            _openInBrowser(context, app);
+            break;
+          case 'open':
+            _openApp(context, ref, app);
+            break;
+          case 'delete':
+            _uninstallApp(context, ref, app);
+            break;
+        }
+      },
+      itemBuilder: (context) => [
+        const PopupMenuItem<String>(
+          value: 'share',
+          child: Row(
+            children: [Icon(Icons.share), SizedBox(width: 12), Text('Share')],
+          ),
+        ),
+        const PopupMenuItem<String>(
+          value: 'copy_link',
+          child: Row(
+            children: [
+              Icon(Icons.link),
+              SizedBox(width: 12),
+              Text('Copy link'),
+            ],
+          ),
+        ),
+        PopupMenuItem<String>(
+          value: 'save_app',
+          child: Row(
+            children: [
+              Icon(isSaved ? Icons.bookmark : Icons.bookmark_border),
+              const SizedBox(width: 12),
+              Text(isSaved ? 'Remove from saved' : 'Save app'),
+            ],
+          ),
+        ),
+        const PopupMenuItem<String>(
+          value: 'view_publisher',
+          child: Row(
+            children: [
+              Icon(Icons.person),
+              SizedBox(width: 12),
+              Text('View publisher'),
+            ],
+          ),
+        ),
+        const PopupMenuItem<String>(
+          value: 'open_browser',
+          child: Row(
+            children: [
+              Icon(Icons.open_in_browser),
+              SizedBox(width: 12),
+              Text('Open in browser'),
+            ],
+          ),
+        ),
+        if (isInstalled) ...[
+          const PopupMenuItem<String>(
+            value: 'open',
+            child: Row(
+              children: [
+                Icon(Icons.open_in_new),
+                SizedBox(width: 12),
+                Text('Open'),
+              ],
+            ),
+          ),
+          const PopupMenuItem<String>(
+            value: 'delete',
+            child: Row(
+              children: [
+                Icon(Icons.delete_outline),
+                SizedBox(width: 12),
+                Text('Delete'),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  String _getAppUrl(App app) {
+    final naddr = Utils.encodeShareableIdentifier(
+      AddressInput(
+        identifier: app.identifier,
+        author: app.pubkey,
+        kind: app.event.kind,
+        relays: [],
+      ),
+    );
+    return 'https://zapstore.dev/apps/$naddr';
+  }
+
+  void _shareApp(BuildContext context, App app) {
+    try {
+      final shareUrl = _getAppUrl(app);
+      SharePlus.instance.share(ShareParams(text: shareUrl));
+    } catch (e) {
+      if (context.mounted) {
+        context.showError('Failed to share app', description: '$e');
+      }
+    }
+  }
+
+  void _copyLink(BuildContext context, App app) {
+    try {
+      final shareUrl = _getAppUrl(app);
+      Clipboard.setData(ClipboardData(text: shareUrl));
+      context.showInfo('Link copied to clipboard');
+    } catch (e) {
+      if (context.mounted) {
+        context.showError('Failed to copy link', description: '$e');
+      }
+    }
+  }
+
+  Future<void> _toggleSaveApp(
+    BuildContext context,
+    WidgetRef ref,
+    App app,
+    bool isCurrentlySaved,
+  ) async {
+    await showBaseDialog(
+      context: context,
+      dialog: SaveAppDialog(app: app, isPrivatelySaved: isCurrentlySaved),
+    );
+  }
+
+  void _viewPublisher(BuildContext context, App app) {
+    final segments = GoRouterState.of(context).uri.pathSegments;
+    final first = segments.isNotEmpty ? segments.first : 'search';
+    context.push('/$first/user/${app.pubkey}');
+  }
+
+  Future<void> _openInBrowser(BuildContext context, App app) async {
+    try {
+      final url = _getAppUrl(app);
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        if (context.mounted) {
+          context.showError('Could not open browser');
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        context.showError('Failed to open browser', description: '$e');
+      }
+    }
+  }
+
+  Future<void> _openApp(BuildContext context, WidgetRef ref, App app) async {
+    try {
+      final packageManager = ref.read(packageManagerProvider.notifier);
+      context.showInfo('Launching ${app.name ?? app.identifier}...');
+      await packageManager.launchApp(app.identifier);
+    } catch (e) {
+      if (!context.mounted) return;
+      context.showError(
+        'Failed to launch ${app.name ?? app.identifier}',
+        description:
+            'The app may have been uninstalled or moved. Try reinstalling.\n\n$e',
+      );
+    }
+  }
+
+  Future<void> _uninstallApp(
+    BuildContext context,
+    WidgetRef ref,
+    App app,
+  ) async {
+    try {
+      final packageManager = ref.read(packageManagerProvider.notifier);
+      await packageManager.uninstall(app.identifier);
+      // Only reaches here after successful uninstall
+      if (context.mounted) {
+        context.showInfo('${app.name ?? app.identifier} has been uninstalled');
+      }
+    } catch (e) {
+      if (context.mounted) {
+        // Don't show error for user cancellation
+        final message = e.toString();
+        if (!message.contains('cancelled')) {
+          context.showError('Uninstall failed', description: '$e');
+        }
+      }
+    }
   }
 }

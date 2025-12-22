@@ -9,15 +9,15 @@ const kZapstorePubkey =
 const kFranzapPubkey =
     '726a1e261cc6474674e8285e3951b3bb139be9a773d1acf49dc868db861a1c11';
 
-/// Identifier for storing user bookmarks
+/// Identifier for storing user saved apps
 const kAppBookmarksIdentifier = 'zapstore-bookmarks';
 
-/// Event filter for app packs - excludes bookmarks and packs with zero App references
+/// Event filter for app packs - excludes saved apps and packs with zero App references
 bool appPackEventFilter(Map<String, dynamic> event) {
   final tags = event['tags'] as List<dynamic>?;
   if (tags == null) return false;
 
-  // Check for bookmarks identifier in 'd' tag
+  // Check for saved apps identifier in 'd' tag
   for (final tag in tags) {
     if (tag is List && tag.isNotEmpty && tag[0] == 'd') {
       if (tag.length > 1 && tag[1] == kAppBookmarksIdentifier) {

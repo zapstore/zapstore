@@ -3,7 +3,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/utils/extensions.dart';
 
-/// Provider that watches the user's bookmark pack and provides decrypted bookmark state
+/// Provider that watches the user's saved apps pack and provides decrypted saved apps state
 /// Fetches from remote once on boot, then uses local storage only
 final bookmarksProvider = FutureProvider<Set<String>>((ref) async {
   final signer = ref.watch(Signer.activeSignerProvider);
@@ -13,7 +13,7 @@ final bookmarksProvider = FutureProvider<Set<String>>((ref) async {
     return {};
   }
 
-  // Query bookmark pack - stream enabled to auto-update when bookmarks change locally
+  // Query saved apps pack - stream enabled to auto-update when saved apps change locally
   // Initial fetch from remote, then watches local storage for changes
   final packState = ref.watch(
     query<AppPack>(
@@ -25,7 +25,7 @@ final bookmarksProvider = FutureProvider<Set<String>>((ref) async {
         relays: 'social',
         stream: false,
       ),
-      subscriptionPrefix: 'user-bookmarks',
+      subscriptionPrefix: 'user-saved-apps',
     ),
   );
 
@@ -58,27 +58,27 @@ final bookmarksProvider = FutureProvider<Set<String>>((ref) async {
   }
 });
 
-/// Extension to check if an app is bookmarked
-extension BookmarkChecker on WidgetRef {
-  /// Check if the given app is bookmarked
-  bool isAppBookmarked(App app) {
-    final bookmarksState = watch(bookmarksProvider);
+/// Extension to check if an app is saved
+extension SavedAppsChecker on WidgetRef {
+  /// Check if the given app is saved
+  bool isAppSaved(App app) {
+    final savedAppsState = watch(bookmarksProvider);
     final appAddressableId =
         '${app.event.kind}:${app.pubkey}:${app.identifier}';
 
-    return bookmarksState.when(
-      data: (bookmarks) => bookmarks.contains(appAddressableId),
+    return savedAppsState.when(
+      data: (savedApps) => savedApps.contains(appAddressableId),
       loading: () => false,
       error: (_, __) => false,
     );
   }
 
-  /// Get all bookmarked app addressable IDs
-  Set<String> getBookmarkedIds() {
-    final bookmarksState = watch(bookmarksProvider);
+  /// Get all saved app addressable IDs
+  Set<String> getSavedAppIds() {
+    final savedAppsState = watch(bookmarksProvider);
 
-    return bookmarksState.when(
-      data: (bookmarks) => bookmarks,
+    return savedAppsState.when(
+      data: (savedApps) => savedApps,
       loading: () => {},
       error: (_, __) => {},
     );

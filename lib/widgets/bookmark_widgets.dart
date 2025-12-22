@@ -10,9 +10,9 @@ import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/auth_widgets.dart';
 import 'package:zapstore/widgets/common/base_dialog.dart';
 
-/// Dialog for bookmarking an app privately (encrypted)
-class BookmarkDialog extends HookConsumerWidget {
-  const BookmarkDialog({
+/// Dialog for saving an app privately (encrypted)
+class SaveAppDialog extends HookConsumerWidget {
+  const SaveAppDialog({
     super.key,
     required this.app,
     required this.isPrivatelySaved,
@@ -28,7 +28,7 @@ class BookmarkDialog extends HookConsumerWidget {
     return BaseDialog(
       titleIcon: const Icon(Icons.bookmark),
       title: Text(
-        'Private bookmark',
+        'Save App Privately',
         style: Theme.of(context).textTheme.headlineSmall,
       ),
       content: BaseDialogContent(
@@ -44,7 +44,7 @@ class BookmarkDialog extends HookConsumerWidget {
           ),
           if (!isSignedIn) ...[
             const SizedBox(height: 16),
-            const SignInPrompt(message: 'Sign in to bookmark apps privately.'),
+            const SignInPrompt(message: 'Sign in to save apps privately.'),
           ],
         ],
       ),
@@ -75,7 +75,7 @@ class BookmarkDialog extends HookConsumerWidget {
                   size: 18,
                 ),
               ),
-              label: Text(isPrivatelySaved ? 'Remove bookmark' : 'Bookmark'),
+              label: Text(isPrivatelySaved ? 'Remove' : 'Save'),
             );
           },
           child: const SizedBox.shrink(),
@@ -98,7 +98,7 @@ class BookmarkDialog extends HookConsumerWidget {
         if (context.mounted) {
           context.showError(
             'Sign in required',
-            description: 'You need to sign in to save apps to your bookmarks.',
+            description: 'You need to sign in to save apps privately.',
           );
         }
         return;
@@ -129,9 +129,9 @@ class BookmarkDialog extends HookConsumerWidget {
         } catch (e) {
           if (context.mounted) {
             context.showError(
-              'Could not read existing bookmarks',
+              'Could not read existing saved apps',
               description:
-                  'Your previous bookmarks could not be decrypted. Starting fresh.\n\n$e',
+                  'Your previous saved apps could not be decrypted. Starting fresh.\n\n$e',
             );
           }
         }
@@ -151,7 +151,7 @@ class BookmarkDialog extends HookConsumerWidget {
 
       // Create new partial pack with updated list
       final partialPack = PartialAppPack.withEncryptedApps(
-        name: 'Bookmarks',
+        name: 'Saved Apps',
         identifier: kAppBookmarksIdentifier,
         apps: existingAppIds,
       );
@@ -165,7 +165,9 @@ class BookmarkDialog extends HookConsumerWidget {
 
       if (context.mounted) {
         Navigator.pop(context);
-        context.showInfo(isCurrentlySaved ? 'Bookmark removed' : 'Bookmarked');
+        context.showInfo(
+          isCurrentlySaved ? 'App removed from saved' : 'App saved privately',
+        );
       }
     } catch (e) {
       if (context.mounted) {
@@ -201,31 +203,44 @@ class _AddToPackDialogSignedOut extends StatelessWidget {
     return BaseDialog(
       titleIcon: const Icon(Icons.apps),
       title: Text(
-        'Manage App Packs',
+        'Add to App Packs',
         style: Theme.of(context).textTheme.headlineSmall,
       ),
       content: BaseDialogContent(
         children: [
           const SizedBox(height: 8),
-          Row(
-            children: [
-              Icon(
-                Icons.public,
-                size: 16,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Add or remove ${app.name} from public app packs',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Icon(
+                    Icons.info_outline,
+                    size: 18,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.6),
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Add or remove ${app.name} from public app packs that you share with others.',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.6),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 16),
           const SignInPrompt(
@@ -304,31 +319,44 @@ class _AddToPackDialogSignedIn extends HookConsumerWidget {
     return BaseDialog(
       titleIcon: const Icon(Icons.apps),
       title: Text(
-        'Manage App Packs',
+        'Add to App Packs',
         style: Theme.of(context).textTheme.headlineSmall,
       ),
       content: BaseDialogContent(
         children: [
           const SizedBox(height: 8),
-          Row(
-            children: [
-              Icon(
-                Icons.public,
-                size: 16,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Add or remove ${app.name} from public app packs',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Icon(
+                    Icons.info_outline,
+                    size: 18,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.6),
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Add or remove ${app.name} from public app packs that you share with others.',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.6),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 16),
 

@@ -1,10 +1,11 @@
+import 'dart:convert';
+
 import 'package:async_button_builder/async_button_builder.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:zapstore/services/bookmarks_service.dart';
@@ -70,46 +71,53 @@ class SocialActionsRow extends HookConsumerWidget {
     final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
     final isSignedIn = signedInPubkey != null;
 
-    // Watch bookmarks from centralized provider (handles decryption)
-    final bookmarksAsync = ref.watch(bookmarksProvider);
-    final bookmarkedIds = bookmarksAsync.when(
+    // Watch saved apps from centralized provider (handles decryption)
+    final savedAppsAsync = ref.watch(bookmarksProvider);
+    final savedAppIds = savedAppsAsync.when(
       data: (ids) => ids,
       loading: () => <String>{},
       error: (_, __) => <String>{},
     );
 
-    // Check if this app is bookmarked
+    // Check if this app is saved
     final appAddressableId =
         '${app.event.kind}:${app.pubkey}:${app.identifier}';
-    final isPrivatelySaved = bookmarkedIds.contains(appAddressableId);
+    final isPrivatelySaved = savedAppIds.contains(appAddressableId);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Zap + Bookmark + App Pack + Share button row (50% / 16% / 16% / 16% split)
+        // Zap + Save App + App Pack button row
         SizedBox(
           height: 36,
           child: Row(
             children: [
-              // Zap button (50%)
+              // Zap button
               Expanded(
-                flex: 50,
+                flex: 68,
                 child: ZapButton(app: app, author: author),
               ),
               const SizedBox(width: 8),
-              // Bookmark button (16%)
+              // Save App button
               Expanded(
                 flex: 16,
                 child: FilledButton(
-                  onPressed: () =>
-                      _showBookmarkDialog(context, ref, app, isPrivatelySaved),
+                  onPressed: () => _handleSaveApp(
+                    context,
+                    ref,
+                    app,
+                    isPrivatelySaved,
+                    isSignedIn,
+                  ),
                   style: FilledButton.styleFrom(
                     padding: EdgeInsets.zero,
                     backgroundColor: isPrivatelySaved && isSignedIn
                         ? (Theme.of(context).brightness == Brightness.dark
-                              ? const Color(0xFF4A6BA0) // Deep blue
-                              : const Color(0xFF1E4D8B)) // Darker blue
-                        : Theme.of(context).colorScheme.surfaceContainerHighest,
+                              ? const Color(0xFF9B4F5E) // Red wine/burgundy
+                              : const Color(0xFF7D3C4D)) // Deep burgundy
+                        : (Theme.of(context).brightness == Brightness.dark
+                              ? const Color(0xFF3A3A3F) // Dark neutral
+                              : const Color(0xFFE8E3E8)), // Light neutral
                     foregroundColor: isPrivatelySaved && isSignedIn
                         ? Colors.white
                         : Theme.of(
@@ -128,7 +136,7 @@ class SocialActionsRow extends HookConsumerWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              // App Pack button (16%)
+              // App Pack button
               Expanded(
                 flex: 16,
                 child: FilledButton(
@@ -137,34 +145,14 @@ class SocialActionsRow extends HookConsumerWidget {
                     padding: EdgeInsets.zero,
                     backgroundColor:
                         Theme.of(context).brightness == Brightness.dark
-                        ? const Color(0xFF3A6FCC) // Theme dark primary
-                        : const Color(0xFF2563A8), // Muted blue
+                        ? const Color(0xFF4A7BA7) // Soft steel blue
+                        : const Color(0xFF5B8FB9), // Light ocean blue
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
                   child: const Icon(Icons.apps, size: 20),
-                ),
-              ),
-              const SizedBox(width: 8),
-              // Share button (16%)
-              Expanded(
-                flex: 16,
-                child: FilledButton(
-                  onPressed: () => _shareApp(context, app),
-                  style: FilledButton.styleFrom(
-                    padding: EdgeInsets.zero,
-                    backgroundColor:
-                        Theme.of(context).brightness == Brightness.dark
-                        ? const Color(0xFF2D5A8F) // Navy blue
-                        : const Color(0xFF1A4673), // Darker navy
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: const Icon(Icons.share, size: 20),
                 ),
               ),
             ],
@@ -177,16 +165,92 @@ class SocialActionsRow extends HookConsumerWidget {
     );
   }
 
-  Future<void> _showBookmarkDialog(
+  Future<void> _handleSaveApp(
     BuildContext context,
     WidgetRef ref,
     App app,
     bool isPrivatelySaved,
+    bool isSignedIn,
   ) async {
-    await showBaseDialog(
-      context: context,
-      dialog: BookmarkDialog(app: app, isPrivatelySaved: isPrivatelySaved),
-    );
+    // If not signed in, show dialog to prompt sign in
+    if (!isSignedIn) {
+      await showBaseDialog(
+        context: context,
+        dialog: SaveAppDialog(app: app, isPrivatelySaved: isPrivatelySaved),
+      );
+      return;
+    }
+
+    // If signed in, save directly without dialog
+    try {
+      final signer = ref.read(Signer.activeSignerProvider);
+      final signedInPubkey = ref.read(Signer.activePubkeyProvider);
+
+      if (signer == null || signedInPubkey == null) return;
+
+      // Query for existing pack
+      final existingPackState = await ref.storage.query(
+        RequestFilter<AppPack>(
+          authors: {signedInPubkey},
+          tags: {
+            '#d': {kAppBookmarksIdentifier},
+          },
+        ).toRequest(),
+        source: const LocalSource(),
+      );
+      final existingPack = existingPackState.firstOrNull;
+
+      // Get existing app IDs by decrypting if pack exists
+      List<String> existingAppIds = [];
+      if (existingPack != null) {
+        try {
+          final decryptedContent = await signer.nip44Decrypt(
+            existingPack.content,
+            signedInPubkey,
+          );
+          existingAppIds = (jsonDecode(decryptedContent) as List)
+              .cast<String>();
+        } catch (_) {
+          // Silently start fresh if decryption fails
+        }
+      }
+
+      // Modify the list
+      final appAddressableId =
+          '${app.event.kind}:${app.pubkey}:${app.identifier}';
+
+      if (isPrivatelySaved) {
+        existingAppIds.remove(appAddressableId);
+      } else {
+        if (!existingAppIds.contains(appAddressableId)) {
+          existingAppIds.add(appAddressableId);
+        }
+      }
+
+      // Create new partial pack with updated list
+      final partialPack = PartialAppPack.withEncryptedApps(
+        name: 'Saved Apps',
+        identifier: kAppBookmarksIdentifier,
+        apps: existingAppIds,
+      );
+
+      // Sign (encrypts the content)
+      final signedPack = await partialPack.signWith(signer);
+
+      // Save to local storage and publish to relays
+      await ref.storage.save({signedPack});
+      ref.storage.publish({signedPack}, source: RemoteSource(relays: 'social'));
+
+      if (context.mounted) {
+        context.showInfo(
+          isPrivatelySaved ? 'App removed from saved' : 'App saved privately',
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        context.showError('Failed to save app', description: '$e');
+      }
+    }
   }
 
   Future<void> _showAddToPackDialog(BuildContext context, App app) async {
@@ -194,28 +258,6 @@ class SocialActionsRow extends HookConsumerWidget {
       context: context,
       dialog: AddToPackDialog(app: app),
     );
-  }
-
-  void _shareApp(BuildContext context, App app) {
-    try {
-      // Generate naddr for the app
-      final naddr = Utils.encodeShareableIdentifier(
-        AddressInput(
-          identifier: app.identifier,
-          author: app.pubkey,
-          kind: app.event.kind,
-          relays: [],
-        ),
-      );
-      final shareUrl = 'https://zapstore.dev/apps/$naddr';
-
-      // Share using Android's share sheet
-      SharePlus.instance.share(ShareParams(text: shareUrl));
-    } catch (e) {
-      if (context.mounted) {
-        context.showError('Failed to share app', description: '$e');
-      }
-    }
   }
 }
 

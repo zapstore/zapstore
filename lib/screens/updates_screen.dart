@@ -20,8 +20,8 @@ class UpdatesScreen extends HookConsumerWidget {
     final updatesCount =
         categorized.automaticUpdates.length + categorized.manualUpdates.length;
     final upToDateCount = categorized.upToDateApps.length;
-    final bookmarksAsync = ref.watch(bookmarksProvider);
-    final bookmarksCount = bookmarksAsync.maybeWhen(
+    final savedAppsAsync = ref.watch(bookmarksProvider);
+    final savedAppsCount = savedAppsAsync.maybeWhen(
       data: (ids) => ids.length,
       orElse: () => 0,
     );
@@ -60,8 +60,8 @@ class UpdatesScreen extends HookConsumerWidget {
               ),
               Tab(
                 child: _TabLabelWithBadge(
-                  label: 'Bookmarks',
-                  count: bookmarksCount,
+                  label: 'Saved',
+                  count: savedAppsCount,
                   textStyle: tabLabelStyle,
                   badgeColor: Colors.blue.shade700.withValues(alpha: 0.4),
                 ),
@@ -72,7 +72,7 @@ class UpdatesScreen extends HookConsumerWidget {
         body: const Padding(
           padding: EdgeInsets.only(top: 16),
           child: TabBarView(
-            children: [_UpdatesTab(), _UpToDateTab(), _BookmarksTab()],
+            children: [_UpdatesTab(), _UpToDateTab(), _SavedAppsTab()],
           ),
         ),
       ),
@@ -539,8 +539,8 @@ class _UpToDateTab extends HookConsumerWidget {
   }
 }
 
-class _BookmarksTab extends HookConsumerWidget {
-  const _BookmarksTab();
+class _SavedAppsTab extends HookConsumerWidget {
+  const _SavedAppsTab();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -551,7 +551,7 @@ class _BookmarksTab extends HookConsumerWidget {
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
-            'Sign in to view bookmarks',
+            'Sign in to view saved apps',
             style: context.textTheme.bodyMedium?.copyWith(
               color: Theme.of(
                 context,
@@ -562,9 +562,9 @@ class _BookmarksTab extends HookConsumerWidget {
       );
     }
 
-    final bookmarksAsync = ref.watch(bookmarksProvider);
+    final savedAppsAsync = ref.watch(bookmarksProvider);
 
-    return bookmarksAsync.when(
+    return savedAppsAsync.when(
       loading: () => Center(
         child: CircularProgressIndicator(
           color: Theme.of(context).colorScheme.primary,
@@ -572,7 +572,7 @@ class _BookmarksTab extends HookConsumerWidget {
       ),
       error: (_, __) => Center(
         child: Text(
-          'Error loading bookmarks',
+          'Error loading saved apps',
           style: context.textTheme.bodyMedium?.copyWith(
             color: Theme.of(context).colorScheme.error,
           ),
@@ -586,48 +586,48 @@ class _BookmarksTab extends HookConsumerWidget {
             })
             .whereType<String>()
             .toSet();
-        return _BookmarkedAppsSection(identifiers: identifiers);
+        return _SavedAppsSection(identifiers: identifiers);
       },
     );
   }
 }
 
-class _BookmarkedAppsSection extends StatelessWidget {
-  const _BookmarkedAppsSection({required this.identifiers});
+class _SavedAppsSection extends StatelessWidget {
+  const _SavedAppsSection({required this.identifiers});
 
   final Set<String> identifiers;
 
   @override
   Widget build(BuildContext context) {
-    if (identifiers.isEmpty) return const _NoBookmarkedAppsEmptyState();
-    return _BookmarkedAppsSectionWithIds(identifiers: identifiers);
+    if (identifiers.isEmpty) return const _NoSavedAppsEmptyState();
+    return _SavedAppsSectionWithIds(identifiers: identifiers);
   }
 }
 
-class _BookmarkedAppsSectionWithIds extends ConsumerWidget {
-  const _BookmarkedAppsSectionWithIds({required this.identifiers});
+class _SavedAppsSectionWithIds extends ConsumerWidget {
+  const _SavedAppsSectionWithIds({required this.identifiers});
 
   final Set<String> identifiers;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final bookmarkedAppsState = ref.watch(
+    final savedAppsState = ref.watch(
       query<App>(
         tags: {'#d': identifiers},
         and: (app) => {app.latestRelease},
         source: const LocalSource(),
-        subscriptionPrefix: 'bookmark-apps',
+        subscriptionPrefix: 'saved-apps',
       ),
     );
 
-    final savedApps = bookmarkedAppsState.models.toList()
+    final savedApps = savedAppsState.models.toList()
       ..sort(
         (a, b) => (a.name ?? a.identifier).toLowerCase().compareTo(
           (b.name ?? b.identifier).toLowerCase(),
         ),
       );
 
-    if (savedApps.isEmpty) return const _NoBookmarkedAppsEmptyState();
+    if (savedApps.isEmpty) return const _NoSavedAppsEmptyState();
 
     return ListView.builder(
       padding: EdgeInsets.zero,
@@ -643,8 +643,8 @@ class _BookmarkedAppsSectionWithIds extends ConsumerWidget {
   }
 }
 
-class _NoBookmarkedAppsEmptyState extends StatelessWidget {
-  const _NoBookmarkedAppsEmptyState();
+class _NoSavedAppsEmptyState extends StatelessWidget {
+  const _NoSavedAppsEmptyState();
 
   @override
   Widget build(BuildContext context) {
@@ -652,7 +652,7 @@ class _NoBookmarkedAppsEmptyState extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Text(
-          'No bookmarked apps yet',
+          'No saved apps yet',
           style: context.textTheme.bodyMedium?.copyWith(
             color: Theme.of(
               context,
