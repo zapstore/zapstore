@@ -71,6 +71,16 @@ class VersionPillWidget extends HookConsumerWidget {
     String availableVersion, {
     bool isDowngrade = false,
   }) {
+    // Get version codes
+    final installedVersionCode = app.installedPackage?.versionCode;
+    final availableVersionCode = app.latestFileMetadata?.versionCode;
+    
+    // When version strings are equal but version codes differ, show version codes in parentheses
+    final showVersionCodes = installedVersion == availableVersion &&
+        installedVersionCode != null &&
+        availableVersionCode != null &&
+        installedVersionCode != availableVersionCode;
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -84,6 +94,7 @@ class VersionPillWidget extends HookConsumerWidget {
             Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
             Theme.of(context).colorScheme.onSurface,
             isInstalledVersion: true,
+            versionCode: showVersionCodes ? installedVersionCode : null,
           ),
         ),
 
@@ -108,6 +119,7 @@ class VersionPillWidget extends HookConsumerWidget {
                 ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5)
                 : Colors.white,
             isDowngrade: isDowngrade,
+            versionCode: showVersionCodes ? availableVersionCode : null,
           ),
         ),
       ],
@@ -123,9 +135,10 @@ class VersionPillWidget extends HookConsumerWidget {
     Color textColor, {
     bool isInstalledVersion = false,
     bool isDowngrade = false,
+    int? versionCode,
   }) {
-    // Trim version text to max 8 characters to make room for icon
-    String displayVersion = _displayVersion(version);
+    // Build display version with optional version code in parentheses
+    String displayVersion = _displayVersion(version, versionCode: versionCode);
 
     // Determine app status for icon
     Widget? statusIcon;
@@ -193,8 +206,12 @@ class VersionPillWidget extends HookConsumerWidget {
     );
   }
 
-  String _displayVersion(String version) {
+  String _displayVersion(String version, {int? versionCode}) {
     // Show full version - let Flexible + TextOverflow.ellipsis handle truncation only when needed
+    // If versionCode is provided, append it in parentheses
+    if (versionCode != null) {
+      return '$version ($versionCode)';
+    }
     return version;
   }
 
