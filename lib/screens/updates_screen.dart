@@ -342,19 +342,29 @@ class _UpdatesSectionHeader extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return Padding(
       padding: const EdgeInsets.all(16.0),
-      child: Row(
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          Icon(icon, size: 20, color: AppColors.darkActionPrimary),
-          const SizedBox(width: 8),
-          Text(
-            title,
-            style: context.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 20, color: AppColors.darkActionPrimary),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  title,
+                  style: context.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              CountBadge(count: count, color: AppColors.darkPillBackground),
+            ],
           ),
-          const SizedBox(width: 8),
-          CountBadge(count: count, color: AppColors.darkPillBackground),
-          const Spacer(),
           AsyncButtonBuilder(
             onPressed: () async {
               final downloadService = ref.read(

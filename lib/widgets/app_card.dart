@@ -87,41 +87,40 @@ class AppCard extends HookConsumerWidget {
             // Header row: Icon + Name/Version (icon matches header height)
             LayoutBuilder(
               builder: (context, constraints) {
-                // Icon takes max 20% of available width
-                final iconSize = (constraints.maxWidth * 0.20).clamp(
-                  48.0,
-                  64.0,
+                // Icon takes a little over 20% of available width
+                final iconSize = (constraints.maxWidth * 0.21).clamp(
+                  50.0,
+                  68.0,
                 );
-                return IntrinsicHeight(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // App Icon (stretches to match name + version height, max 20% width)
-                      _buildAppIcon(context, iconSize),
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // App Icon (stretches to match name + version height, ~20% width)
+                    _buildAppIcon(context, iconSize),
 
-                      const SizedBox(width: 14),
+                    const SizedBox(width: 14),
 
-                      // App Name and Version (always stacked)
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            // App name with optional "by publisher" inline
-                            _buildAppNameWithPublisher(context, publisher),
-                            const SizedBox(height: 6),
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: VersionPillWidget(
-                                app: app!,
-                                showUpdateArrow: showUpdateArrow,
-                              ),
+                    // App Name and Version (always stacked)
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // App name with optional "by publisher" inline
+                          _buildAppNameWithPublisher(context, publisher),
+                          const SizedBox(height: 8),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: VersionPillWidget(
+                              app: app!,
+                              showUpdateArrow: showUpdateArrow,
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 );
               },
             ),
@@ -133,7 +132,7 @@ class AppCard extends HookConsumerWidget {
                 descriptionText,
                 style: descriptionStyle,
                 overflow: TextOverflow.ellipsis,
-                maxLines: 3,
+                maxLines: 2,
                 softWrap: true,
               ),
             ],
@@ -143,9 +142,9 @@ class AppCard extends HookConsumerWidget {
               LayoutBuilder(
                 builder: (context, constraints) {
                   // Match the text column start (icon width + spacing)
-                  final iconSize = (constraints.maxWidth * 0.20).clamp(
-                    48.0,
-                    64.0,
+                  final iconSize = (constraints.maxWidth * 0.21).clamp(
+                    50.0,
+                    68.0,
                   );
                   final leftInset = iconSize + 14;
 
@@ -197,46 +196,44 @@ class AppCard extends HookConsumerWidget {
   Widget _buildAppIcon(BuildContext context, double size) {
     final iconUrl = firstValidHttpUrl(app!.icons);
 
-    return AspectRatio(
-      aspectRatio: 1,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: size, maxHeight: size),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.1),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(14),
-            child: iconUrl != null
-                ? CachedNetworkImage(
-                    imageUrl: iconUrl,
-                    fit: BoxFit.cover,
-                    fadeInDuration: const Duration(milliseconds: 500),
-                    fadeOutDuration: const Duration(milliseconds: 200),
-                    placeholder: (_, url) => const SizedBox.shrink(),
-                    errorWidget: (context, url, error) => Center(
-                      child: Icon(
-                        Icons.broken_image_outlined,
-                        size: 32,
-                        color: Colors.grey[400],
-                      ),
-                    ),
-                  )
-                : Center(
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.1),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: iconUrl != null
+              ? CachedNetworkImage(
+                  imageUrl: iconUrl,
+                  fit: BoxFit.cover,
+                  fadeInDuration: const Duration(milliseconds: 500),
+                  fadeOutDuration: const Duration(milliseconds: 200),
+                  placeholder: (_, url) => const SizedBox.shrink(),
+                  errorWidget: (context, url, error) => Center(
                     child: Icon(
-                      Icons.apps_outlined,
+                      Icons.broken_image_outlined,
                       size: 32,
                       color: Colors.grey[400],
                     ),
                   ),
-          ),
+                )
+              : Center(
+                  child: Icon(
+                    Icons.apps_outlined,
+                    size: 32,
+                    color: Colors.grey[400],
+                  ),
+                ),
         ),
       ),
     );
@@ -359,7 +356,7 @@ class AppCard extends HookConsumerWidget {
           ),
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final iconSize = (constraints.maxWidth * 0.20).clamp(48.0, 64.0);
+              final iconSize = (constraints.maxWidth * 0.21).clamp(50.0, 68.0);
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -391,7 +388,7 @@ class AppCard extends HookConsumerWidget {
                                 borderRadius: BorderRadius.circular(4),
                               ),
                             ),
-                            const SizedBox(height: 6),
+                            const SizedBox(height: 8),
                             // Version pill skeleton
                             Container(
                               height: 20,
@@ -406,7 +403,7 @@ class AppCard extends HookConsumerWidget {
                       ),
                     ],
                   ),
-                  // Description skeleton - 3 lines to match actual maxLines: 3
+                  // Description skeleton - 2 lines to match maxLines: 2
                   if (showDescription) ...[
                     const SizedBox(height: 12),
                     Column(
@@ -420,19 +417,10 @@ class AppCard extends HookConsumerWidget {
                             borderRadius: BorderRadius.circular(4),
                           ),
                         ),
-                        const SizedBox(height: 6),
+                        const SizedBox(height: 8),
                         Container(
                           height: 16,
-                          width: double.infinity,
-                          decoration: BoxDecoration(
-                            color: AppColors.darkSkeletonBase,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Container(
-                          height: 16,
-                          width: 140,
+                          width: 200,
                           decoration: BoxDecoration(
                             color: AppColors.darkSkeletonBase,
                             borderRadius: BorderRadius.circular(4),

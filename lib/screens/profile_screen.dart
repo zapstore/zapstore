@@ -176,7 +176,7 @@ class _AuthenticationSection extends ConsumerWidget {
                     NoteParser.parse(
                       context,
                       profile!.about!,
-                      textStyle: context.textTheme.bodySmall,
+                      textStyle: context.textTheme.bodyMedium,
                       onNostrEntity: (entity) => NostrEntityWidget(
                         entity: entity,
                         colorPair: [
