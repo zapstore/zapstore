@@ -27,14 +27,17 @@ class SearchScreen extends HookConsumerWidget {
     // Get platform from package manager
     final platform = ref.read(packageManagerProvider.notifier).platform;
 
-    // Function to perform search
+    // Function to perform search (only with 3+ characters)
     final performSearch = useCallback((String query) {
-      if (query.trim().isEmpty) {
-        searchQuery.value = '';
+      final trimmed = query.trim();
+      // Keep keyboard open if less than 3 characters
+      if (trimmed.length < 3) {
+        // Re-request focus to keep keyboard open
+        searchFocusNode.requestFocus();
         return;
       }
-      searchQuery.value = query.trim();
-    }, []);
+      searchQuery.value = trimmed;
+    }, [searchFocusNode]);
 
     final trimmedQuery = searchQuery.value.trim();
 
