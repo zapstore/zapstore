@@ -164,6 +164,7 @@ class _SearchResultsSection extends HookConsumerWidget {
         and: (app) => {
           app.latestRelease,
           app.latestRelease.value?.latestMetadata,
+          app.latestRelease.value?.latestAsset,
         },
         // Force the search to hit the default relay group (relay.zapstore.dev)
         // so a connection appears in Debug Info when searching.

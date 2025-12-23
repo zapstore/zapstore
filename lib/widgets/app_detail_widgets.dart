@@ -718,7 +718,7 @@ class DebugVersionsSection extends HookConsumerWidget {
     final releasesState = ref.watch(
       query<Release>(
         tags: app.event.addressableIdTagMap,
-        and: (release) => {release.latestMetadata},
+        and: (release) => {release.latestMetadata, release.latestAsset},
         source: LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
         subscriptionPrefix: 'debug-releases',
       ),

@@ -86,6 +86,7 @@ class _AppStackContentWithApps extends HookConsumerWidget {
         and: (app) => {
           app.latestRelease,
           app.latestRelease.value?.latestMetadata,
+          app.latestRelease.value?.latestAsset,
         },
         source: const LocalAndRemoteSource(relays: 'AppCatalog'),
         subscriptionPrefix: 'app-stack-apps-${stack!.identifier}',

@@ -60,7 +60,10 @@ class LatestReleasesContainer extends HookConsumerWidget {
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 6,
+                ),
                 child: Text(
                   'LATEST RELEASES',
                   style: context.textTheme.labelLarge?.copyWith(
@@ -286,6 +289,7 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
         and: (app) => {
           app.latestRelease,
           app.latestRelease.value?.latestMetadata,
+          app.latestRelease.value?.latestAsset,
         },
         // NOTE: It must stream=true
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: true),
@@ -358,12 +362,22 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
           source: const RemoteSource(stream: false),
         );
 
-        // Load file metadata for the releases
+        // Load file metadata for the releases (old format)
         if (releases.isNotEmpty) {
           await ref.storage.query(
             Request<FileMetadata>(
               releases
                   .map((r) => r.latestMetadata.req?.filters.firstOrNull)
+                  .nonNulls
+                  .toList(),
+            ),
+            source: const RemoteSource(stream: false),
+          );
+          // Load software assets for the releases (new format)
+          await ref.storage.query(
+            Request<SoftwareAsset>(
+              releases
+                  .map((r) => r.latestAsset.req?.filters.firstOrNull)
                   .nonNulls
                   .toList(),
             ),

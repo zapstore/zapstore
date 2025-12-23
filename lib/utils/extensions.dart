@@ -38,8 +38,10 @@ extension AppExt on App {
       ref.read(packageManagerProvider.notifier).isInstalled(identifier);
 
   /// Latest file metadata associated to the latest release
+  /// Prefers SoftwareAsset (new format) over FileMetadata (old format)
   /// Note: assumes latest metadata has been loaded for the current platform
   FileMetadata? get latestFileMetadata =>
+      latestRelease.value?.latestAsset.value ??
       latestRelease.value?.latestMetadata.value;
 
   /// Whether there is an update available for the installed app
@@ -78,4 +80,31 @@ extension AppExt on App {
 
 extension WidgetRefExt on WidgetRef {
   Ref get ref => read(Provider((ref) => ref));
+}
+
+/// Extension to handle both old and new format certificate hashes
+extension FileMetadataExt on FileMetadata {
+  /// Returns the APK certificate hash, checking new format first then old
+  /// New format (SoftwareAsset): apkCertificateHashes (Set)
+  /// Old format (FileMetadata): apkSignatureHash (String?)
+  String? get certificateHash {
+    // Try new format first (SoftwareAsset has apkCertificateHashes)
+    if (this is SoftwareAsset) {
+      final hashes = (this as SoftwareAsset).apkCertificateHashes;
+      if (hashes.isNotEmpty) return hashes.first;
+    }
+    // Fall back to old format
+    return apkSignatureHash;
+  }
+
+  /// Returns all APK certificate hashes
+  Set<String> get certificateHashes {
+    // Try new format first
+    if (this is SoftwareAsset) {
+      final hashes = (this as SoftwareAsset).apkCertificateHashes;
+      if (hashes.isNotEmpty) return hashes;
+    }
+    // Fall back to old format (single hash as set)
+    return apkSignatureHash != null ? {apkSignatureHash!} : {};
+  }
 }

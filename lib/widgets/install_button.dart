@@ -719,8 +719,7 @@ class InstallButton extends ConsumerWidget {
     final updateVersion = app.latestFileMetadata?.version ?? 'Unknown';
     final currentVersion = installedPackage?.version ?? 'Unknown';
     final currentCertHash = installedPackage?.signatureHash ?? 'Unknown';
-    final updateCertHash =
-        app.latestFileMetadata?.apkSignatureHash ?? 'Unknown';
+    final updateCertHash = app.latestFileMetadata?.certificateHash ?? 'Unknown';
 
     // Get author profile
     final author = app.author.value;

@@ -82,8 +82,8 @@ class AppInfoTable extends HookConsumerWidget {
       );
     }
 
-    if (fileMetadata?.apkSignatureHash != null) {
-      final full = fileMetadata!.apkSignatureHash!;
+    if (fileMetadata?.certificateHash != null) {
+      final full = fileMetadata!.certificateHash!;
       rows.add(
         _InfoRow(
           label: 'Certificate hash',

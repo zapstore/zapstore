@@ -43,6 +43,7 @@ class UserScreen extends HookConsumerWidget {
         and: (app) => {
           app.latestRelease,
           app.latestRelease.value?.latestMetadata,
+          app.latestRelease.value?.latestAsset,
         },
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
         subscriptionPrefix: 'user-apps',

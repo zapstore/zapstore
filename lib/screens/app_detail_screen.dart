@@ -43,7 +43,11 @@ class AppDetailScreen extends HookConsumerWidget {
           '#f': {platform},
         },
         limit: 1,
-        and: (a) => {a.latestRelease, a.latestRelease.value?.latestMetadata},
+        and: (a) => {
+          a.latestRelease,
+          a.latestRelease.value?.latestMetadata,
+          a.latestRelease.value?.latestAsset,
+        },
         // stream=true ensures cached/local results render immediately; remote
         // results will merge in as they arrive.
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),

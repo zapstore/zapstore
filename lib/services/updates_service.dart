@@ -80,6 +80,7 @@ class CategorizedAppsNotifier extends Notifier<CategorizedApps> {
         and: (app) => {
           app.latestRelease,
           app.latestRelease.value?.latestMetadata,
+          app.latestRelease.value?.latestAsset,
         },
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: true),
         andSource: const LocalAndRemoteSource(
