@@ -38,9 +38,7 @@ class ProfileHeader extends StatelessWidget {
           // Display name
           Text(
             profile!.name ?? profile!.nameOrNpub,
-            style: Theme.of(
-              context,
-            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+            style: Theme.of(context).textTheme.headlineSmall,
             textAlign: TextAlign.center,
           ),
 

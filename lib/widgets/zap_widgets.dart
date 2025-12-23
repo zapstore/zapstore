@@ -117,7 +117,6 @@ class ZappersHorizontalList extends StatelessWidget {
                   '⚡️${formatSatsCompact(totalSats)}',
                   style: theme.textTheme.titleLarge?.copyWith(
                     color: Colors.white,
-                    fontWeight: FontWeight.bold,
                   ),
                 ),
                 const SizedBox(width: 6),

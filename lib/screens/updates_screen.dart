@@ -187,9 +187,7 @@ class _UpdatesListBody extends StatelessWidget {
             const SizedBox(height: 12),
             Text(
               'No apps installed yet',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+              style: theme.textTheme.titleMedium,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 6),
@@ -313,9 +311,7 @@ class _InstallingHeader extends StatelessWidget {
           const SizedBox(width: 8),
           Text(
             'Installing',
-            style: context.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
+            style: context.textTheme.titleMedium,
           ),
           const SizedBox(width: 8),
           CountBadge(count: count, color: AppColors.darkPillBackground),
@@ -356,9 +352,7 @@ class _UpdatesSectionHeader extends ConsumerWidget {
               Flexible(
                 child: Text(
                   title,
-                  style: context.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: context.textTheme.titleMedium,
                 ),
               ),
               const SizedBox(width: 8),
@@ -485,9 +479,7 @@ class _UpToDateHeader extends StatelessWidget {
           const SizedBox(width: 8),
           Text(
             'Up to date',
-            style: context.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
+            style: context.textTheme.titleMedium,
           ),
           const SizedBox(width: 8),
           CountBadge(count: count, color: AppColors.darkPillBackground),

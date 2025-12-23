@@ -12,8 +12,8 @@ const kFranzapPubkey =
 /// Identifier for storing user saved apps
 const kAppBookmarksIdentifier = 'zapstore-bookmarks';
 
-/// Event filter for app packs - excludes saved apps and packs with zero App references
-bool appPackEventFilter(Map<String, dynamic> event) {
+/// Event filter for app stacks - excludes saved apps and stacks with zero App references
+bool appStackEventFilter(Map<String, dynamic> event) {
   final tags = event['tags'] as List<dynamic>?;
   if (tags == null) return false;
 

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
+import 'package:zapstore/constants/app_constants.dart';
 import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/auth_widgets.dart';
@@ -104,9 +105,9 @@ class SaveAppDialog extends HookConsumerWidget {
         return;
       }
 
-      // Query for existing pack
-      final existingPackState = await ref.storage.query(
-        RequestFilter<AppPack>(
+      // Query for existing stack
+      final existingStackState = await ref.storage.query(
+        RequestFilter<AppStack>(
           authors: {signedInPubkey},
           tags: {
             '#d': {kAppBookmarksIdentifier},
@@ -114,14 +115,14 @@ class SaveAppDialog extends HookConsumerWidget {
         ).toRequest(),
         source: const LocalSource(),
       );
-      final existingPack = existingPackState.firstOrNull;
+      final existingStack = existingStackState.firstOrNull;
 
-      // Get existing app IDs by decrypting if pack exists
+      // Get existing app IDs by decrypting if stack exists
       List<String> existingAppIds = [];
-      if (existingPack != null) {
+      if (existingStack != null) {
         try {
           final decryptedContent = await signer.nip44Decrypt(
-            existingPack.content,
+            existingStack.content,
             signedInPubkey,
           );
           existingAppIds = (jsonDecode(decryptedContent) as List)
@@ -149,19 +150,21 @@ class SaveAppDialog extends HookConsumerWidget {
         }
       }
 
-      // Create new partial pack with updated list
-      final partialPack = PartialAppPack.withEncryptedApps(
+      // Create new partial stack with updated list
+      final partialStack = PartialAppStack.withEncryptedApps(
         name: 'Saved Apps',
         identifier: kAppBookmarksIdentifier,
         apps: existingAppIds,
       );
 
       // Sign (encrypts the content)
-      final signedPack = await partialPack.signWith(signer);
+      final signedStack = await partialStack.signWith(signer);
 
       // Save to local storage and publish to relays
-      await ref.storage.save({signedPack});
-      ref.storage.publish({signedPack}, source: RemoteSource(relays: 'social'));
+      await ref.storage.save({signedStack});
+      ref.storage.publish({
+        signedStack,
+      }, source: RemoteSource(relays: 'social'));
 
       if (context.mounted) {
         Navigator.pop(context);
@@ -177,9 +180,9 @@ class SaveAppDialog extends HookConsumerWidget {
   }
 }
 
-/// Dialog for managing app packs (public collections)
-class AddToPackDialog extends HookConsumerWidget {
-  const AddToPackDialog({super.key, required this.app});
+/// Dialog for managing app stacks (public collections)
+class AddToStackDialog extends HookConsumerWidget {
+  const AddToStackDialog({super.key, required this.app});
 
   final App app;
 
@@ -187,14 +190,14 @@ class AddToPackDialog extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
     if (signedInPubkey == null) {
-      return _AddToPackDialogSignedOut(app: app);
+      return _AddToStackDialogSignedOut(app: app);
     }
-    return _AddToPackDialogSignedIn(app: app, signedInPubkey: signedInPubkey);
+    return _AddToStackDialogSignedIn(app: app, signedInPubkey: signedInPubkey);
   }
 }
 
-class _AddToPackDialogSignedOut extends StatelessWidget {
-  const _AddToPackDialogSignedOut({required this.app});
+class _AddToStackDialogSignedOut extends StatelessWidget {
+  const _AddToStackDialogSignedOut({required this.app});
 
   final App app;
 
@@ -203,7 +206,7 @@ class _AddToPackDialogSignedOut extends StatelessWidget {
     return BaseDialog(
       titleIcon: const Icon(Icons.apps),
       title: Text(
-        'Add to App Packs',
+        'Add to App Stacks',
         style: Theme.of(context).textTheme.headlineSmall,
       ),
       content: BaseDialogContent(
@@ -231,7 +234,7 @@ class _AddToPackDialogSignedOut extends StatelessWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Add or remove ${app.name} from public app packs that you share with others.',
+                    'Add or remove ${app.name} from public app stacks that you share with others.',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: Theme.of(
                         context,
@@ -244,7 +247,7 @@ class _AddToPackDialogSignedOut extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           const SignInPrompt(
-            message: 'Sign in to create and manage your public app packs.',
+            message: 'Sign in to create and manage your public app stacks.',
           ),
         ],
       ),
@@ -263,8 +266,8 @@ class _AddToPackDialogSignedOut extends StatelessWidget {
   }
 }
 
-class _AddToPackDialogSignedIn extends HookConsumerWidget {
-  const _AddToPackDialogSignedIn({
+class _AddToStackDialogSignedIn extends HookConsumerWidget {
+  const _AddToStackDialogSignedIn({
     required this.app,
     required this.signedInPubkey,
   });
@@ -274,37 +277,38 @@ class _AddToPackDialogSignedIn extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final newPackNameController = useTextEditingController();
+    final newStackNameController = useTextEditingController();
 
-    final publicPacksState = ref.watch(
-      query<AppPack>(
+    final publicStacksState = ref.watch(
+      query<AppStack>(
         authors: {signedInPubkey},
-        and: (pack) => {pack.apps},
+        and: (stack) => {stack.apps},
         source: const LocalAndRemoteSource(relays: 'social', stream: false),
         andSource: const LocalSource(),
-        subscriptionPrefix: 'user-packs-dialog',
+        schemaFilter: appStackEventFilter,
+        subscriptionPrefix: 'user-stacks-dialog',
       ),
     );
 
-    final publicPacks = publicPacksState.models
-        .where((pack) => pack.identifier != kAppBookmarksIdentifier)
+    final publicStacks = publicStacksState.models
+        .where((stack) => stack.identifier != kAppBookmarksIdentifier)
         .toList();
 
-    // Check which packs contain this app
+    // Check which stacks contain this app
     final selectedCollections = useState<Set<String>>({});
-    // Track new packs with their names (identifier -> name)
-    final newPackNames = useState<Map<String, String>>({});
+    // Track new stacks with their names (identifier -> name)
+    final newStackNames = useState<Map<String, String>>({});
 
     useEffect(() {
       final selected = <String>{};
-      for (final pack in publicPacks) {
-        if (pack.apps.toList().any((appModel) => appModel.id == app.id)) {
-          selected.add(pack.identifier);
+      for (final stack in publicStacks) {
+        if (stack.apps.toList().any((appModel) => appModel.id == app.id)) {
+          selected.add(stack.identifier);
         }
       }
       selectedCollections.value = selected;
       return null;
-    }, [app.id, publicPacks.length]);
+    }, [app.id, publicStacks.length]);
 
     // Helper to slugify name to identifier
     String slugify(String text) {
@@ -319,7 +323,7 @@ class _AddToPackDialogSignedIn extends HookConsumerWidget {
     return BaseDialog(
       titleIcon: const Icon(Icons.apps),
       title: Text(
-        'Add to App Packs',
+        'Add to App Stacks',
         style: Theme.of(context).textTheme.headlineSmall,
       ),
       content: BaseDialogContent(
@@ -347,7 +351,7 @@ class _AddToPackDialogSignedIn extends HookConsumerWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Add or remove ${app.name} from public app packs that you share with others.',
+                    'Add or remove ${app.name} from public app stacks that you share with others.',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: Theme.of(
                         context,
@@ -360,18 +364,18 @@ class _AddToPackDialogSignedIn extends HookConsumerWidget {
           ),
           const SizedBox(height: 16),
 
-          // Show existing packs and newly created packs as selectable chips
-          if (publicPacks.isNotEmpty || newPackNames.value.isNotEmpty) ...[
+          // Show existing stacks and newly created stacks as selectable chips
+          if (publicStacks.isNotEmpty || newStackNames.value.isNotEmpty) ...[
             Wrap(
               spacing: 8,
               runSpacing: 8,
               children: [
-                // Existing packs
-                ...publicPacks.map((pack) {
+                // Existing stacks
+                ...publicStacks.map((stack) {
                   final isSelected = selectedCollections.value.contains(
-                    pack.identifier,
+                    stack.identifier,
                   );
-                  final displayName = pack.name ?? pack.identifier;
+                  final displayName = stack.name ?? stack.identifier;
                   return FilterChip(
                     label: Text(displayName),
                     selected: isSelected,
@@ -379,12 +383,12 @@ class _AddToPackDialogSignedIn extends HookConsumerWidget {
                       if (selected) {
                         selectedCollections.value = {
                           ...selectedCollections.value,
-                          pack.identifier,
+                          stack.identifier,
                         };
                       } else {
                         selectedCollections.value = {
                           ...selectedCollections.value,
-                        }..remove(pack.identifier);
+                        }..remove(stack.identifier);
                       }
                     },
                     backgroundColor: isSelected
@@ -408,11 +412,11 @@ class _AddToPackDialogSignedIn extends HookConsumerWidget {
                     side: BorderSide.none,
                   );
                 }),
-                // Newly created packs not yet in publicPacks
-                ...newPackNames.value.entries
+                // Newly created stacks not yet in publicStacks
+                ...newStackNames.value.entries
                     .where(
-                      (entry) => !publicPacks.any(
-                        (pack) => pack.identifier == entry.key,
+                      (entry) => !publicStacks.any(
+                        (stack) => stack.identifier == entry.key,
                       ),
                     )
                     .map((entry) {
@@ -434,11 +438,11 @@ class _AddToPackDialogSignedIn extends HookConsumerWidget {
                             selectedCollections.value = {
                               ...selectedCollections.value,
                             }..remove(identifier);
-                            // Also remove from newPackNames if deselected
+                            // Also remove from newStackNames if deselected
                             final updatedNames = Map<String, String>.from(
-                              newPackNames.value,
+                              newStackNames.value,
                             )..remove(identifier);
-                            newPackNames.value = updatedNames;
+                            newStackNames.value = updatedNames;
                           }
                         },
                         backgroundColor: isSelected
@@ -469,12 +473,12 @@ class _AddToPackDialogSignedIn extends HookConsumerWidget {
             const SizedBox(height: 16),
           ],
 
-          // Input for new pack
+          // Input for new stack
           TextField(
-            controller: newPackNameController,
+            controller: newStackNameController,
             maxLength: 20,
             decoration: const InputDecoration(
-              labelText: 'Add to new app pack',
+              labelText: 'Add to new app stack',
               hintText: 'e.g., Favorite Apps',
               border: OutlineInputBorder(),
             ),
@@ -488,8 +492,11 @@ class _AddToPackDialogSignedIn extends HookConsumerWidget {
                   ...selectedCollections.value,
                   identifier,
                 };
-                newPackNames.value = {...newPackNames.value, identifier: name};
-                newPackNameController.clear();
+                newStackNames.value = {
+                  ...newStackNames.value,
+                  identifier: name,
+                };
+                newStackNameController.clear();
               }
             },
           ),
@@ -502,20 +509,20 @@ class _AddToPackDialogSignedIn extends HookConsumerWidget {
         ),
         AsyncButtonBuilder(
           onPressed: () async {
-            // Check if there's a pending new pack name in the text field
-            final pendingPackName = newPackNameController.text.trim();
-            if (pendingPackName.isNotEmpty) {
-              final identifier = slugify(pendingPackName);
+            // Check if there's a pending new stack name in the text field
+            final pendingStackName = newStackNameController.text.trim();
+            if (pendingStackName.isNotEmpty) {
+              final identifier = slugify(pendingStackName);
               if (identifier.isNotEmpty &&
                   !selectedCollections.value.contains(identifier)) {
-                // Add the pending pack to the collections
+                // Add the pending stack to the collections
                 selectedCollections.value = {
                   ...selectedCollections.value,
                   identifier,
                 };
-                newPackNames.value = {
-                  ...newPackNames.value,
-                  identifier: pendingPackName,
+                newStackNames.value = {
+                  ...newStackNames.value,
+                  identifier: pendingStackName,
                 };
               }
             }
@@ -525,9 +532,9 @@ class _AddToPackDialogSignedIn extends HookConsumerWidget {
               context,
               ref,
               app,
-              publicPacks,
+              publicStacks,
               selectedCollections.value,
-              newPackNames.value,
+              newStackNames.value,
             );
           },
           builder: (context, child, callback, buttonState) {
@@ -557,9 +564,9 @@ class _AddToPackDialogSignedIn extends HookConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     App app,
-    List<AppPack> existingPacks,
+    List<AppStack> existingStacks,
     Set<String> selectedCollectionIds,
-    Map<String, String> newPackNames,
+    Map<String, String> newStackNames,
   ) async {
     try {
       final signer = ref.read(Signer.activeSignerProvider);
@@ -567,7 +574,7 @@ class _AddToPackDialogSignedIn extends HookConsumerWidget {
         if (context.mounted) {
           context.showError(
             'Sign in required',
-            description: 'You need to sign in to manage app packs.',
+            description: 'You need to sign in to manage app stacks.',
           );
         }
         return;
@@ -575,11 +582,11 @@ class _AddToPackDialogSignedIn extends HookConsumerWidget {
 
       // Get current state of which collections contain this app
       final currentCollectionsWithApp = <String>{};
-      for (final pack in existingPacks) {
+      for (final stack in existingStacks) {
         // Get raw app IDs from event tags
-        final appIds = pack.event.getTagSetValues('a');
+        final appIds = stack.event.getTagSetValues('a');
         if (appIds.contains(app.id)) {
-          currentCollectionsWithApp.add(pack.identifier);
+          currentCollectionsWithApp.add(stack.identifier);
         }
       }
 
@@ -590,79 +597,79 @@ class _AddToPackDialogSignedIn extends HookConsumerWidget {
 
       // Update or create collections
       for (final collectionId in selectedCollectionIds) {
-        final existingPack = existingPacks
-            .where((pack) => pack.identifier == collectionId)
+        final existingStack = existingStacks
+            .where((stack) => stack.identifier == collectionId)
             .firstOrNull;
 
-        // Use the provided name from newPackNames, or existing pack name, or identifier
-        final packName =
-            newPackNames[collectionId] ?? existingPack?.name ?? collectionId;
+        // Use the provided name from newStackNames, or existing stack name, or identifier
+        final stackName =
+            newStackNames[collectionId] ?? existingStack?.name ?? collectionId;
 
         // Get existing app IDs as a list to preserve order
         final existingAppIds =
-            existingPack?.event.getTagSetValues('a').toList() ?? [];
+            existingStack?.event.getTagSetValues('a').toList() ?? [];
 
-        // Check if app already exists in the pack
+        // Check if app already exists in the stack
         final appAlreadyExists = existingAppIds.contains(app.id);
 
-        // Only update if the app is not already in the pack
+        // Only update if the app is not already in the stack
         if (!appAlreadyExists) {
-          final partialPack = PartialAppPack(
-            name: packName,
+          final partialStack = PartialAppStack(
+            name: stackName,
             identifier: collectionId,
           );
 
           // Add existing apps in order
           for (final appId in existingAppIds) {
-            partialPack.addApp(appId);
+            partialStack.addApp(appId);
           }
 
           // Add this app at the end
-          partialPack.addApp(app.id);
+          partialStack.addApp(app.id);
 
-          final signedPack = await partialPack.signWith(signer);
-          await ref.storage.save({signedPack});
+          final signedStack = await partialStack.signWith(signer);
+          await ref.storage.save({signedStack});
           await ref.storage.publish({
-            signedPack,
+            signedStack,
           }, source: RemoteSource(relays: 'social'));
         }
       }
 
       // Remove from deselected collections
       for (final collectionId in collectionsToRemoveFrom) {
-        final existingPack = existingPacks
-            .where((pack) => pack.identifier == collectionId)
+        final existingStack = existingStacks
+            .where((stack) => stack.identifier == collectionId)
             .firstOrNull;
-        if (existingPack != null) {
-          final partialPack = PartialAppPack(
-            name: existingPack.name ?? collectionId,
+        if (existingStack != null) {
+          final partialStack = PartialAppStack(
+            name: existingStack.name ?? collectionId,
             identifier: collectionId,
           );
 
           // Re-add all apps except the one we're removing, preserving order
           // Get raw app IDs from event tags as a list to preserve order
-          final existingAppIds = existingPack.event
+          final existingAppIds = existingStack.event
               .getTagSetValues('a')
               .toList();
           for (final appId in existingAppIds) {
             if (appId != app.id) {
-              partialPack.addApp(appId);
+              partialStack.addApp(appId);
             }
           }
 
-          final signedPack = await partialPack.signWith(signer);
-          await ref.storage.save({signedPack});
+          final signedStack = await partialStack.signWith(signer);
+          await ref.storage.save({signedStack});
           await ref.storage.publish({
-            signedPack,
+            signedStack,
           }, source: RemoteSource(relays: 'social'));
         }
       }
 
       if (context.mounted) {
         if (selectedCollectionIds.isEmpty) {
-          context.showInfo('Removed from all app packs');
+          context.showInfo('Removed from all app stacks');
         } else {
-          context.showInfo('App packs updated');
+          context.showInfo('App stacks updated');
         }
         Navigator.pop(context);
       }

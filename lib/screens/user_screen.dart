@@ -5,11 +5,11 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/utils/extensions.dart';
 
+import '../constants/app_constants.dart';
 import '../theme.dart';
 import '../widgets/common/note_parser.dart';
 import '../widgets/common/profile_avatar.dart';
 import '../widgets/app_card.dart';
-import '../widgets/app_pack_container.dart';
 import '../widgets/zap_widgets.dart';
 
 /// User profile screen - shows any user/developer profile
@@ -55,9 +55,9 @@ class UserScreen extends HookConsumerWidget {
         ? userAppsState.models.where((a) => a.isZapstoreApp).toList()
         : userAppsState.models;
 
-    // Query user's app packs
-    final appPacksState = ref.watch(
-      query<AppPack>(
+    // Query user's app stacks
+    final appStacksState = ref.watch(
+      query<AppStack>(
         authors: {pubkey},
         limit: 20,
         and: (pack) => {pack.apps},
@@ -66,11 +66,11 @@ class UserScreen extends HookConsumerWidget {
           relays: 'AppCatalog',
           stream: false,
         ),
-        schemaFilter: appPackEventFilter,
-        subscriptionPrefix: 'user-packs',
+        schemaFilter: appStackEventFilter,
+        subscriptionPrefix: 'user-stacks',
       ),
     );
-    final packs = appPacksState.models
+    final stacks = appStacksState.models
       ..sort((a, b) => b.event.createdAt.compareTo(a.event.createdAt));
 
     return Scaffold(
@@ -99,9 +99,7 @@ class UserScreen extends HookConsumerWidget {
                   padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
                   child: Text(
                     'Published Apps',
-                    style: context.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: context.textTheme.titleLarge,
                   ),
                 ),
               ),
@@ -113,33 +111,23 @@ class UserScreen extends HookConsumerWidget {
               ),
             ],
 
-            // App packs section - only show if packs exist
-            if (packs.isNotEmpty) ...[
+            // App stacks section - only show if stacks exist
+            if (stacks.isNotEmpty) ...[
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 32, 16, 16),
+                  padding: const EdgeInsets.fromLTRB(16, 32, 16, 8),
                   child: Text(
-                    'App Packs',
-                    style: context.textTheme.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                    'App Stacks',
+                    style: context.textTheme.headlineMedium,
                   ),
                 ),
               ),
-              for (final pack in packs) ...[
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                    child: Text(
-                      pack.name ?? pack.identifier,
-                      style: context.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-                SliverToBoxAdapter(child: AppsGrid(apps: pack.apps.toList())),
-              ],
+              SliverList(
+                delegate: SliverChildBuilderDelegate((context, index) {
+                  final stack = stacks[index];
+                  return _StackLinkCard(stack: stack, pubkey: pubkey);
+                }, childCount: stacks.length),
+              ),
             ],
 
             // Bottom padding
@@ -172,9 +160,7 @@ class _UserHeader extends StatelessWidget {
                 Text(
                   profile?.nameOrNpub ??
                       '${Utils.encodeShareableFromString(pubkey, type: 'npub').substring(0, 12)}...',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: Theme.of(context).textTheme.headlineSmall,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -268,6 +254,73 @@ class _UserZapsList extends HookConsumerWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       child: ZappersHorizontalList(zaps: allZaps.toList()),
+    );
+  }
+}
+
+class _StackLinkCard extends StatelessWidget {
+  const _StackLinkCard({required this.stack, required this.pubkey});
+
+  final AppStack stack;
+  final String pubkey;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: InkWell(
+        onTap: () {
+          final segments = GoRouterState.of(context).uri.pathSegments;
+          final first = segments.isNotEmpty ? segments.first : 'search';
+          // Build naddr for the stack
+          final naddr = Utils.encodeShareableIdentifier(
+            AddressInput(
+              identifier: stack.identifier,
+              author: pubkey,
+              kind: stack.event.kind,
+              relays: const [],
+            ),
+          );
+          context.push('/$first/stack/$naddr');
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: Theme.of(
+                context,
+              ).colorScheme.outline.withValues(alpha: 0.2),
+            ),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      stack.name ?? stack.identifier,
+                      style: context.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Icon(
+                Icons.chevron_right,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

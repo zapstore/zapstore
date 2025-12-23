@@ -115,7 +115,7 @@ TextTheme _createProfessionalTextTheme() {
     headlineMedium: const TextStyle(
       fontFamily: kHeadlineFontFamily,
       fontSize: 31,
-      fontWeight: FontWeight.w400,
+      fontWeight: FontWeight.w800,
       letterSpacing: 0.15,
       color: baseColor,
       height: 1.3,
@@ -123,7 +123,7 @@ TextTheme _createProfessionalTextTheme() {
     headlineSmall: const TextStyle(
       fontFamily: kHeadlineFontFamily,
       fontSize: 26,
-      fontWeight: FontWeight.w400,
+      fontWeight: FontWeight.w800,
       letterSpacing: 0.15,
       color: baseColor,
       height: 1.35,
@@ -133,7 +133,7 @@ TextTheme _createProfessionalTextTheme() {
     titleLarge: const TextStyle(
       fontFamily: kHeadlineFontFamily,
       fontSize: 24,
-      fontWeight: FontWeight.w400,
+      fontWeight: FontWeight.w700,
       letterSpacing: 0.1,
       color: baseColor,
       height: 1.4,
@@ -141,7 +141,7 @@ TextTheme _createProfessionalTextTheme() {
     titleMedium: const TextStyle(
       fontFamily: kHeadlineFontFamily,
       fontSize: 20,
-      fontWeight: FontWeight.w400,
+      fontWeight: FontWeight.w700,
       letterSpacing: 0.15,
       color: baseColor,
       height: 1.45,
@@ -149,7 +149,7 @@ TextTheme _createProfessionalTextTheme() {
     titleSmall: const TextStyle(
       fontFamily: kHeadlineFontFamily,
       fontSize: 18,
-      fontWeight: FontWeight.w400,
+      fontWeight: FontWeight.w700,
       letterSpacing: 0.15,
       color: baseColor,
       height: 1.45,

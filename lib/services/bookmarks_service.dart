@@ -13,10 +13,10 @@ final bookmarksProvider = FutureProvider<Set<String>>((ref) async {
     return {};
   }
 
-  // Query saved apps pack - stream enabled to auto-update when saved apps change locally
+  // Query saved apps stack - stream enabled to auto-update when saved apps change locally
   // Initial fetch from remote, then watches local storage for changes
-  final packState = ref.watch(
-    query<AppPack>(
+  final stackState = ref.watch(
+    query<AppStack>(
       authors: {signedInPubkey},
       tags: {
         '#d': {kAppBookmarksIdentifier},
@@ -30,20 +30,20 @@ final bookmarksProvider = FutureProvider<Set<String>>((ref) async {
   );
 
   // Handle different storage states
-  final pack = switch (packState) {
+  final stack = switch (stackState) {
     StorageLoading() => null,
     StorageError() => null,
     StorageData(:final models) => models.firstOrNull,
   };
 
-  if (pack == null || pack.content.isEmpty) {
+  if (stack == null || stack.content.isEmpty) {
     return {};
   }
 
   try {
     // Content is always encrypted after signing - must explicitly decrypt
     final decryptedContent = await signer.nip44Decrypt(
-      pack.content,
+      stack.content,
       signedInPubkey,
     );
 

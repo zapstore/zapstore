@@ -22,7 +22,7 @@ class AppStackScreen extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     // Query stack with apps relationship
     final stackState = ref.watch(
-      query<AppPack>(
+      query<AppStack>(
         authors: authorPubkey != null ? {authorPubkey!} : null,
         tags: {
           '#d': {stackId},
@@ -61,7 +61,7 @@ class AppStackScreen extends HookConsumerWidget {
 
 /// Intermediate widget that loads apps with their release relationships
 class _AppStackContentWithApps extends HookConsumerWidget {
-  final AppPack? stack;
+  final AppStack? stack;
 
   const _AppStackContentWithApps({required this.stack});
 
@@ -132,7 +132,7 @@ class _ErrorScaffold extends StatelessWidget {
 
 /// Internal widget that displays stack details
 class _AppStackContent extends HookConsumerWidget {
-  final AppPack stack;
+  final AppStack stack;
   final List<App> apps;
 
   const _AppStackContent({required this.stack, required this.apps});
@@ -179,9 +179,7 @@ class _AppStackContent extends HookConsumerWidget {
                   children: [
                     Text(
                       'Apps in this stack',
-                      style: context.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: context.textTheme.titleLarge,
                     ),
                     const SizedBox(width: 8),
                     CountBadge(
@@ -235,7 +233,7 @@ class _AppStackContent extends HookConsumerWidget {
 class _StackHeader extends StatelessWidget {
   const _StackHeader({required this.stack, this.author});
 
-  final AppPack stack;
+  final AppStack stack;
   final Profile? author;
 
   @override
@@ -246,9 +244,7 @@ class _StackHeader extends StatelessWidget {
         // Stack name
         Text(
           stack.name ?? stack.identifier,
-          style: context.textTheme.headlineMedium?.copyWith(
-            fontWeight: FontWeight.bold,
-          ),
+          style: context.textTheme.headlineMedium,
         ),
         const SizedBox(height: 8),
         // Published by author (same style as app_detail_screen)

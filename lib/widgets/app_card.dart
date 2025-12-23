@@ -243,7 +243,6 @@ class AppCard extends HookConsumerWidget {
     final appName = app!.name ?? app!.identifier;
     final titleStyle = context.textTheme.titleMedium?.copyWith(
       fontWeight: FontWeight.w900,
-      letterSpacing: 0.1,
     );
 
     // If no publisher or relay-signed, just show name

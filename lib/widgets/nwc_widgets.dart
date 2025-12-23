@@ -31,9 +31,7 @@ class NWCConnectionCard extends HookConsumerWidget {
                 const SizedBox(width: 8),
                 Text(
                   'Lightning Wallet',
-                  style: context.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: context.textTheme.titleMedium,
                 ),
               ],
             ),

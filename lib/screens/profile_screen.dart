@@ -375,9 +375,7 @@ class _DebugMessagesSection extends HookConsumerWidget {
                 Expanded(
                   child: Text(
                     'Debug Info',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
               ],
@@ -975,9 +973,7 @@ class _DataManagementSection extends ConsumerWidget {
           children: [
             Text(
               'Data Management',
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+              style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 16),
             ListTile(
@@ -1267,9 +1263,7 @@ class _AboutSection extends ConsumerWidget {
             children: [
               Text(
                 'About',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 16),
               if (isLoading) ...[
@@ -1326,9 +1320,7 @@ class _AboutSection extends ConsumerWidget {
           children: [
             Text(
               'About',
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+              style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 16),
             ListTile(

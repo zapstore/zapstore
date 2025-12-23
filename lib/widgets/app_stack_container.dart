@@ -6,6 +6,7 @@ import 'package:models/models.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:skeletonizer/skeletonizer.dart';
+import '../constants/app_constants.dart';
 import '../utils/extensions.dart';
 import '../utils/url_utils.dart';
 import '../theme.dart';
@@ -28,7 +29,7 @@ class AppStackContainer extends HookConsumerWidget {
     final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
 
     final appStacksState = ref.watch(
-      query<AppPack>(
+      query<AppStack>(
         limit: 50,
         and: (pack) => {pack.apps},
         source: LocalAndRemoteSource(stream: true, relays: 'social'),
@@ -36,7 +37,7 @@ class AppStackContainer extends HookConsumerWidget {
           relays: 'AppCatalog',
           stream: false,
         ),
-        schemaFilter: appPackEventFilter,
+        schemaFilter: appStackEventFilter,
         subscriptionPrefix: 'app-stack',
       ),
     );
@@ -61,7 +62,7 @@ class AppStackContainer extends HookConsumerWidget {
 
     final rawStacks = switch (appStacksState) {
       StorageData(:final models) => models,
-      _ => <AppPack>[],
+      _ => <AppStack>[],
     };
 
     if (rawStacks.isEmpty) {
@@ -87,7 +88,9 @@ class AppStackContainer extends HookConsumerWidget {
           for (int i = 0; i < stacks.length; i += 2)
             Padding(
               padding: EdgeInsets.only(
-                right: i == stacks.length - 2 || i == stacks.length - 1 ? 0 : 10,
+                right: i == stacks.length - 2 || i == stacks.length - 1
+                    ? 0
+                    : 10,
               ),
               child: SizedBox(
                 width: 160,
@@ -108,8 +111,8 @@ class AppStackContainer extends HookConsumerWidget {
     );
   }
 
-  List<AppPack> _sortStacks(
-    List<AppPack> stacks, {
+  List<AppStack> _sortStacks(
+    List<AppStack> stacks, {
     String? signedInPubkey,
     Set<String>? followingPubkeys,
   }) {
@@ -119,8 +122,8 @@ class AppStackContainer extends HookConsumerWidget {
         followingPubkeys != null &&
         followingPubkeys.isNotEmpty) {
       // Signed in: followed profiles first, then by recency
-      final followed = <AppPack>[];
-      final others = <AppPack>[];
+      final followed = <AppStack>[];
+      final others = <AppStack>[];
 
       for (final stack in stacks) {
         if (followingPubkeys.contains(stack.pubkey)) {
@@ -278,7 +281,7 @@ class _SkeletonStackCard extends StatelessWidget {
 class _StackCard extends HookConsumerWidget {
   const _StackCard({required this.stack});
 
-  final AppPack stack;
+  final AppStack stack;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -339,14 +342,13 @@ class _StackCard extends HookConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Stack name
-            Text(
+            // Stack name with conditional fade out
+            _FadingText(
               stack.name ?? stack.identifier,
               style: context.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
+                fontFamily: 'Inter',
+                fontSize: (context.textTheme.titleMedium?.fontSize ?? 16) * 0.9,
               ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
             ),
             const SizedBox(height: 6),
             // Author row: avatar + Name
@@ -397,9 +399,7 @@ class _AppIconsRow extends StatelessWidget {
                 aspectRatio: 1,
                 child: Container(
                   decoration: BoxDecoration(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .surfaceContainerHighest
+                    color: Theme.of(context).colorScheme.surfaceContainerHighest
                         .withValues(alpha: 0.8),
                     borderRadius: BorderRadius.circular(10),
                   ),
@@ -482,7 +482,9 @@ class _AppIconTile extends StatelessWidget {
                     ),
                   )
                 : Container(
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
                     child: const Icon(
                       Icons.apps_outlined,
                       size: 16,
@@ -492,6 +494,59 @@ class _AppIconTile extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Text widget that only applies fade-out effect when text overflows
+class _FadingText extends HookWidget {
+  const _FadingText(this.text, {required this.style});
+
+  final String text;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Measure if text would overflow
+        final textPainter = TextPainter(
+          text: TextSpan(text: text, style: style),
+          maxLines: 1,
+          textDirection: TextDirection.ltr,
+        )..layout(maxWidth: double.infinity);
+
+        final isOverflowing = textPainter.width > constraints.maxWidth;
+
+        final textWidget = Text(
+          text,
+          style: style,
+          maxLines: 1,
+          overflow: TextOverflow.clip,
+        );
+
+        if (!isOverflowing) {
+          return textWidget;
+        }
+
+        // Apply fade effect only when overflowing
+        return ShaderMask(
+          shaderCallback: (bounds) {
+            return LinearGradient(
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+              colors: [
+                Theme.of(context).colorScheme.onSurface,
+                Theme.of(context).colorScheme.onSurface,
+                Theme.of(context).colorScheme.onSurface.withValues(alpha: 0),
+              ],
+              stops: const [0.0, 0.8, 1.0],
+            ).createShader(bounds);
+          },
+          blendMode: BlendMode.dstIn,
+          child: textWidget,
+        );
+      },
     );
   }
 }

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
@@ -22,7 +23,6 @@ import 'package:zapstore/widgets/download_text_container.dart';
 import 'package:zapstore/widgets/expandable_markdown.dart';
 import 'package:zapstore/widgets/install_button.dart';
 import 'package:zapstore/widgets/screenshots_gallery.dart';
-import 'package:zapstore/widgets/version_pill_widget.dart';
 
 class AppDetailScreen extends HookConsumerWidget {
   const AppDetailScreen({super.key, required this.appId, this.authorPubkey});
@@ -309,50 +309,41 @@ class _AppDetailContent extends HookConsumerWidget {
                           ],
                         ),
                         const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            Text(
-                              'Version ',
-                              style: context.textTheme.bodyMedium,
-                            ),
-                            ColorFiltered(
-                              colorFilter: const ColorFilter.matrix(<double>[
-                                0.2126,
-                                0.7152,
-                                0.0722,
-                                0,
-                                0,
-                                0.2126,
-                                0.7152,
-                                0.0722,
-                                0,
-                                0,
-                                0.2126,
-                                0.7152,
-                                0.0722,
-                                0,
-                                0,
-                                0,
-                                0,
-                                0,
-                                1,
-                                0,
-                              ]),
-                              child: VersionPillWidget(
-                                app: app,
-                                forceVersion: latestMetadata.version,
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.05),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Version:',
+                                style: context.textTheme.bodyMedium,
                               ),
-                            ),
-                            const SizedBox(width: 12),
-                            Text(
-                              '(${formatDate(latestMetadata.createdAt)})',
-                              style: context.textTheme.bodyMedium?.copyWith(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurface.withValues(alpha: 0.6),
+                              Gap(4),
+                              Text(
+                                latestMetadata.version,
+                                style: context.textTheme.bodyMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
-                            ),
-                          ],
+                              Gap(4),
+                              Text(
+                                '(${formatDate(latestMetadata.createdAt)})',
+                                style: context.textTheme.bodyMedium?.copyWith(
+                                  color: Theme.of(context).colorScheme.onSurface
+                                      .withValues(alpha: 0.6),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                         Padding(
                           padding: const EdgeInsets.symmetric(vertical: 20),
@@ -586,9 +577,9 @@ class _AppDetailContent extends HookConsumerWidget {
         return;
       }
 
-      // Query for existing pack
-      final existingPackState = await ref.storage.query(
-        RequestFilter<AppPack>(
+      // Query for existing stack
+      final existingStackState = await ref.storage.query(
+        RequestFilter<AppStack>(
           authors: {signedInPubkey},
           tags: {
             '#d': {kAppBookmarksIdentifier},
@@ -596,14 +587,14 @@ class _AppDetailContent extends HookConsumerWidget {
         ).toRequest(),
         source: const LocalSource(),
       );
-      final existingPack = existingPackState.firstOrNull;
+      final existingStack = existingStackState.firstOrNull;
 
-      // Get existing app IDs by decrypting if pack exists
+      // Get existing app IDs by decrypting if stack exists
       List<String> existingAppIds = [];
-      if (existingPack != null) {
+      if (existingStack != null) {
         try {
           final decryptedContent = await signer.nip44Decrypt(
-            existingPack.content,
+            existingStack.content,
             signedInPubkey,
           );
           existingAppIds = (jsonDecode(decryptedContent) as List)
@@ -631,19 +622,19 @@ class _AppDetailContent extends HookConsumerWidget {
         }
       }
 
-      // Create new partial pack with updated list
-      final partialPack = PartialAppPack.withEncryptedApps(
+      // Create new partial stack with updated list
+      final partialStack = PartialAppStack.withEncryptedApps(
         name: 'Saved Apps',
         identifier: kAppBookmarksIdentifier,
         apps: existingAppIds,
       );
 
       // Sign (encrypts the content)
-      final signedPack = await partialPack.signWith(signer);
+      final signedStack = await partialStack.signWith(signer);
 
       // Save to local storage and publish to relays
-      await ref.storage.save({signedPack});
-      ref.storage.publish({signedPack}, source: RemoteSource(relays: 'social'));
+      await ref.storage.save({signedStack});
+      ref.storage.publish({signedStack}, source: RemoteSource(relays: 'social'));
 
       if (context.mounted) {
         context.showInfo(

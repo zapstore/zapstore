@@ -64,7 +64,7 @@ class ReleaseNotes extends StatelessWidget {
   }
 }
 
-/// Row of social action buttons (zap, bookmark, app pack, share)
+/// Row of social action buttons (zap, bookmark, app stack, share)
 class SocialActionsRow extends HookConsumerWidget {
   const SocialActionsRow({super.key, required this.app, required this.author});
 
@@ -92,7 +92,7 @@ class SocialActionsRow extends HookConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Zap + Save App + App Pack button row
+        // Zap + Save App + App Stack button row
         SizedBox(
           height: 36,
           child: Row(
@@ -141,11 +141,11 @@ class SocialActionsRow extends HookConsumerWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              // App Pack button
+              // App Stack button
               Expanded(
                 flex: 16,
                 child: FilledButton(
-                  onPressed: () => _showAddToPackDialog(context, app),
+                  onPressed: () => _showAddToStackDialog(context, app),
                   style: FilledButton.styleFrom(
                     padding: EdgeInsets.zero,
                     backgroundColor:
@@ -193,9 +193,9 @@ class SocialActionsRow extends HookConsumerWidget {
 
       if (signer == null || signedInPubkey == null) return;
 
-      // Query for existing pack
-      final existingPackState = await ref.storage.query(
-        RequestFilter<AppPack>(
+      // Query for existing stack
+      final existingStackState = await ref.storage.query(
+        RequestFilter<AppStack>(
           authors: {signedInPubkey},
           tags: {
             '#d': {kAppBookmarksIdentifier},
@@ -203,14 +203,14 @@ class SocialActionsRow extends HookConsumerWidget {
         ).toRequest(),
         source: const LocalSource(),
       );
-      final existingPack = existingPackState.firstOrNull;
+      final existingStack = existingStackState.firstOrNull;
 
-      // Get existing app IDs by decrypting if pack exists
+      // Get existing app IDs by decrypting if stack exists
       List<String> existingAppIds = [];
-      if (existingPack != null) {
+      if (existingStack != null) {
         try {
           final decryptedContent = await signer.nip44Decrypt(
-            existingPack.content,
+            existingStack.content,
             signedInPubkey,
           );
           existingAppIds = (jsonDecode(decryptedContent) as List)
@@ -232,19 +232,19 @@ class SocialActionsRow extends HookConsumerWidget {
         }
       }
 
-      // Create new partial pack with updated list
-      final partialPack = PartialAppPack.withEncryptedApps(
+      // Create new partial stack with updated list
+      final partialStack = PartialAppStack.withEncryptedApps(
         name: 'Saved Apps',
         identifier: kAppBookmarksIdentifier,
         apps: existingAppIds,
       );
 
       // Sign (encrypts the content)
-      final signedPack = await partialPack.signWith(signer);
+      final signedStack = await partialStack.signWith(signer);
 
       // Save to local storage and publish to relays
-      await ref.storage.save({signedPack});
-      ref.storage.publish({signedPack}, source: RemoteSource(relays: 'social'));
+      await ref.storage.save({signedStack});
+      ref.storage.publish({signedStack}, source: RemoteSource(relays: 'social'));
 
       if (context.mounted) {
         context.showInfo(
@@ -258,10 +258,10 @@ class SocialActionsRow extends HookConsumerWidget {
     }
   }
 
-  Future<void> _showAddToPackDialog(BuildContext context, App app) async {
+  Future<void> _showAddToStackDialog(BuildContext context, App app) async {
     await showBaseDialog(
       context: context,
-      dialog: AddToPackDialog(app: app),
+      dialog: AddToStackDialog(app: app),
     );
   }
 }

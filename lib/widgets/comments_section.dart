@@ -52,11 +52,11 @@ class CommentsSection extends HookConsumerWidget {
   }
 }
 
-/// Comments section for AppPack/Stack detail screen
+/// Comments section for AppStack/Stack detail screen
 class StackCommentsSection extends HookConsumerWidget {
   const StackCommentsSection({super.key, required this.stack});
 
-  final AppPack stack;
+  final AppStack stack;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -111,12 +111,7 @@ class _CommentsSectionLayout extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Comments',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-              ),
+              Text('Comments', style: Theme.of(context).textTheme.titleLarge),
               if (comments.isNotEmpty)
                 _CommentCountBadge(count: comments.length),
             ],
@@ -251,7 +246,6 @@ class _CommentCard extends HookConsumerWidget {
                                 Text(
                                   author?.nameOrNpub ?? '',
                                   style: context.textTheme.titleSmall?.copyWith(
-                                    fontWeight: FontWeight.w600,
                                     fontSize:
                                         (context
                                                 .textTheme
@@ -338,7 +332,7 @@ class _AddCommentButton extends ConsumerWidget {
 class _AddStackCommentButton extends ConsumerWidget {
   const _AddStackCommentButton({required this.stack});
 
-  final AppPack stack;
+  final AppStack stack;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -401,9 +395,7 @@ class _CommentComposer extends HookConsumerWidget {
               children: [
                 Text(
                   'Comment on $versionToComment',
-                  style: context.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: context.textTheme.titleMedium,
                 ),
                 IconButton(
                   onPressed: () => Navigator.pop(context),
@@ -532,7 +524,7 @@ class _CommentComposer extends HookConsumerWidget {
 class _StackCommentComposer extends HookConsumerWidget {
   const _StackCommentComposer({required this.stack});
 
-  final AppPack stack;
+  final AppStack stack;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -557,9 +549,7 @@ class _StackCommentComposer extends HookConsumerWidget {
               children: [
                 Text(
                   'Comment on $stackName',
-                  style: context.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: context.textTheme.titleMedium,
                 ),
                 IconButton(
                   onPressed: () => Navigator.pop(context),

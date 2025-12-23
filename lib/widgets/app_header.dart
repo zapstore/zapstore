@@ -61,8 +61,6 @@ class AppHeader extends StatelessWidget {
                   AutoSizeText(
                     app.name ?? app.identifier,
                     style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 0.1,
                       fontSize:
                           (Theme.of(
                                 context,
