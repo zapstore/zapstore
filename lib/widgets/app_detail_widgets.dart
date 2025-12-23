@@ -54,7 +54,12 @@ class ReleaseNotes extends StatelessWidget {
           launchUrl(Uri.parse(url));
         }
       },
-      styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)),
+      styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+        blockquoteDecoration: BoxDecoration(
+          color: const Color(0xFF1E3A5F), // Dark blue
+          borderRadius: BorderRadius.circular(8),
+        ),
+      ),
     );
   }
 }
