@@ -68,7 +68,7 @@ class LatestReleasesContainer extends HookConsumerWidget {
                       context,
                     ).colorScheme.onSurface.withValues(alpha: 0.85),
                     letterSpacing: 1.5,
-                    fontWeight: FontWeight.w300,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
               ),

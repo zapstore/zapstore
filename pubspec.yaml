@@ -120,6 +120,11 @@ flutter:
           weight: 300
         - asset: assets/fonts/Inter-Italic.ttf
           style: italic
+    - family: Inter Display
+      fonts:
+        - asset: assets/fonts/InterDisplay-Regular.ttf
+        - asset: assets/fonts/InterDisplay-ExtraBold.ttf
+          weight: 800
 
 flutter_launcher_icons:
   android: true

@@ -270,22 +270,78 @@ class _AppDetailContent extends HookConsumerWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const SizedBox(height: 12),
-                        Text(
-                          'Latest release',
-                          style: context.textTheme.headlineMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
                         Row(
                           children: [
-                            VersionPillWidget(
-                              app: app,
-                              forceVersion: latestMetadata.version,
+                            Expanded(
+                              child: Container(
+                                height: 1,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.2),
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              child: Text(
+                                'LATEST RELEASE',
+                                style: context.textTheme.labelLarge?.copyWith(
+                                  color: Theme.of(context).colorScheme.onSurface
+                                      .withValues(alpha: 0.85),
+                                  letterSpacing: 1.5,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              child: Container(
+                                height: 1,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.2),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          children: [
+                            Text(
+                              'Version ',
+                              style: context.textTheme.bodyMedium,
+                            ),
+                            ColorFiltered(
+                              colorFilter: const ColorFilter.matrix(<double>[
+                                0.2126,
+                                0.7152,
+                                0.0722,
+                                0,
+                                0,
+                                0.2126,
+                                0.7152,
+                                0.0722,
+                                0,
+                                0,
+                                0.2126,
+                                0.7152,
+                                0.0722,
+                                0,
+                                0,
+                                0,
+                                0,
+                                0,
+                                1,
+                                0,
+                              ]),
+                              child: VersionPillWidget(
+                                app: app,
+                                forceVersion: latestMetadata.version,
+                              ),
                             ),
                             const SizedBox(width: 12),
                             Text(
-                              formatDate(latestMetadata.createdAt),
+                              '(${formatDate(latestMetadata.createdAt)})',
                               style: context.textTheme.bodyMedium?.copyWith(
                                 color: Theme.of(
                                   context,

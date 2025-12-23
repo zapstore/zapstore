@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 
-/// Font family used throughout the app
+/// Base font family used for body text and UI elements
 const kFontFamily = 'Inter';
+
+/// Display and headline font family
+const kHeadlineFontFamily = 'Inter Display';
 
 // Professional color constants (dark theme only)
 class AppColors {
@@ -76,25 +79,25 @@ TextTheme _createProfessionalTextTheme() {
   return const TextTheme().copyWith(
     // Display styles - for main headings
     displayLarge: const TextStyle(
-      fontFamily: kFontFamily,
-      fontSize: 56,
-      fontWeight: FontWeight.w700,
+      fontFamily: kHeadlineFontFamily,
+      fontSize: 62,
+      fontWeight: FontWeight.w800,
       letterSpacing: -0.5,
       color: baseColor,
       height: 1.1,
     ),
     displayMedium: const TextStyle(
-      fontFamily: kFontFamily,
-      fontSize: 44,
-      fontWeight: FontWeight.w600,
+      fontFamily: kHeadlineFontFamily,
+      fontSize: 48,
+      fontWeight: FontWeight.w800,
       letterSpacing: -0.25,
       color: baseColor,
       height: 1.15,
     ),
     displaySmall: const TextStyle(
-      fontFamily: kFontFamily,
-      fontSize: 36,
-      fontWeight: FontWeight.w600,
+      fontFamily: kHeadlineFontFamily,
+      fontSize: 40,
+      fontWeight: FontWeight.w800,
       letterSpacing: 0,
       color: baseColor,
       height: 1.2,
@@ -102,25 +105,25 @@ TextTheme _createProfessionalTextTheme() {
 
     // Headline styles - for section titles
     headlineLarge: const TextStyle(
-      fontFamily: kFontFamily,
-      fontSize: 32,
-      fontWeight: FontWeight.w600,
+      fontFamily: kHeadlineFontFamily,
+      fontSize: 35,
+      fontWeight: FontWeight.w800,
       letterSpacing: 0,
       color: baseColor,
       height: 1.25,
     ),
     headlineMedium: const TextStyle(
-      fontFamily: kFontFamily,
-      fontSize: 28,
-      fontWeight: FontWeight.w600,
+      fontFamily: kHeadlineFontFamily,
+      fontSize: 31,
+      fontWeight: FontWeight.w400,
       letterSpacing: 0.15,
       color: baseColor,
       height: 1.3,
     ),
     headlineSmall: const TextStyle(
-      fontFamily: kFontFamily,
-      fontSize: 24,
-      fontWeight: FontWeight.w600,
+      fontFamily: kHeadlineFontFamily,
+      fontSize: 26,
+      fontWeight: FontWeight.w400,
       letterSpacing: 0.15,
       color: baseColor,
       height: 1.35,
@@ -128,25 +131,25 @@ TextTheme _createProfessionalTextTheme() {
 
     // Title styles - for card titles and prominent text
     titleLarge: const TextStyle(
-      fontFamily: kFontFamily,
-      fontSize: 22,
-      fontWeight: FontWeight.w600,
+      fontFamily: kHeadlineFontFamily,
+      fontSize: 24,
+      fontWeight: FontWeight.w400,
       letterSpacing: 0.1,
       color: baseColor,
       height: 1.4,
     ),
     titleMedium: const TextStyle(
-      fontFamily: kFontFamily,
-      fontSize: 18,
-      fontWeight: FontWeight.w600,
+      fontFamily: kHeadlineFontFamily,
+      fontSize: 20,
+      fontWeight: FontWeight.w400,
       letterSpacing: 0.15,
       color: baseColor,
       height: 1.45,
     ),
     titleSmall: const TextStyle(
-      fontFamily: kFontFamily,
-      fontSize: 16,
-      fontWeight: FontWeight.w500,
+      fontFamily: kHeadlineFontFamily,
+      fontSize: 18,
+      fontWeight: FontWeight.w400,
       letterSpacing: 0.15,
       color: baseColor,
       height: 1.45,
@@ -338,9 +341,9 @@ final darkTheme = ThemeData(
     surfaceTintColor: Colors.transparent,
     foregroundColor: AppColors.darkOnSurface,
     titleTextStyle: TextStyle(
-      fontFamily: kFontFamily,
-      fontSize: 20,
-      fontWeight: FontWeight.w600,
+      fontFamily: kHeadlineFontFamily,
+      fontSize: 22,
+      fontWeight: FontWeight.w800,
       color: AppColors.darkOnSurface,
       letterSpacing: 0.1,
     ),
