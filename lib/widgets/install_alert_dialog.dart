@@ -18,10 +18,15 @@ class InstallAlertDialog extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // Query publisher profile (app.pubkey is always present)
-    final publisherState = ref.watch(query<Profile>(
-      authors: {app.pubkey},
-      source: const LocalAndRemoteSource(relays: {'social', 'vertex'}, cachedFor: Duration(hours: 2)),
-    ));
+    final publisherState = ref.watch(
+      query<Profile>(
+        authors: {app.pubkey},
+        source: const LocalAndRemoteSource(
+          relays: {'social', 'vertex'},
+          cachedFor: Duration(hours: 2),
+        ),
+      ),
+    );
     final publisher = switch (publisherState) {
       StorageData(:final models) => models.firstOrNull,
       _ => null,
@@ -57,28 +62,31 @@ class InstallAlertDialog extends HookConsumerWidget {
               size: baseTextSize,
             ),
           ] else ...[
-            AuthorContainer(
-              profile: publisher,
-              beforeText: '${app.name ?? app.identifier} is published by',
-              afterText: '.',
-              oneLine: false,
-              size: baseTextSize,
-            ),
-            Gap(14),
             profile != null
                 ? RelevantWhoFollowContainer(
-                    toNpub: publisher.npub,
-                    trailingText:
-                        ' and others follow ${publisher.nameOrNpub} on Nostr.\n\nThis information helps you determine ${publisher.nameOrNpub}\'s reputation. They are not endorsements of the ${app.name} app.',
+                    app: app,
                     size: baseTextSize,
                   )
-                : SignInButton(
-                    label:
-                        'Sign in to view the publisher\'s reputable followers',
-                    minimal: true,
-                    requireNip55: true,
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      AuthorContainer(
+                        profile: publisher,
+                        beforeText: '${app.name ?? app.identifier} is published by',
+                        afterText: '.',
+                        oneLine: false,
+                        size: baseTextSize,
+                      ),
+                      const Gap(14),
+                      SignInButton(
+                        label:
+                            'Sign in to view the publisher\'s reputable followers',
+                        minimal: true,
+                        requireNip55: true,
+                      ),
+                    ],
                   ),
-            Gap(14),
+            const Gap(14),
             Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
