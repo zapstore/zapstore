@@ -48,7 +48,7 @@ class InstallAlertDialog extends HookConsumerWidget {
               profile: publisher,
               beforeText: 'The',
               afterText:
-                  ' relay makes the ${app.name ?? app.identifier} app available but did not develop it. ',
+                  ' relay makes the ${app.name ?? app.identifier} app available but did not develop it or sign its APK. ',
               oneLine: false,
               size: baseTextSize,
             ),
@@ -63,16 +63,14 @@ class InstallAlertDialog extends HookConsumerWidget {
             ),
           ] else ...[
             profile != null
-                ? RelevantWhoFollowContainer(
-                    app: app,
-                    size: baseTextSize,
-                  )
+                ? RelevantWhoFollowContainer(app: app, size: baseTextSize)
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       AuthorContainer(
                         profile: publisher,
-                        beforeText: '${app.name ?? app.identifier} is published by',
+                        beforeText:
+                            '${app.name ?? app.identifier} is published by',
                         afterText: '.',
                         oneLine: false,
                         size: baseTextSize,
