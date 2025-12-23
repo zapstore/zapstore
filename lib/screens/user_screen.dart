@@ -97,7 +97,7 @@ class UserScreen extends HookConsumerWidget {
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
                   child: Text(
-                    'Apps',
+                    'Published Apps',
                     style: context.textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
@@ -113,11 +113,22 @@ class UserScreen extends HookConsumerWidget {
             ],
 
             // App packs section - only show if packs exist
-            if (packs.isNotEmpty)
+            if (packs.isNotEmpty) ...[
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 32, 16, 16),
+                  child: Text(
+                    'App Packs',
+                    style: context.textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
               for (final pack in packs) ...[
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                     child: Text(
                       pack.name ?? pack.identifier,
                       style: context.textTheme.titleLarge?.copyWith(
@@ -128,6 +139,7 @@ class UserScreen extends HookConsumerWidget {
                 ),
                 SliverToBoxAdapter(child: AppsGrid(apps: pack.apps.toList())),
               ],
+            ],
 
             // Bottom padding
             const SliverToBoxAdapter(child: SizedBox(height: 32)),
