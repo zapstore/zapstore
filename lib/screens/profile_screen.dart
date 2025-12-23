@@ -186,6 +186,28 @@ class _AuthenticationSection extends ConsumerWidget {
                         // No tap callbacks - make it non-interactive
                       ),
                     ),
+                  const SizedBox(height: 12),
+                  // Link to full profile view
+                  InkWell(
+                    onTap: () => context.push('/profile/user/$pubkey'),
+                    child: Row(
+                      children: [
+                        Text(
+                          'View Full Profile',
+                          style: context.textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.arrow_forward,
+                          size: 14,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -1084,7 +1106,7 @@ class _SavedAppsHeading extends ConsumerWidget {
             })
             .whereType<String>()
             .toSet();
-        
+
         if (identifiers.isEmpty) {
           return const SizedBox.shrink();
         }
@@ -1113,7 +1135,7 @@ class _SavedAppsSection extends HookConsumerWidget {
     final savedAppsAsync = ref.watch(bookmarksProvider);
 
     return savedAppsAsync.when(
-      loading: () => _SavedAppsLoadingCard(context),
+      loading: () => _savedAppsLoadingCard(context),
       error: (_, __) => const SizedBox.shrink(),
       data: (addressableIds) {
         if (addressableIds.isEmpty) {
@@ -1127,7 +1149,7 @@ class _SavedAppsSection extends HookConsumerWidget {
             })
             .whereType<String>()
             .toSet();
-        
+
         if (identifiers.isEmpty) {
           return const SizedBox.shrink();
         }
@@ -1140,7 +1162,7 @@ class _SavedAppsSection extends HookConsumerWidget {
     );
   }
 
-  Widget _SavedAppsLoadingCard(BuildContext context) {
+  Widget _savedAppsLoadingCard(BuildContext context) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -1212,13 +1234,15 @@ class _SavedAppsList extends ConsumerWidget {
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: savedApps.map(
-            (app) => AppCard(
-              app: app,
-              showUpdateArrow: false,
-              showDescription: false,
-            ),
-          ).toList(),
+          children: savedApps
+              .map(
+                (app) => AppCard(
+                  app: app,
+                  showUpdateArrow: false,
+                  showDescription: false,
+                ),
+              )
+              .toList(),
         ),
       ),
     );
