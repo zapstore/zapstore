@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -16,9 +17,7 @@ import 'package:zapstore/widgets/app_detail_widgets.dart';
 import 'package:zapstore/widgets/app_header.dart';
 import 'package:zapstore/widgets/app_info_table.dart';
 import 'package:zapstore/widgets/author_container.dart';
-import 'package:zapstore/widgets/bookmark_widgets.dart';
 import 'package:zapstore/widgets/comments_section.dart';
-import 'package:zapstore/widgets/common/base_dialog.dart';
 import 'package:zapstore/widgets/download_text_container.dart';
 import 'package:zapstore/widgets/expandable_markdown.dart';
 import 'package:zapstore/widgets/install_button.dart';
@@ -115,6 +114,7 @@ class _AppDetailContent extends HookConsumerWidget {
     }
 
     final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
+    final isSignedIn = signedInPubkey != null;
     final showDebugSections = isDebugMode(signedInPubkey);
 
     // Query author profile from social relays
@@ -156,7 +156,7 @@ class _AppDetailContent extends HookConsumerWidget {
                 ),
               ),
               InstallButton(app: app, release: latestRelease),
-              _buildFloatingMenu(context, ref, app, isInstalled),
+              _buildFloatingMenu(context, ref, app, isInstalled, isSignedIn),
             ],
           ),
         ),
@@ -242,6 +242,10 @@ class _AppDetailContent extends HookConsumerWidget {
                               p: context.textTheme.bodyLarge?.copyWith(
                                 height: 1.6,
                               ),
+                              blockquoteDecoration: BoxDecoration(
+                                color: const Color(0xFF1E3A5F), // Dark blue
+                                borderRadius: BorderRadius.circular(8),
+                              ),
                             ),
                       ),
                     ),
@@ -321,7 +325,7 @@ class _AppDetailContent extends HookConsumerWidget {
             InstallButton(app: app, release: latestRelease),
 
             // Floating three-dot menu
-            _buildFloatingMenu(context, ref, app, isInstalled),
+            _buildFloatingMenu(context, ref, app, isInstalled, isSignedIn),
           ],
         ),
       ),
@@ -333,11 +337,12 @@ class _AppDetailContent extends HookConsumerWidget {
     WidgetRef ref,
     App app,
     bool isInstalled,
+    bool isSignedIn,
   ) {
     return Positioned(
       top: 8,
       right: 8,
-      child: _buildOverflowMenu(context, ref, app, isInstalled),
+      child: _buildOverflowMenu(context, ref, app, isInstalled, isSignedIn),
     );
   }
 
@@ -346,6 +351,7 @@ class _AppDetailContent extends HookConsumerWidget {
     WidgetRef ref,
     App app,
     bool isInstalled,
+    bool isSignedIn,
   ) {
     // Watch saved apps to check if app is saved
     final savedAppsAsync = ref.watch(bookmarksProvider);
@@ -358,104 +364,110 @@ class _AppDetailContent extends HookConsumerWidget {
         '${app.event.kind}:${app.pubkey}:${app.identifier}';
     final isSaved = savedAppIds.contains(appAddressableId);
 
-    return PopupMenuButton<String>(
-      icon: const Icon(Icons.more_vert),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      onSelected: (value) {
-        switch (value) {
-          case 'share':
-            _shareApp(context, app);
-            break;
-          case 'copy_link':
-            _copyLink(context, app);
-            break;
-          case 'save_app':
-            _toggleSaveApp(context, ref, app, isSaved);
-            break;
-          case 'view_publisher':
-            _viewPublisher(context, app);
-            break;
-          case 'open_browser':
-            _openInBrowser(context, app);
-            break;
-          case 'open':
-            _openApp(context, ref, app);
-            break;
-          case 'delete':
-            _uninstallApp(context, ref, app);
-            break;
-        }
-      },
-      itemBuilder: (context) => [
-        const PopupMenuItem<String>(
-          value: 'share',
-          child: Row(
-            children: [Icon(Icons.share), SizedBox(width: 12), Text('Share')],
-          ),
-        ),
-        const PopupMenuItem<String>(
-          value: 'copy_link',
-          child: Row(
-            children: [
-              Icon(Icons.link),
-              SizedBox(width: 12),
-              Text('Copy link'),
-            ],
-          ),
-        ),
-        PopupMenuItem<String>(
-          value: 'save_app',
-          child: Row(
-            children: [
-              Icon(isSaved ? Icons.bookmark : Icons.bookmark_border),
-              const SizedBox(width: 12),
-              Text(isSaved ? 'Remove from saved' : 'Save app'),
-            ],
-          ),
-        ),
-        const PopupMenuItem<String>(
-          value: 'view_publisher',
-          child: Row(
-            children: [
-              Icon(Icons.person),
-              SizedBox(width: 12),
-              Text('View publisher'),
-            ],
-          ),
-        ),
-        const PopupMenuItem<String>(
-          value: 'open_browser',
-          child: Row(
-            children: [
-              Icon(Icons.open_in_browser),
-              SizedBox(width: 12),
-              Text('Open in browser'),
-            ],
-          ),
-        ),
-        if (isInstalled) ...[
+    return Material(
+      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.9),
+      shape: const CircleBorder(),
+      elevation: 2,
+      child: PopupMenuButton<String>(
+        icon: const Icon(Icons.more_vert),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        onSelected: (value) {
+          switch (value) {
+            case 'share':
+              _shareApp(context, app);
+              break;
+            case 'copy_link':
+              _copyLink(context, app);
+              break;
+            case 'save_app':
+              _toggleSaveApp(context, ref, app, isSaved);
+              break;
+            case 'view_publisher':
+              _viewPublisher(context, app);
+              break;
+            case 'open_browser':
+              _openInBrowser(context, app);
+              break;
+            case 'open':
+              _openApp(context, ref, app);
+              break;
+            case 'delete':
+              _uninstallApp(context, ref, app);
+              break;
+          }
+        },
+        itemBuilder: (context) => [
           const PopupMenuItem<String>(
-            value: 'open',
+            value: 'share',
+            child: Row(
+              children: [Icon(Icons.share), SizedBox(width: 12), Text('Share')],
+            ),
+          ),
+          const PopupMenuItem<String>(
+            value: 'copy_link',
             child: Row(
               children: [
-                Icon(Icons.open_in_new),
+                Icon(Icons.link),
                 SizedBox(width: 12),
-                Text('Open'),
+                Text('Copy link'),
+              ],
+            ),
+          ),
+          if (isSignedIn)
+            PopupMenuItem<String>(
+              value: 'save_app',
+              child: Row(
+                children: [
+                  Icon(isSaved ? Icons.bookmark : Icons.bookmark_border),
+                  const SizedBox(width: 12),
+                  Text(isSaved ? 'Remove from saved' : 'Save app'),
+                ],
+              ),
+            ),
+          const PopupMenuItem<String>(
+            value: 'view_publisher',
+            child: Row(
+              children: [
+                Icon(Icons.person),
+                SizedBox(width: 12),
+                Text('View publisher'),
               ],
             ),
           ),
           const PopupMenuItem<String>(
-            value: 'delete',
+            value: 'open_browser',
             child: Row(
               children: [
-                Icon(Icons.delete_outline),
+                Icon(Icons.open_in_browser),
                 SizedBox(width: 12),
-                Text('Delete'),
+                Text('Open in browser'),
               ],
             ),
           ),
+          if (isInstalled) ...[
+            const PopupMenuItem<String>(
+              value: 'open',
+              child: Row(
+                children: [
+                  Icon(Icons.open_in_new),
+                  SizedBox(width: 12),
+                  Text('Open'),
+                ],
+              ),
+            ),
+            const PopupMenuItem<String>(
+              value: 'delete',
+              child: Row(
+                children: [
+                  Icon(Icons.delete_outline),
+                  SizedBox(width: 12),
+                  Text('Delete'),
+                ],
+              ),
+            ),
+          ],
         ],
-      ],
+      ),
     );
   }
 
@@ -500,10 +512,89 @@ class _AppDetailContent extends HookConsumerWidget {
     App app,
     bool isCurrentlySaved,
   ) async {
-    await showBaseDialog(
-      context: context,
-      dialog: SaveAppDialog(app: app, isPrivatelySaved: isCurrentlySaved),
-    );
+    try {
+      final signer = ref.read(Signer.activeSignerProvider);
+      final signedInPubkey = ref.read(Signer.activePubkeyProvider);
+
+      if (signer == null || signedInPubkey == null) {
+        if (context.mounted) {
+          context.showError(
+            'Sign in required',
+            description: 'You need to sign in to save apps.',
+          );
+        }
+        return;
+      }
+
+      // Query for existing pack
+      final existingPackState = await ref.storage.query(
+        RequestFilter<AppPack>(
+          authors: {signedInPubkey},
+          tags: {
+            '#d': {kAppBookmarksIdentifier},
+          },
+        ).toRequest(),
+        source: const LocalSource(),
+      );
+      final existingPack = existingPackState.firstOrNull;
+
+      // Get existing app IDs by decrypting if pack exists
+      List<String> existingAppIds = [];
+      if (existingPack != null) {
+        try {
+          final decryptedContent = await signer.nip44Decrypt(
+            existingPack.content,
+            signedInPubkey,
+          );
+          existingAppIds = (jsonDecode(decryptedContent) as List)
+              .cast<String>();
+        } catch (e) {
+          if (context.mounted) {
+            context.showError(
+              'Could not read existing saved apps',
+              description:
+                  'Your previous saved apps could not be decrypted. Starting fresh.\n\n$e',
+            );
+          }
+        }
+      }
+
+      // Modify the list
+      final appAddressableId =
+          '${app.event.kind}:${app.pubkey}:${app.identifier}';
+
+      if (isCurrentlySaved) {
+        existingAppIds.remove(appAddressableId);
+      } else {
+        if (!existingAppIds.contains(appAddressableId)) {
+          existingAppIds.add(appAddressableId);
+        }
+      }
+
+      // Create new partial pack with updated list
+      final partialPack = PartialAppPack.withEncryptedApps(
+        name: 'Saved Apps',
+        identifier: kAppBookmarksIdentifier,
+        apps: existingAppIds,
+      );
+
+      // Sign (encrypts the content)
+      final signedPack = await partialPack.signWith(signer);
+
+      // Save to local storage and publish to relays
+      await ref.storage.save({signedPack});
+      ref.storage.publish({signedPack}, source: RemoteSource(relays: 'social'));
+
+      if (context.mounted) {
+        context.showInfo(
+          isCurrentlySaved ? 'App removed from saved' : 'App saved',
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        context.showError('Failed to update bookmark', description: '$e');
+      }
+    }
   }
 
   void _viewPublisher(BuildContext context, App app) {

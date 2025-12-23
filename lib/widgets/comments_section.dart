@@ -154,6 +154,7 @@ class _CommentCard extends HookConsumerWidget {
         authors: {comment.event.pubkey},
         source: const LocalAndRemoteSource(
           relays: {'social', 'vertex'},
+          stream: false,
           cachedFor: Duration(hours: 2),
         ),
       ),
