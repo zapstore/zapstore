@@ -11,6 +11,7 @@ import 'package:zapstore/widgets/auth_widgets.dart';
 import 'package:zapstore/widgets/common/profile_avatar.dart';
 import 'package:zapstore/widgets/pill_widget.dart';
 
+/// Comments section for App detail screen
 class CommentsSection extends HookConsumerWidget {
   const CommentsSection({super.key, required this.app, this.fileMetadata});
 
@@ -43,6 +44,64 @@ class CommentsSection extends HookConsumerWidget {
       _ => null,
     };
 
+    return _CommentsSectionLayout(
+      comments: comments,
+      errorException: errorException,
+      addCommentButton: _AddCommentButton(fileMetadata: fileMetadata!),
+    );
+  }
+}
+
+/// Comments section for AppPack/Stack detail screen
+class StackCommentsSection extends HookConsumerWidget {
+  const StackCommentsSection({super.key, required this.stack});
+
+  final AppPack stack;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final commentsState = ref.watch(
+      query<Comment>(
+        tags: {
+          '#A': {stack.id},
+        },
+        source: LocalAndRemoteSource(stream: true, relays: 'social'),
+        subscriptionPrefix: 'stack-comments',
+      ),
+    );
+
+    // Extract comments and error state
+    final List<Comment> comments = switch (commentsState) {
+      StorageData(:final models) => models,
+      _ => [],
+    };
+    final errorException = switch (commentsState) {
+      StorageError(:final exception) => exception,
+      _ => null,
+    };
+
+    return _CommentsSectionLayout(
+      comments: comments,
+      errorException: errorException,
+      addCommentButton: _AddStackCommentButton(stack: stack),
+    );
+  }
+}
+
+/// Shared layout for both App and Stack comments
+class _CommentsSectionLayout extends StatelessWidget {
+  const _CommentsSectionLayout({
+    required this.comments,
+    required this.errorException,
+    required this.addCommentButton,
+  });
+
+  final List<Comment> comments;
+  final Object? errorException;
+  final Widget addCommentButton;
+
+  @override
+  Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -64,11 +123,11 @@ class CommentsSection extends HookConsumerWidget {
           ),
           const SizedBox(height: 12),
           // Add Comment button - always visible
-          _AddCommentButton(fileMetadata: fileMetadata!),
+          addCommentButton,
           // Error message if any
           if (errorException != null) ...[
             const SizedBox(height: 16),
-            _buildCommentsError(context, errorException),
+            _buildCommentsError(context, errorException!),
           ],
           // Comments list - only when there are comments
           if (comments.isNotEmpty) ...[
@@ -276,6 +335,40 @@ class _AddCommentButton extends ConsumerWidget {
   }
 }
 
+class _AddStackCommentButton extends ConsumerWidget {
+  const _AddStackCommentButton({required this.stack});
+
+  final AppPack stack;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SizedBox(
+      width: double.infinity,
+      child: FilledButton.icon(
+        onPressed: () => _showStackCommentComposer(context),
+        icon: const Icon(Icons.add_comment),
+        label: const Text('Add Comment'),
+        style: FilledButton.styleFrom(
+          backgroundColor: Theme.of(
+            context,
+          ).colorScheme.surfaceContainerHighest,
+          foregroundColor: Theme.of(context).colorScheme.onSurface,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      ),
+    );
+  }
+
+  void _showStackCommentComposer(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => _StackCommentComposer(stack: stack),
+    );
+  }
+}
+
 class _CommentComposer extends HookConsumerWidget {
   const _CommentComposer({required this.fileMetadata});
 
@@ -418,6 +511,138 @@ class _CommentComposer extends HookConsumerWidget {
 
       // Add v tag for version (per NIP-22 guidance, not d tag)
       comment.event.addTagValue('v', versionToComment);
+
+      final signedComment = await comment.signWith(signer);
+
+      await signedComment.save();
+      await signedComment.publish(source: RemoteSource(relays: 'social'));
+
+      if (context.mounted) {
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (context.mounted) {
+        context.showError('Failed to post comment', description: '$e');
+      }
+    }
+  }
+}
+
+/// Comment composer for Stack comments
+class _StackCommentComposer extends HookConsumerWidget {
+  const _StackCommentComposer({required this.stack});
+
+  final AppPack stack;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isSignedIn = ref.watch(Signer.activePubkeyProvider) != null;
+    final textController = useTextEditingController();
+    useListenable(textController);
+
+    final stackName = stack.name ?? stack.identifier;
+
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Comment on $stackName',
+                  style: context.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            if (!isSignedIn) ...[
+              const SignInPrompt(
+                message: 'Sign in to share your thoughts about this stack.',
+              ),
+            ] else ...[
+              TextField(
+                controller: textController,
+                decoration: InputDecoration(
+                  hintText: 'Share your thoughts about $stackName...',
+                  border: const OutlineInputBorder(),
+                ),
+                maxLines: 4,
+                autofocus: true,
+              ),
+            ],
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: AsyncButtonBuilder(
+                child: const Text('Post Comment'),
+                onPressed: () =>
+                    _publishComment(ref, textController.text, context),
+                builder: (context, child, callback, buttonState) {
+                  return FilledButton(
+                    onPressed: !isSignedIn
+                        ? null
+                        : buttonState.maybeWhen(
+                            loading: () => null,
+                            orElse: () => textController.text.trim().isEmpty
+                                ? null
+                                : callback,
+                          ),
+                    child: buttonState.maybeWhen(
+                      loading: () => const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Colors.white,
+                          ),
+                        ),
+                      ),
+                      orElse: () => child,
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _publishComment(
+    WidgetRef ref,
+    String content,
+    BuildContext context,
+  ) async {
+    if (content.trim().isEmpty) return;
+
+    try {
+      final signer = ref.read(Signer.activeSignerProvider);
+      if (signer == null) {
+        if (context.mounted) {
+          context.showError(
+            'Sign in required',
+            description: 'You need to sign in with Amber to post comments.',
+          );
+        }
+        return;
+      }
+
+      final comment = PartialComment(content: content.trim(), rootModel: stack);
 
       final signedComment = await comment.signWith(signer);
 

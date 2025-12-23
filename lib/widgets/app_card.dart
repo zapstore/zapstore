@@ -71,8 +71,8 @@ class AppCard extends HookConsumerWidget {
         context.push('/$first/app/$naddr');
       },
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        padding: const EdgeInsets.all(16),
+        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(20),
           color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.6),
@@ -127,7 +127,7 @@ class AppCard extends HookConsumerWidget {
 
             // App Description rendered as plain text (markdown stripped)
             if (showDescription) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               Text(
                 descriptionText,
                 style: descriptionStyle,
@@ -341,9 +341,9 @@ class AppCard extends HookConsumerWidget {
       child: Skeletonizer(
         enabled: true,
         child: Container(
-          // Match actual content: vertical: 6, not 8
-          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          padding: const EdgeInsets.all(16),
+          // Match actual content: vertical: 4
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(20),
             color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.6),
@@ -405,7 +405,7 @@ class AppCard extends HookConsumerWidget {
                   ),
                   // Description skeleton - 2 lines to match maxLines: 2
                   if (showDescription) ...[
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 10),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -454,7 +454,7 @@ class _AppCardUpdateButtonSection extends ConsumerWidget {
 
     return Column(
       children: [
-        const Gap(12),
+        const Gap(10),
         ConstrainedBox(
           constraints: const BoxConstraints(minHeight: 38),
           child: _CompactInstallButton(
@@ -489,7 +489,7 @@ class _AppCardZapEncouragementSection extends ConsumerWidget {
 
     return Column(
       children: [
-        const Gap(12),
+        const Gap(10),
         _ZapEncouragementInCard(app: app, author: publisher),
       ],
     );

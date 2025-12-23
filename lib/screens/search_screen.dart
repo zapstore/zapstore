@@ -3,7 +3,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 
-import '../widgets/app_pack_container.dart';
+import '../widgets/app_stack_container.dart';
 import '../widgets/latest_releases_container.dart';
 import '../widgets/app_card.dart';
 import '../utils/extensions.dart';
@@ -116,10 +116,10 @@ class SearchScreen extends HookConsumerWidget {
                       scrollController: scrollController,
                     ),
 
-                  // App Curation Container with professional spacing
+                  // App Stacks Container
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    child: AppPackContainer(
+                    padding: const EdgeInsets.only(bottom: 14),
+                    child: AppStackContainer(
                       showSkeleton: !(initState.hasValue || initState.hasError),
                     ),
                   ),
@@ -199,7 +199,7 @@ class _SearchResultsSection extends HookConsumerWidget {
       children: [
         if (isSearching)
           Column(
-            children: List.generate(3, (_) => const AppCard(isLoading: true)),
+            children: List.generate(2, (_) => const AppCard(isLoading: true)),
           )
         else if (error != null)
           Padding(
@@ -246,25 +246,13 @@ class _SearchResultsSection extends HookConsumerWidget {
           Column(
             children: [
               // App Cards - authors loaded via profileProvider in AppCard
-              ...results.map((app) => _SearchResultCard(app: app)),
+              ...results.map(
+                (app) => AppCard(app: app, showUpdateArrow: app.hasUpdate),
+              ),
             ],
           ),
         const SizedBox(height: 24),
       ],
     );
-  }
-}
-
-/// Helper widget for search result cards with version information
-class _SearchResultCard extends ConsumerWidget {
-  const _SearchResultCard({required this.app});
-
-  final App app;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // Check if app has updates
-    // Author loaded via profileProvider in AppCard
-    return AppCard(app: app, showUpdateArrow: app.hasUpdate);
   }
 }

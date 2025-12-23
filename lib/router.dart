@@ -3,6 +3,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/screens/main_scaffold.dart';
 import 'package:zapstore/screens/app_detail_screen.dart';
+import 'package:zapstore/screens/app_stack_screen.dart';
 import 'package:zapstore/screens/user_screen.dart';
 import 'package:zapstore/screens/search_screen.dart';
 import 'package:zapstore/screens/updates_screen.dart';
@@ -11,9 +12,9 @@ import 'package:zapstore/screens/profile_screen.dart';
 /// Root paths for each navigation branch (used for back navigation handling)
 const kBranchRoots = ['/search', '/updates', '/profile'];
 
-typedef _ResolvedAppRoute = ({String identifier, String? author});
+typedef _ResolvedRoute = ({String identifier, String? author});
 
-_ResolvedAppRoute _resolveAppRouteId(String rawId) {
+_ResolvedRoute _resolveNaddrRouteId(String rawId) {
   if (rawId.startsWith('naddr1')) {
     try {
       final decoded = Utils.decodeShareableIdentifier(rawId);
@@ -33,9 +34,24 @@ GoRoute _appDetailRoute() {
     path: 'app/:id',
     builder: (context, state) {
       final rawId = state.pathParameters['id']!;
-      final resolved = _resolveAppRouteId(rawId);
+      final resolved = _resolveNaddrRouteId(rawId);
       return AppDetailScreen(
         appId: resolved.identifier,
+        authorPubkey: resolved.author,
+      );
+    },
+  );
+}
+
+/// Helper to build stack detail route
+GoRoute _stackDetailRoute() {
+  return GoRoute(
+    path: 'stack/:id',
+    builder: (context, state) {
+      final rawId = state.pathParameters['id']!;
+      final resolved = _resolveNaddrRouteId(rawId);
+      return AppStackScreen(
+        stackId: resolved.identifier,
         authorPubkey: resolved.author,
       );
     },
@@ -80,7 +96,7 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: '/search',
                 builder: (context, state) => const SearchScreen(),
-                routes: [_appDetailRoute(), _userRoute()],
+                routes: [_appDetailRoute(), _stackDetailRoute(), _userRoute()],
               ),
             ],
           ),
@@ -90,7 +106,7 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: '/updates',
                 builder: (context, state) => const UpdatesScreen(),
-                routes: [_appDetailRoute(), _userRoute()],
+                routes: [_appDetailRoute(), _stackDetailRoute(), _userRoute()],
               ),
             ],
           ),
@@ -100,7 +116,7 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: '/profile',
                 builder: (context, state) => const ProfileScreen(),
-                routes: [_appDetailRoute(), _userRoute()],
+                routes: [_appDetailRoute(), _stackDetailRoute(), _userRoute()],
               ),
             ],
           ),
