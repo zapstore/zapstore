@@ -28,7 +28,7 @@ class AppStackScreen extends HookConsumerWidget {
           '#d': {stackId},
         },
         limit: 1,
-        and: (pack) => {pack.apps},
+        and: (stack) => {stack.apps},
         source: LocalAndRemoteSource(stream: true, relays: 'social'),
         andSource: const LocalAndRemoteSource(
           relays: 'AppCatalog',

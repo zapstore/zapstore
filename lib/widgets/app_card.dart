@@ -71,8 +71,8 @@ class AppCard extends HookConsumerWidget {
         context.push('/$first/app/$naddr');
       },
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        padding: const EdgeInsets.all(12),
+        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(20),
           color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.6),
@@ -341,7 +341,7 @@ class AppCard extends HookConsumerWidget {
         enabled: true,
         child: Container(
           // Match actual content: vertical: 4
-          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(20),
