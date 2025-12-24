@@ -108,3 +108,25 @@ extension FileMetadataExt on FileMetadata {
     return apkSignatureHash != null ? {apkSignatureHash!} : {};
   }
 }
+
+/// String abbreviation utilities
+extension StringAbbreviationExt on String {
+  /// Abbreviates a string to show beginning and end with ellipsis
+  /// Default: shows first 6 and last 6 chars if string is longer than 12
+  String abbreviate({int start = 6, int end = 6}) {
+    final t = trim();
+    final minLength = start + end;
+    if (t.length <= minLength) return t;
+    return '${t.substring(0, start)}...${t.substring(t.length - end)}';
+  }
+
+  /// Abbreviates npub identifiers to "npub1abc...xyz" format
+  /// Shows first 9 chars (npub1 + 4 chars) and last 7 chars
+  /// Returns original string if not an npub identifier
+  String abbreviateNpub() {
+    if (!startsWith('npub1') || length < 20) {
+      return this;
+    }
+    return '${substring(0, 9)}...${substring(length - 7)}';
+  }
+}

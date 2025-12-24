@@ -78,7 +78,7 @@ class AppInfoTable extends HookConsumerWidget {
     if (fileMetadata?.hash != null) {
       final full = fileMetadata!.hash;
       rows.add(
-        _InfoRow(label: 'File hash', value: _abbr(full), copyValue: full),
+        _InfoRow(label: 'File hash', value: full.abbreviate(), copyValue: full),
       );
     }
 
@@ -87,7 +87,7 @@ class AppInfoTable extends HookConsumerWidget {
       rows.add(
         _InfoRow(
           label: 'Certificate hash',
-          value: _abbr(full),
+          value: full.abbreviate(),
           copyValue: full,
         ),
       );
@@ -125,12 +125,6 @@ class AppInfoTable extends HookConsumerWidget {
     }
 
     return rows;
-  }
-
-  String _abbr(String v) {
-    final t = v.trim();
-    if (t.length <= 12) return t;
-    return '${t.substring(0, 6)}...${t.substring(t.length - 6)}';
   }
 
   Widget _buildVersionCodePills(

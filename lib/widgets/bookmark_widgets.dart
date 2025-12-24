@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
-import 'package:zapstore/constants/app_constants.dart';
 import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/auth_widgets.dart';
@@ -285,14 +284,27 @@ class _AddToStackDialogSignedIn extends HookConsumerWidget {
         and: (stack) => {stack.apps},
         source: const LocalAndRemoteSource(relays: 'social', stream: false),
         andSource: const LocalSource(),
-        schemaFilter: appStackEventFilter,
         subscriptionPrefix: 'user-stacks-dialog',
+        // Filter at query level: exclude saved-apps stack and stacks with no app references
+        schemaFilter: (event) {
+          final tags = event['tags'] as List?;
+          if (tags == null) return false;
+          // Check d tag is not the bookmarks identifier
+          final dTag = tags.firstWhere(
+            (t) => t is List && t.isNotEmpty && t[0] == 'd',
+            orElse: () => null,
+          );
+          if (dTag != null && dTag[1] == kAppBookmarksIdentifier) return false;
+          // Check has at least one 'a' tag (app reference)
+          final hasAppRef = tags.any(
+            (t) => t is List && t.isNotEmpty && t[0] == 'a',
+          );
+          return hasAppRef;
+        },
       ),
     );
 
-    final publicStacks = publicStacksState.models
-        .where((stack) => stack.identifier != kAppBookmarksIdentifier)
-        .toList();
+    final publicStacks = publicStacksState.models.toList();
 
     // Check which stacks contain this app
     final selectedCollections = useState<Set<String>>({});

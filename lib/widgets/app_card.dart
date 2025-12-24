@@ -261,6 +261,7 @@ class AppCard extends HookConsumerWidget {
     );
     final publisherStyle = byStyle?.copyWith(fontWeight: FontWeight.w600);
     final avatarSize = context.textTheme.bodyMedium!.fontSize! * 1.4;
+    final displayName = publisher.nameOrNpub.abbreviateNpub();
 
     return Text.rich(
       TextSpan(
@@ -281,7 +282,7 @@ class AppCard extends HookConsumerWidget {
               ),
             ),
           ),
-          TextSpan(text: publisher.nameOrNpub, style: publisherStyle),
+          TextSpan(text: displayName, style: publisherStyle),
         ],
       ),
       softWrap: true,

@@ -73,28 +73,49 @@ class ZapButton extends HookConsumerWidget {
 
 /// Horizontal list of zappers with their profile avatars and amounts
 class ZappersHorizontalList extends StatelessWidget {
-  const ZappersHorizontalList({super.key, required this.zaps});
+  const ZappersHorizontalList({
+    super.key,
+    required this.zaps,
+    this.profilesMap,
+  });
 
   final List<Zap> zaps;
+
+  /// Optional map of pubkey -> Profile. If not provided, falls back to
+  /// relationship-loaded profiles (legacy behavior).
+  final Map<String, Profile>? profilesMap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final color = theme.textTheme.bodySmall?.color?.withValues(alpha: 0.8);
 
-    // Group sats per zapper (prefer zapRequest.author over wallet author)
+    // Group sats per zapper (prefer zapRequest author over wallet author)
     final Map<String, int> satsPerPubkey = <String, int>{};
     final Map<String, Profile> profileByPubkey = <String, Profile>{};
 
     for (final zap in zaps) {
-      final requestAuthor = zap.zapRequest.value?.author.value;
-      final walletAuthor = zap.author.value;
-      final chosenAuthor = requestAuthor ?? walletAuthor;
-      final pubkey = chosenAuthor?.pubkey;
-      if (pubkey == null || chosenAuthor == null) continue;
+      // Get pubkeys - prefer zapRequest author over wallet author
+      final requestPubkey = zap.zapRequest.value?.event.pubkey;
+      final walletPubkey = zap.event.pubkey;
+      final chosenPubkey = requestPubkey ?? walletPubkey;
 
-      satsPerPubkey[pubkey] = (satsPerPubkey[pubkey] ?? 0) + zap.amount;
-      profileByPubkey[pubkey] = chosenAuthor;
+      // Get profile from provided map or fall back to relationship
+      Profile? chosenProfile;
+      if (profilesMap != null) {
+        chosenProfile = profilesMap![chosenPubkey];
+      } else {
+        // Legacy: try to get from relationship
+        final requestAuthor = zap.zapRequest.value?.author.value;
+        final walletAuthor = zap.author.value;
+        chosenProfile = requestAuthor ?? walletAuthor;
+      }
+
+      satsPerPubkey[chosenPubkey] =
+          (satsPerPubkey[chosenPubkey] ?? 0) + zap.amount;
+      if (chosenProfile != null) {
+        profileByPubkey[chosenPubkey] = chosenProfile;
+      }
     }
 
     final entries = satsPerPubkey.entries.toList()

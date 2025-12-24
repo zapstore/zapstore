@@ -820,12 +820,6 @@ class InstallButton extends ConsumerWidget {
     }
   }
 
-  String _abbr(String v) {
-    final t = v.trim();
-    if (t.length <= 12) return t;
-    return '${t.substring(0, 6)}...${t.substring(t.length - 6)}';
-  }
-
   Widget _buildCompactHashRow(
     BuildContext context,
     String versionLabel,
@@ -844,7 +838,7 @@ class InstallButton extends ConsumerWidget {
                   style: TextStyle(fontWeight: FontWeight.w600),
                 ),
                 TextSpan(
-                  text: _abbr(hash),
+                  text: hash.abbreviate(),
                   style: TextStyle(fontFamily: 'monospace'),
                 ),
               ],

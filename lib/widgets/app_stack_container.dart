@@ -6,7 +6,6 @@ import 'package:models/models.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:skeletonizer/skeletonizer.dart';
-import '../constants/app_constants.dart';
 import '../utils/extensions.dart';
 import '../utils/url_utils.dart';
 import '../theme.dart';
@@ -37,8 +36,8 @@ class AppStackContainer extends HookConsumerWidget {
           relays: 'AppCatalog',
           stream: false,
         ),
-        schemaFilter: appStackEventFilter,
         subscriptionPrefix: 'app-stack',
+        schemaFilter: appStackEventFilter,
       ),
     );
 
@@ -60,18 +59,18 @@ class AppStackContainer extends HookConsumerWidget {
     final followingPubkeys =
         contactListState?.models.firstOrNull?.followingPubkeys;
 
-    final rawStacks = switch (appStacksState) {
-      StorageData(:final models) => models,
+    final stacks = switch (appStacksState) {
+      StorageData(:final models) => models.toList(),
       _ => <AppStack>[],
     };
 
-    if (rawStacks.isEmpty) {
+    if (stacks.isEmpty) {
       return _buildSkeleton(context);
     }
 
     // Sort stacks: followed profiles first (or franzap if not signed in), then by recency
-    final stacks = _sortStacks(
-      rawStacks,
+    final sortedStacks = _sortStacks(
+      stacks,
       signedInPubkey: signedInPubkey,
       followingPubkeys: followingPubkeys,
     );
@@ -85,10 +84,11 @@ class AppStackContainer extends HookConsumerWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (int i = 0; i < stacks.length; i += 2)
+          for (int i = 0; i < sortedStacks.length; i += 2)
             Padding(
               padding: EdgeInsets.only(
-                right: i == stacks.length - 2 || i == stacks.length - 1
+                right:
+                    i == sortedStacks.length - 2 || i == sortedStacks.length - 1
                     ? 0
                     : 10,
               ),
@@ -97,10 +97,10 @@ class AppStackContainer extends HookConsumerWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _StackCard(stack: stacks[i]),
-                    if (i + 1 < stacks.length) ...[
+                    _StackCard(stack: sortedStacks[i]),
+                    if (i + 1 < sortedStacks.length) ...[
                       const SizedBox(height: 10),
-                      _StackCard(stack: stacks[i + 1]),
+                      _StackCard(stack: sortedStacks[i + 1]),
                     ],
                   ],
                 ),
@@ -174,23 +174,20 @@ class AppStackContainer extends HookConsumerWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              for (int i = 0; i < 6; i += 2)
-                Padding(
-                  padding: EdgeInsets.only(right: i == 4 ? 0 : 10),
-                  child: SizedBox(
-                    width: 160,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const _SkeletonStackCard(),
-                        if (i + 1 < 6) ...[
-                          const SizedBox(height: 10),
-                          const _SkeletonStackCard(),
-                        ],
-                      ],
-                    ),
+              for (int column = 0; column < 3; column++) ...[
+                if (column > 0) const SizedBox(width: 10),
+                SizedBox(
+                  width: 160,
+                  child: const Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _SkeletonStackCard(),
+                      SizedBox(height: 10),
+                      _SkeletonStackCard(),
+                    ],
                   ),
                 ),
+              ],
             ],
           ),
         ),
@@ -214,55 +211,36 @@ class _SkeletonStackCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Stack name placeholder - increased to match titleMedium size
           Container(
-            height: 22,
+            height: 18,
             width: double.infinity,
             decoration: BoxDecoration(
               color: AppColors.darkSkeletonBase,
               borderRadius: BorderRadius.circular(4),
             ),
           ),
-          const SizedBox(height: 6),
-          // Author row placeholder
-          Row(
-            children: [
-              Container(
-                width: 18,
-                height: 18,
-                decoration: BoxDecoration(
-                  color: AppColors.darkSkeletonBase,
-                  borderRadius: BorderRadius.circular(9),
-                ),
-              ),
-              const SizedBox(width: 5),
-              Container(
-                height: 16,
-                width: 70,
-                decoration: BoxDecoration(
-                  color: AppColors.darkSkeletonBase,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-            ],
-          ),
           const SizedBox(height: 8),
-          // Horizontal icons row placeholder - ensure proper sizing
-          SizedBox(
-            height: 36, // Explicit height to match actual icon row
-            child: Row(
-              children: List.generate(
-                4,
-                (index) => Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.all(2),
-                    child: AspectRatio(
-                      aspectRatio: 1,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: AppColors.darkSkeletonBase,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
+          Container(
+            height: 14,
+            width: 90,
+            decoration: BoxDecoration(
+              color: AppColors.darkSkeletonBase,
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: List.generate(
+              3,
+              (index) => Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  child: AspectRatio(
+                    aspectRatio: 1,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: AppColors.darkSkeletonBase,
+                        borderRadius: BorderRadius.circular(8),
                       ),
                     ),
                   ),
@@ -300,14 +278,32 @@ class _StackCard extends HookConsumerWidget {
       _ => null,
     };
 
-    // Get shuffled apps for the icons row - shuffle only once
-    final apps = stack.apps.toList();
-    final totalApps = apps.length;
-    final previewApps = useMemoized(() {
-      final shuffled = List<App>.from(apps)..shuffle(Random());
-      // Show 3 if there are more than 4, otherwise show up to 4
+    final stackApps = stack.apps.toList();
+    final totalApps = stackApps.length;
+
+    // Pick preview apps deterministically (stable UI) and only fetch those from AppCatalog
+    final previewBaseApps = (() {
+      final shuffled = List<App>.from(stackApps)
+        ..shuffle(Random(stack.id.hashCode));
       return shuffled.take(totalApps > 4 ? 3 : 4).toList();
-    }, [stack.id]);
+    })();
+    final previewIdentifiers = previewBaseApps
+        .map((app) => app.identifier)
+        .toSet();
+
+    final appsState = ref.watch(
+      query<App>(
+        tags: {'#d': previewIdentifiers},
+        limit: previewIdentifiers.length,
+        source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
+        subscriptionPrefix: 'app-stack-preview-apps-${stack.id}',
+      ),
+    );
+
+    final appsMap = {for (final app in appsState.models) app.identifier: app};
+    final previewApps = previewBaseApps
+        .map((app) => appsMap[app.identifier] ?? app)
+        .toList();
 
     // Styling like app_card.dart (slightly larger for visibility)
     final profileStyle = context.textTheme.bodySmall?.copyWith(

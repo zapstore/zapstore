@@ -4,8 +4,6 @@ import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/utils/extensions.dart';
-
-import '../constants/app_constants.dart';
 import '../theme.dart';
 import '../widgets/common/note_parser.dart';
 import '../widgets/common/profile_avatar.dart';
@@ -66,11 +64,11 @@ class UserScreen extends HookConsumerWidget {
           relays: 'AppCatalog',
           stream: false,
         ),
-        schemaFilter: appStackEventFilter,
         subscriptionPrefix: 'user-stacks',
+        schemaFilter: appStackEventFilter,
       ),
     );
-    final stacks = appStacksState.models
+    final stacks = appStacksState.models.toList()
       ..sort((a, b) => b.event.createdAt.compareTo(a.event.createdAt));
 
     return Scaffold(
@@ -158,8 +156,9 @@ class _UserHeader extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  profile?.nameOrNpub ??
-                      '${Utils.encodeShareableFromString(pubkey, type: 'npub').substring(0, 12)}...',
+                  profile?.nameOrNpub.abbreviateNpub() ??
+                      Utils.encodeShareableFromString(pubkey, type: 'npub')
+                          .abbreviateNpub(),
                   style: Theme.of(context).textTheme.headlineSmall,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -206,11 +205,7 @@ class _UserZapsList extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (apps.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    // Create combined tag maps for zaps on apps and their metadata
+    // Collect addressable tags for apps and metadata IDs separately
     final allAppTags = <String, Set<String>>{};
     final metadataIds = <String>{};
 
@@ -226,34 +221,65 @@ class _UserZapsList extends HookConsumerWidget {
       }
     }
 
-    final zapTags = <String, Set<String>>{
-      ...allAppTags,
-      if (metadataIds.isNotEmpty) '#e': metadataIds,
-    };
-
-    if (zapTags.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    final zapsState = ref.watch(
+    // Query zaps on apps (via #a tag) - separate from metadata zaps
+    final appZapsState = ref.watch(
       query<Zap>(
-        tags: zapTags,
+        tags: allAppTags,
         source: const LocalAndRemoteSource(relays: 'social'),
-        and: (zap) => {zap.author, zap.zapRequest},
+        and: (zap) => {zap.zapRequest},
         andSource: const LocalAndRemoteSource(relays: 'social', stream: false),
-        subscriptionPrefix: 'user-zaps',
+        subscriptionPrefix: 'user-app-zaps',
       ),
     );
 
-    final allZaps = zapsState.models;
+    // Query zaps on metadata (via #e tag) - separate query
+    final metadataZapsState = ref.watch(
+      query<Zap>(
+        tags: {'#e': metadataIds},
+        source: const LocalAndRemoteSource(relays: 'social'),
+        and: (zap) => {zap.zapRequest},
+        andSource: const LocalAndRemoteSource(relays: 'social', stream: false),
+        subscriptionPrefix: 'user-metadata-zaps',
+      ),
+    );
+
+    // Combine zaps from both queries
+    final allZaps = {...appZapsState.models, ...metadataZapsState.models};
 
     if (allZaps.isEmpty) {
       return const SizedBox.shrink();
     }
 
+    // Collect pubkeys from zaps and zapRequests for profile query
+    final zapperPubkeys = <String>{};
+    for (final zap in allZaps) {
+      zapperPubkeys.add(zap.event.pubkey);
+      final zapRequest = zap.zapRequest.value;
+      if (zapRequest != null) {
+        zapperPubkeys.add(zapRequest.event.pubkey);
+      }
+    }
+
+    // Query profiles separately with cachedFor
+    final profilesState = ref.watch(
+      query<Profile>(
+        authors: zapperPubkeys,
+        source: const LocalAndRemoteSource(
+          relays: {'social', 'vertex'},
+          cachedFor: Duration(hours: 2),
+        ),
+      ),
+    );
+    final profilesMap = {
+      for (final p in profilesState.models) p.pubkey: p,
+    };
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-      child: ZappersHorizontalList(zaps: allZaps.toList()),
+      child: ZappersHorizontalList(
+        zaps: allZaps.toList(),
+        profilesMap: profilesMap,
+      ),
     );
   }
 }
