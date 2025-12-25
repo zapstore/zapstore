@@ -226,8 +226,6 @@ class _UserZapsList extends HookConsumerWidget {
       query<Zap>(
         tags: allAppTags,
         source: const LocalAndRemoteSource(relays: 'social'),
-        and: (zap) => {zap.zapRequest},
-        andSource: const LocalAndRemoteSource(relays: 'social', stream: false),
         subscriptionPrefix: 'user-app-zaps',
       ),
     );
@@ -237,8 +235,6 @@ class _UserZapsList extends HookConsumerWidget {
       query<Zap>(
         tags: {'#e': metadataIds},
         source: const LocalAndRemoteSource(relays: 'social'),
-        and: (zap) => {zap.zapRequest},
-        andSource: const LocalAndRemoteSource(relays: 'social', stream: false),
         subscriptionPrefix: 'user-metadata-zaps',
       ),
     );
@@ -250,13 +246,13 @@ class _UserZapsList extends HookConsumerWidget {
       return const SizedBox.shrink();
     }
 
-    // Collect pubkeys from zaps and zapRequests for profile query
+    // Collect zapper pubkeys from metadata (already extracted from description tag)
     final zapperPubkeys = <String>{};
     for (final zap in allZaps) {
-      zapperPubkeys.add(zap.event.pubkey);
-      final zapRequest = zap.zapRequest.value;
-      if (zapRequest != null) {
-        zapperPubkeys.add(zapRequest.event.pubkey);
+      // The zapper's pubkey is in event.metadata['author'], extracted from description
+      final zapperPubkey = zap.event.metadata['author'] as String?;
+      if (zapperPubkey != null) {
+        zapperPubkeys.add(zapperPubkey);
       }
     }
 

@@ -90,31 +90,28 @@ class ZappersHorizontalList extends StatelessWidget {
     final theme = Theme.of(context);
     final color = theme.textTheme.bodySmall?.color?.withValues(alpha: 0.8);
 
-    // Group sats per zapper (prefer zapRequest author over wallet author)
+    // Group sats per zapper using metadata['author'] (extracted from description tag)
     final Map<String, int> satsPerPubkey = <String, int>{};
     final Map<String, Profile> profileByPubkey = <String, Profile>{};
 
     for (final zap in zaps) {
-      // Get pubkeys - prefer zapRequest author over wallet author
-      final requestPubkey = zap.zapRequest.value?.event.pubkey;
-      final walletPubkey = zap.event.pubkey;
-      final chosenPubkey = requestPubkey ?? walletPubkey;
+      // The zapper's pubkey is in event.metadata['author'], extracted from description
+      final zapperPubkey = zap.event.metadata['author'] as String?;
+      if (zapperPubkey == null) continue;
 
-      // Get profile from provided map or fall back to relationship
+      // Get profile from provided map or fall back to author relationship
       Profile? chosenProfile;
       if (profilesMap != null) {
-        chosenProfile = profilesMap![chosenPubkey];
+        chosenProfile = profilesMap![zapperPubkey];
       } else {
-        // Legacy: try to get from relationship
-        final requestAuthor = zap.zapRequest.value?.author.value;
-        final walletAuthor = zap.author.value;
-        chosenProfile = requestAuthor ?? walletAuthor;
+        // Legacy: try to get from author relationship (which now points to zapper)
+        chosenProfile = zap.author.value;
       }
 
-      satsPerPubkey[chosenPubkey] =
-          (satsPerPubkey[chosenPubkey] ?? 0) + zap.amount;
+      satsPerPubkey[zapperPubkey] =
+          (satsPerPubkey[zapperPubkey] ?? 0) + zap.amount;
       if (chosenProfile != null) {
-        profileByPubkey[chosenPubkey] = chosenProfile;
+        profileByPubkey[zapperPubkey] = chosenProfile;
       }
     }
 

@@ -229,22 +229,12 @@ class _SkeletonStackCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          Row(
-            children: List.generate(
-              3,
-              (index) => Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 2),
-                  child: AspectRatio(
-                    aspectRatio: 1,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: AppColors.darkSkeletonBase,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                  ),
-                ),
+          AspectRatio(
+            aspectRatio: 4,
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.darkSkeletonBase,
+                borderRadius: BorderRadius.circular(8),
               ),
             ),
           ),
