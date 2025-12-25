@@ -9,7 +9,7 @@ import 'package:models/models.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:zapstore/services/bookmarks_service.dart';
-import 'package:zapstore/services/download/download_service.dart';
+import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/theme.dart';
 import 'package:zapstore/utils/extensions.dart';
@@ -244,7 +244,9 @@ class SocialActionsRow extends HookConsumerWidget {
 
       // Save to local storage and publish to relays
       await ref.storage.save({signedStack});
-      ref.storage.publish({signedStack}, source: RemoteSource(relays: 'social'));
+      ref.storage.publish({
+        signedStack,
+      }, source: RemoteSource(relays: 'social'));
 
       if (context.mounted) {
         context.showInfo(
@@ -909,12 +911,8 @@ class DebugVersionsSection extends HookConsumerWidget {
     Release release,
     FileMetadata metadata,
   ) async {
-    // Use the download service with specific metadata
-    final downloadService = ref.read(downloadServiceProvider.notifier);
-    await downloadService.downloadAppWithMetadata(
-      app.identifier,
-      app.name ?? app.identifier,
-      metadata,
-    );
+    // Use PackageManager to start download
+    final pm = ref.read(packageManagerProvider.notifier);
+    await pm.startDownload(app.identifier, metadata, displayName: app.name);
   }
 }

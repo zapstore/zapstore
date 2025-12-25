@@ -1,32 +1,35 @@
+import 'package:models/models.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 
-/// Dummy implementation of PackageManager for testing
+/// Dummy implementation of PackageManager for testing and non-Android platforms
 final class DummyPackageManager extends PackageManager {
   DummyPackageManager(super.ref) {
-    // Initialize state with mock packages
-    state = [
-      PackageInfo(
-        appId: 'com.example.test',
-        version: '1.0.0',
-        versionCode: 1,
-        signatureHash: 'dummy_signature_1',
-        installTime: DateTime.now().subtract(const Duration(days: 1)),
-      ),
-      PackageInfo(
-        appId: 'dev.zapstore.alpha',
-        version: '1.0.0',
-        versionCode: 1,
-        signatureHash: 'dummy_signature_2',
-        installTime: DateTime.now().subtract(const Duration(hours: 12)),
-      ),
-      PackageInfo(
-        appId: 'com.dummy.browser',
-        version: '2.1.0',
-        versionCode: 210,
-        signatureHash: 'dummy_signature_3',
-        installTime: DateTime.now().subtract(const Duration(days: 5)),
-      ),
-    ];
+    state = PackageManagerState(
+      installed: {
+        'com.example.test': const PackageInfo(
+          appId: 'com.example.test',
+          name: 'Test App',
+          version: '1.0.0',
+          versionCode: 1,
+          signatureHash: 'dummy_signature_1',
+        ),
+        'dev.zapstore.alpha': const PackageInfo(
+          appId: 'dev.zapstore.alpha',
+          name: 'Zapstore',
+          version: '1.0.0',
+          versionCode: 1,
+          signatureHash: 'dummy_signature_2',
+        ),
+        'com.dummy.browser': const PackageInfo(
+          appId: 'com.dummy.browser',
+          name: 'Dummy Browser',
+          version: '2.1.0',
+          versionCode: 210,
+          signatureHash: 'dummy_signature_3',
+        ),
+      },
+      operations: const {},
+    );
   }
 
   @override
@@ -36,56 +39,57 @@ final class DummyPackageManager extends PackageManager {
   String get packageExtension => '.apk';
 
   @override
+  bool get supportsSilentInstall => false;
+
+  @override
   Future<void> install(
     String appId,
     String filePath, {
     required String expectedHash,
     required int expectedSize,
-    bool skipVerification = false,
+    required FileMetadata target,
   }) async {
-    // Mock implementation - just add to list if not already present
-    if (!state.any((p) => p.appId == appId)) {
-      state = [
-        ...state,
-        PackageInfo(
-          appId: appId,
-          version: '1.0.0',
-          versionCode: 1,
-          signatureHash: 'mock_signature',
-          installTime: DateTime.now(),
-        ),
-      ];
-    }
+    // Mock: simulate install delay then add to installed
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    final newInstalled = Map<String, PackageInfo>.from(state.installed);
+    newInstalled[appId] = PackageInfo(
+      appId: appId,
+      version: target.version,
+      versionCode: target.versionCode,
+      signatureHash: 'mock_signature',
+      installTime: DateTime.now(),
+    );
+    state = state.copyWith(installed: newInstalled);
+
+    // Clear the operation since install completed
+    clearOperation(appId);
   }
 
   @override
   Future<void> uninstall(String appId) async {
-    state = state.where((p) => p.appId != appId).toList();
+    await Future.delayed(const Duration(milliseconds: 300));
+
+    final newInstalled = Map<String, PackageInfo>.from(state.installed);
+    newInstalled.remove(appId);
+    state = state.copyWith(installed: newInstalled);
   }
 
   @override
   Future<void> launchApp(String appId) async {
-    // Mock implementation - just simulate launching
-    if (!state.any((p) => p.appId == appId)) {
+    if (!state.installed.containsKey(appId)) {
       throw Exception('App not installed: $appId');
     }
-    // In a real implementation, this would launch the app
     await Future.delayed(const Duration(milliseconds: 500));
   }
 
   @override
   Future<void> requestPermission() async {
-    // Mock implementation - always succeeds
+    // Mock: always succeeds
   }
 
   @override
-  Future<bool> hasPermission() async {
-    // Mock implementation - always has permission
-    return true;
-  }
-
-  @override
-  bool get supportsSilentInstall => false;
+  Future<bool> hasPermission() async => true;
 
   @override
   Future<void> syncInstalledPackages() async {

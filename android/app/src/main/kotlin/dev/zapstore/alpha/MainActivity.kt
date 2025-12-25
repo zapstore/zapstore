@@ -9,7 +9,7 @@ class MainActivity: FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         
-        // Register the unified package manager plugin
+        // Register plugins
         flutterEngine.plugins.add(AndroidPackageManagerPlugin())
         flutterEngine.plugins.add(AppRestartPlugin())
     }

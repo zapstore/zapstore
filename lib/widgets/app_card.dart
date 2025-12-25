@@ -8,7 +8,7 @@ import 'package:markdown/markdown.dart' as md;
 import 'package:skeletonizer/skeletonizer.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/url_utils.dart';
-import 'package:zapstore/services/download/download_service.dart';
+import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/widgets/zap_widgets.dart';
 
 import 'common/profile_avatar.dart';
@@ -446,9 +446,9 @@ class _AppCardUpdateButtonSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final downloadInfo = ref.watch(downloadInfoProvider(app.identifier));
-    final hasDownload = downloadInfo != null;
-    final shouldShow = app.hasUpdate || hasDownload;
+    final operation = ref.watch(installOperationProvider(app.identifier));
+    final hasOperation = operation != null;
+    final shouldShow = app.hasUpdate || hasOperation;
 
     if (!shouldShow) return const SizedBox.shrink();
 
@@ -478,9 +478,9 @@ class _AppCardZapEncouragementSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final downloadInfo = ref.watch(downloadInfoProvider(app.identifier));
+    final operation = ref.watch(installOperationProvider(app.identifier));
 
-    final isActive = downloadInfo?.isActiveOrInstalling ?? false;
+    final isActive = operation?.isActive ?? false;
     final hasLud16 = publisher?.lud16?.trim().isNotEmpty ?? false;
     final canZap = publisher != null && hasLud16;
     final shouldShow = isActive && !app.isRelaySigned && canZap;

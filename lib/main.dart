@@ -12,7 +12,6 @@ import 'package:purplebase/purplebase.dart';
 import 'package:amber_signer/amber_signer.dart';
 import 'package:zapstore/services/app_restart_service.dart';
 import 'package:zapstore/services/background_update_service.dart';
-import 'package:zapstore/services/download/download_service.dart';
 import 'package:zapstore/router.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/theme.dart';
@@ -272,36 +271,49 @@ Future<void> onSignInSuccess(Ref ref) async {
   );
 }
 
-/// Observes app lifecycle events and re-syncs package state when app regains focus
+/// Observes app lifecycle events and manages package/storage state
 class _AppLifecycleObserver with WidgetsBindingObserver {
   _AppLifecycleObserver(this._ref);
 
   final WidgetRef _ref;
 
+  /// Handle permission grants that happened while app was backgrounded
+  Future<void> _checkPermissionGrants() async {
+    final packageManager = _ref.read(packageManagerProvider.notifier);
+    if (packageManager is! AndroidPackageManager) return;
+
+    final hasPermission = await packageManager.hasPermission();
+    if (!hasPermission) return;
+
+    // Advance any operations waiting for permission
+    final state = _ref.read(packageManagerProvider);
+    final awaitingPermission = state.operations.entries
+        .where((e) => e.value is AwaitingPermission)
+        .map((e) => e.key)
+        .toList(growable: false);
+
+    for (final appId in awaitingPermission) {
+      await packageManager.onPermissionGranted(appId);
+    }
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    final downloadService = _ref.read(downloadServiceProvider.notifier);
     final notifier =
         _ref.read(storageNotifierProvider.notifier)
             as PurplebaseStorageNotifier;
+    final packageManager = _ref.read(packageManagerProvider.notifier);
 
     if (state == AppLifecycleState.resumed) {
-      // Process any pending installations
-      unawaited(downloadService.setAppForeground(true));
+      // Sync installed packages to detect installs that completed while backgrounded
+      unawaited(packageManager.syncInstalledPackages());
 
-      // Re-sync installed packages from Android system
-      unawaited(
-        _ref.read(packageManagerProvider.notifier).syncInstalledPackages(),
-      );
-      // Note: UpdateNotifier automatically triggers checkForUpdates() when
-      // packageManagerProvider state changes, so we don't need to call it explicitly
+      // Check for permission grants that happened in settings
+      unawaited(_checkPermissionGrants());
 
-      // Force immediate health check on storage/relay connections
-      // This detects stale connections after system sleep and triggers reconnection
+      // Reconnect storage/relay connections
       notifier.connect();
     } else if (state == AppLifecycleState.paused) {
-      // Note: paused corresponds to Android's `onStop`
-      unawaited(downloadService.setAppForeground(false));
       notifier.disconnect();
     }
   }

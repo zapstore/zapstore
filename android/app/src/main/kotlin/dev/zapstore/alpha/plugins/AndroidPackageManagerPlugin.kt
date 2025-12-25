@@ -5,481 +5,661 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
-import android.app.role.RoleManager
-import android.app.admin.DevicePolicyManager
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.UserManager
 import android.provider.Settings
 import android.system.Os
 import android.util.Log
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import io.flutter.embedding.engine.plugins.FlutterPlugin
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
 import java.io.File
 import java.io.FileInputStream
-import java.io.IOException
 import java.security.MessageDigest
 
 private const val TAG = "AndroidPackageManager"
 
+/** Uninstall polling timeout - 30 seconds is plenty for user to confirm/cancel */
+private const val UNINSTALL_TIMEOUT_MS = 30_000L
+private const val UNINSTALL_POLL_INTERVAL_MS = 500L
+
+/** Watchdog timeouts (bounded with backoff to avoid false negatives on slow devices) */
+private const val VERIFY_WATCHDOG_MS = 10_000L
+private const val INSTALL_WATCHDOG_MS = 10_000L
+private const val MAX_INSTALL_WATCHDOG_MS = 120_000L
+
 /**
- * AndroidPackageManagerPlugin following Accrescent's proven silent installation approach.
- * 
- * Silent Installation Behavior:
- * - Apps installed BY Zapstore: Updates are completely silent (no user prompt)
- * - Apps installed by OTHER sources: First update requires user confirmation to transfer
- *   installer ownership. After accepting once, all subsequent updates are silent.
- * 
- * This is Android's security model to prevent malicious "store hijacking" - even with
- * APP_MARKET category and UPDATE_PACKAGES_WITHOUT_USER_ACTION permission.
- * 
- * Requirements:
- * - Android 12+ (API 31+) for USER_ACTION_NOT_REQUIRED
- * - APP_MARKET category in AndroidManifest.xml
- * - UPDATE_PACKAGES_WITHOUT_USER_ACTION permission
- * - ENFORCE_UPDATE_OWNERSHIP permission (Android 14+)
+ * Install status values emitted via EventChannel.
+ * These form a simple state machine with no hanging states.
  */
-class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler {
-    private lateinit var channel: MethodChannel
+object InstallStatus {
+    const val STARTED = "started"
+    const val VERIFYING = "verifying"
+    const val PENDING_USER_ACTION = "pendingUserAction"
+    const val ALREADY_IN_PROGRESS = "alreadyInProgress"
+    const val SUCCESS = "success"
+    const val FAILED = "failed"
+    const val CANCELLED = "cancelled"
+}
+
+/**
+ * Structured error codes for failures.
+ * Dart uses these for reliable error categorization instead of parsing strings.
+ */
+object ErrorCode {
+    const val DOWNLOAD_FAILED = "downloadFailed"
+    const val HASH_MISMATCH = "hashMismatch"
+    const val INVALID_FILE = "invalidFile"
+    const val INSTALL_FAILED = "installFailed"
+    const val CERT_MISMATCH = "certMismatch"
+    const val PERMISSION_DENIED = "permissionDenied"
+    const val INSUFFICIENT_STORAGE = "insufficientStorage"
+    const val INCOMPATIBLE = "incompatible"
+    const val BLOCKED = "blocked"
+    const val ALREADY_IN_PROGRESS = "alreadyInProgress"
+    const val INSTALL_TIMEOUT = "installTimeout"
+}
+
+/**
+ * AndroidPackageManagerPlugin - Event-driven architecture for clean state management.
+ * 
+ * Architecture:
+ * - MethodChannel: Fire-and-forget commands (install, uninstall, etc.)
+ * - EventChannel: Streams install status events to Dart
+ * - ProcessLifecycleOwner: Auto-detects app foreground state (no Dart involvement)
+ * 
+ * The native side is the single source of truth for install state.
+ * Dart simply reacts to events - no polling, no probing, no hanging awaits.
+ */
+class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler, 
+    EventChannel.StreamHandler, DefaultLifecycleObserver {
+    
+    private lateinit var methodChannel: MethodChannel
+    private lateinit var eventChannel: EventChannel
     private lateinit var context: Context
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    /** Per-app watchdog generation counters (cancels old scheduled callbacks) */
+    private val watchdogGen = mutableMapOf<String, Int>()
+    private val watchdogDeadlineMs = mutableMapOf<String, Long>()
+
+    /** Track verification threads so we can "ping" and avoid false timeouts */
+    private val verificationThreads = mutableMapOf<String, Thread>()
+    
+    private var eventSink: EventChannel.EventSink? = null
     
     companion object {
-        // Store pending install results keyed by sessionId - completed when broadcast arrives
-        private val pendingInstallResults = mutableMapOf<Int, Result>()
+        private var instance: AndroidPackageManagerPlugin? = null
         
-        // Map sessionId to packageName for reverse lookup
+        /** Map sessionId to packageName for reverse lookup in broadcasts */
         private val sessionToPackage = mutableMapOf<Int, String>()
         
-        // Store pending user action intents keyed by packageName - for re-launching after foreground
+        /** Pending user action intents - stored for re-launch when app returns to foreground */
         private val pendingUserActionIntents = mutableMapOf<String, Intent>()
-
-        // Track whether the pending user action prompt was deferred (app backgrounded or launch failed).
-        // Only deferred prompts should be re-launched on app resume to avoid double system dialogs.
-        private val pendingUserActionDeferred = mutableMapOf<String, Boolean>()
         
-        // Track app foreground state - set by Dart via setAppForegroundState
+        /** Buffer last-known event per appId when Dart isn't listening yet */
+        private val bufferedEvents = mutableMapOf<String, Map<String, Any?>>()
+
+        /** App foreground state - auto-managed by ProcessLifecycleOwner */
         private var isAppInForeground = true
         
-        // Reference to context for static methods (set during onAttachedToEngine)
         private var appContext: Context? = null
         
         /**
-         * Set the app's foreground state. Called from Dart when lifecycle changes.
+         * Called by InstallResultReceiver when a broadcast arrives.
+         * Emits the status event to Dart via EventChannel.
          */
-        fun setAppForegroundState(foreground: Boolean) {
-            isAppInForeground = foreground
-            Log.d(TAG, "App foreground state: $foreground")
-        }
-        
-        /**
-         * Check if the app is currently in foreground.
-         */
-        fun isAppInForeground(): Boolean = isAppInForeground
-        
-        /**
-         * Check if we're already waiting for a result for this package.
-         */
-        fun hasPendingResultForPackage(packageName: String): Boolean {
-            return sessionToPackage.containsValue(packageName)
-        }
-        
-        /**
-         * Called by InstallResultReceiver when installation completes/fails.
-         * Completes the pending method channel result so Dart await finishes.
-         */
-        fun completeInstallResult(sessionId: Int, resultMap: Map<String, Any?>, context: Context? = null) {
-            val result = pendingInstallResults.remove(sessionId)
-            val packageName = resultMap["packageName"] as? String ?: sessionToPackage[sessionId]
+        fun onInstallResult(
+            sessionId: Int,
+            status: String,
+            packageName: String,
+            message: String? = null,
+            isUpdate: Boolean = false,
+            confirmIntent: Intent? = null,
+            errorCode: String? = null
+        ) {
+            val pkg = packageName.ifEmpty { sessionToPackage[sessionId] ?: "unknown" }
             
-            // Clear all tracking for this session/package
-            sessionToPackage.remove(sessionId)
-            if (packageName != null) {
-                pendingUserActionIntents.remove(packageName)
-                pendingUserActionDeferred.remove(packageName)
-                Log.d(TAG, "Cleared all tracking for $packageName (session $sessionId)")
-            }
+            Log.d(TAG, "onInstallResult: pkg=$pkg, status=$status, msg=$message, errorCode=$errorCode, sessionId=$sessionId")
             
-            // For failed/cancelled installs, try to abandon the session to clean up
-            val isSuccess = resultMap["isSuccess"] as? Boolean ?: false
-            val ctx = context ?: appContext
-            if (!isSuccess && ctx != null) {
-                try {
-                    val packageInstaller = ctx.packageManager.packageInstaller
-                    packageInstaller.abandonSession(sessionId)
-                    Log.d(TAG, "Abandoned failed session $sessionId")
-                } catch (e: Exception) {
-                    // Session might already be abandoned or completed
-                    Log.d(TAG, "Could not abandon session $sessionId: ${e.message}")
+            // Handle pending user action - store intent for potential re-launch
+            if (status == InstallStatus.PENDING_USER_ACTION && confirmIntent != null) {
+                pendingUserActionIntents[pkg] = confirmIntent
+                
+                // Auto-launch dialog if app is in foreground
+                if (isAppInForeground) {
+                    launchConfirmDialog(pkg, confirmIntent)
                 }
             }
             
-            if (result != null) {
-                Log.d(TAG, "Completing install result for session $sessionId: $resultMap")
-                result.success(resultMap)
-            } else {
-                Log.w(TAG, "No pending result found for session $sessionId")
+            // Clean up tracking on terminal states
+            if (status in listOf(InstallStatus.SUCCESS, InstallStatus.FAILED, InstallStatus.CANCELLED)) {
+                sessionToPackage.remove(sessionId)
+                pendingUserActionIntents.remove(pkg)
+                
+                if (status != InstallStatus.SUCCESS) {
+                    abandonSession(sessionId)
+                }
+            }
+            
+            val inst = instance
+            if (inst == null) {
+                Log.e(TAG, "CRITICAL: Cannot emit event - plugin instance is null! pkg=$pkg, status=$status")
+                bufferEvent(pkg, status, message, errorCode)
+                return
+            }
+            inst.emitInstallStatus(pkg, status, message, errorCode)
+        }
+
+        private fun bufferEvent(
+            appId: String,
+            status: String,
+            message: String? = null,
+            errorCode: String? = null
+        ) {
+            val event = mutableMapOf<String, Any?>(
+                "appId" to appId,
+                "status" to status
+            )
+            if (message != null) event["message"] = message
+            if (errorCode != null) event["errorCode"] = errorCode
+            bufferedEvents[appId] = event
+        }
+        
+        private fun launchConfirmDialog(packageName: String, intent: Intent) {
+            val ctx = appContext ?: return
+            try {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                ctx.startActivity(intent)
+                Log.d(TAG, "Launched confirmation dialog for $packageName")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to launch confirmation dialog for $packageName", e)
             }
         }
         
-        /**
-         * Check if we have a pending result for this session (used by receiver)
-         */
-        fun hasPendingResult(sessionId: Int): Boolean {
-            return pendingInstallResults.containsKey(sessionId)
+        private fun abandonSession(sessionId: Int) {
+            val ctx = appContext ?: return
+            try {
+                ctx.packageManager.packageInstaller.abandonSession(sessionId)
+            } catch (e: Exception) {
+                Log.d(TAG, "Could not abandon session $sessionId: ${e.message}")
+            }
         }
         
-        /**
-         * Store a pending user action intent for later re-launch.
-         */
-        fun storePendingUserActionIntent(packageName: String, intent: Intent) {
-            pendingUserActionIntents[packageName] = intent
-            Log.d(TAG, "Stored pending user action intent for $packageName")
-        }
-
-        /**
-         * Mark whether a pending user action prompt was deferred.
-         *
-         * - deferred=true: prompt was NOT shown (or failed to show). Safe to re-launch on resume.
-         * - deferred=false: prompt was shown while in foreground. Do NOT re-launch on resume.
-         */
-        fun setPendingUserActionDeferred(packageName: String, deferred: Boolean) {
-            pendingUserActionDeferred[packageName] = deferred
-            Log.d(TAG, "Pending user action deferred for $packageName: $deferred")
-        }
-        
-        /**
-         * Check if there's a pending user action for a package
-         */
-        fun hasPendingUserAction(packageName: String): Boolean {
-            return pendingUserActionIntents.containsKey(packageName)
-        }
+        fun isAppInForeground(): Boolean = isAppInForeground
     }
-
-    override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
-        channel = MethodChannel(flutterPluginBinding.binaryMessenger, "android_package_manager")
-        channel.setMethodCallHandler(this)
-        context = flutterPluginBinding.applicationContext
+    
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // FLUTTER PLUGIN LIFECYCLE
+    // ═══════════════════════════════════════════════════════════════════════════════
+    
+    override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
+        context = binding.applicationContext
         appContext = context
+        instance = this
         
-        // Clean up ALL existing sessions on startup - start fresh
-        abandonAllSessions()
+        methodChannel = MethodChannel(binding.binaryMessenger, "android_package_manager")
+        methodChannel.setMethodCallHandler(this)
         
+        eventChannel = EventChannel(binding.binaryMessenger, "android_package_manager/events")
+        eventChannel.setStreamHandler(this)
+        
+        // Auto-detect foreground state via ProcessLifecycleOwner
+        mainHandler.post {
+            ProcessLifecycleOwner.get().lifecycle.addObserver(this)
+        }
+        
+        cleanupStaleSessions()
         Log.d(TAG, "AndroidPackageManagerPlugin initialized")
     }
     
-    /**
-     * Abandon ALL PackageInstaller sessions owned by this app.
-     * Called on startup to ensure clean state.
-     */
-    private fun abandonAllSessions() {
-        try {
-            val packageInstaller = context.packageManager.packageInstaller
-            val mySessions = packageInstaller.mySessions
-            var abandonedCount = 0
-            
-            for (session in mySessions) {
-                // Never abandon active sessions: doing so can cause "session files in use" and/or
-                // break in-progress installs when the engine re-attaches.
-                if (session.isActive) {
-                    Log.d(TAG, "Startup cleanup: skipping active session ${session.sessionId} for ${session.appPackageName}")
-                    continue
-                }
-                Log.d(TAG, "Abandoning startup session ${session.sessionId} for ${session.appPackageName}")
-                try {
-                    packageInstaller.abandonSession(session.sessionId)
-                    abandonedCount++
-                } catch (e: Exception) {
-                    Log.w(TAG, "Failed to abandon session ${session.sessionId}", e)
-                }
-            }
-            
-            // Clear all in-memory state
-            pendingInstallResults.clear()
-            sessionToPackage.clear()
-            pendingUserActionIntents.clear()
-            pendingUserActionDeferred.clear()
-            
-            if (abandonedCount > 0) {
-                Log.d(TAG, "Startup cleanup: abandoned $abandonedCount sessions")
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to cleanup sessions on startup", e)
-        }
-    }
-    
-    /**
-     * Find an existing session for a package, if any.
-     * Returns the session info or null if no session exists.
-     */
-    private fun findExistingSession(packageName: String): PackageInstaller.SessionInfo? {
-        return try {
-            val packageInstaller = context.packageManager.packageInstaller
-            packageInstaller.mySessions.find { it.appPackageName == packageName }
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to check existing sessions", e)
-            null
-        }
-    }
-    
-    /**
-     * Abandon any existing session for a package.
-     * Returns true if a session was abandoned.
-     */
-    private fun abandonExistingSession(packageName: String): Boolean {
-        val existingSession = findExistingSession(packageName)
-        if (existingSession != null) {
-            try {
-                val packageInstaller = context.packageManager.packageInstaller
-                packageInstaller.abandonSession(existingSession.sessionId)
-                pendingInstallResults.remove(existingSession.sessionId)
-                sessionToPackage.remove(existingSession.sessionId)
-                pendingUserActionIntents.remove(packageName)
-                pendingUserActionDeferred.remove(packageName)
-                Log.d(TAG, "Abandoned existing session ${existingSession.sessionId} for $packageName")
-                return true
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to abandon session for $packageName", e)
-            }
-        }
-        return false
-    }
-
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-        channel.setMethodCallHandler(null)
-        // Clear any pending results on detach
-        pendingInstallResults.clear()
+        mainHandler.post {
+            ProcessLifecycleOwner.get().lifecycle.removeObserver(this)
+        }
+        methodChannel.setMethodCallHandler(null)
+        eventChannel.setStreamHandler(null)
+        eventSink = null
+        instance = null
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // LIFECYCLE OBSERVER (Auto foreground detection)
+    // ═══════════════════════════════════════════════════════════════════════════════
+    
+    override fun onStart(owner: LifecycleOwner) {
+        // App came to foreground
+        val wasForeground = isAppInForeground
+        isAppInForeground = true
+        Log.d(TAG, "App foregrounded")
+        
+        if (!wasForeground) {
+            // Re-launch any pending install dialogs
+            for ((packageName, intent) in pendingUserActionIntents.toMap()) {
+                Log.d(TAG, "Re-launching pending dialog for $packageName")
+                launchConfirmDialog(packageName, intent)
+            }
+        }
+    }
+    
+    override fun onStop(owner: LifecycleOwner) {
+        // App went to background
+        isAppInForeground = false
+        Log.d(TAG, "App backgrounded")
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // EVENT CHANNEL STREAM HANDLER
+    // ═══════════════════════════════════════════════════════════════════════════════
+    
+    override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+        eventSink = events
+        // Flush buffered events (if any) so Dart can reconcile state.
+        val sink = eventSink ?: return
+        mainHandler.post {
+            if (bufferedEvents.isNotEmpty()) {
+                for (event in bufferedEvents.values) {
+                    try {
+                        sink.success(event)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to flush buffered event: $event", e)
+                    }
+                }
+                bufferedEvents.clear()
+            }
+        }
+    }
+    
+    override fun onCancel(arguments: Any?) {
+        eventSink = null
+    }
+    
+    private fun emitInstallStatus(
+        appId: String, 
+        status: String, 
+        message: String? = null,
+        errorCode: String? = null
+    ) {
+        val emitNow = emit@{
+            // Update watchdog regardless of whether Dart is listening.
+            updateWatchdog(appId, status)
+
+            val sink = eventSink
+            if (sink == null) {
+                Log.e(TAG, "CRITICAL: Cannot emit event - eventSink is null! appId=$appId, status=$status, msg=$message")
+                bufferEvent(appId, status, message, errorCode)
+                return@emit
+            }
+            
+            val event = mutableMapOf<String, Any?>(
+                "appId" to appId,
+                "status" to status
+            )
+            if (message != null) {
+                event["message"] = message
+            }
+            if (errorCode != null) {
+                event["errorCode"] = errorCode
+            }
+            Log.d(TAG, "Emitting to Dart: $event")
+            sink.success(event)
+        }
+
+        // If we're already on the main thread (common for MethodChannel calls),
+        // emit synchronously so the UI can transition immediately.
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            emitNow()
+        } else {
+            mainHandler.post { emitNow() }
+        }
     }
 
+    private fun bumpWatchdogGen(appId: String): Int {
+        val next = (watchdogGen[appId] ?: 0) + 1
+        watchdogGen[appId] = next
+        return next
+    }
+
+    private fun clearWatchdog(appId: String) {
+        bumpWatchdogGen(appId)
+        watchdogDeadlineMs.remove(appId)
+    }
+
+    private fun scheduleWatchdog(appId: String, initialDelayMs: Long) {
+        val gen = bumpWatchdogGen(appId)
+        val now = System.currentTimeMillis()
+        val deadline = watchdogDeadlineMs[appId] ?: (now + MAX_INSTALL_WATCHDOG_MS).also {
+            watchdogDeadlineMs[appId] = it
+        }
+
+        mainHandler.postDelayed({
+            if (watchdogGen[appId] != gen) return@postDelayed
+
+            // "Ping" reality before timing out.
+            val hasSession = hasActiveSession(appId)
+            val hasPendingUi = pendingUserActionIntents.containsKey(appId)
+            val verifyThread = verificationThreads[appId]
+            val verifyingAlive = verifyThread?.isAlive == true
+
+            // If work is still happening, extend (bounded by deadline).
+            val now2 = System.currentTimeMillis()
+            if (now2 < deadline && (hasSession || hasPendingUi || verifyingAlive)) {
+                // Nudge Dart to show the most accurate state (esp. after reconnect).
+                if (hasPendingUi) {
+                    emitInstallStatus(appId, InstallStatus.PENDING_USER_ACTION, "User confirmation pending")
+                } else if (hasSession) {
+                    emitInstallStatus(appId, InstallStatus.STARTED)
+                } else if (verifyingAlive) {
+                    emitInstallStatus(appId, InstallStatus.VERIFYING)
+                }
+                // Backoff: next check is another INSTALL_WATCHDOG_MS.
+                scheduleWatchdog(appId, INSTALL_WATCHDOG_MS)
+                return@postDelayed
+            }
+
+            // Deadline exceeded or no evidence of progress: fail fast and cleanup.
+            Log.w(TAG, "Watchdog timeout for $appId (hasSession=$hasSession, pendingUi=$hasPendingUi, verifyingAlive=$verifyingAlive)")
+            abandonExistingSession(appId)
+            emitInstallStatus(
+                appId,
+                InstallStatus.FAILED,
+                "Installation timed out. Please retry.",
+                ErrorCode.INSTALL_TIMEOUT
+            )
+            clearWatchdog(appId)
+        }, initialDelayMs)
+    }
+
+    private fun updateWatchdog(appId: String, status: String) {
+        when (status) {
+            InstallStatus.VERIFYING -> {
+                // Start watchdog for verify stage
+                scheduleWatchdog(appId, VERIFY_WATCHDOG_MS)
+            }
+            InstallStatus.STARTED, InstallStatus.PENDING_USER_ACTION -> {
+                // Start/refresh watchdog for install stage
+                scheduleWatchdog(appId, INSTALL_WATCHDOG_MS)
+            }
+            InstallStatus.SUCCESS, InstallStatus.FAILED, InstallStatus.CANCELLED -> {
+                clearWatchdog(appId)
+                verificationThreads.remove(appId)
+            }
+        }
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // METHOD CHANNEL HANDLER
+    // ═══════════════════════════════════════════════════════════════════════════════
+    
     override fun onMethodCall(call: MethodCall, result: Result) {
         when (call.method) {
             "install" -> {
                 val filePath = call.argument<String>("filePath")
-                if (filePath == null) {
-                    result.error("MISSING_ARGUMENT", "File path is required", null)
+                val packageName = call.argument<String>("packageName")
+                val expectedHash = call.argument<String>("expectedHash")
+                val expectedSize = call.argument<Number>("expectedSize")?.toLong()
+                
+                if (filePath == null || packageName == null) {
+                    result.error("MISSING_ARGUMENT", "filePath and packageName required", null)
                     return
                 }
-                val expectedHash = call.argument<String>("expectedHash")
-                // Dart integers come as Integer, not Long, so we need to safely convert
-                val expectedSize = call.argument<Number>("expectedSize")?.toLong()
-                val skipVerification = call.argument<Boolean>("skipVerification") ?: false
-                installApk(filePath, expectedHash, expectedSize, skipVerification, result)
+                installApk(filePath, packageName, expectedHash, expectedSize, result)
             }
+            
             "canInstallSilently" -> {
                 val packageName = call.argument<String>("packageName")
                 result.success(canInstallSilently(packageName))
             }
-            "hasUnknownSourcesPermission" -> {
-                result.success(hasUnknownSourcesPermission())
-            }
+            
+            "hasUnknownSourcesPermission" -> result.success(hasUnknownSourcesPermission())
+            
+            "requestInstallPermission" -> requestInstallPermission(result)
+            
             "getInstalledApps" -> {
                 val includeSystem = call.argument<Boolean>("includeSystemApps") ?: false
                 result.success(getInstalledApps(includeSystem))
             }
-            "requestInstallPermission" -> {
-                requestInstallPermission(result)
-            }
+            
             "uninstall" -> {
                 val packageName = call.argument<String>("packageName")
                 if (packageName == null) {
-                    result.error("MISSING_ARGUMENT", "Package name is required", null)
+                    result.error("MISSING_ARGUMENT", "packageName required", null)
                     return
                 }
                 uninstallApp(packageName, result)
             }
+            
             "launchApp" -> {
                 val packageName = call.argument<String>("packageName")
                 if (packageName == null) {
-                    result.error("MISSING_ARGUMENT", "Package name is required", null)
+                    result.error("MISSING_ARGUMENT", "packageName required", null)
                     return
                 }
                 launchApp(packageName, result)
             }
-            "retryPendingInstall" -> {
-                val packageName = call.argument<String>("packageName")
-                if (packageName == null) {
-                    result.error("MISSING_ARGUMENT", "Package name is required", null)
-                    return
-                }
-                retryPendingInstall(packageName, result)
-            }
-            "setAppForegroundState" -> {
-                val foreground = call.argument<Boolean>("foreground") ?: true
-                setAppForegroundState(foreground)
-                result.success(null)
-            }
-            else -> {
-                result.notImplemented()
-            }
+            
+            else -> result.notImplemented()
         }
     }
-
-    private fun canInstallSilently(packageName: String? = null): Boolean {
-        try {
-            // Android 12+ (API 31+) is required for USER_ACTION_NOT_REQUIRED to work
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-                return false
+    
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // INSTALLATION
+    // ═══════════════════════════════════════════════════════════════════════════════
+    
+    private fun installApk(
+        filePath: String,
+        packageName: String,
+        expectedHash: String?,
+        expectedSize: Long?,
+        result: Result
+    ) {
+        val file = File(filePath)
+        if (!file.exists()) {
+            emitInstallStatus(packageName, InstallStatus.FAILED, "APK file not found", ErrorCode.DOWNLOAD_FAILED)
+            result.success(mapOf("started" to false, "error" to "APK file not found", "errorCode" to ErrorCode.DOWNLOAD_FAILED))
+            return
+        }
+        
+        if (hasActiveSession(packageName)) {
+            pendingUserActionIntents[packageName]?.let { launchConfirmDialog(packageName, it) }
+            // IMPORTANT: Emit an event so Dart can transition out of active states.
+            if (pendingUserActionIntents.containsKey(packageName)) {
+                emitInstallStatus(packageName, InstallStatus.PENDING_USER_ACTION, "User confirmation pending")
+            } else {
+                emitInstallStatus(packageName, InstallStatus.ALREADY_IN_PROGRESS, "Installation already in progress", ErrorCode.ALREADY_IN_PROGRESS)
             }
-
-            // 1) UPDATE_PACKAGES_WITHOUT_USER_ACTION permission (the main one we rely on)
-            val hasUpdateWithoutUserActionPerm = try {
-                context.checkSelfPermission("android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION") == PackageManager.PERMISSION_GRANTED
-            } catch (_: Throwable) { false }
-
-            // 2) Device owner (enterprise) can generally install without user action
-            val isDeviceOwner = try {
-                val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-                dpm.isDeviceOwnerApp(context.packageName)
-            } catch (_: Throwable) { false }
-
-            // 3) Default package installer role (rare; typically system store)
-            val hasInstallerRole = try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    val roleManager = context.getSystemService(Context.ROLE_SERVICE) as RoleManager
-                    val installerRole = "android.app.role.PACKAGE_INSTALLER"
-                    roleManager.isRoleAvailable(installerRole) &&
-                        roleManager.isRoleHeld(installerRole)
-                } else false
-            } catch (_: Throwable) { false }
-
-            // 4) Check if we can request package installs (basic requirement)
-            val canRequestInstalls = try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    context.packageManager.canRequestPackageInstalls()
-                } else true
-            } catch (_: Throwable) { false }
-
-            // Additional check for installer ownership if package name provided
-            val weAreInstaller = if (packageName != null) {
-                try {
-                    val installerPackageName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                        context.packageManager.getInstallSourceInfo(packageName).installingPackageName
+            result.success(mapOf("started" to false, "alreadyInProgress" to true))
+            return
+        }
+        
+        if (expectedHash != null && expectedSize != null) {
+            // Emit verifying status before starting hash check
+            emitInstallStatus(packageName, InstallStatus.VERIFYING)
+            result.success(mapOf("started" to true, "verifying" to true))
+            
+            val t = Thread {
+                val verification = verifyApk(file, expectedHash, expectedSize)
+                mainHandler.post {
+                    if (verification.isSuccess) {
+                        startInstallSession(file, packageName, result = null) // Result already sent
                     } else {
-                        @Suppress("DEPRECATION")
-                        context.packageManager.getInstallerPackageName(packageName)
+                        emitInstallStatus(
+                            packageName, 
+                            InstallStatus.FAILED, 
+                            verification.errorMessage,
+                            verification.errorCode
+                        )
                     }
-                    val isInstaller = installerPackageName == context.packageName
-                    isInstaller
-                } catch (e: PackageManager.NameNotFoundException) {
-                    // Package not installed yet, so we can install it silently (first install)
-                    Log.d(TAG, "Package $packageName not installed yet (NameNotFoundException)")
-                    true
-                } catch (e: Exception) {
-                    // If we can't verify we're the installer, assume we're not
-                    Log.w(TAG, "Failed to check installer for $packageName", e)
-                    false
+                    verificationThreads.remove(packageName)
                 }
-            } else {
-                true // No specific package check
             }
-
-            // Can install silently if we have the permission OR (we're the installer/device owner/have role)
-            val hasSpecialPrivilege = hasUpdateWithoutUserActionPerm || isDeviceOwner || hasInstallerRole
-            
-            // CRITICAL: Even with UPDATE_PACKAGES_WITHOUT_USER_ACTION permission,
-            // Android requires one-time user confirmation to transfer installer ownership.
-            // For UI categorization, we must check if we're already the installer.
-            // If a specific package is being checked, installer ownership is REQUIRED for truly silent updates.
-            val canSilently = if (packageName != null) {
-                // For specific package checks: must be installer OR have special privileges AND be installer
-                // Actually, even with privileges, first update of non-owned app requires user action
-                canRequestInstalls && weAreInstaller
-            } else {
-                // General capability check (no specific package)
-                canRequestInstalls && hasSpecialPrivilege
-            }
-            
-            return canSilently
-        } catch (e: Throwable) {
-            Log.w(TAG, "canInstallSilently check failed", e)
-            return false
-        }
-    }
-
-    private fun hasUnknownSourcesPermission(): Boolean {
-        return try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.packageManager.canRequestPackageInstalls()
-            } else true
-        } catch (_: Throwable) { false }
-    }
-
-    private fun requestInstallPermission(result: Result) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            if (!context.packageManager.canRequestPackageInstalls()) {
-                try {
-                    val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
-                        data = Uri.parse("package:${context.packageName}")
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    context.startActivity(intent)
-                    result.success(mapOf(
-                        "success" to true,
-                        "message" to "Permission request launched"
-                    ))
-                } catch (e: Exception) {
-                    result.success(mapOf(
-                        "success" to false,
-                        "message" to "Failed to launch permission request: ${e.message}"
-                    ))
-                }
-            } else {
-                result.success(mapOf(
-                    "success" to true,
-                    "message" to "Permission already granted"
-                ))
-            }
+            verificationThreads[packageName] = t
+            t.start()
         } else {
-            result.success(mapOf(
-                "success" to true,
-                "message" to "Permission not required on this Android version"
-            ))
+            startInstallSession(file, packageName, result)
         }
     }
-
-    /**
-     * Result of APK verification (for background thread use)
-     */
+    
+    private fun startInstallSession(apkFile: File, packageName: String, result: Result?) {
+        try {
+            val userManager = context.getSystemService(UserManager::class.java)
+            val installBlocked = userManager.hasUserRestriction(UserManager.DISALLOW_INSTALL_APPS) ||
+                userManager.hasUserRestriction(UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES) ||
+                userManager.hasUserRestriction(UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES_GLOBALLY)
+            
+            if (installBlocked) {
+                emitInstallStatus(packageName, InstallStatus.FAILED, "Installation blocked by device policy", ErrorCode.BLOCKED)
+                result?.success(mapOf("started" to false, "error" to "Blocked by policy", "errorCode" to ErrorCode.BLOCKED))
+                return
+            }
+            
+            val packageInstaller = context.packageManager.packageInstaller
+            val pkgInfo = context.packageManager.getPackageArchiveInfo(apkFile.absolutePath, 0)
+            if (pkgInfo == null) {
+                emitInstallStatus(packageName, InstallStatus.FAILED, "Invalid APK file", ErrorCode.INVALID_FILE)
+                result?.success(mapOf("started" to false, "error" to "Invalid APK", "errorCode" to ErrorCode.INVALID_FILE))
+                return
+            }
+            
+            // CRITICAL: Use the passed packageName for tracking, not the APK's internal package name
+            // This ensures Dart's operation key matches the events we emit
+            // The APK's packageName should match, but we log a warning if not
+            val trackingPackageName = packageName
+            if (pkgInfo.packageName != packageName) {
+                Log.w(TAG, "Package name mismatch: tracking='$packageName', APK contains='${pkgInfo.packageName}'. Using tracking name for events.")
+            }
+            
+            val isUpdate = try {
+                context.packageManager.getPackageInfo(pkgInfo.packageName, 0)
+                true
+            } catch (_: PackageManager.NameNotFoundException) { false }
+            
+            abandonExistingSession(trackingPackageName)
+            
+            val sessionParams = PackageInstaller.SessionParams(
+                PackageInstaller.SessionParams.MODE_FULL_INSTALL
+            ).apply {
+                // Set app package name for proper installer tracking
+                setAppPackageName(pkgInfo.packageName)
+                
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+                    // Explicitly set ourselves as the installer for update ownership
+                    setInstallerPackageName(context.packageName)
+                }
+                setInstallLocation(pkgInfo.installLocation)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    setPackageSource(PackageInstaller.PACKAGE_SOURCE_STORE)
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    setRequestUpdateOwnership(true)
+                }
+            }
+            
+            val sessionId = packageInstaller.createSession(sessionParams)
+            val session = packageInstaller.openSession(sessionId)
+            // Use tracking name so events match Dart's operation key
+            sessionToPackage[sessionId] = trackingPackageName
+            
+            FileInputStream(apkFile).use { fis ->
+                val fileSize = Os.fstat(fis.fd).st_size
+                val sessionStream = session.openWrite(apkFile.name, 0, fileSize)
+                fis.copyTo(sessionStream)
+                fis.close()
+                session.fsync(sessionStream)
+                sessionStream.close()
+            }
+            
+            val intent = Intent(context.applicationContext, InstallResultReceiver::class.java).apply {
+                putExtra("sessionId", sessionId)
+                // Use tracking name so events match Dart's operation key
+                putExtra("packageName", trackingPackageName)
+                putExtra("isUpdate", isUpdate)
+            }
+            val pendingIntent = PendingIntent.getBroadcast(
+                context.applicationContext, sessionId, intent,
+                PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+            
+            session.commit(pendingIntent.intentSender)
+            session.close()
+            
+            emitInstallStatus(trackingPackageName, InstallStatus.STARTED)
+            result?.success(mapOf("started" to true, "sessionId" to sessionId, "packageName" to trackingPackageName))
+            
+        } catch (e: SecurityException) {
+            emitInstallStatus(packageName, InstallStatus.FAILED, "Permission denied: ${e.message}", ErrorCode.PERMISSION_DENIED)
+            result?.success(mapOf("started" to false, "error" to "Permission denied", "errorCode" to ErrorCode.PERMISSION_DENIED))
+        } catch (e: Exception) {
+            emitInstallStatus(packageName, InstallStatus.FAILED, e.message ?: "Installation failed", ErrorCode.INSTALL_FAILED)
+            result?.success(mapOf("started" to false, "error" to e.message, "errorCode" to ErrorCode.INSTALL_FAILED))
+        }
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // SESSION MANAGEMENT
+    // ═══════════════════════════════════════════════════════════════════════════════
+    
+    private fun hasActiveSession(packageName: String): Boolean {
+        return sessionToPackage.containsValue(packageName) || 
+               findExistingSession(packageName) != null
+    }
+    
+    private fun findExistingSession(packageName: String): PackageInstaller.SessionInfo? {
+        return try {
+            context.packageManager.packageInstaller.mySessions
+                .find { it.appPackageName == packageName }
+        } catch (_: Exception) { null }
+    }
+    
+    private fun abandonExistingSession(packageName: String) {
+        val session = findExistingSession(packageName) ?: return
+        try {
+            context.packageManager.packageInstaller.abandonSession(session.sessionId)
+            sessionToPackage.remove(session.sessionId)
+            pendingUserActionIntents.remove(packageName)
+        } catch (_: Exception) {}
+    }
+    
+    private fun cleanupStaleSessions() {
+        try {
+            val installer = context.packageManager.packageInstaller
+            installer.mySessions.filter { !it.isActive }.forEach { session ->
+                try { installer.abandonSession(session.sessionId) } catch (_: Exception) {}
+            }
+            sessionToPackage.clear()
+            pendingUserActionIntents.clear()
+        } catch (_: Exception) {}
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // APK VERIFICATION
+    // ═══════════════════════════════════════════════════════════════════════════════
+    
     private data class VerificationResult(
-        val isSuccess: Boolean,
-        val errorMessage: String = ""
+        val isSuccess: Boolean, 
+        val errorMessage: String = "",
+        val errorCode: String? = null
     )
     
-    /**
-     * Verify APK on background thread - returns result instead of using Flutter Result
-     */
-    private fun verifyApkBackground(
-        apkFile: File,
-        expectedHash: String,
-        expectedSize: Long
-    ): VerificationResult {
-        val actualSize = apkFile.length()
-        
-        // First, verify this is a valid APK/ZIP file
-        if (!isValidApk(apkFile)) {
-            val errorMsg = """
-                Invalid APK file. The downloaded file is not a valid Android package.
-                This may indicate:
-                • Incomplete download
-                • Corrupted file
-                • Wrong file type
-                
-                File size: ${String.format("%.2f", actualSize / 1024.0 / 1024.0)} MB ($actualSize bytes)
-                Please try downloading again.
-            """.trimIndent()
-            
-            apkFile.delete()
-            return VerificationResult(false, errorMsg)
+    private fun verifyApk(file: File, expectedHash: String, expectedSize: Long): VerificationResult {
+        if (!isValidApkFormat(file)) {
+            file.delete()
+            return VerificationResult(false, "Invalid APK file format", ErrorCode.INVALID_FILE)
         }
         
-        Log.d(TAG, "APK file format validation passed")
-        
-        // Calculate SHA-256 hash for verification
         val digest = MessageDigest.getInstance("SHA-256")
-        val buffer = ByteArray(8192)
-        FileInputStream(apkFile).use { fis ->
+        FileInputStream(file).use { fis ->
+            val buffer = ByteArray(8192)
             var bytesRead: Int
             while (fis.read(buffer).also { bytesRead = it } != -1) {
                 digest.update(buffer, 0, bytesRead)
@@ -488,335 +668,156 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler {
         val actualHash = digest.digest().joinToString("") { "%02x".format(it) }
         
         if (actualHash.lowercase() != expectedHash.lowercase()) {
-            val expectedSizeMb = String.format("%.2f", expectedSize / 1024.0 / 1024.0)
-            val actualSizeMb = String.format("%.2f", actualSize / 1024.0 / 1024.0)
-            val sizeDiff = actualSize - expectedSize
-            val sizeDiffMb = String.format("%.2f", kotlin.math.abs(sizeDiff) / 1024.0 / 1024.0)
-            val sizeDiffSign = if (sizeDiff > 0) "+" else ""
-            
-            val errorMsg = """
-                Hash verification failed. File may be corrupted or tampered.
-                Expected hash: $expectedHash
-                Actual hash: $actualHash
-                Expected size: $expectedSizeMb MB ($expectedSize bytes)
-                Actual size: $actualSizeMb MB ($actualSize bytes)
-                Difference: $sizeDiffSign$sizeDiffMb MB ($sizeDiffSign$sizeDiff bytes)
-            """.trimIndent()
-            
-            return VerificationResult(false, errorMsg)
+            return VerificationResult(
+                false, 
+                "Hash verification failed. Expected: $expectedHash, Actual: $actualHash",
+                ErrorCode.HASH_MISMATCH
+            )
         }
-        
-        Log.d(TAG, "APK verification successful: size=$actualSize bytes (expected $expectedSize), hash=$actualHash")
         return VerificationResult(true)
     }
-
-    private fun isValidApk(apkFile: File): Boolean {
-        // Check if file is a valid ZIP/APK by verifying ZIP magic bytes
-        // APK files are ZIP archives, so they should start with PK\x03\x04 (0x504B0304)
-        try {
-            FileInputStream(apkFile).use { fis ->
-                val magicBytes = ByteArray(4)
-                val bytesRead = fis.read(magicBytes)
-                if (bytesRead < 4) {
-                    Log.w(TAG, "File too small to be a valid APK: ${apkFile.length()} bytes")
-                    return false
-                }
-                
-                // Check for ZIP magic number: 0x504B0304 (PK\x03\x04)
-                val isZip = magicBytes[0] == 0x50.toByte() && 
-                           magicBytes[1] == 0x4B.toByte() && 
-                           magicBytes[2] == 0x03.toByte() && 
-                           magicBytes[3] == 0x04.toByte()
-                
-                if (!isZip) {
-                    Log.w(TAG, "File does not have valid ZIP/APK magic bytes")
-                    return false
-                }
-                
-                return true
+    
+    private fun isValidApkFormat(file: File): Boolean {
+        return try {
+            FileInputStream(file).use { fis ->
+                val magic = ByteArray(4)
+                if (fis.read(magic) < 4) return false
+                magic[0] == 0x50.toByte() && magic[1] == 0x4B.toByte() &&
+                    magic[2] == 0x03.toByte() && magic[3] == 0x04.toByte()
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error checking APK validity", e)
+        } catch (_: Exception) { false }
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // PERMISSIONS
+    // ═══════════════════════════════════════════════════════════════════════════════
+    
+    private fun canInstallSilently(packageName: String? = null): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            Log.d(TAG, "canInstallSilently($packageName): false - API < 31")
             return false
         }
+        
+        val canRequest = try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.packageManager.canRequestPackageInstalls()
+            } else true
+        } catch (_: Throwable) { false }
+        
+        if (!canRequest) {
+            Log.d(TAG, "canInstallSilently($packageName): false - no install permission")
+            return false
+        }
+        
+        if (packageName != null) {
+            return try {
+                val installSource = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    context.packageManager.getInstallSourceInfo(packageName)
+                } else null
+                
+                val installer = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && installSource != null) {
+                    installSource.installingPackageName
+                } else {
+                    @Suppress("DEPRECATION")
+                    context.packageManager.getInstallerPackageName(packageName)
+                }
+                
+                val ourPackage = context.packageName
+                val result = installer == ourPackage
+                
+                Log.d(TAG, "canInstallSilently($packageName): installer=$installer, us=$ourPackage, result=$result")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && installSource != null) {
+                    Log.d(TAG, "  initiatingPackage=${installSource.initiatingPackageName}")
+                    Log.d(TAG, "  originatingPackage=${installSource.originatingPackageName}")
+                }
+                
+                result
+            } catch (_: PackageManager.NameNotFoundException) {
+                Log.d(TAG, "canInstallSilently($packageName): false - package not found")
+                false  // Package not found = can't silently install it
+            } catch (e: Exception) {
+                Log.d(TAG, "canInstallSilently($packageName): false - error: ${e.message}")
+                false
+            }
+        }
+        
+        // Check general capability (no specific package)
+        val hasPermission = try {
+            context.checkSelfPermission("android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION") ==
+                PackageManager.PERMISSION_GRANTED
+        } catch (_: Throwable) { false }
+        
+        Log.d(TAG, "canInstallSilently(general): hasUpdatePermission=$hasPermission")
+        return hasPermission
     }
     
-    private fun installApk(
-        filePath: String, 
-        expectedHash: String?,
-        expectedSize: Long?,
-        skipVerification: Boolean,
-        result: Result
-    ) {
-        val file = File(filePath)
-        if (!file.exists()) {
-            result.success(mapOf(
-                "isSuccess" to false,
-                "errorMessage" to "The APK file was not found"
-            ))
-            return
-        }
-
-        // Verify APK if hash and size are provided, unless skipping verification
-        if (skipVerification) {
-            Log.w(TAG, "⚠️ RECKLESS MODE: APK verification SKIPPED by user request ⚠️")
-            Log.w(TAG, "Installing APK without hash verification: $filePath")
-            proceedWithInstall(file, filePath, result)
-        } else if (expectedHash != null && expectedSize != null) {
-            // Run hash verification on background thread to avoid UI jank
-            Thread {
-                val verificationResult = verifyApkBackground(file, expectedHash, expectedSize)
-                android.os.Handler(context.mainLooper).post {
-                    if (verificationResult.isSuccess) {
-                        proceedWithInstall(file, filePath, result)
-                    } else {
-                        result.success(mapOf(
-                            "isSuccess" to false,
-                            "errorMessage" to verificationResult.errorMessage
-                        ))
-                    }
+    private fun hasUnknownSourcesPermission(): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.packageManager.canRequestPackageInstalls()
+            } else true
+        } catch (_: Throwable) { false }
+    }
+    
+    private fun requestInstallPermission(result: Result) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && 
+            !context.packageManager.canRequestPackageInstalls()) {
+            try {
+                val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                    data = Uri.parse("package:${context.packageName}")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
-            }.start()
+                context.startActivity(intent)
+                result.success(mapOf("success" to true))
+            } catch (e: Exception) {
+                result.success(mapOf("success" to false, "message" to e.message))
+            }
         } else {
-            Log.w(TAG, "APK verification skipped - hash or size not provided")
-            proceedWithInstall(file, filePath, result)
+            result.success(mapOf("success" to true))
         }
     }
     
-    private fun proceedWithInstall(file: File, filePath: String, result: Result) {
-        try {
-            installApp(file, result)
-        } catch (e: SecurityException) {
-            // Fallback to system installer
-            launchSystemInstaller(filePath, result)
-        } catch (e: Exception) {
-            result.success(mapOf(
-                "isSuccess" to false,
-                "errorMessage" to "Installation failed: ${e.message}"
-            ))
-        }
-    }
-
-    private fun installApp(apkFile: File, result: Result) {
-        // Check UserManager restrictions (like Accrescent does)
-        val userManager = context.getSystemService(UserManager::class.java)
-        val installBlocked =
-            userManager.hasUserRestriction(UserManager.DISALLOW_INSTALL_APPS) ||
-            userManager.hasUserRestriction(UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES) ||
-            userManager.hasUserRestriction(UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES_GLOBALLY)
-        
-        if (installBlocked) {
-            Log.w(TAG, "Installation blocked by UserManager policy")
-            result.success(mapOf(
-                "isSuccess" to false,
-                "errorMessage" to "Installation blocked by device policy"
-            ))
-            return
-        }
-        
-        val packageInstaller = context.packageManager.packageInstaller
-        
-        // Get package info from the APK
-        val pkgInfo = context.packageManager.getPackageArchiveInfo(apkFile.absolutePath, 0)
-        if (pkgInfo == null) {
-            throw IOException("Invalid APK file")
-        }
-        
-        val packageName = pkgInfo.packageName
-        val isUpdate = try {
-            context.packageManager.getPackageInfo(packageName, 0)
-            true
-        } catch (e: PackageManager.NameNotFoundException) {
-            false
-        }
-        
-        // CRITICAL: Check if we're already waiting for a result for this package
-        // This prevents double-prompts and "session files in use" errors
-        if (hasPendingResultForPackage(packageName)) {
-            Log.d(TAG, "Already have pending result for $packageName")
-            
-            // Only re-show the dialog if the prompt was actually deferred.
-            // If the prompt was already shown in the foreground, re-launching it causes double prompts.
-            val pendingIntent = pendingUserActionIntents[packageName]
-            val deferred = pendingUserActionDeferred[packageName] == true
-            if (pendingIntent != null && deferred && isAppInForeground()) {
-                Log.d(TAG, "Re-launching deferred dialog for $packageName")
-                try {
-                    pendingIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                    context.startActivity(pendingIntent)
-                    pendingUserActionDeferred[packageName] = false
-                } catch (e: Exception) {
-                    Log.w(TAG, "Failed to re-launch dialog", e)
-                }
-            }
-            
-            // Tell Dart that installation is already in progress - don't start a new one
-            result.success(mapOf(
-                "isSuccess" to false,
-                "errorMessage" to "Installation already in progress",
-                "packageName" to packageName,
-                "alreadyInProgress" to true
-            ))
-            return
-        }
-        
-        // Check for orphaned system session (no pending result, but session exists)
-        val existingSession = findExistingSession(packageName)
-        if (existingSession != null) {
-            Log.d(TAG, "Found orphaned session ${existingSession.sessionId} for $packageName, abandoning it")
-            abandonExistingSession(packageName)
-        }
-        
-        Log.d(TAG, "Installing $packageName (update=$isUpdate)")
-        
-        // Match Accrescent's session setup exactly
-        // The APP_MARKET category in the manifest grants silent install privileges
-        val sessionParams = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            sessionParams.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
-        }
-        sessionParams.setInstallLocation(pkgInfo.installLocation)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            sessionParams.setPackageSource(PackageInstaller.PACKAGE_SOURCE_STORE)
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            sessionParams.setRequestUpdateOwnership(true)
-        }
-        
-        val sessionId = packageInstaller.createSession(sessionParams)
-        val session = packageInstaller.openSession(sessionId)
-        
-        Log.d(TAG, "Created new session $sessionId for $packageName")
-        
-        // Transfer the APK file - match Accrescent's approach exactly
-        FileInputStream(apkFile).use { fileInputStream ->
-            // Use Os.fstat for accurate file size (like Accrescent)
-            val fileDescriptor = fileInputStream.fd
-            val fileSize = Os.fstat(fileDescriptor).st_size
-            
-            // Use APK file name instead of generic "package"
-            val sessionStream = session.openWrite(apkFile.name, 0, fileSize)
-            
-            fileInputStream.copyTo(sessionStream)
-            
-            // Close in Accrescent's order: file first, then session
-            fileInputStream.close()
-            session.fsync(sessionStream)
-            sessionStream.close()
-        }
-        
-        // Store pending result BEFORE committing - will be completed by InstallResultReceiver
-        pendingInstallResults[sessionId] = result
-        sessionToPackage[sessionId] = packageName
-        Log.d(TAG, "Stored pending result for session $sessionId ($packageName), awaiting broadcast...")
-        
-        // Create pending intent for installation result
-        val intent = Intent(context.applicationContext, InstallResultReceiver::class.java).apply {
-            putExtra("sessionId", sessionId)
-            putExtra("packageName", packageName)
-            putExtra("isUpdate", isUpdate)
-        }
-        val pendingIntentForBroadcast = PendingIntent.getBroadcast(
-            context.applicationContext,
-            sessionId,  // Use sessionId as requestCode for uniqueness
-            intent,
-            PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-        
-        // Commit the session - result will be delivered via broadcast to InstallResultReceiver
-        // which will call completeInstallResult() to finish the method channel call
-        session.commit(pendingIntentForBroadcast.intentSender)
-        session.close()
-        
-        // DO NOT call result.success() here - wait for InstallResultReceiver broadcast
-        // The Dart side will block on await until completeInstallResult() is called
-    }
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // UNINSTALL
+    // ═══════════════════════════════════════════════════════════════════════════════
     
-    private fun launchSystemInstaller(filePath: String, result: Result) {
-        try {
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(Uri.parse("file://$filePath"), "application/vnd.android.package-archive")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            
-            context.startActivity(intent)
-            
-            result.success(mapOf(
-                "isSuccess" to true,
-                "errorMessage" to "",
-                "fallbackMethod" to "system_installer"
-            ))
-        } catch (e: Exception) {
-            result.success(mapOf(
-                "isSuccess" to false,
-                "errorMessage" to "Failed to launch installer: ${e.message}"
-            ))
-        }
-    }
-
     private fun uninstallApp(packageName: String, result: Result) {
         try {
-            // Check if the package is installed
-            val pm = context.packageManager
             try {
-                pm.getPackageInfo(packageName, 0)
-            } catch (e: PackageManager.NameNotFoundException) {
-                result.success(mapOf(
-                    "isSuccess" to false,
-                    "errorMessage" to "Package not found: $packageName"
-                ))
+                context.packageManager.getPackageInfo(packageName, 0)
+            } catch (_: PackageManager.NameNotFoundException) {
+                result.success(mapOf("isSuccess" to false, "errorMessage" to "Package not found"))
                 return
             }
             
-            // Launch system uninstaller
             val intent = Intent(Intent.ACTION_DELETE).apply {
                 data = Uri.parse("package:$packageName")
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            
             context.startActivity(intent)
             
-            // Poll for package removal since ACTION_DELETE has no callback
-            // This runs on a background thread to avoid blocking the main thread
+            // Poll for removal with 30 second timeout
             Thread {
-                val timeoutMs = 120_000L  // 2 minute timeout for user to confirm
-                val pollIntervalMs = 500L
                 val startTime = System.currentTimeMillis()
                 
-                while (System.currentTimeMillis() - startTime < timeoutMs) {
+                while (System.currentTimeMillis() - startTime < UNINSTALL_TIMEOUT_MS) {
                     try {
-                        Thread.sleep(pollIntervalMs)
-                        
-                        // Check if package is still installed
-                        try {
-                            pm.getPackageInfo(packageName, 0)
-                            // Package still exists, keep polling
-                        } catch (e: PackageManager.NameNotFoundException) {
-                            // Package removed! Success
-                            Log.d(TAG, "Package $packageName successfully uninstalled")
-                            android.os.Handler(context.mainLooper).post {
-                                result.success(mapOf(
-                                    "isSuccess" to true,
-                                    "packageName" to packageName
-                                ))
-                            }
-                            return@Thread
+                        Thread.sleep(UNINSTALL_POLL_INTERVAL_MS)
+                        context.packageManager.getPackageInfo(packageName, 0)
+                    } catch (_: PackageManager.NameNotFoundException) {
+                        mainHandler.post {
+                            result.success(mapOf("isSuccess" to true, "packageName" to packageName))
                         }
-                    } catch (e: InterruptedException) {
-                        break
-                    }
+                        return@Thread
+                    } catch (_: InterruptedException) { break }
                 }
                 
-                // Timeout - check one more time then treat as cancelled
                 val stillInstalled = try {
-                    pm.getPackageInfo(packageName, 0)
+                    context.packageManager.getPackageInfo(packageName, 0)
                     true
-                } catch (e: PackageManager.NameNotFoundException) {
-                    false
-                }
+                } catch (_: PackageManager.NameNotFoundException) { false }
                 
-                android.os.Handler(context.mainLooper).post {
+                mainHandler.post {
                     result.success(mapOf(
                         "isSuccess" to !stillInstalled,
                         "packageName" to packageName,
@@ -825,210 +826,84 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler {
                 }
             }.start()
             
-            // DO NOT call result.success() here - wait for polling to complete
-            
         } catch (e: Exception) {
-            Log.e(TAG, "Uninstall failed for $packageName", e)
-            result.success(mapOf(
-                "isSuccess" to false,
-                "errorMessage" to "Uninstall failed: ${e.message}"
-            ))
-        }
-    }
-
-    private fun launchApp(packageName: String, result: Result) {
-        try {
-            val pm = context.packageManager
-            
-            // Check if the package is installed
-            try {
-                pm.getPackageInfo(packageName, 0)
-            } catch (e: PackageManager.NameNotFoundException) {
-                result.success(mapOf(
-                    "isSuccess" to false,
-                    "errorMessage" to "Package not found: $packageName"
-                ))
-                return
-            }
-            
-            // Get the launch intent for the package
-            val launchIntent = pm.getLaunchIntentForPackage(packageName)
-            if (launchIntent == null) {
-                result.success(mapOf(
-                    "isSuccess" to false,
-                    "errorMessage" to "No launch activity found for package: $packageName"
-                ))
-                return
-            }
-            
-            // Add flags to ensure the app launches properly
-            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            launchIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            
-            // Launch the app
-            context.startActivity(launchIntent)
-            
-            result.success(mapOf(
-                "isSuccess" to true,
-                "errorMessage" to "",
-                "packageName" to packageName
-            ))
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "Launch failed for $packageName", e)
-            result.success(mapOf(
-                "isSuccess" to false,
-                "errorMessage" to "Launch failed: ${e.message}"
-            ))
+            result.success(mapOf("isSuccess" to false, "errorMessage" to e.message))
         }
     }
     
-    /**
-     * Launch a pending install prompt when app returns to foreground.
-     * Called from Dart after setAppForegroundState(true).
-     * 
-     * Returns success if:
-     * - There's a pending user action intent (stored when app was backgrounded)
-     * - OR there's an active session in the system
-     */
-    private fun retryPendingInstall(packageName: String, result: Result) {
-        // First check if we have a stored user action intent
-        val pendingIntent = pendingUserActionIntents[packageName]
-        if (pendingIntent != null) {
-            val deferred = pendingUserActionDeferred[packageName] == true
-            if (!deferred) {
-                // Prompt was already shown while app was in foreground.
-                // Do not re-launch it on resume (prevents double system dialogs).
-                result.success(mapOf(
-                    "isSuccess" to false,
-                    "hasPending" to true,
-                    "relaunched" to false,
-                    "promptAlreadyShown" to true,
-                    "packageName" to packageName
-                ))
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // APP LAUNCH
+    // ═══════════════════════════════════════════════════════════════════════════════
+    
+    private fun launchApp(packageName: String, result: Result) {
+        try {
+            val launchIntent = context.packageManager.getLaunchIntentForPackage(packageName)
+            if (launchIntent == null) {
+                result.success(mapOf("isSuccess" to false, "errorMessage" to "No launch activity"))
                 return
             }
-
-            Log.d(TAG, "Re-launching deferred user action for $packageName")
-            try {
-                pendingIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                context.startActivity(pendingIntent)
-                pendingUserActionDeferred[packageName] = false
-                result.success(mapOf(
-                    "isSuccess" to true,
-                    "hasPending" to true,
-                    "relaunched" to true,
-                    "promptAlreadyShown" to false,
-                    "packageName" to packageName
-                ))
-                return
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to launch install prompt for $packageName", e)
-                // Clear the stale intent
-                pendingUserActionIntents.remove(packageName)
-                pendingUserActionDeferred.remove(packageName)
-            }
-        }
-        
-        // Check if there's a system session waiting
-        val existingSession = findExistingSession(packageName)
-        if (existingSession != null) {
-            Log.d(TAG, "Found system session ${existingSession.sessionId} for $packageName but no user action intent")
-            // Session exists but we don't have the intent - user needs to re-trigger install
-            result.success(mapOf(
-                "isSuccess" to false,
-                "hasPending" to true,
-                "sessionPending" to true,
-                "relaunched" to false,
-                "promptAlreadyShown" to false,
-                "packageName" to packageName
-            ))
-        } else {
-            // No pending intent and no active session
-            result.success(mapOf(
-                "isSuccess" to false,
-                "hasPending" to false,
-                "relaunched" to false,
-                "promptAlreadyShown" to false,
-                "packageName" to packageName
-            ))
+            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            context.startActivity(launchIntent)
+            result.success(mapOf("isSuccess" to true))
+        } catch (e: Exception) {
+            result.success(mapOf("isSuccess" to false, "errorMessage" to e.message))
         }
     }
-
+    
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // INSTALLED APPS
+    // ═══════════════════════════════════════════════════════════════════════════════
+    
     private fun getInstalledApps(includeSystemApps: Boolean): List<Map<String, Any?>> {
         val pm = context.packageManager
-        val packages = pm.getInstalledPackages(0)
-        val out = mutableListOf<Map<String, Any?>>()
-        
-        for (pkg in packages) {
-            val appInfo = pkg.applicationInfo ?: continue
+        return pm.getInstalledPackages(0).mapNotNull { pkg ->
+            val appInfo = pkg.applicationInfo ?: return@mapNotNull null
             val isSystem = (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
-            if (!includeSystemApps && isSystem) continue
+            if (!includeSystemApps && isSystem) return@mapNotNull null
             
-            val name = appInfo.loadLabel(pm)?.toString()
-            val bundleId = pkg.packageName
-            val versionName = pkg.versionName
-            val versionCode: Long = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 pkg.longVersionCode
             } else {
                 @Suppress("DEPRECATION")
                 pkg.versionCode.toLong()
             }
             
-            // Get signature hash
-            val signatureHash = try {
-                getSignatureHash(bundleId)
-            } catch (e: Exception) {
-                ""
-            }
-            
-            // Check if we can silently update this package (we are the installer)
-            val canSilentlyUpdate = canInstallSilently(bundleId)
-            
-            out.add(mapOf(
-                "name" to name,
-                "bundleId" to bundleId,
-                "versionName" to versionName,
+            mapOf(
+                "name" to appInfo.loadLabel(pm)?.toString(),
+                "bundleId" to pkg.packageName,
+                "versionName" to pkg.versionName,
                 "versionCode" to versionCode,
-                "signatureHash" to signatureHash,
-                "canInstallSilently" to canSilentlyUpdate,
-            ))
+                "signatureHash" to getSignatureHash(pkg.packageName),
+                "canInstallSilently" to canInstallSilently(pkg.packageName)
+            )
         }
-        return out
     }
     
     private fun getSignatureHash(packageName: String): String {
-        val pm = context.packageManager
-        val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            pm.getPackageInfo(
-                packageName,
-                PackageManager.PackageInfoFlags.of(PackageManager.GET_SIGNING_CERTIFICATES.toLong())
-            )
-        } else {
-            @Suppress("DEPRECATION")
-            pm.getPackageInfo(packageName, PackageManager.GET_SIGNATURES)
-        }
-        
-        val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            packageInfo.signingInfo?.let { signingInfo ->
-                if (signingInfo.hasMultipleSigners()) {
-                    signingInfo.apkContentsSigners
-                } else {
-                    signingInfo.signingCertificateHistory
-                }
-            } ?: emptyArray()
-        } else {
-            @Suppress("DEPRECATION")
-            packageInfo.signatures ?: emptyArray()
-        }
-        
-        if (signatures.isEmpty()) return ""
-        
-        // Get SHA-256 hash of first signature
-        val signature = signatures[0]
-        val digest = MessageDigest.getInstance("SHA-256")
-        val hashBytes = digest.digest(signature.toByteArray())
-        return hashBytes.joinToString("") { "%02x".format(it) }
+        return try {
+            val pm = context.packageManager
+            val pkgInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                pm.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(
+                    PackageManager.GET_SIGNING_CERTIFICATES.toLong()))
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getPackageInfo(packageName, PackageManager.GET_SIGNATURES)
+            }
+            
+            val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                pkgInfo.signingInfo?.let { si ->
+                    if (si.hasMultipleSigners()) si.apkContentsSigners else si.signingCertificateHistory
+                } ?: emptyArray()
+            } else {
+                @Suppress("DEPRECATION")
+                pkgInfo.signatures ?: emptyArray()
+            }
+            
+            if (signatures.isEmpty()) return ""
+            
+            MessageDigest.getInstance("SHA-256")
+                .digest(signatures[0].toByteArray())
+                .joinToString("") { "%02x".format(it) }
+        } catch (_: Exception) { "" }
     }
-
 }

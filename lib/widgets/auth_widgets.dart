@@ -19,10 +19,8 @@ class SignInPrompt extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final packageManager = ref.watch(packageManagerProvider);
-    final isAmberInstalled = packageManager.any(
-      (p) => p.appId == kAmberPackageId,
-    );
+    final pmState = ref.watch(packageManagerProvider);
+    final isAmberInstalled = pmState.installed.containsKey(kAmberPackageId);
     final isLoading = useState(false);
 
     Future<void> handleSignIn() async {
@@ -32,7 +30,10 @@ class SignInPrompt extends HookConsumerWidget {
         context.showInfo(
           'Install Amber to sign in with your Nostr identity',
           actions: [
-            ('Open Amber', () async => context.push('/search/app/$kAmberNaddr')),
+            (
+              'Open Amber',
+              () async => context.push('/search/app/$kAmberNaddr'),
+            ),
           ],
         );
       } else {

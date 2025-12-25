@@ -140,10 +140,9 @@ class _AppDetailContent extends HookConsumerWidget {
     final latestMetadata = app.latestFileMetadata;
 
     // Check if app is installed for menu options
-    final installedPackage = ref
-        .watch(packageManagerProvider)
-        .where((p) => p.appId == app.identifier)
-        .firstOrNull;
+    final installedPackage = ref.watch(
+      installedPackageProvider(app.identifier),
+    );
     final isInstalled = installedPackage != null;
 
     // Show skeleton while relationships are loading
@@ -634,7 +633,9 @@ class _AppDetailContent extends HookConsumerWidget {
 
       // Save to local storage and publish to relays
       await ref.storage.save({signedStack});
-      ref.storage.publish({signedStack}, source: RemoteSource(relays: 'social'));
+      ref.storage.publish({
+        signedStack,
+      }, source: RemoteSource(relays: 'social'));
 
       if (context.mounted) {
         context.showInfo(
@@ -675,7 +676,6 @@ class _AppDetailContent extends HookConsumerWidget {
   Future<void> _openApp(BuildContext context, WidgetRef ref, App app) async {
     try {
       final packageManager = ref.read(packageManagerProvider.notifier);
-      context.showInfo('Launching ${app.name ?? app.identifier}...');
       await packageManager.launchApp(app.identifier);
     } catch (e) {
       if (!context.mounted) return;

@@ -28,7 +28,7 @@ extension AppExt on App {
 
   /// Returns PackageInfo if installed, otherwise null
   PackageInfo? get installedPackage =>
-      ref.read(packageManagerProvider.notifier).getInfo(identifier);
+      ref.read(packageManagerProvider).installed[identifier];
 
   /// Whether the app is installed on the device
   bool get isInstalled =>

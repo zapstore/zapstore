@@ -23,7 +23,9 @@ class VersionPillWidget extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // Watch package manager state for reactivity
-    final installedPackages = ref.watch(packageManagerProvider);
+    ref.watch(
+      packageManagerProvider.select((s) => s.installed[app.identifier]),
+    );
 
     // Resolve installed and available versions using AppExt
     final installedVersion = app.installedPackage?.version;
@@ -38,8 +40,6 @@ class VersionPillWidget extends HookConsumerWidget {
         availableVersion != null) {
       return _buildDualVersionPills(
         context,
-        ref,
-        installedPackages,
         installedVersion,
         availableVersion,
         isDowngrade: downgradeAvailable,
@@ -55,8 +55,6 @@ class VersionPillWidget extends HookConsumerWidget {
 
     return _buildVersionPill(
       context,
-      ref,
-      installedPackages,
       version,
       AppColors.darkPillBackground,
       Colors.white,
@@ -65,8 +63,6 @@ class VersionPillWidget extends HookConsumerWidget {
 
   Widget _buildDualVersionPills(
     BuildContext context,
-    WidgetRef ref,
-    List<PackageInfo> installedPackages,
     String installedVersion,
     String availableVersion, {
     bool isDowngrade = false,
@@ -74,9 +70,10 @@ class VersionPillWidget extends HookConsumerWidget {
     // Get version codes
     final installedVersionCode = app.installedPackage?.versionCode;
     final availableVersionCode = app.latestFileMetadata?.versionCode;
-    
+
     // When version strings are equal but version codes differ, show version codes in parentheses
-    final showVersionCodes = installedVersion == availableVersion &&
+    final showVersionCodes =
+        installedVersion == availableVersion &&
         installedVersionCode != null &&
         availableVersionCode != null &&
         installedVersionCode != availableVersionCode;
@@ -88,8 +85,6 @@ class VersionPillWidget extends HookConsumerWidget {
         Flexible(
           child: _buildVersionPill(
             context,
-            ref,
-            installedPackages,
             installedVersion,
             Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
             Theme.of(context).colorScheme.onSurface,
@@ -98,7 +93,7 @@ class VersionPillWidget extends HookConsumerWidget {
           ),
         ),
 
-        // Arrow icon (always arrow, forbidden icon is in the pill itself)
+        // Arrow icon
         Icon(
           Icons.arrow_right,
           size: 16,
@@ -109,8 +104,6 @@ class VersionPillWidget extends HookConsumerWidget {
         Flexible(
           child: _buildVersionPill(
             context,
-            ref,
-            installedPackages,
             availableVersion,
             isDowngrade
                 ? Theme.of(context).colorScheme.outline.withValues(alpha: 0.3)
@@ -128,8 +121,6 @@ class VersionPillWidget extends HookConsumerWidget {
 
   Widget _buildVersionPill(
     BuildContext context,
-    WidgetRef ref,
-    List<PackageInfo> installedPackages,
     String version,
     Color backgroundColor,
     Color textColor, {
@@ -168,16 +159,12 @@ class VersionPillWidget extends HookConsumerWidget {
       }
     }
 
-    // Use grey colors for "do not disturb" states (downgrade, certificate mismatch)
-    final finalBackgroundColor = backgroundColor;
-    final finalTextColor = textColor;
-
     final double verticalPadding = isInstalledVersion ? 5.0 * 1.05 : 5.0;
 
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 9, vertical: verticalPadding),
       decoration: BoxDecoration(
-        color: finalBackgroundColor,
+        color: backgroundColor,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
@@ -190,7 +177,7 @@ class VersionPillWidget extends HookConsumerWidget {
               overflow: TextOverflow.ellipsis,
               style: context.textTheme.labelSmall?.copyWith(
                 fontWeight: FontWeight.bold,
-                color: finalTextColor,
+                color: textColor,
               ),
             ),
           ),
@@ -207,13 +194,9 @@ class VersionPillWidget extends HookConsumerWidget {
   }
 
   String _displayVersion(String version, {int? versionCode}) {
-    // Show full version - let Flexible + TextOverflow.ellipsis handle truncation only when needed
-    // If versionCode is provided, append it in parentheses
     if (versionCode != null) {
       return '$version ($versionCode)';
     }
     return version;
   }
-
-  // No width enforcement; both pills share the same text style
 }

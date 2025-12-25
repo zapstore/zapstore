@@ -218,10 +218,8 @@ class _AuthenticationSection extends ConsumerWidget {
   }
 
   Widget _buildSignInOptions(BuildContext context, WidgetRef ref) {
-    final packageManager = ref.watch(packageManagerProvider);
-    final isAmberInstalled = packageManager.any(
-      (p) => p.appId == kAmberPackageId,
-    );
+    final pmState = ref.watch(packageManagerProvider);
+    final isAmberInstalled = pmState.installed.containsKey(kAmberPackageId);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1248,23 +1246,18 @@ class _SavedAppsList extends ConsumerWidget {
 class _AboutSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final manager = ref.watch(packageManagerProvider);
-    final zsPackage = manager.firstWhereOrNull(
-      (i) => i.appId == kZapstoreAppIdentifier,
-    );
+    final pmState = ref.watch(packageManagerProvider);
+    final zsPackage = pmState.installed[kZapstoreAppIdentifier];
 
     if (zsPackage == null) {
-      final isLoading = manager.isEmpty;
+      final isLoading = pmState.installed.isEmpty;
       return Card(
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'About',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
+              Text('About', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 16),
               if (isLoading) ...[
                 Row(
@@ -1318,10 +1311,7 @@ class _AboutSection extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'About',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
+            Text('About', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 16),
             ListTile(
               leading: ClipOval(

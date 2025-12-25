@@ -169,12 +169,12 @@ Future<bool> _checkForUpdatesInBackground(Set<String>? appCatalogRelays) async {
       final packageManager = container.read(packageManagerProvider.notifier);
       await packageManager.syncInstalledPackages();
 
-      final packages = container.read(packageManagerProvider);
-      if (packages.isEmpty) {
+      final pmState = container.read(packageManagerProvider);
+      if (pmState.installed.isEmpty) {
         return true; // No installed apps to check
       }
 
-      final installedIds = packages.map((p) => p.appId).toSet();
+      final installedIds = pmState.installed.keys.toSet();
 
       // Query for apps with updates from relay
       final storage = container.read(storageNotifierProvider.notifier);
