@@ -1,0 +1,29 @@
+{
+  "model": "claude-sonnet-4",
+  "temperature": 0.2,
+  "mcpServers": {
+    "purplestack": {
+      "type": "stdio",
+      "command": "bash",
+      "args": [
+        "tools/scripts/run-mcp.sh"
+      ]
+    },
+    "nostr": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@nostrbook/mcp@latest"
+      ]
+    },
+    "developer": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@soapbox.pub/developer-mcp@latest"
+      ]
+    }
+  }
+}

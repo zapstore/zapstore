@@ -1,357 +1,712 @@
-import 'package:auto_size_text/auto_size_text.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:easy_image_viewer/easy_image_viewer.dart';
+import 'dart:convert';
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_hooks/flutter_hooks.dart';
-import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:gap/gap.dart';
+import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:models/models.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:zapstore/main.data.dart';
-import 'package:zapstore/models/app.dart';
-import 'package:zapstore/models/release.dart';
+import 'package:zapstore/services/bookmarks_service.dart';
+import 'package:zapstore/services/notification_service.dart';
+import 'package:zapstore/utils/debug_utils.dart';
 import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/services/package_manager/package_manager.dart';
+import 'package:zapstore/widgets/app_detail_widgets.dart';
+import 'package:zapstore/widgets/app_header.dart';
+import 'package:zapstore/widgets/app_info_table.dart';
+import 'package:zapstore/widgets/author_container.dart';
+import 'package:zapstore/widgets/comments_section.dart';
+import 'package:zapstore/widgets/download_text_container.dart';
+import 'package:zapstore/widgets/expandable_markdown.dart';
 import 'package:zapstore/widgets/install_button.dart';
-import 'package:zapstore/widgets/release_card.dart';
-import 'package:zapstore/widgets/signer_container.dart';
-import 'package:zapstore/widgets/users_rich_text.dart';
-import 'package:zapstore/widgets/versioned_app_header.dart';
-import 'package:zapstore/widgets/zap_button.dart';
-import 'package:zapstore/widgets/zap_receipts.dart';
+import 'package:zapstore/widgets/screenshots_gallery.dart';
 
 class AppDetailScreen extends HookConsumerWidget {
-  final App model;
-  AppDetailScreen({
-    required this.model,
-    super.key,
-  });
+  const AppDetailScreen({super.key, required this.appId, this.authorPubkey});
+
+  final String appId;
+  final String? authorPubkey;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final scrollController = ScrollController();
+    final platform = ref.read(packageManagerProvider.notifier).platform;
 
-    final snapshot = useFuture(useMemoized(() async {
-      // Skip cache to actually hit the remote to refresh
-      return await ref.apps
-          .findOne(model.identifier, remote: true, params: {'skipCache': true});
-    }));
+    // Query app with relationships
+    final appState = ref.watch(
+      query<App>(
+        authors: authorPubkey != null ? {authorPubkey!} : null,
+        tags: {
+          '#d': {appId},
+          '#f': {platform},
+        },
+        limit: 1,
+        and: (a) => {
+          a.latestRelease,
+          a.latestRelease.value?.latestMetadata,
+          a.latestRelease.value?.latestAsset,
+        },
+        // stream=true ensures cached/local results render immediately; remote
+        // results will merge in as they arrive.
+        source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
+        subscriptionPrefix: authorPubkey != null
+            ? 'app-detail-${authorPubkey!}-$appId'
+            : 'app-detail-$appId',
+      ),
+    );
 
-    final state = ref.apps.watchOne(model.id!,
-        alsoWatch: (_) => {
-              _.localApp,
-              _.releases,
-              _.releases.artifacts,
-              _.signer,
-            });
+    // Handle loading/error states when app not yet available
+    return switch (appState) {
+      StorageError(:final exception) => _ErrorScaffold(
+        message: exception.toString(),
+      ),
+      StorageData() => _AppDetailContent(
+        app: appState.models.firstOrNull,
+        appState: appState,
+      ),
+      StorageLoading() => const Scaffold(
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.all(16),
+            child: AppDetailSkeleton(),
+          ),
+        ),
+      ),
+    };
+  }
+}
 
-    final app = state.model ?? model;
+class _ErrorScaffold extends StatelessWidget {
+  final String message;
+  const _ErrorScaffold({required this.message});
 
-    final curatedBy = ref.appCurationSets
-        .findAllLocal()
-        .where((s) => s.appIds.contains(app.identifier))
-        .map((s) => s.signer.value)
-        .nonNulls
-        .toSet();
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Open App')),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, size: 64),
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Text(message, textAlign: TextAlign.center),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
-    // If request returned and result was null, go back
-    if (snapshot.connectionState == ConnectionState.done &&
-        snapshot.data == null) {
-      return Center(
-        child: ElevatedButton(
-          onPressed: () {
-            Navigator.of(context).pop();
-          },
-          child: Text(
-            'This app is no longer available.\nPress to go back.',
+/// Internal widget that displays app details
+class _AppDetailContent extends HookConsumerWidget {
+  final App? app;
+  final StorageState<App> appState;
+
+  const _AppDetailContent({required this.app, required this.appState});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final app = this.app;
+    if (app == null) {
+      return const _ErrorScaffold(message: 'App not found');
+    }
+
+    final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
+    final isSignedIn = signedInPubkey != null;
+    final showDebugSections = isDebugMode(signedInPubkey);
+
+    // Query author profile from social relays
+    final authorState = ref.watch(
+      query<Profile>(
+        authors: {app.pubkey},
+        source: const LocalAndRemoteSource(
+          relays: {'social', 'vertex'},
+          cachedFor: Duration(hours: 2),
+        ),
+      ),
+    );
+    final author = switch (authorState) {
+      StorageData(:final models) => models.firstOrNull,
+      _ => null,
+    };
+
+    final latestRelease = app.latestRelease.value;
+    final latestMetadata = app.latestFileMetadata;
+
+    // Check if app is installed for menu options
+    final installedPackage = ref.watch(
+      installedPackageProvider(app.identifier),
+    );
+    final isInstalled = installedPackage != null;
+
+    // Show skeleton while relationships are loading
+    if (latestRelease == null || latestMetadata == null) {
+      return Scaffold(
+        body: SafeArea(
+          child: Stack(
+            children: [
+              const SingleChildScrollView(
+                padding: EdgeInsets.only(top: 16, bottom: 80),
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16),
+                  child: AppDetailSkeleton(),
+                ),
+              ),
+              InstallButton(app: app, release: latestRelease),
+              _buildFloatingMenu(context, ref, app, isInstalled, isSignedIn),
+            ],
           ),
         ),
       );
     }
 
-    return RefreshIndicator(
-      onRefresh: () => ref.apps.findOne(model.identifier, remote: true),
-      child: Column(
-        children: [
-          Expanded(
-            child: CustomScrollView(
-              slivers: [
-                SliverList(
-                  delegate: SliverChildListDelegate(
-                    [
-                      VersionedAppHeader(app: app),
-                      Gap(16),
-                      if (app.hasCertificateMismatch)
-                        Container(
-                          decoration: BoxDecoration(
-                            color: Colors.orange[900],
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(10),
-                            child: Text(
-                              '${app.name} ${app.latestMetadata!.version} has a different Android certificate than version ${app.localApp.value!.installedVersion} installed on your device.\n\nHave you used another app store to install ${app.name}? If so, you can choose to remove it and re-install coming back to this screen.\n\nIt otherwise could be a malicious update, contact the developer for details.\n\nNew certificate hash: ${app.latestMetadata!.apkSignatureHash}',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                        ),
-                      if (app.images.isNotEmpty)
-                        Scrollbar(
-                          controller: scrollController,
-                          interactive: true,
-                          trackVisibility: true,
-                          child: SingleChildScrollView(
-                            controller: scrollController,
-                            scrollDirection: Axis.horizontal,
-                            child: SizedBox(
-                              height: 320,
-                              child: Row(
-                                children: [
-                                  for (final i in app.images)
-                                    GestureDetector(
-                                      onTap: () {
-                                        final imageProvider =
-                                            CachedNetworkImageProvider(i,
-                                                scale: 0.6);
-                                        showImageViewer(
-                                          context,
-                                          imageProvider,
-                                          doubleTapZoomable: true,
-                                        );
-                                      },
-                                      child: Padding(
-                                        padding:
-                                            const EdgeInsets.only(right: 12),
-                                        child: CachedNetworkImage(
-                                          imageUrl: i,
-                                          errorWidget: (_, __, ___) =>
-                                              Container(),
-                                        ),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      Divider(height: 24),
-                      if (curatedBy.isNotEmpty)
-                        Container(
-                          decoration: BoxDecoration(
-                            color: Colors.grey[900],
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(10),
-                            child: UsersRichText(
-                              trailingText: ' picked this app',
-                              users: curatedBy.toList(),
-                            ),
-                          ),
-                        ),
-                      if (curatedBy.isNotEmpty) Gap(20),
-                      MarkdownBody(
-                        styleSheet: MarkdownStyleSheet(
-                          h1: TextStyle(fontWeight: FontWeight.bold),
-                          h2: TextStyle(fontWeight: FontWeight.bold),
-                          p: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w300,
-                          ),
-                        ),
-                        selectable: false,
-                        data: app.event.content.parseEmojis(),
-                      ),
-                      Gap(10),
-                      Padding(
-                        padding: const EdgeInsets.only(right: 14),
-                        child: SignerContainer(app: app),
-                      ),
-                      if (app.latestMetadata != null &&
-                          app.signer.isPresent &&
-                          app.isSelfSigned)
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Gap(10),
-                            SizedBox(
-                                width: double.infinity,
-                                child: ZapButton(app: app)),
-                            Gap(10),
-                            ZapReceipts(app: app),
-                          ],
-                        ),
-                      Gap(20),
-                      Container(
-                        padding: EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: Colors.grey[900],
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Column(
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.all(8),
-                              child: Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text('Source'),
-                                  Gap(10),
-                                  Flexible(
-                                    child: GestureDetector(
-                                      onTap: () {
-                                        if (app.repository != null) {
-                                          launchUrl(Uri.parse(app.repository!));
-                                        }
-                                      },
-                                      child: app.repository != null
-                                          ? AutoSizeText(
-                                              app.repository!,
-                                              minFontSize: 12,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            )
-                                          : Text('Source code not available',
-                                              style: TextStyle(
-                                                  color: Colors.red[300],
-                                                  fontWeight: FontWeight.bold)),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.all(8),
-                              child: Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text('License'),
-                                  Text((app.license == null ||
-                                          app.license == 'NOASSERTION')
-                                      ? 'Unknown'
-                                      : app.license!)
-                                ],
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.all(8),
-                              child: Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text('App ID'),
-                                  Gap(10),
-                                  Flexible(
-                                    child: AutoSizeText(
-                                      app.identifier,
-                                      minFontSize: 12,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  )
-                                ],
-                              ),
-                            ),
-                            if (app.latestMetadata != null)
-                              Padding(
-                                padding: const EdgeInsets.all(8),
-                                child: Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text('APK package SHA-256'),
-                                    Flexible(
-                                      child: GestureDetector(
-                                        onTap: () {
-                                          Clipboard.setData(ClipboardData(
-                                              text: app.latestMetadata!.hash!));
-                                          context.showInfo(
-                                              'Copied APK package SHA-256 to the clipboard');
-                                        },
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Text(
-                                              app.latestMetadata!.hash!.shorten,
-                                              maxLines: 1,
-                                            ),
-                                            Gap(6),
-                                            Icon(Icons.copy_rounded, size: 18)
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            if (app.latestMetadata?.apkSignatureHash != null)
-                              Padding(
-                                padding: const EdgeInsets.all(8),
-                                child: Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text('APK certificate SHA-256'),
-                                    Flexible(
-                                      child: GestureDetector(
-                                        onTap: () {
-                                          Clipboard.setData(ClipboardData(
-                                              text: app.latestMetadata!
-                                                  .apkSignatureHash!));
-                                          context.showInfo(
-                                              'Copied APK certificate SHA-256 to the clipboard');
-                                        },
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Text(
-                                              app.latestMetadata!
-                                                  .apkSignatureHash!.shorten,
-                                              maxLines: 1,
-                                            ),
-                                            Gap(6),
-                                            Icon(Icons.copy_rounded, size: 18)
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                      Divider(height: 60),
-                      Text(
-                        'Latest release'.toUpperCase(),
-                        style: TextStyle(
-                          fontSize: 16,
-                          letterSpacing: 3,
-                          fontWeight: FontWeight.w300,
-                        ),
-                      ),
-                      Gap(10),
-                      if (app.releases.isEmpty) Text('No available releases'),
-                      if (app.releases.isNotEmpty)
-                        ReleaseCard(
-                            release:
-                                app.releases.toList().sortedByLatest.first),
-                    ],
+    return Scaffold(
+      body: SafeArea(
+        child: Stack(
+          children: [
+            SingleChildScrollView(
+              padding: const EdgeInsets.only(top: 16, bottom: 80),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // App header
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: AppHeader(app: app),
                   ),
-                ),
+
+                  // Published by / Released at section
+                  if (app.isRelaySigned)
+                    Padding(
+                      padding: const EdgeInsets.only(
+                        left: 16,
+                        right: 16,
+                        bottom: 8,
+                      ),
+                      child: DownloadTextContainer(
+                        url: latestMetadata.urls.first,
+                        size: 14,
+                      ),
+                    )
+                  else
+                    Padding(
+                      padding: const EdgeInsets.only(
+                        left: 16,
+                        right: 16,
+                        bottom: 8,
+                      ),
+                      child: author != null
+                          ? AuthorContainer(
+                              profile: author,
+                              beforeText: 'Published by',
+                              oneLine: true,
+                              size: 14,
+                              app: app,
+                              onTap: () {
+                                final segments = GoRouterState.of(
+                                  context,
+                                ).uri.pathSegments;
+                                final first = segments.isNotEmpty
+                                    ? segments.first
+                                    : 'search';
+                                context.push('/$first/user/${author.pubkey}');
+                              },
+                            )
+                          : const AuthorSkeleton(),
+                    ),
+
+                  // Screenshots gallery
+                  if (app.images.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: ScreenshotsGallery(app: app),
+                    ),
+
+                  // App description
+                  if (app.description.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(
+                        left: 20,
+                        right: 20,
+                        top: 8,
+                      ),
+                      child: ExpandableMarkdown(
+                        data: app.description,
+                        styleSheet:
+                            MarkdownStyleSheet.fromTheme(
+                              Theme.of(context),
+                            ).copyWith(
+                              p: context.textTheme.bodyLarge?.copyWith(
+                                height: 1.6,
+                              ),
+                              blockquoteDecoration: BoxDecoration(
+                                color: const Color(0xFF1E3A5F), // Dark blue
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                      ),
+                    ),
+
+                  // Social action buttons
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 16),
+                        SocialActionsRow(app: app, author: author),
+                        const SizedBox(height: 16),
+                      ],
+                    ),
+                  ),
+
+                  // Latest release section
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Container(
+                                height: 1,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.2),
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              child: Text(
+                                'LATEST RELEASE',
+                                style: context.textTheme.labelLarge?.copyWith(
+                                  color: Theme.of(context).colorScheme.onSurface
+                                      .withValues(alpha: 0.85),
+                                  letterSpacing: 1.5,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              child: Container(
+                                height: 1,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.2),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.05),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Version:',
+                                style: context.textTheme.bodyMedium,
+                              ),
+                              Gap(4),
+                              Text(
+                                latestMetadata.version,
+                                style: context.textTheme.bodyMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Gap(4),
+                              Text(
+                                '(${formatDate(latestMetadata.createdAt)})',
+                                style: context.textTheme.bodyMedium?.copyWith(
+                                  color: Theme.of(context).colorScheme.onSurface
+                                      .withValues(alpha: 0.6),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 20),
+                          child: ReleaseNotes(release: latestRelease),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: AppInfoTable(app: app, fileMetadata: latestMetadata),
+                  ),
+
+                  CommentsSection(app: app, fileMetadata: latestMetadata),
+
+                  // Debug section
+                  if (showDebugSections)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: DebugVersionsSection(app: app),
+                    ),
+
+                  const SizedBox(height: 100),
+                ],
+              ),
+            ),
+
+            // Sticky install button
+            InstallButton(app: app, release: latestRelease),
+
+            // Floating three-dot menu
+            _buildFloatingMenu(context, ref, app, isInstalled, isSignedIn),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFloatingMenu(
+    BuildContext context,
+    WidgetRef ref,
+    App app,
+    bool isInstalled,
+    bool isSignedIn,
+  ) {
+    return Positioned(
+      top: 8,
+      right: 8,
+      child: _buildOverflowMenu(context, ref, app, isInstalled, isSignedIn),
+    );
+  }
+
+  Widget _buildOverflowMenu(
+    BuildContext context,
+    WidgetRef ref,
+    App app,
+    bool isInstalled,
+    bool isSignedIn,
+  ) {
+    // Watch saved apps to check if app is saved
+    final savedAppsAsync = ref.watch(bookmarksProvider);
+    final savedAppIds = savedAppsAsync.when(
+      data: (ids) => ids,
+      loading: () => <String>{},
+      error: (_, __) => <String>{},
+    );
+    final appAddressableId =
+        '${app.event.kind}:${app.pubkey}:${app.identifier}';
+    final isSaved = savedAppIds.contains(appAddressableId);
+
+    return Material(
+      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.9),
+      shape: const CircleBorder(),
+      elevation: 2,
+      child: PopupMenuButton<String>(
+        icon: const Icon(Icons.more_vert),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        onSelected: (value) {
+          switch (value) {
+            case 'share':
+              _shareApp(context, app);
+              break;
+            case 'copy_link':
+              _copyLink(context, app);
+              break;
+            case 'save_app':
+              _toggleSaveApp(context, ref, app, isSaved);
+              break;
+            case 'view_publisher':
+              _viewPublisher(context, app);
+              break;
+            case 'open_browser':
+              _openInBrowser(context, app);
+              break;
+            case 'open':
+              _openApp(context, ref, app);
+              break;
+            case 'delete':
+              _uninstallApp(context, ref, app);
+              break;
+          }
+        },
+        itemBuilder: (context) => [
+          const PopupMenuItem<String>(
+            value: 'share',
+            child: Row(
+              children: [Icon(Icons.share), SizedBox(width: 12), Text('Share')],
+            ),
+          ),
+          const PopupMenuItem<String>(
+            value: 'copy_link',
+            child: Row(
+              children: [
+                Icon(Icons.link),
+                SizedBox(width: 12),
+                Text('Copy link'),
               ],
             ),
           ),
-          SizedBox(
-            height: 50,
-            child: Center(
-              child: InstallButton(app: app),
+          if (isSignedIn)
+            PopupMenuItem<String>(
+              value: 'save_app',
+              child: Row(
+                children: [
+                  Icon(isSaved ? Icons.bookmark : Icons.bookmark_border),
+                  const SizedBox(width: 12),
+                  Text(isSaved ? 'Remove from saved' : 'Save app'),
+                ],
+              ),
+            ),
+          const PopupMenuItem<String>(
+            value: 'view_publisher',
+            child: Row(
+              children: [
+                Icon(Icons.person),
+                SizedBox(width: 12),
+                Text('View publisher'),
+              ],
             ),
           ),
+          const PopupMenuItem<String>(
+            value: 'open_browser',
+            child: Row(
+              children: [
+                Icon(Icons.open_in_browser),
+                SizedBox(width: 12),
+                Text('Open in browser'),
+              ],
+            ),
+          ),
+          if (isInstalled) ...[
+            const PopupMenuItem<String>(
+              value: 'open',
+              child: Row(
+                children: [
+                  Icon(Icons.open_in_new),
+                  SizedBox(width: 12),
+                  Text('Open'),
+                ],
+              ),
+            ),
+            const PopupMenuItem<String>(
+              value: 'delete',
+              child: Row(
+                children: [
+                  Icon(Icons.delete_outline),
+                  SizedBox(width: 12),
+                  Text('Delete'),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  String _getAppUrl(App app) {
+    final naddr = Utils.encodeShareableIdentifier(
+      AddressInput(
+        identifier: app.identifier,
+        author: app.pubkey,
+        kind: app.event.kind,
+        relays: [],
+      ),
+    );
+    return 'https://zapstore.dev/apps/$naddr';
+  }
+
+  void _shareApp(BuildContext context, App app) {
+    try {
+      final shareUrl = _getAppUrl(app);
+      SharePlus.instance.share(ShareParams(text: shareUrl));
+    } catch (e) {
+      if (context.mounted) {
+        context.showError('Failed to share app', description: '$e');
+      }
+    }
+  }
+
+  void _copyLink(BuildContext context, App app) {
+    try {
+      final shareUrl = _getAppUrl(app);
+      Clipboard.setData(ClipboardData(text: shareUrl));
+      context.showInfo('Link copied to clipboard');
+    } catch (e) {
+      if (context.mounted) {
+        context.showError('Failed to copy link', description: '$e');
+      }
+    }
+  }
+
+  Future<void> _toggleSaveApp(
+    BuildContext context,
+    WidgetRef ref,
+    App app,
+    bool isCurrentlySaved,
+  ) async {
+    try {
+      final signer = ref.read(Signer.activeSignerProvider);
+      final signedInPubkey = ref.read(Signer.activePubkeyProvider);
+
+      if (signer == null || signedInPubkey == null) {
+        if (context.mounted) {
+          context.showError(
+            'Sign in required',
+            description: 'You need to sign in to save apps.',
+          );
+        }
+        return;
+      }
+
+      // Query for existing stack
+      final existingStackState = await ref.storage.query(
+        RequestFilter<AppStack>(
+          authors: {signedInPubkey},
+          tags: {
+            '#d': {kAppBookmarksIdentifier},
+          },
+        ).toRequest(),
+        source: const LocalSource(),
+      );
+      final existingStack = existingStackState.firstOrNull;
+
+      // Get existing app IDs by decrypting if stack exists
+      List<String> existingAppIds = [];
+      if (existingStack != null) {
+        try {
+          final decryptedContent = await signer.nip44Decrypt(
+            existingStack.content,
+            signedInPubkey,
+          );
+          existingAppIds = (jsonDecode(decryptedContent) as List)
+              .cast<String>();
+        } catch (e) {
+          if (context.mounted) {
+            context.showError(
+              'Could not read existing saved apps',
+              description:
+                  'Your previous saved apps could not be decrypted. Starting fresh.\n\n$e',
+            );
+          }
+        }
+      }
+
+      // Modify the list
+      final appAddressableId =
+          '${app.event.kind}:${app.pubkey}:${app.identifier}';
+
+      if (isCurrentlySaved) {
+        existingAppIds.remove(appAddressableId);
+      } else {
+        if (!existingAppIds.contains(appAddressableId)) {
+          existingAppIds.add(appAddressableId);
+        }
+      }
+
+      // Create new partial stack with updated list
+      final partialStack = PartialAppStack.withEncryptedApps(
+        name: 'Saved Apps',
+        identifier: kAppBookmarksIdentifier,
+        apps: existingAppIds,
+      );
+
+      // Sign (encrypts the content)
+      final signedStack = await partialStack.signWith(signer);
+
+      // Save to local storage and publish to relays
+      await ref.storage.save({signedStack});
+      ref.storage.publish({
+        signedStack,
+      }, source: RemoteSource(relays: 'social'));
+
+      if (context.mounted) {
+        context.showInfo(
+          isCurrentlySaved ? 'App removed from saved' : 'App saved',
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        context.showError('Failed to update bookmark', description: '$e');
+      }
+    }
+  }
+
+  void _viewPublisher(BuildContext context, App app) {
+    final segments = GoRouterState.of(context).uri.pathSegments;
+    final first = segments.isNotEmpty ? segments.first : 'search';
+    context.push('/$first/user/${app.pubkey}');
+  }
+
+  Future<void> _openInBrowser(BuildContext context, App app) async {
+    try {
+      final url = _getAppUrl(app);
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        if (context.mounted) {
+          context.showError('Could not open browser');
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        context.showError('Failed to open browser', description: '$e');
+      }
+    }
+  }
+
+  Future<void> _openApp(BuildContext context, WidgetRef ref, App app) async {
+    try {
+      final packageManager = ref.read(packageManagerProvider.notifier);
+      await packageManager.launchApp(app.identifier);
+    } catch (e) {
+      if (!context.mounted) return;
+      context.showError(
+        'Failed to launch ${app.name ?? app.identifier}',
+        description:
+            'The app may have been uninstalled or moved. Try reinstalling.\n\n$e',
+      );
+    }
+  }
+
+  Future<void> _uninstallApp(
+    BuildContext context,
+    WidgetRef ref,
+    App app,
+  ) async {
+    try {
+      final packageManager = ref.read(packageManagerProvider.notifier);
+      await packageManager.uninstall(app.identifier);
+      // Only reaches here after successful uninstall
+      if (context.mounted) {
+        context.showInfo('${app.name ?? app.identifier} has been uninstalled');
+      }
+    } catch (e) {
+      if (context.mounted) {
+        // Don't show error for user cancellation
+        final message = e.toString();
+        if (!message.contains('cancelled')) {
+          context.showError('Uninstall failed', description: '$e');
+        }
+      }
+    }
   }
 }

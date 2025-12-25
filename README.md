@@ -1,4 +1,8 @@
-# zapstore
+# Zapstore
+
+The open app store powered by your social network
+
+[https://zapstore.dev](https://zapstore.dev)
 
 ## Build from source
 

@@ -1,111 +1,135 @@
 name: zapstore
 description: The permissionless app store
-publish_to: 'none'
+publish_to: "none"
 
-version: 0.2.7+27
+version: 1.0.0+1000
 
 environment:
-  sdk: '>=3.3.0 <4.0.0'
+  sdk: ^3.8.1
 
+# Dependencies specify other packages that your package needs in order to work.
+# To automatically upgrade your package dependencies to the latest versions
+# consider running `flutter pub upgrade --major-versions`. Alternatively,
+# dependencies can be manually updated by changing the version numbers below to
+# the latest version available on pub.dev. To see which dependencies have newer
+# versions available, run `flutter pub outdated`.
 dependencies:
   flutter:
     sdk: flutter
-  cupertino_icons: ^1.0.2
-  flutter_data: ^2.0.0-rc3
-  hooks_riverpod: ^2.5.3
-  json_annotation: ^4.9.0
-  flutter_hooks: ^0.20.4
-  build_runner: ^2.4.8
-  collection: ^1.18.0
-  path_provider: ^2.1.2
-  crypto: ^3.0.3
-  go_router: ^14.0.2
-  permission_handler: ^11.3.1
-  path: ^1.9.0
-  http: ^1.2.1
+
+  flutter_riverpod: ^2.6.1
+  flutter_hooks: ^0.21.2
+  path_provider: ^2.1.5
+  go_router: ^16.0.0
   async_button_builder: ^3.0.0+1
-  android_package_manager: ^0.7.1
-  url_launcher: ^6.2.5
-  purplebase: ^0.2.0
-  sqlite3_flutter_libs: ^0.5.20
-  flutter_markdown: ^0.7.1
-  cached_network_image: ^3.3.1
-  gap: ^3.0.1
-  auto_size_text: ^3.0.0
-  intl: ^0.18.1
-  device_info_plus: ^11.2.0
-  flutter_layout_grid: ^2.0.6
-  signer_plugin: ^1.0.0
-  skeletonizer: ^1.1.2+1
-  flutter_phoenix: ^1.1.1
-  percent_indicator: ^4.2.3
-  toastification: ^2.0.0
-  system_info2: ^4.0.0
-  badges: ^3.1.2
-  convert: ^3.1.1
-  async: ^2.11.0
-  app_links: ^6.3.2
+  sqlite3_flutter_libs: ^0.5.34
+  cached_network_image: ^3.4.1
+  skeletonizer: ^2.1.0+1
   dart_emoji: ^0.2.0+2
-  remove_markdown: ^0.0.2
-  install_plugin: ^2.1.0
-  shared_preferences: ^2.3.2
-  background_downloader: ^8.8.0
-  mutex: ^3.1.0
   easy_image_viewer: ^1.5.1
-  flutter_secure_storage: ^9.2.2
-  ndk: ^0.2.4
+  models: ^0.3.0
+  purplebase: ^0.3.0
+  amber_signer: ^0.1.0
+  hooks_riverpod: ^2.6.1
+  path: ^1.9.1
+  any_link_preview: ^3.0.3
+  http: ^1.2.1
+  url_launcher: ^6.3.0
+  flutter_markdown: ^0.7.7+1
+  auto_size_text: ^3.0.0
+  percent_indicator: ^4.2.5
+  flutter_layout_grid: ^2.0.8
+  permission_handler: ^12.0.1
+  equatable: ^2.0.7
+  state_notifier: ^1.0.0
+  gap: ^3.0.1
+  remove_markdown: ^0.0.2
+  intl: ^0.20.2
+  collection: ^1.19.1
+  qr_flutter: ^4.1.0
+  share_plus: ^12.0.0
+  background_downloader: ^9.2.6
+  connectivity_plus: ^7.0.0
+  app_links: ^6.4.1
+  flutter_secure_storage: ^10.0.0
+  markdown: ^7.3.0
+  workmanager: ^0.9.0+3
+  flutter_local_notifications: ^19.5.0
 
 dependency_overrides:
+  models:
+    path: ../../purplebase/models
+    # git:
+    #   url: https://github.com/purplebase/models
+    #   ref: main
   purplebase:
-    # path: ../../purplebase/purplebase
+    path: ../../purplebase/purplebase
+    # git:
+    #   url: https://github.com/purplebase/purplebase
+    #   ref: master
+  amber_signer:
+    # path: ../amber_signer
     git:
-      url: https://github.com/purplebase/purplebase
-      ref: 512eab9828d2d1ca9e1b7e48a5742a3b08b9b99f
-  flutter_data:
-    git:
-      url: https://github.com/zapstore/flutter_data
-      ref: d7376cf1eac8e9c563d4c6eed8e567adc877415c
-  signer_plugin:
-    git:
-      url: https://github.com/chebizarro/flutter-signer-plugin
-      ref: baa5b2fcf7ba8db606a76794582348a1403438b0
+      url: https://github.com/purplebase/amber_signer
+      ref: main
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  json_serializable: ^6.7.1
-  flutter_lints: ^5.0.0
-  icons_launcher: ^3.0.0
 
+  # The "flutter_lints" package below contains a set of recommended lints to
+  # encourage good coding practices. The lint set provided by the package is
+  # activated in the `analysis_options.yaml` file located at the root of your
+  # package. See that file for information about deactivating specific lint
+  # rules and activating additional ones.
+  flutter_lints: ^5.0.0
+  mcp_dart: ^0.5.3
+  bm25: ^2.2.3
+  archive: ^4.0.7
+  args: ^2.7.0
+  flutter_launcher_icons: ^0.14.4
+
+# For information on the generic Dart part of this file, see the
+# following page: https://dart.dev/tools/pub/pubspec
+
+# The following section is specific to Flutter packages.
 flutter:
+  # The following line ensures that the Material Icons font is
+  # included with your application, so that you can use the icons in
+  # the material Icons class.
   uses-material-design: true
 
+  # To add assets to your application, add an assets section, like this:
   assets:
-    - assets/images/logo.png
-    - assets/images/logo-bg.png
-    - assets/images/logo-fg.png
+    - assets/images/
 
+  # An image asset can refer to one or more resolution-specific "variants", see
+  # https://flutter.dev/to/resolution-aware-images
+
+  # For details regarding adding assets from package dependencies, see
+  # https://flutter.dev/to/asset-from-package
+
+  # Custom fonts
   fonts:
     - family: Inter
       fonts:
-        - asset: assets/fonts/Inter-Light.ttf
-          weight: 300
         - asset: assets/fonts/Inter-Regular.ttf
-        - asset: assets/fonts/Inter-Italic.ttf
-          style: italic
         - asset: assets/fonts/Inter-Bold.ttf
           weight: 700
+        - asset: assets/fonts/Inter-Light.ttf
+          weight: 300
+        - asset: assets/fonts/Inter-Italic.ttf
+          style: italic
+    - family: Inter Display
+      fonts:
+        - asset: assets/fonts/InterDisplay-Regular.ttf
+        - asset: assets/fonts/InterDisplay-ExtraBold.ttf
+          weight: 800
 
-icons_launcher:
+flutter_launcher_icons:
+  android: true
+  ios: false
   image_path: "assets/images/logo.png"
-  platforms:
-    android:
-      enable: true
-      image_path: "assets/images/logo.png"
-      notification_image: "assets/images/logo.png"
-      adaptive_background_image: "assets/images/logo-bg.png"
-      adaptive_foreground_image: "assets/images/logo-fg.png"
-      adaptive_monochrome_image: "assets/images/logo-bw.png"
-    macos:
-      enable: true
-      image_path: "assets/images/logo.png"
+  adaptive_icon_background: "assets/images/logo-bg.png"
+  adaptive_icon_foreground: "assets/images/logo-fg.png"
+  adaptive_icon_monochrome: "assets/images/logo-fg.png"
