@@ -604,7 +604,11 @@ class InstallButton extends ConsumerWidget {
     final operation = ref.read(installOperationProvider(app.identifier));
     if (operation is! OperationFailed) return;
 
-    context.showError(operation.message, actions: const []);
+    context.showError(
+      operation.message,
+      description: operation.description,
+      actions: const [],
+    );
 
     // Always clear error after showing it (reckless mode removed).
     final pm = ref.read(packageManagerProvider.notifier);
@@ -617,6 +621,9 @@ class InstallButton extends ConsumerWidget {
         'Certificate mismatch',
         description: 'The app signature does not match. Force update required.',
       );
+    } else if (operation.description != null) {
+      // Errors with descriptions (from Kotlin) are shown as toasts
+      context.showError(operation.message, description: operation.description);
     }
     // Other errors are shown when user taps the error button
   }

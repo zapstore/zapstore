@@ -275,24 +275,14 @@ class _ZappersListSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final latestMetadata = app.latestFileMetadata;
-    if (latestMetadata == null) return const SizedBox.shrink();
-
-    return _ZappersListSectionWithMetadata(
-      app: app,
-      metadataId: latestMetadata.id,
-    );
+    return _ZappersListSectionWithMetadata(app: app);
   }
 }
 
 class _ZappersListSectionWithMetadata extends ConsumerWidget {
-  const _ZappersListSectionWithMetadata({
-    required this.app,
-    required this.metadataId,
-  });
+  const _ZappersListSectionWithMetadata({required this.app});
 
   final App app;
-  final String metadataId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -305,19 +295,7 @@ class _ZappersListSectionWithMetadata extends ConsumerWidget {
       ),
     );
 
-    // Query zaps on metadata (via #e tag)
-    final zapsOnMetadataState = ref.watch(
-      query<Zap>(
-        tags: {
-          '#e': {metadataId},
-        },
-        source: const LocalAndRemoteSource(relays: 'social'),
-        subscriptionPrefix: 'metadata-zaps',
-      ),
-    );
-
-    // Combine zaps from both queries
-    final allZaps = {...zapsState.models, ...zapsOnMetadataState.models};
+    final allZaps = zapsState.models;
 
     if (allZaps.isEmpty) return const SizedBox.shrink();
 

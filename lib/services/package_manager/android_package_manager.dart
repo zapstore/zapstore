@@ -99,10 +99,11 @@ final class AndroidPackageManager extends PackageManager {
     final statusRaw = event['status'] as String?;
     final message = event['message'] as String?;
     final errorCode = event['errorCode'] as String?;
+    final description = event['description'] as String?;
     final status = InstallStatusX.tryParse(statusRaw);
 
     debugPrint(
-      '[PackageManager] Received event: appId=$appId, status=$status, msg=$message, errorCode=$errorCode',
+      '[PackageManager] Received event: appId=$appId, status=$status, msg=$message, errorCode=$errorCode, desc=$description',
     );
 
     if (appId == null || statusRaw == null) {
@@ -196,6 +197,7 @@ final class AndroidPackageManager extends PackageManager {
             target: target,
             type: _errorCodeToFailureType(errorCode, message),
             message: message ?? 'Installation failed',
+            description: description,
             filePath: filePath,
           ),
         );

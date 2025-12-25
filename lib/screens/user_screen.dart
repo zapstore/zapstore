@@ -205,24 +205,22 @@ class _UserZapsList extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Collect addressable tags for apps and metadata IDs separately
-    final allAppTags = <String, Set<String>>{};
-    final metadataIds = <String>{};
+    // Don't query zaps if user has no apps
+    if (apps.isEmpty) {
+      return const SizedBox.shrink();
+    }
 
+    // Collect addressable tags for apps
+    final allAppTags = <String, Set<String>>{};
     for (final app in apps) {
       final appTags = app.event.addressableIdTagMap;
       for (final entry in appTags.entries) {
         allAppTags[entry.key] = {...?allAppTags[entry.key], ...entry.value};
       }
-
-      final metadata = app.latestFileMetadata;
-      if (metadata != null) {
-        metadataIds.add(metadata.id);
-      }
     }
 
-    // Query zaps on apps (via #a tag) - separate from metadata zaps
-    final appZapsState = ref.watch(
+    // Query zaps on apps (via #a tag)
+    final zapsState = ref.watch(
       query<Zap>(
         tags: allAppTags,
         source: const LocalAndRemoteSource(relays: 'social'),
@@ -230,17 +228,7 @@ class _UserZapsList extends HookConsumerWidget {
       ),
     );
 
-    // Query zaps on metadata (via #e tag) - separate query
-    final metadataZapsState = ref.watch(
-      query<Zap>(
-        tags: {'#e': metadataIds},
-        source: const LocalAndRemoteSource(relays: 'social'),
-        subscriptionPrefix: 'user-metadata-zaps',
-      ),
-    );
-
-    // Combine zaps from both queries
-    final allZaps = {...appZapsState.models, ...metadataZapsState.models};
+    final allZaps = zapsState.models;
 
     if (allZaps.isEmpty) {
       return const SizedBox.shrink();

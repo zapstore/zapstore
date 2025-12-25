@@ -132,12 +132,14 @@ class Uninstalling extends InstallOperation {
 class OperationFailed extends InstallOperation {
   final FailureType type;
   final String message;
+  final String? description;
   final String? filePath;
 
   const OperationFailed({
     required super.target,
     required this.type,
     required this.message,
+    this.description,
     this.filePath,
   });
 

@@ -287,7 +287,8 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
         appId: String, 
         status: String, 
         message: String? = null,
-        errorCode: String? = null
+        errorCode: String? = null,
+        description: String? = null
     ) {
         val emitNow = emit@{
             // Update watchdog regardless of whether Dart is listening.
@@ -309,6 +310,9 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
             }
             if (errorCode != null) {
                 event["errorCode"] = errorCode
+            }
+            if (description != null) {
+                event["description"] = description
             }
             Log.d(TAG, "Emitting to Dart: $event")
             sink.success(event)
@@ -496,8 +500,9 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
                         emitInstallStatus(
                             packageName, 
                             InstallStatus.FAILED, 
-                            verification.errorMessage,
-                            verification.errorCode
+                            verification.errorTitle,
+                            verification.errorCode,
+                            verification.errorDescription
                         )
                     }
                     verificationThreads.remove(packageName)
@@ -648,14 +653,20 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
     
     private data class VerificationResult(
         val isSuccess: Boolean, 
-        val errorMessage: String = "",
+        val errorTitle: String = "",
+        val errorDescription: String? = null,
         val errorCode: String? = null
     )
     
     private fun verifyApk(file: File, expectedHash: String, expectedSize: Long): VerificationResult {
         if (!isValidApkFormat(file)) {
             file.delete()
-            return VerificationResult(false, "Invalid APK file format", ErrorCode.INVALID_FILE)
+            return VerificationResult(
+                false, 
+                "Invalid APK file",
+                "The downloaded file is not a valid APK format.",
+                ErrorCode.INVALID_FILE
+            )
         }
         
         val digest = MessageDigest.getInstance("SHA-256")
@@ -671,7 +682,8 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
         if (actualHash.lowercase() != expectedHash.lowercase()) {
             return VerificationResult(
                 false, 
-                "Hash verification failed. Expected: $expectedHash, Actual: $actualHash",
+                "Hash verification failed",
+                "The downloaded file hash does not match.\n\nExpected: $expectedHash\nActual: $actualHash",
                 ErrorCode.HASH_MISMATCH
             )
         }
