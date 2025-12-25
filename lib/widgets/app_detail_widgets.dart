@@ -268,24 +268,15 @@ class SocialActionsRow extends HookConsumerWidget {
   }
 }
 
-class _ZappersListSection extends StatelessWidget {
+class _ZappersListSection extends ConsumerWidget {
   const _ZappersListSection({required this.app});
 
   final App app;
 
   @override
-  Widget build(BuildContext context) {
-    return _ZappersListSectionWithMetadata(app: app);
-  }
-}
-
-class _ZappersListSectionWithMetadata extends ConsumerWidget {
-  const _ZappersListSectionWithMetadata({required this.app});
-
-  final App app;
-
-  @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final metadataId = app.latestFileMetadata?.id;
+
     // Query zaps on app (via #a tag)
     final zapsState = ref.watch(
       query<Zap>(
@@ -295,7 +286,24 @@ class _ZappersListSectionWithMetadata extends ConsumerWidget {
       ),
     );
 
-    final allZaps = zapsState.models;
+    // Query zaps on metadata (via #e tag) - for legacy compatibility
+    final zapsOnMetadataState = metadataId != null
+        ? ref.watch(
+            query<Zap>(
+              tags: {
+                '#e': {metadataId},
+              },
+              source: const LocalAndRemoteSource(relays: 'social'),
+              subscriptionPrefix: 'metadata-zaps',
+            ),
+          )
+        : null;
+
+    // Combine zaps from both queries
+    final allZaps = {
+      ...zapsState.models,
+      if (zapsOnMetadataState != null) ...zapsOnMetadataState.models,
+    };
 
     if (allZaps.isEmpty) return const SizedBox.shrink();
 

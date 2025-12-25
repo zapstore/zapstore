@@ -29,23 +29,40 @@ class ProfileAvatar extends StatelessWidget {
               height: radius * 2,
               fadeInDuration: const Duration(milliseconds: 500),
               fadeOutDuration: const Duration(milliseconds: 200),
-              placeholder: (context, url) => const SizedBox.shrink(),
-              errorWidget: (context, url, error) => Center(
-                child: Icon(
-                  Icons.person_outline,
-                  color: AppColors.darkSkeletonHighlight,
-                  size: radius * 1.3,
+              placeholder: (context, url) => Container(
+                width: radius * 2,
+                height: radius * 2,
+                color: const Color(0xFF1A1A1A),
+                child: Center(
+                  child: Icon(
+                    Icons.person,
+                    color: const Color(0xFF2C4A6B),
+                    size: radius * 1.2,
+                  ),
+                ),
+              ),
+              errorWidget: (context, url, error) => Container(
+                width: radius * 2,
+                height: radius * 2,
+                color: const Color(0xFF1A1A1A),
+                child: Center(
+                  child: Icon(
+                    Icons.person,
+                    color: const Color(0xFF2C4A6B),
+                    size: radius * 1.2,
+                  ),
                 ),
               ),
             )
-          : SizedBox(
+          : Container(
               width: radius * 2,
               height: radius * 2,
+              color: const Color(0xFF1A1A1A),
               child: Center(
                 child: Icon(
-                  Icons.person_outline,
-                  color: AppColors.darkSkeletonHighlight,
-                  size: radius * 1.3,
+                  Icons.person,
+                  color: const Color(0xFF0D1B2A),
+                  size: radius * 2,
                 ),
               ),
             ),

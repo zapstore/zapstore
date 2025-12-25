@@ -210,17 +210,22 @@ class _UserZapsList extends HookConsumerWidget {
       return const SizedBox.shrink();
     }
 
-    // Collect addressable tags for apps
+    // Collect addressable tags for apps and metadata IDs
     final allAppTags = <String, Set<String>>{};
+    final metadataIds = <String>{};
     for (final app in apps) {
       final appTags = app.event.addressableIdTagMap;
       for (final entry in appTags.entries) {
         allAppTags[entry.key] = {...?allAppTags[entry.key], ...entry.value};
       }
+      final metadata = app.latestFileMetadata;
+      if (metadata != null) {
+        metadataIds.add(metadata.id);
+      }
     }
 
     // Query zaps on apps (via #a tag)
-    final zapsState = ref.watch(
+    final appZapsState = ref.watch(
       query<Zap>(
         tags: allAppTags,
         source: const LocalAndRemoteSource(relays: 'social'),
@@ -228,7 +233,22 @@ class _UserZapsList extends HookConsumerWidget {
       ),
     );
 
-    final allZaps = zapsState.models;
+    // Query zaps on metadata (via #e tag) - for legacy compatibility
+    final metadataZapsState = metadataIds.isNotEmpty
+        ? ref.watch(
+            query<Zap>(
+              tags: {'#e': metadataIds},
+              source: const LocalAndRemoteSource(relays: 'social'),
+              subscriptionPrefix: 'user-metadata-zaps',
+            ),
+          )
+        : null;
+
+    // Combine zaps from both queries
+    final allZaps = {
+      ...appZapsState.models,
+      if (metadataZapsState != null) ...metadataZapsState.models,
+    };
 
     if (allZaps.isEmpty) {
       return const SizedBox.shrink();
