@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
+import 'package:zapstore/services/updates_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'app_card.dart';
 
@@ -41,8 +42,20 @@ class LatestReleasesContainer extends HookConsumerWidget {
     final state = ref.watch(latestReleasesProvider);
     final storage = state.storage;
 
-    // Combine live storage models (newest) with paged older apps
-    final combinedApps = [...storage.models, ...state.olderApps];
+    // Get pinned apps with zapstore updates to inject at top
+    final categorized = ref.watch(categorizedAppsProvider);
+    final pinnedAppsWithUpdates = [
+      ...categorized.automaticUpdates,
+      ...categorized.manualUpdates,
+    ].where((a) => a.isZapstoreApp).toList();
+    final pinnedIds = pinnedAppsWithUpdates.map((a) => a.id).toSet();
+
+    // Combine live storage models (newest) with paged older apps, excluding pinned
+    final allApps = [
+      ...storage.models,
+      ...state.olderApps,
+    ].where((a) => !pinnedIds.contains(a.id)).toList();
+    final combinedApps = [...pinnedAppsWithUpdates, ...allApps];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

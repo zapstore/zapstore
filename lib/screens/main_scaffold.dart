@@ -5,6 +5,7 @@ import 'package:models/models.dart';
 import 'package:zapstore/router.dart';
 import 'package:zapstore/services/updates_service.dart';
 import 'package:zapstore/widgets/common/badges.dart';
+import 'package:zapstore/widgets/zapstore_update_prompt_listener.dart';
 import '../widgets/common/profile_avatar.dart';
 import '../theme.dart';
 
@@ -56,21 +57,26 @@ class MainScaffold extends StatelessWidget {
           // At home tab root, do nothing (don't close the app)
         }
       },
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          // Use mobile layout for screens < 550px width
-          if (constraints.maxWidth < 550) {
-            return MobileScaffold(
-              navigationShell: navigationShell,
-              onNavTap: _onBottomNavTap,
-            );
-          } else {
-            return DesktopScaffold(
-              navigationShell: navigationShell,
-              onNavTap: _onBottomNavTap,
-            );
-          }
-        },
+      child: Stack(
+        children: [
+          LayoutBuilder(
+            builder: (context, constraints) {
+              // Use mobile layout for screens < 550px width
+              if (constraints.maxWidth < 550) {
+                return MobileScaffold(
+                  navigationShell: navigationShell,
+                  onNavTap: _onBottomNavTap,
+                );
+              } else {
+                return DesktopScaffold(
+                  navigationShell: navigationShell,
+                  onNavTap: _onBottomNavTap,
+                );
+              }
+            },
+          ),
+          const ZapstoreUpdatePromptListener(),
+        ],
       ),
     );
   }

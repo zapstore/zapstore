@@ -16,12 +16,9 @@ extension ContextExt on BuildContext {
   TextTheme get textTheme => Theme.of(this).textTheme;
 }
 
-/// Zapstore's own app identifiers
-const kZapstoreAppIdentifiers = {'dev.zapstore.app', 'dev.zapstore.alpha'};
-
 extension AppExt on App {
   /// Whether this app is one of Zapstore's own apps
-  bool get isZapstoreApp => kZapstoreAppIdentifiers.contains(identifier);
+  bool get isZapstoreApp => identifier == kZapstoreAppIdentifier;
 
   /// Whether this app is signed by Zapstore pubkey
   bool get isSignedByZapstore => pubkey == kZapstorePubkey;
