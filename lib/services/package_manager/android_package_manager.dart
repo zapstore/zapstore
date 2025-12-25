@@ -170,19 +170,8 @@ final class AndroidPackageManager extends PackageManager {
         break;
 
       case InstallStatus.alreadyInProgress:
-        // Native is stuck thinking an install is in progress.
-        // Treat as failure so user can see the issue and retry manually.
-        setOperation(
-          appId,
-          OperationFailed(
-            target: target,
-            type: FailureType.installFailed,
-            message: 'Android is busy. Please try again in a moment.',
-            filePath: filePath,
-          ),
-        );
-        // Move on to next app in queue
-        _advanceAfterDelay();
+        // Real pending dialog exists - Kotlin will also send pendingUserAction event
+        // which transitions to Installing. Nothing to do here.
         break;
 
       case InstallStatus.success:
@@ -376,18 +365,8 @@ final class AndroidPackageManager extends PackageManager {
       final resultMap = Map<String, dynamic>.from(result ?? {});
 
       if (resultMap['alreadyInProgress'] == true) {
-        // Native is stuck thinking an install is in progress.
-        // Treat as failure so user can see and retry manually.
-        setOperation(
-          appId,
-          OperationFailed(
-            target: target,
-            type: FailureType.installFailed,
-            message: 'Android is busy. Please try again in a moment.',
-            filePath: filePath,
-          ),
-        );
-        _advanceAfterDelay();
+        // Real pending dialog exists - Kotlin re-launched it and sent pendingUserAction
+        // event which transitions to Installing. Nothing to do here.
         return;
       }
 

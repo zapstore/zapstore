@@ -470,15 +470,16 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
         }
         
         if (hasActiveSession(packageName)) {
-            pendingUserActionIntents[packageName]?.let { launchConfirmDialog(packageName, it) }
-            // IMPORTANT: Emit an event so Dart can transition out of active states.
             if (pendingUserActionIntents.containsKey(packageName)) {
+                // Real pending dialog - re-launch it and let user complete
+                pendingUserActionIntents[packageName]?.let { launchConfirmDialog(packageName, it) }
                 emitInstallStatus(packageName, InstallStatus.PENDING_USER_ACTION, "User confirmation pending")
-            } else {
-                emitInstallStatus(packageName, InstallStatus.ALREADY_IN_PROGRESS, "Installation already in progress", ErrorCode.ALREADY_IN_PROGRESS)
+                result.success(mapOf("started" to false, "alreadyInProgress" to true))
+                return
             }
-            result.success(mapOf("started" to false, "alreadyInProgress" to true))
-            return
+            // No pending dialog = stale session. Abandon and proceed with fresh install.
+            Log.d(TAG, "Abandoning stale session for $packageName")
+            abandonExistingSession(packageName)
         }
         
         if (expectedHash != null && expectedSize != null) {
