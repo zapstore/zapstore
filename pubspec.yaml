@@ -1,6 +1,6 @@
 name: zapstore
-description: The permissionless app store
-publish_to: "none"
+description: The open app store powered by your social network
+publish_to: none
 
 version: 1.0.0+1000
 
