@@ -58,20 +58,20 @@ dependencies:
 
 dependency_overrides:
   models:
-    path: ../../purplebase/models
-    # git:
-    #   url: https://github.com/purplebase/models
-    #   ref: main
+    # path: ../../purplebase/models
+    git:
+      url: https://github.com/purplebase/models
+      ref: ca70b39
   purplebase:
-    path: ../../purplebase/purplebase
-    # git:
-    #   url: https://github.com/purplebase/purplebase
-    #   ref: master
+    # path: ../../purplebase/purplebase
+    git:
+      url: https://github.com/purplebase/purplebase
+      ref: "6052022"
   amber_signer:
     # path: ../amber_signer
     git:
       url: https://github.com/purplebase/amber_signer
-      ref: main
+      ref: 4d065ba
 
 dev_dependencies:
   flutter_test:
