@@ -214,6 +214,12 @@ final darkTheme = ThemeData(
   useMaterial3: true,
   brightness: Brightness.dark,
   scaffoldBackgroundColor: Colors.transparent,
+  // Enable iOS-style swipe-to-go-back gesture on Android
+  pageTransitionsTheme: const PageTransitionsTheme(
+    builders: {
+      TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+    },
+  ),
   colorScheme: const ColorScheme.dark(
     primary: AppColors.darkPrimary,
     secondary: AppColors.darkSecondary,
