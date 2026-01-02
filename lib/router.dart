@@ -8,6 +8,7 @@ import 'package:zapstore/screens/user_screen.dart';
 import 'package:zapstore/screens/search_screen.dart';
 import 'package:zapstore/screens/updates_screen.dart';
 import 'package:zapstore/screens/profile_screen.dart';
+import 'package:zapstore/widgets/swipe_back_wrapper.dart';
 
 /// Root paths for each navigation branch (used for back navigation handling)
 const kBranchRoots = ['/search', '/updates', '/profile'];
@@ -35,9 +36,11 @@ GoRoute _appDetailRoute() {
     builder: (context, state) {
       final rawId = state.pathParameters['id']!;
       final resolved = _resolveNaddrRouteId(rawId);
-      return AppDetailScreen(
-        appId: resolved.identifier,
-        authorPubkey: resolved.author,
+      return SwipeBackWrapper(
+        child: AppDetailScreen(
+          appId: resolved.identifier,
+          authorPubkey: resolved.author,
+        ),
       );
     },
   );
@@ -50,9 +53,11 @@ GoRoute _stackDetailRoute() {
     builder: (context, state) {
       final rawId = state.pathParameters['id']!;
       final resolved = _resolveNaddrRouteId(rawId);
-      return AppStackScreen(
-        stackId: resolved.identifier,
-        authorPubkey: resolved.author,
+      return SwipeBackWrapper(
+        child: AppStackScreen(
+          stackId: resolved.identifier,
+          authorPubkey: resolved.author,
+        ),
       );
     },
   );
@@ -64,7 +69,9 @@ GoRoute _userRoute() {
     path: 'user/:pubkey',
     builder: (context, state) {
       final pubkey = state.pathParameters['pubkey']!;
-      return UserScreen(pubkey: pubkey);
+      return SwipeBackWrapper(
+        child: UserScreen(pubkey: pubkey),
+      );
     },
   );
 }
