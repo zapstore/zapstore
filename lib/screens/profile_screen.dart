@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:async_button_builder/async_button_builder.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,6 +8,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
+import 'package:skeletonizer/skeletonizer.dart';
 import 'package:zapstore/services/app_restart_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:purplebase/purplebase.dart';
@@ -18,6 +18,7 @@ import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/common/profile_avatar.dart';
 import 'package:zapstore/widgets/app_card.dart';
+import 'package:zapstore/widgets/auth_widgets.dart';
 import 'package:zapstore/theme.dart';
 import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/widgets/common/note_parser.dart';
@@ -36,7 +37,7 @@ class ProfileScreen extends ConsumerWidget {
       body: ListView(
         children: [
           // Authentication Section
-          const _AuthenticationSection(),
+          _AuthenticationSection(),
 
           const SizedBox(height: 24),
 
@@ -91,7 +92,7 @@ class _AuthenticationSection extends ConsumerWidget {
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -110,8 +111,14 @@ class _AuthenticationSection extends ConsumerWidget {
                       ),
                     ),
                   );
+
                   final profile = profileState.models.firstOrNull;
-                  return _buildSignedInProfile(context, ref, pubkey, profile);
+                  final isLoading = profileState is StorageLoading && profile == null;
+
+                  return Skeletonizer(
+                    enabled: isLoading,
+                    child: _buildSignedInProfile(context, ref, pubkey, profile),
+                  );
                 },
               )
             else
@@ -131,129 +138,143 @@ class _AuthenticationSection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Profile Information
         Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            ProfileAvatar(profile: profile, radius: 32),
+            ProfileAvatar(
+              profile: profile,
+              radius: 36,
+              borderColors: [
+                Theme.of(context).colorScheme.primary,
+                Theme.of(context).colorScheme.secondary,
+              ],
+            ),
             const SizedBox(width: 16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          profile?.nameOrNpub ?? '',
-                          style: context.textTheme.titleLarge,
-                        ),
-                      ),
-                      // Smaller Sign Out button
-                      FilledButton.icon(
-                        onPressed: () => _signOut(context, ref),
-                        icon: const Icon(Icons.logout, size: 14),
-                        label: const Text(
-                          'Sign Out',
-                          style: TextStyle(fontSize: 12),
-                        ),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: Colors.red.shade900,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          minimumSize: const Size(0, 0),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  // Profile bio with NoteParser (non-interactive)
-                  if ((profile?.about?.trim().isNotEmpty ?? false))
-                    NoteParser.parse(
-                      context,
-                      profile!.about!,
-                      textStyle: context.textTheme.bodyMedium,
-                      onNostrEntity: (entity) => NostrEntityWidget(
-                        entity: entity,
-                        colorPair: [
-                          Theme.of(context).colorScheme.primary,
-                          Theme.of(context).colorScheme.secondary,
-                        ],
-                        // No tap callbacks - make it non-interactive
-                      ),
+                  Text(
+                    profile?.nameOrNpub ?? 'Nostr User',
+                    style: context.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w900,
                     ),
-                  const SizedBox(height: 12),
-                  // Link to full profile view
-                  InkWell(
-                    onTap: () => context.push('/profile/user/$pubkey'),
-                    child: Row(
-                      children: [
-                        Text(
-                          'View Full Profile',
-                          style: context.textTheme.bodySmall?.copyWith(
-                            color: Theme.of(context).colorScheme.primary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Icon(
-                          Icons.arrow_forward,
-                          size: 14,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                      ],
-                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
+                  const SizedBox(height: 4),
+                  if (profile?.nip05 != null)
+                    Text(
+                      profile!.nip05!,
+                      style: context.textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    )
+                  else
+                    Text(
+                      pubkey.abbreviateNpub(),
+                      style: context.textTheme.bodySmall,
+                    ),
                 ],
               ),
             ),
+            IconButton(
+              onPressed: () => _signOut(context, ref),
+              icon: const Icon(Icons.logout_rounded, size: 20),
+              color: Theme.of(context).colorScheme.error,
+              tooltip: 'Sign Out',
+            ),
           ],
+        ),
+        if (profile?.about?.trim().isNotEmpty ?? false) ...[
+          const SizedBox(height: 16),
+          NoteParser.parse(
+            context,
+            profile!.about!,
+            textStyle: context.textTheme.bodyMedium,
+            onNostrEntity: (entity) => NostrEntityWidget(
+              entity: entity,
+              colorPair: [
+                Theme.of(context).colorScheme.primary,
+                Theme.of(context).colorScheme.secondary,
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: 16),
+        InkWell(
+          onTap: () => context.push('/profile/user/$pubkey'),
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'View Full Profile',
+                  style: context.textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.primary,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(
+                  Icons.arrow_forward_rounded,
+                  size: 14,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ],
+            ),
+          ),
         ),
       ],
     );
   }
 
   Widget _buildSignInOptions(BuildContext context, WidgetRef ref) {
-    final pmState = ref.watch(packageManagerProvider);
-    final isAmberInstalled = pmState.installed.containsKey(kAmberPackageId);
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Benefits Section
         Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
               child: Icon(
-                Icons.info_outline,
-                size: 20,
+                Icons.account_circle_outlined,
+                size: 24,
                 color: Theme.of(context).colorScheme.primary,
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: Text(
-                'Sign in to unlock social features',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Sign In',
+                    style: context.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  Text(
+                    'Unlock social features and sync your data',
+                    style: context.textTheme.bodySmall,
+                  ),
+                ],
               ),
             ),
           ],
         ),
-        const SizedBox(height: 12),
-        SizedBox(
-          width: double.infinity,
-          child: _SignInButtonWithAmberCheck(
-            isAmberInstalled: isAmberInstalled,
-          ),
-        ),
+        const SizedBox(height: 20),
+        UnifiedSignInButton(),
       ],
     );
   }
@@ -266,63 +287,6 @@ class _AuthenticationSection extends ConsumerWidget {
         context.showError('Sign out failed', description: '$e');
       }
     }
-  }
-}
-
-// Sign in button with Amber installation check
-class _SignInButtonWithAmberCheck extends ConsumerWidget {
-  const _SignInButtonWithAmberCheck({required this.isAmberInstalled});
-
-  final bool isAmberInstalled;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return AsyncButtonBuilder(
-      onPressed: () async {
-        if (!isAmberInstalled) {
-          context.push('/profile/app/$kAmberNaddr');
-        } else {
-          await ref.read(amberSignerProvider).signIn();
-        }
-      },
-      builder: (context, child, callback, state) {
-        final onPressed = state.maybeWhen(
-          loading: () => null,
-          orElse: () => callback,
-        );
-        final loading = state.maybeWhen(
-          loading: () => true,
-          orElse: () => false,
-        );
-
-        return FilledButton(
-          onPressed: onPressed,
-          style: FilledButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          ),
-          child: loading
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.login, size: 16),
-                    const SizedBox(width: 8),
-                    Text(
-                      isAmberInstalled
-                          ? 'Sign in with Amber'
-                          : 'Install Amber to sign in',
-                      style: const TextStyle(fontSize: 13),
-                    ),
-                  ],
-                ),
-        );
-      },
-      child: const SizedBox.shrink(),
-    );
   }
 }
 
