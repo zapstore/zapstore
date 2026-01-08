@@ -23,6 +23,7 @@ import 'package:zapstore/widgets/download_text_container.dart';
 import 'package:zapstore/widgets/expandable_markdown.dart';
 import 'package:zapstore/widgets/install_button.dart';
 import 'package:zapstore/widgets/screenshots_gallery.dart';
+import 'package:zapstore/widgets/common/profile_avatar.dart';
 
 class AppDetailScreen extends HookConsumerWidget {
   const AppDetailScreen({super.key, required this.appId, this.authorPubkey});
@@ -192,6 +193,9 @@ class _AppDetailContent extends HookConsumerWidget {
                       child: DownloadTextContainer(
                         url: latestMetadata.urls.first,
                         size: 14,
+                        onTap: app.repository != null
+                            ? () => launchUrl(Uri.parse(app.repository!))
+                            : null,
                       ),
                     )
                   else
@@ -252,6 +256,9 @@ class _AppDetailContent extends HookConsumerWidget {
                             ),
                       ),
                     ),
+
+                  // Included in stacks section
+                  _IncludedInStacksRow(app: app),
 
                   // Social action buttons
                   Padding(
@@ -708,5 +715,102 @@ class _AppDetailContent extends HookConsumerWidget {
         }
       }
     }
+  }
+}
+
+/// Widget showing which stacks include this app (local only)
+class _IncludedInStacksRow extends HookConsumerWidget {
+  final App app;
+
+  const _IncludedInStacksRow({required this.app});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Get stacks from the app's relationship (LocalSource only)
+    final stacks = app.appStacks.toList();
+
+    if (stacks.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    // Get unique pubkeys from stack authors
+    final authorPubkeys = stacks.map((s) => s.pubkey).toSet();
+
+    // Query profiles for stack authors
+    final profilesState = ref.watch(
+      query<Profile>(
+        authors: authorPubkeys,
+        source: const LocalSource(),
+      ),
+    );
+
+    final profiles = switch (profilesState) {
+      StorageData(:final models) => models,
+      _ => <Profile>[],
+    };
+
+    // Create a map of pubkey -> profile for easy lookup
+    final profileMap = {for (final p in profiles) p.pubkey: p};
+
+    return Padding(
+      padding: const EdgeInsets.only(left: 16, right: 16, top: 8),
+      child: Row(
+        children: [
+          // Stack of overlapping profile avatars (each tappable to its stack)
+          SizedBox(
+            height: 24,
+            child: _buildStackedAvatars(context, stacks, profileMap),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            'added this app to their stacks',
+            style: context.textTheme.bodyMedium?.copyWith(
+              color:
+                  Theme.of(context).colorScheme.onSurface.withValues(
+                    alpha: 0.7,
+                  ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStackedAvatars(
+    BuildContext context,
+    List<AppStack> stacks,
+    Map<String, Profile> profileMap,
+  ) {
+    final avatarRadius = 12.0;
+    final overlap = 4.0;
+    final maxAvatars = 5;
+
+    final stackList = stacks.take(maxAvatars).toList();
+    final totalWidth =
+        (avatarRadius * 2) + ((stackList.length - 1) * (avatarRadius * 2 - overlap));
+
+    return SizedBox(
+      width: totalWidth,
+      child: Stack(
+        children: [
+          for (var i = 0; i < stackList.length; i++)
+            Positioned(
+              left: i * (avatarRadius * 2 - overlap),
+              child: GestureDetector(
+                onTap: () {
+                  final pubkey = stackList[i].pubkey;
+                  final segments = GoRouterState.of(context).uri.pathSegments;
+                  final first = segments.isNotEmpty ? segments.first : 'search';
+                  context.push('/$first/user/$pubkey');
+                },
+                child: ProfileAvatar(
+                  profile: profileMap[stackList[i].pubkey],
+                  radius: avatarRadius,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }

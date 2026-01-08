@@ -35,36 +35,69 @@ class DownloadTextContainer extends StatelessWidget {
     );
     final boldStyle = baseStyle?.copyWith(fontWeight: FontWeight.w600);
 
-    final richText = Text.rich(
+    // If no onTap, render as simple rich text
+    if (onTap == null) {
+      return Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(text: beforeText, style: baseStyle),
+            const TextSpan(text: ' '),
+            if (iconWidget != null)
+              WidgetSpan(
+                alignment: PlaceholderAlignment.middle,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: iconWidget,
+                ),
+              ),
+            TextSpan(text: pathText, style: boldStyle),
+          ],
+        ),
+        softWrap: !oneLine,
+        overflow: oneLine ? TextOverflow.ellipsis : TextOverflow.visible,
+        maxLines: oneLine ? 1 : null,
+      );
+    }
+
+    // With onTap: make only the URL portion (icon + path) tappable
+    return Text.rich(
       TextSpan(
         children: [
           TextSpan(text: beforeText, style: baseStyle),
           const TextSpan(text: ' '),
-          if (iconWidget != null)
-            WidgetSpan(
-              alignment: PlaceholderAlignment.middle,
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(8),
               child: Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: iconWidget,
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (iconWidget != null) ...[
+                      iconWidget,
+                      const SizedBox(width: 4),
+                    ],
+                    Flexible(
+                      child: Text(
+                        pathText,
+                        style: boldStyle,
+                        overflow: oneLine ? TextOverflow.ellipsis : TextOverflow.visible,
+                        maxLines: oneLine ? 1 : null,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          TextSpan(text: pathText, style: boldStyle),
+          ),
         ],
       ),
       softWrap: !oneLine,
       overflow: oneLine ? TextOverflow.ellipsis : TextOverflow.visible,
       maxLines: oneLine ? 1 : null,
     );
-
-    if (onTap != null) {
-      return InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(padding: const EdgeInsets.all(4), child: richText),
-      );
-    }
-
-    return richText;
   }
 
   Uri? _tryParseUri(String value) {

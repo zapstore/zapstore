@@ -93,6 +93,17 @@ class AppInfoTable extends HookConsumerWidget {
       );
     }
 
+    if (fileMetadata?.size != null) {
+      final sizeInBytes = fileMetadata!.size!;
+      final sizeInMB = (sizeInBytes / (1024 * 1024)).toStringAsFixed(2);
+      rows.add(
+        _InfoRow(
+          label: 'Size',
+          value: '$sizeInMB MB',
+        ),
+      );
+    }
+
     if (fileMetadata?.versionCode != null) {
       // Get installed package info for comparison
       final installedPackage = app.installedPackage;
