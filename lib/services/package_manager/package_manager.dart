@@ -492,9 +492,14 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
     FileMetadata target,
     String downloadUrl, {
     String? displayName,
+    bool isCdnRetry = false,
   }) async {
     final fileName = '${target.hash}$packageExtension';
-    final metaData = _encodeTaskMetadata(appId, target.id);
+    final metaData = _encodeTaskMetadata(
+      appId,
+      target.id,
+      isCdnRetry: isCdnRetry,
+    );
 
     final task = DownloadTask(
       taskId:
@@ -544,8 +549,10 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
     InstallOperation? operation;
 
     final metaData = update.task.metaData;
+    bool isCdnRetry = false;
     if (metaData.isNotEmpty) {
-      final (decodedAppId, _) = _parseTaskMetadata(metaData);
+      final (decodedAppId, _, cdnRetry) = _parseTaskMetadata(metaData);
+      isCdnRetry = cdnRetry;
       if (decodedAppId != null) {
         final op = getOperation(decodedAppId);
         // Ensure the operation actually matches this taskId (metadata could be stale).
@@ -577,7 +584,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
     if (appId == null || operation == null) return;
 
     if (update is TaskStatusUpdate) {
-      _handleDownloadStatusUpdate(appId, operation, update);
+      _handleDownloadStatusUpdate(appId, operation, update, isCdnRetry);
     } else if (update is TaskProgressUpdate) {
       _handleDownloadProgressUpdate(appId, operation, update);
     }
@@ -587,6 +594,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
     String appId,
     InstallOperation operation,
     TaskStatusUpdate update,
+    bool isCdnRetry,
   ) {
     final target = operation.target;
 
@@ -623,10 +631,32 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
         );
         break;
 
+      case TaskStatus.notFound:
+        // 404 error - retry with CDN fallback if not already tried
+        if (!isCdnRetry) {
+          final cdnUrl = 'https://cdn.zapstore.dev/${target.hash}';
+          unawaited(
+            _startDownloadTask(appId, target, cdnUrl, isCdnRetry: true),
+          );
+          return;
+        }
+        // CDN also returned 404 - fail the operation
+        setOperation(
+          appId,
+          OperationFailed(
+            target: target,
+            type: FailureType.downloadFailed,
+            message: 'File not found (404)',
+          ),
+        );
+        _processQueuedDownload();
+        break;
+
       case TaskStatus.failed:
         String error = 'Download failed';
-        if (update.exception != null) {
-          error = update.exception.toString();
+        final exception = update.exception;
+        if (exception != null) {
+          error = exception.toString();
           if (error.length > 200) error = '${error.substring(0, 197)}...';
         }
         setOperation(
@@ -835,7 +865,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
           continue;
         }
 
-        final (appId, metadataId) = _parseTaskMetadata(metaData);
+        final (appId, metadataId, _) = _parseTaskMetadata(metaData);
         if (appId == null) {
           await _cleanupTask(task);
           continue;
@@ -940,16 +970,23 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
     } catch (_) {}
   }
 
-  String _encodeTaskMetadata(String appId, String metadataId) {
-    return '$appId|$metadataId';
+  String _encodeTaskMetadata(
+    String appId,
+    String metadataId, {
+    bool isCdnRetry = false,
+  }) {
+    return '$appId|$metadataId|${isCdnRetry ? '1' : '0'}';
   }
 
-  (String? appId, String? metadataId) _parseTaskMetadata(String metaData) {
+  (String? appId, String? metadataId, bool isCdnRetry) _parseTaskMetadata(
+    String metaData,
+  ) {
     final parts = metaData.split('|');
     if (parts.length >= 2) {
-      return (parts[0], parts[1]);
+      final isCdnRetry = parts.length >= 3 && parts[2] == '1';
+      return (parts[0], parts[1], isCdnRetry);
     }
-    return (metaData.isNotEmpty ? metaData : null, null);
+    return (metaData.isNotEmpty ? metaData : null, null, false);
   }
 
   Future<FileMetadata?> _loadFileMetadata(
