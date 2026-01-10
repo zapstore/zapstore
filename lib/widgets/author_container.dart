@@ -6,8 +6,10 @@ import '../utils/extensions.dart';
 /// Author container widget showing "Published by [profile]" text with avatar
 /// Based on the old AuthorContainer design pattern
 /// Can be hidden for Zapstore-published apps (except main Zapstore app)
+/// Supports nullable profile with pubkey fallback for cases where profile isn't loaded
 class AuthorContainer extends StatelessWidget {
-  final Profile profile;
+  final Profile? profile;
+  final String? pubkey; // Fallback pubkey when profile is null
   final String? beforeText;
   final String? afterText;
   final bool oneLine;
@@ -17,14 +19,16 @@ class AuthorContainer extends StatelessWidget {
 
   const AuthorContainer({
     super.key,
-    required this.profile,
+    this.profile,
+    this.pubkey,
     this.beforeText,
     this.afterText,
     this.oneLine = true,
     this.size,
     this.app,
     this.onTap,
-  });
+  }) : assert(profile != null || pubkey != null,
+            'Either profile or pubkey must be provided');
 
   @override
   Widget build(BuildContext context) {
@@ -42,6 +46,12 @@ class AuthorContainer extends StatelessWidget {
     );
     final boldStyle = baseStyle?.copyWith(fontWeight: FontWeight.w600);
 
+    // Get display name: use profile.nameOrNpub if available, otherwise encode pubkey as npub
+    final displayName = profile?.nameOrNpub ??
+        (pubkey != null
+            ? Utils.encodeShareableFromString(pubkey!, type: 'npub')
+            : 'Unknown');
+
     final rowWidget = Text.rich(
       TextSpan(
         children: [
@@ -58,7 +68,7 @@ class AuthorContainer extends StatelessWidget {
               ),
             ),
           ),
-          TextSpan(text: profile.nameOrNpub, style: boldStyle),
+          TextSpan(text: displayName, style: boldStyle),
           if (afterText != null) TextSpan(text: afterText, style: baseStyle),
         ],
       ),

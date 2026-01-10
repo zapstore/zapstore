@@ -285,7 +285,7 @@ class _StackCard extends HookConsumerWidget {
       query<App>(
         tags: {'#d': previewIdentifiers},
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
-        subscriptionPrefix: 'app-stack-preview-apps-${stack.id}',
+        subscriptionPrefix: 'app-stack-preview-apps-${stack.identifier}',
       ),
     );
 
@@ -336,14 +336,18 @@ class _StackCard extends HookConsumerWidget {
               ),
             ),
             const SizedBox(height: 6),
-            // Author row: avatar + Name
+            // Author row: avatar + Name (with npub fallback)
             Row(
               children: [
                 ProfileAvatar(profile: author, radius: 9),
                 const SizedBox(width: 5),
                 Expanded(
                   child: Text(
-                    author?.nameOrNpub ?? '',
+                    author?.nameOrNpub ??
+                        Utils.encodeShareableFromString(
+                          stack.event.pubkey,
+                          type: 'npub',
+                        ),
                     style: profileStyle,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

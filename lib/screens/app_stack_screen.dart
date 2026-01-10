@@ -245,19 +245,19 @@ class _StackHeader extends StatelessWidget {
           style: context.textTheme.headlineMedium,
         ),
         const SizedBox(height: 8),
-        // Published by author (same style as app_detail_screen)
-        if (author != null)
-          AuthorContainer(
-            profile: author!,
-            beforeText: 'Published by',
-            oneLine: true,
-            size: 14,
-            onTap: () {
-              final segments = GoRouterState.of(context).uri.pathSegments;
-              final first = segments.isNotEmpty ? segments.first : 'search';
-              context.push('/$first/user/${stack.pubkey}');
-            },
-          ),
+        // Published by author - always show, with fallback to npub
+        AuthorContainer(
+          profile: author,
+          pubkey: stack.pubkey,
+          beforeText: 'Published by',
+          oneLine: true,
+          size: 14,
+          onTap: () {
+            final segments = GoRouterState.of(context).uri.pathSegments;
+            final first = segments.isNotEmpty ? segments.first : 'search';
+            context.push('/$first/user/${stack.pubkey}');
+          },
+        ),
       ],
     );
   }

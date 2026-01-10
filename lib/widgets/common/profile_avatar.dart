@@ -36,8 +36,8 @@ class ProfileAvatar extends StatelessWidget {
                 child: Center(
                   child: Icon(
                     Icons.person,
-                    color: const Color(0xFF2C4A6B),
-                    size: radius * 1.2,
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
+                    size: radius * 0.9,
                   ),
                 ),
               ),
@@ -48,8 +48,8 @@ class ProfileAvatar extends StatelessWidget {
                 child: Center(
                   child: Icon(
                     Icons.person,
-                    color: const Color(0xFF2C4A6B),
-                    size: radius * 1.2,
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
+                    size: radius * 0.9,
                   ),
                 ),
               ),
@@ -61,8 +61,8 @@ class ProfileAvatar extends StatelessWidget {
               child: Center(
                 child: Icon(
                   Icons.person,
-                  color: const Color(0xFF0D1B2A),
-                  size: radius * 2,
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
+                  size: radius * 0.9,
                 ),
               ),
             ),
