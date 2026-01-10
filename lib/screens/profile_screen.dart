@@ -333,7 +333,7 @@ class _DebugMessagesSection extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final poolState = ref.watch(poolStateProvider);
-    final selectedTab = useState(0); // 0=Subscriptions, 1=Logs
+    final selectedTab = useState(0); // 0=Subscriptions, 1=Relays
     final now = useState(DateTime.now());
     final expandedSubs = useState<Set<String>>({});
 
@@ -346,6 +346,7 @@ class _DebugMessagesSection extends HookConsumerWidget {
     }, const []);
 
     final subscriptions = poolState?.subscriptions ?? {};
+    final closedSubscriptions = poolState?.closedSubscriptions ?? {};
     final logs = poolState?.logs ?? const [];
 
     void toggleSubscription(String id) {
@@ -381,16 +382,18 @@ class _DebugMessagesSection extends HookConsumerWidget {
             const SizedBox(height: 10),
 
             // Tab selector
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
                 _TabButton(
                   label: 'Subscriptions (${subscriptions.length})',
                   isSelected: selectedTab.value == 0,
                   onTap: () => selectedTab.value = 0,
                 ),
-                const SizedBox(width: 8),
                 _TabButton(
-                  label: 'Log (${logs.length})',
+                  label:
+                      'Relays (${subscriptions.values.expand((s) => s.relays.keys).toSet().length})',
                   isSelected: selectedTab.value == 1,
                   onTap: () => selectedTab.value = 1,
                 ),
@@ -403,11 +406,21 @@ class _DebugMessagesSection extends HookConsumerWidget {
               _buildSubscriptionsTab(
                 context,
                 subscriptions,
+                closedSubscriptions,
+                logs,
                 now.value,
                 expandedSubs.value,
                 toggleSubscription,
               ),
-            if (selectedTab.value == 1) _buildLogsTab(context, logs),
+            if (selectedTab.value == 1)
+              _buildRelaysTab(
+                context,
+                logs,
+                subscriptions,
+                closedSubscriptions,
+                expandedSubs.value,
+                toggleSubscription,
+              ),
           ],
         ),
       ),
@@ -417,328 +430,591 @@ class _DebugMessagesSection extends HookConsumerWidget {
   Widget _buildSubscriptionsTab(
     BuildContext context,
     Map<String, RelaySubscription> subscriptions,
+    Map<String, RelaySubscription> closedSubscriptions,
+    List<LogEntry> allLogs,
     DateTime now,
     Set<String> expandedSubs,
     void Function(String id) onToggleSub,
   ) {
-    if (subscriptions.isEmpty) {
-      return _EmptyState(message: 'No active subscriptions');
+    if (subscriptions.isEmpty && closedSubscriptions.isEmpty) {
+      return _EmptyState(message: 'No subscriptions');
     }
 
     final sortedSubs = subscriptions.entries.toList()
       ..sort((a, b) => a.key.compareTo(b.key));
 
+    // Sort closed by closedAt (newest first)
+    final sortedClosedSubs = closedSubscriptions.entries.toList()
+      ..sort((a, b) {
+        final aTime = a.value.closedAt ?? a.value.startedAt;
+        final bTime = b.value.closedAt ?? b.value.startedAt;
+        return bTime.compareTo(aTime);
+      });
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: sortedSubs.map((entry) {
-        final sub = entry.value;
-        final relays = sub.relays;
-        final isExpanded = expandedSubs.contains(sub.id);
-
-        final totalRelays = sub.totalRelayCount;
-        final activeRelays = sub.activeRelayCount;
-        final allEose = sub.allEoseReceived;
-
-        final relayEntries = relays.entries.toList()
-          ..sort((a, b) => a.key.compareTo(b.key));
-
-        return InkWell(
-          onTap: () => onToggleSub(sub.id),
-          borderRadius: BorderRadius.circular(8),
-          child: Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Theme.of(
-                context,
-              ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
+      children: [
+        // Active subscriptions
+        ...sortedSubs.map(
+          (entry) => _buildSubscriptionCard(
+            context,
+            entry,
+            allLogs,
+            now,
+            expandedSubs,
+            onToggleSub,
+            isHistorical: false,
+          ),
+        ),
+        // Historical subscriptions header
+        if (sortedClosedSubs.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Icon(
+                Icons.history,
+                size: 14,
                 color: Theme.of(
                   context,
-                ).colorScheme.outline.withValues(alpha: 0.2),
+                ).colorScheme.onSurface.withValues(alpha: 0.5),
               ),
+              const SizedBox(width: 6),
+              Text(
+                'History (${sortedClosedSubs.length})',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.5),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // Historical subscriptions
+          ...sortedClosedSubs.map(
+            (entry) => _buildSubscriptionCard(
+              context,
+              entry,
+              allLogs,
+              now,
+              expandedSubs,
+              onToggleSub,
+              isHistorical: true,
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildSubscriptionCard(
+    BuildContext context,
+    MapEntry<String, RelaySubscription> entry,
+    List<LogEntry> allLogs,
+    DateTime now,
+    Set<String> expandedSubs,
+    void Function(String id) onToggleSub, {
+    required bool isHistorical,
+  }) {
+    final sub = entry.value;
+    final relays = sub.relays;
+    final isExpanded = expandedSubs.contains(sub.id);
+
+    final totalRelays = sub.totalRelayCount;
+    final activeRelays = sub.activeRelayCount;
+    final allEose = sub.allEoseReceived;
+
+    final relayEntries = relays.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+
+    // For historical: calculate duration
+    final duration = isHistorical && sub.closedAt != null
+        ? sub.closedAt!.difference(sub.startedAt)
+        : null;
+
+    return InkWell(
+      onTap: () => onToggleSub(sub.id),
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest
+              .withValues(alpha: isHistorical ? 0.15 : 0.3),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                Row(
-                  children: [
-                    Icon(
-                      sub.stream ? Icons.stream : Icons.download,
-                      size: 16,
-                      color: allEose ? Colors.green : Colors.amber.shade700,
+                Icon(
+                  isHistorical
+                      ? Icons.check_circle_outline
+                      : (sub.stream ? Icons.stream : Icons.download),
+                  size: 16,
+                  color: isHistorical
+                      ? Colors.blueGrey
+                      : (allEose ? Colors.green : Colors.amber.shade700),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    entry.key,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontFamily: 'monospace',
+                      fontWeight: FontWeight.w600,
+                      color: isHistorical
+                          ? Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.6)
+                          : null,
                     ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        entry.key,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontFamily: 'monospace',
-                          fontWeight: FontWeight.w600,
-                        ),
-                        overflow: TextOverflow.ellipsis,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _StatusChip(
+                  icon: Icons.event,
+                  label: '${sub.eventCount}',
+                  color: isHistorical
+                      ? Colors.blueGrey
+                      : Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 6),
+                if (isHistorical && duration != null)
+                  _StatusChip(
+                    icon: Icons.timer,
+                    label: _formatDuration(duration),
+                    color: Colors.blueGrey,
+                  )
+                else
+                  _StatusChip(
+                    icon: Icons.cloud_done,
+                    label: '$activeRelays/$totalRelays',
+                    color: allEose ? Colors.green : Colors.amber.shade700,
+                  ),
+                const SizedBox(width: 6),
+                Icon(
+                  isExpanded ? Icons.expand_less : Icons.expand_more,
+                  size: 16,
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
+              ],
+            ),
+            if (!isHistorical && relayEntries.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.surface.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.outline.withValues(alpha: 0.15),
+                  ),
+                ),
+                child: Column(
+                  children: relayEntries.map((relayEntry) {
+                    final relay = relayEntry.value;
+                    final phase = relay.phase;
+                    final phaseColor = switch (phase) {
+                      RelaySubPhase.streaming => Colors.green,
+                      RelaySubPhase.loading => Colors.blue,
+                      RelaySubPhase.connecting => Colors.orange,
+                      RelaySubPhase.waiting => Colors.amber,
+                      RelaySubPhase.failed => Colors.red,
+                      RelaySubPhase.disconnected => Colors.grey,
+                      RelaySubPhase.closed => Colors.blueGrey,
+                    };
+                    final phaseIcon = switch (phase) {
+                      RelaySubPhase.streaming => Icons.cloud_done,
+                      RelaySubPhase.loading => Icons.cloud_sync,
+                      RelaySubPhase.connecting => Icons.wifi_find,
+                      RelaySubPhase.waiting => Icons.pause_circle,
+                      RelaySubPhase.failed => Icons.error,
+                      RelaySubPhase.disconnected => Icons.cloud_off,
+                      RelaySubPhase.closed => Icons.check_circle_outline,
+                    };
+
+                    final shortUrl = relayEntry.key
+                        .replaceAll('wss://', '')
+                        .replaceAll('ws://', '')
+                        .replaceAll(RegExp(r'/$'), '');
+
+                    final streamingSince = relay.streamingSince;
+                    final connectedFor =
+                        (phase == RelaySubPhase.streaming ||
+                                phase == RelaySubPhase.loading) &&
+                            streamingSince != null
+                        ? _formatDuration(now.difference(streamingSince))
+                        : null;
+
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    _StatusChip(
-                      icon: Icons.event,
-                      label: '${sub.eventCount}',
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    const SizedBox(width: 6),
-                    _StatusChip(
-                      icon: Icons.cloud_done,
-                      label: '$activeRelays/$totalRelays',
-                      color: allEose ? Colors.green : Colors.amber.shade700,
-                    ),
-                    const SizedBox(width: 6),
-                    Icon(
-                      isExpanded ? Icons.expand_less : Icons.expand_more,
-                      size: 16,
+                      decoration: BoxDecoration(
+                        border: Border(
+                          bottom: BorderSide(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.outline.withValues(alpha: 0.1),
+                          ),
+                        ),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(phaseIcon, size: 16, color: phaseColor),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  shortUrl,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontFamily: 'monospace',
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '${phase.name}'
+                                  '${relay.reconnectAttempts > 0 ? ' · retry ${relay.reconnectAttempts}' : ''}'
+                                  '${connectedFor != null ? ' · connected for $connectedFor' : ''}',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: phaseColor,
+                                  ),
+                                ),
+                                if (relay.lastError != null) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    relay.lastError!,
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.white,
+                                      fontFamily: 'monospace',
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ],
+            if (isExpanded) ...[
+              _buildRequestView(context, sub),
+              _buildSubscriptionLogs(context, sub.id, allLogs),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRelaysTab(
+    BuildContext context,
+    List<LogEntry> logs,
+    Map<String, RelaySubscription> subscriptions,
+    Map<String, RelaySubscription> closedSubscriptions,
+    Set<String> expandedSubs,
+    void Function(String id) onToggleSub,
+  ) {
+    // Collect all unique relay URLs from subscriptions and logs
+    final allRelayUrls = <String>{};
+    for (final sub in subscriptions.values) {
+      allRelayUrls.addAll(sub.relays.keys);
+    }
+    for (final log in logs) {
+      if (log.relayUrl != null) {
+        allRelayUrls.add(log.relayUrl!);
+      }
+    }
+
+    if (allRelayUrls.isEmpty) {
+      return _EmptyState(message: 'No relays connected');
+    }
+
+    // Group logs by relay URL
+    final logsByRelay = <String, List<LogEntry>>{};
+    for (final relayUrl in allRelayUrls) {
+      logsByRelay[relayUrl] = [];
+    }
+
+    for (final log in logs) {
+      if (log.relayUrl != null && logsByRelay.containsKey(log.relayUrl)) {
+        logsByRelay[log.relayUrl]!.add(log);
+      }
+    }
+
+    // Sort relays alphabetically and logs by timestamp (newest first)
+    final sortedRelays = logsByRelay.keys.toList()..sort();
+    for (final url in sortedRelays) {
+      logsByRelay[url]!.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: sortedRelays.map((relayUrl) {
+        final relayLogs = logsByRelay[relayUrl]!;
+        final shortUrl = relayUrl
+            .replaceAll('wss://', '')
+            .replaceAll('ws://', '')
+            .replaceAll(RegExp(r'/$'), '');
+
+        final errorCount = relayLogs
+            .where((l) => l.level == LogLevel.error)
+            .length;
+        final warningCount = relayLogs
+            .where((l) => l.level == LogLevel.warning)
+            .length;
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          decoration: BoxDecoration(
+            color: Theme.of(
+              context,
+            ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: Theme.of(
+                context,
+              ).colorScheme.outline.withValues(alpha: 0.2),
+            ),
+          ),
+          child: Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              tilePadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 0,
+              ),
+              childrenPadding: EdgeInsets.zero,
+              leading: Icon(
+                Icons.dns,
+                size: 18,
+                color: errorCount > 0
+                    ? Colors.red
+                    : warningCount > 0
+                    ? Colors.orange
+                    : Theme.of(context).colorScheme.primary,
+              ),
+              title: Text(
+                shortUrl,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontFamily: 'monospace',
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              subtitle: Row(
+                children: [
+                  Text(
+                    '${relayLogs.length} logs',
+                    style: TextStyle(
+                      fontSize: 10,
                       color: Theme.of(
                         context,
                       ).colorScheme.onSurface.withValues(alpha: 0.6),
                     ),
+                  ),
+                  if (errorCount > 0) ...[
+                    const SizedBox(width: 8),
+                    _StatusChip(
+                      icon: Icons.error,
+                      label: '$errorCount',
+                      color: Colors.red,
+                    ),
                   ],
-                ),
-                if (relayEntries.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  Container(
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.surface.withValues(alpha: 0.5),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
+                  if (warningCount > 0) ...[
+                    const SizedBox(width: 4),
+                    _StatusChip(
+                      icon: Icons.warning,
+                      label: '$warningCount',
+                      color: Colors.orange,
+                    ),
+                  ],
+                ],
+              ),
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    border: Border(
+                      top: BorderSide(
                         color: Theme.of(
                           context,
-                        ).colorScheme.outline.withValues(alpha: 0.15),
+                        ).colorScheme.outline.withValues(alpha: 0.1),
                       ),
                     ),
-                    child: Column(
-                      children: relayEntries.map((relayEntry) {
-                        final relay = relayEntry.value;
-                        final phase = relay.phase;
-                        final phaseColor = switch (phase) {
-                          RelaySubPhase.streaming => Colors.green,
-                          RelaySubPhase.loading => Colors.blue,
-                          RelaySubPhase.connecting => Colors.orange,
-                          RelaySubPhase.waiting => Colors.amber,
-                          RelaySubPhase.failed => Colors.red,
-                          RelaySubPhase.disconnected => Colors.grey,
-                        };
-                        final phaseIcon = switch (phase) {
-                          RelaySubPhase.streaming => Icons.cloud_done,
-                          RelaySubPhase.loading => Icons.cloud_sync,
-                          RelaySubPhase.connecting => Icons.wifi_find,
-                          RelaySubPhase.waiting => Icons.pause_circle,
-                          RelaySubPhase.failed => Icons.error,
-                          RelaySubPhase.disconnected => Icons.cloud_off,
-                        };
-
-                        final shortUrl = relayEntry.key
-                            .replaceAll('wss://', '')
-                            .replaceAll('ws://', '')
-                            .replaceAll(RegExp(r'/$'), '');
-
-                        final streamingSince = relay.streamingSince;
-                        final connectedFor =
-                            (phase == RelaySubPhase.streaming ||
-                                    phase == RelaySubPhase.loading) &&
-                                streamingSince != null
-                            ? _formatDuration(now.difference(streamingSince))
-                            : null;
-
-                        return Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            border: Border(
-                              bottom: BorderSide(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.outline.withValues(alpha: 0.1),
-                              ),
+                  ),
+                  child: relayLogs.isEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Text(
+                            'No logs for this relay',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withValues(alpha: 0.5),
                             ),
                           ),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Icon(phaseIcon, size: 16, color: phaseColor),
-                              const SizedBox(width: 8),
-                              Expanded(
+                        )
+                      : Column(
+                          children: relayLogs.map((log) {
+                            final time = _formatTime(log.timestamp);
+                            final levelName = log.level.name.toUpperCase();
+                            final color = switch (log.level) {
+                              LogLevel.error => Colors.red,
+                              LogLevel.warning => Colors.orange,
+                              LogLevel.info => Theme.of(
+                                context,
+                              ).colorScheme.primary,
+                            };
+
+                            final subId = log.subscriptionId;
+                            final sub = subId != null
+                                ? (subscriptions[subId] ??
+                                      closedSubscriptions[subId])
+                                : null;
+                            final isExpanded =
+                                subId != null && expandedSubs.contains(subId);
+
+                            return InkWell(
+                              onTap: subId != null
+                                  ? () => onToggleSub(subId)
+                                  : null,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  border: Border(
+                                    bottom: BorderSide(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .outline
+                                          .withValues(alpha: 0.1),
+                                    ),
+                                  ),
+                                ),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(
-                                      shortUrl,
-                                      style: const TextStyle(
-                                        fontSize: 11,
-                                        fontFamily: 'monospace',
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      '${phase.name}'
-                                      '${relay.reconnectAttempts > 0 ? ' · retry ${relay.reconnectAttempts}' : ''}'
-                                      '${connectedFor != null ? ' · connected for $connectedFor' : ''}',
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        color: phaseColor,
-                                      ),
-                                    ),
-                                    if (relay.lastError != null) ...[
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        relay.lastError!,
-                                        style: const TextStyle(
-                                          fontSize: 10,
-                                          color: Colors.white,
-                                          fontFamily: 'monospace',
+                                    Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: color.withValues(
+                                              alpha: 0.12,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              4,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            levelName,
+                                            style: TextStyle(
+                                              fontSize: 9,
+                                              fontWeight: FontWeight.w700,
+                                              color: color,
+                                            ),
+                                          ),
                                         ),
-                                      ),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                '[$time] ${log.message}',
+                                                style: const TextStyle(
+                                                  fontSize: 10,
+                                                  fontFamily: 'monospace',
+                                                ),
+                                              ),
+                                              if (subId != null)
+                                                Text(
+                                                  'Sub: $subId',
+                                                  style: TextStyle(
+                                                    fontSize: 9,
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .onSurface
+                                                        .withValues(alpha: 0.6),
+                                                  ),
+                                                ),
+                                              if (log.exception != null)
+                                                Text(
+                                                  log.exception!.toString(),
+                                                  style: TextStyle(
+                                                    fontSize: 9,
+                                                    color: Colors.red
+                                                        .withValues(alpha: 0.8),
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                        if (subId != null)
+                                          Icon(
+                                            isExpanded
+                                                ? Icons.expand_less
+                                                : Icons.expand_more,
+                                            size: 16,
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurface
+                                                .withValues(alpha: 0.5),
+                                          ),
+                                      ],
+                                    ),
+                                    // Show request when expanded
+                                    if (isExpanded && sub != null) ...[
+                                      const SizedBox(height: 8),
+                                      _buildRequestView(context, sub),
                                     ],
                                   ],
                                 ),
                               ),
-                            ],
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                ],
-                if (isExpanded) _buildRequestView(context, sub),
+                            );
+                          }).toList(),
+                        ),
+                ),
               ],
             ),
           ),
         );
       }).toList(),
-    );
-  }
-
-  Widget _buildLogsTab(BuildContext context, List<LogEntry> logs) {
-    if (logs.isEmpty) {
-      return _EmptyState(message: 'No logs yet');
-    }
-
-    final reversedLogs = logs.reversed.toList();
-
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(
-          context,
-        ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
-        ),
-      ),
-      child: Column(
-        children: reversedLogs.map((log) {
-          final time = _formatTime(log.timestamp);
-          final levelName = log.level.name.toUpperCase();
-          final color = switch (log.level) {
-            LogLevel.error => Colors.red,
-            LogLevel.warning => Colors.orange,
-            LogLevel.info => Theme.of(context).colorScheme.primary,
-          };
-
-          final parts = [
-            if (log.subscriptionId != null) 'Sub: ${log.subscriptionId}',
-            if (log.relayUrl != null) 'Relay: ${log.relayUrl}',
-            if (log.exception != null) 'Error: ${log.exception}',
-          ];
-
-          return Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.outline.withValues(alpha: 0.1),
-                ),
-              ),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    levelName,
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: color,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '[$time] ${log.message}',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontFamily: 'monospace',
-                        ),
-                      ),
-                      if (parts.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 2),
-                          child: Text(
-                            parts.join(' • '),
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurface.withValues(alpha: 0.65),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.copy, size: 14),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  onPressed: () {
-                    final text = [
-                      levelName,
-                      time,
-                      log.message,
-                      if (log.subscriptionId != null)
-                        'Sub: ${log.subscriptionId}',
-                      if (log.relayUrl != null) 'Relay: ${log.relayUrl}',
-                      if (log.exception != null) 'Error: ${log.exception}',
-                    ].where((e) => e.isNotEmpty).join(' | ');
-                    Clipboard.setData(ClipboardData(text: text));
-                    context.showInfo('Debug info copied');
-                  },
-                ),
-              ],
-            ),
-          );
-        }).toList(),
-      ),
     );
   }
 
@@ -840,6 +1116,114 @@ class _DebugMessagesSection extends HookConsumerWidget {
     } catch (_) {
       return payload.toString();
     }
+  }
+
+  Widget _buildSubscriptionLogs(
+    BuildContext context,
+    String subscriptionId,
+    List<LogEntry> allLogs,
+  ) {
+    final subLogs =
+        allLogs.where((log) => log.subscriptionId == subscriptionId).toList()
+          ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+
+    if (subLogs.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'LOGS (${subLogs.length})',
+            style: Theme.of(
+              context,
+            ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 8),
+          ...subLogs.map((log) {
+            final time = _formatTime(log.timestamp);
+            final levelName = log.level.name.toUpperCase();
+            final color = switch (log.level) {
+              LogLevel.error => Colors.red,
+              LogLevel.warning => Colors.orange,
+              LogLevel.info => Theme.of(context).colorScheme.primary,
+            };
+
+            final parts = [
+              if (log.relayUrl != null)
+                log.relayUrl!
+                    .replaceAll('wss://', '')
+                    .replaceAll('ws://', '')
+                    .replaceAll(RegExp(r'/$'), ''),
+              if (log.exception != null) log.exception!,
+            ];
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      levelName,
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        color: color,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '[$time] ${log.message}',
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                        if (parts.isNotEmpty)
+                          Text(
+                            parts.join(' • '),
+                            style: TextStyle(
+                              fontSize: 9,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withValues(alpha: 0.6),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
   }
 }
 
