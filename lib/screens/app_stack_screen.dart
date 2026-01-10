@@ -34,9 +34,7 @@ class AppStackScreen extends HookConsumerWidget {
           relays: 'AppCatalog',
           stream: false,
         ),
-        subscriptionPrefix: authorPubkey != null
-            ? 'app-stack-${authorPubkey!}-$stackId'
-            : 'app-stack-$stackId',
+        subscriptionPrefix: 'app-stack-$stackId',
       ),
     );
 

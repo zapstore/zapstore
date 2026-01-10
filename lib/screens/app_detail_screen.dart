@@ -52,9 +52,7 @@ class AppDetailScreen extends HookConsumerWidget {
         // stream=true ensures cached/local results render immediately; remote
         // results will merge in as they arrive.
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
-        subscriptionPrefix: authorPubkey != null
-            ? 'app-detail-${authorPubkey!}-$appId'
-            : 'app-detail-$appId',
+        subscriptionPrefix: 'app-detail-$appId',
       ),
     );
 
@@ -738,10 +736,7 @@ class _IncludedInStacksRow extends HookConsumerWidget {
 
     // Query profiles for stack authors
     final profilesState = ref.watch(
-      query<Profile>(
-        authors: authorPubkeys,
-        source: const LocalSource(),
-      ),
+      query<Profile>(authors: authorPubkeys, source: const LocalSource()),
     );
 
     final profiles = switch (profilesState) {
@@ -765,10 +760,9 @@ class _IncludedInStacksRow extends HookConsumerWidget {
           Text(
             'added this app to their stacks',
             style: context.textTheme.bodyMedium?.copyWith(
-              color:
-                  Theme.of(context).colorScheme.onSurface.withValues(
-                    alpha: 0.7,
-                  ),
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.7),
             ),
           ),
         ],
@@ -787,7 +781,8 @@ class _IncludedInStacksRow extends HookConsumerWidget {
 
     final stackList = stacks.take(maxAvatars).toList();
     final totalWidth =
-        (avatarRadius * 2) + ((stackList.length - 1) * (avatarRadius * 2 - overlap));
+        (avatarRadius * 2) +
+        ((stackList.length - 1) * (avatarRadius * 2 - overlap));
 
     return SizedBox(
       width: totalWidth,

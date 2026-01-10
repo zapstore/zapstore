@@ -224,7 +224,7 @@ final appInitializationProvider = FutureProvider<void>((ref) async {
           },
           'vertex': {'wss://relay.vertexlab.io'},
         },
-        responseTimeout: Duration(seconds: 4),
+        responseTimeout: Duration(seconds: 6),
       ),
     ).future,
   );

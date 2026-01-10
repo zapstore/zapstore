@@ -29,7 +29,7 @@ class AppStackContainer extends HookConsumerWidget {
 
     final appStacksState = ref.watch(
       query<AppStack>(
-        limit: 50,
+        limit: 20,
         and: (pack) => {pack.apps},
         source: LocalAndRemoteSource(stream: true, relays: 'social'),
         andSource: const LocalAndRemoteSource(
@@ -284,7 +284,6 @@ class _StackCard extends HookConsumerWidget {
     final appsState = ref.watch(
       query<App>(
         tags: {'#d': previewIdentifiers},
-        limit: previewIdentifiers.length,
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
         subscriptionPrefix: 'app-stack-preview-apps-${stack.id}',
       ),

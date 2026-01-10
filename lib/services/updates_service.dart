@@ -126,7 +126,9 @@ class CategorizedAppsNotifier extends Notifier<CategorizedApps> {
     final catalogedAppIds = apps.map((a) => a.identifier).toSet();
 
     // Only process apps that are actually installed (check against our map)
-    final installedApps = apps.where((a) => installedMap.containsKey(a.identifier));
+    final installedApps = apps.where(
+      (a) => installedMap.containsKey(a.identifier),
+    );
 
     for (final app in installedApps) {
       final pkg = installedMap[app.identifier]!;
@@ -148,12 +150,15 @@ class CategorizedAppsNotifier extends Notifier<CategorizedApps> {
     }
 
     // Find installed packages without catalog metadata
-    final uncatalogedApps = installedPackages
-        .where((pkg) => !catalogedAppIds.contains(pkg.appId))
-        .toList()
-      ..sort((a, b) => (a.name ?? a.appId)
-          .toLowerCase()
-          .compareTo((b.name ?? b.appId).toLowerCase()));
+    final uncatalogedApps =
+        installedPackages
+            .where((pkg) => !catalogedAppIds.contains(pkg.appId))
+            .toList()
+          ..sort(
+            (a, b) => (a.name ?? a.appId).toLowerCase().compareTo(
+              (b.name ?? b.appId).toLowerCase(),
+            ),
+          );
 
     int byName(App a, App b) => (a.name ?? a.identifier)
         .toLowerCase()
@@ -194,6 +199,7 @@ class CategorizedAppsNotifier extends Notifier<CategorizedApps> {
           cachedFor: Duration(hours: 2),
           stream: false,
         ),
+        subscriptionPrefix: 'updates-profiles',
       ),
     );
   }

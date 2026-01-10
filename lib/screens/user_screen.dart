@@ -64,7 +64,7 @@ class UserScreen extends HookConsumerWidget {
           relays: 'AppCatalog',
           stream: false,
         ),
-        subscriptionPrefix: 'user-stacks',
+        subscriptionPrefix: 'user-screen-stacks',
         schemaFilter: appStackEventFilter,
       ),
     );
@@ -157,8 +157,10 @@ class _UserHeader extends StatelessWidget {
               children: [
                 Text(
                   profile?.nameOrNpub.abbreviateNpub() ??
-                      Utils.encodeShareableFromString(pubkey, type: 'npub')
-                          .abbreviateNpub(),
+                      Utils.encodeShareableFromString(
+                        pubkey,
+                        type: 'npub',
+                      ).abbreviateNpub(),
                   style: Theme.of(context).textTheme.headlineSmall,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -229,7 +231,7 @@ class _UserZapsList extends HookConsumerWidget {
       query<Zap>(
         tags: allAppTags,
         source: const LocalAndRemoteSource(relays: 'social'),
-        subscriptionPrefix: 'user-app-zaps',
+        subscriptionPrefix: 'user-screen-app-zaps',
       ),
     );
 
@@ -239,7 +241,7 @@ class _UserZapsList extends HookConsumerWidget {
             query<Zap>(
               tags: {'#e': metadataIds},
               source: const LocalAndRemoteSource(relays: 'social'),
-              subscriptionPrefix: 'user-metadata-zaps',
+              subscriptionPrefix: 'user-screen-metadata-zaps',
             ),
           )
         : null;
@@ -274,9 +276,7 @@ class _UserZapsList extends HookConsumerWidget {
         ),
       ),
     );
-    final profilesMap = {
-      for (final p in profilesState.models) p.pubkey: p,
-    };
+    final profilesMap = {for (final p in profilesState.models) p.pubkey: p};
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
