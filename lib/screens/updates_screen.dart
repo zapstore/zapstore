@@ -2,6 +2,7 @@ import 'package:async_button_builder/async_button_builder.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
+import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/services/updates_service.dart';
 import 'package:zapstore/theme.dart';
@@ -30,8 +31,80 @@ class UpdatesScreen extends HookConsumerWidget {
   }
 }
 
+/// Shows connection status with a small indicator at the top
+class _ConnectionStatusIndicator extends ConsumerWidget {
+  const _ConnectionStatusIndicator();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final poolState = ref.watch(poolStateProvider);
+    final subscriptions = poolState?.subscriptions ?? {};
+
+    // Filter to only "updates" subscription
+    final updatesSubs = subscriptions.entries
+        .where((e) => e.key.startsWith('updates'))
+        .map((e) => e.value);
+
+    // Check relay status for updates subscription only
+    bool hasActiveConnection = false;
+
+    for (final sub in updatesSubs) {
+      for (final relay in sub.relays.values) {
+        if (relay.phase == RelaySubPhase.streaming ||
+            relay.phase == RelaySubPhase.loading) {
+          hasActiveConnection = true;
+          break;
+        }
+      }
+      if (hasActiveConnection) break;
+    }
+
+    final statusColor = hasActiveConnection ? Colors.green : Colors.grey;
+    final statusText = hasActiveConnection
+        ? 'Connected · Checking for updates'
+        : 'Offline';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // Status dot
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: statusColor,
+              boxShadow: hasActiveConnection
+                  ? [
+                      BoxShadow(
+                        color: statusColor.withValues(alpha: 0.4),
+                        blurRadius: 4,
+                        spreadRadius: 1,
+                      ),
+                    ]
+                  : null,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            statusText,
+            style: context.textTheme.bodySmall?.copyWith(
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.6),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Item types for the updates list
 enum _UpdatesItemType {
+  connectionStatus,
   installingHeader,
   installingApp,
   automaticHeader,
@@ -220,6 +293,9 @@ class _UpdatesListBody extends StatelessWidget {
     // Build flat list of items for ListView.builder
     final items = <_UpdatesItem>[];
 
+    // Always add connection status at the top
+    items.add(const _UpdatesItem(_UpdatesItemType.connectionStatus));
+
     if (installingApps.isNotEmpty) {
       items.add(const _UpdatesItem(_UpdatesItemType.installingHeader));
       for (final app in installingApps) {
@@ -259,11 +335,12 @@ class _UpdatesListBody extends StatelessWidget {
     }
 
     return ListView.builder(
-      key: const PageStorageKey<String>('updates_list'),
       itemCount: items.length,
       itemBuilder: (context, index) {
         final item = items[index];
         switch (item.type) {
+          case _UpdatesItemType.connectionStatus:
+            return const _ConnectionStatusIndicator();
           case _UpdatesItemType.installingHeader:
             return _InstallingHeader(count: installingApps.length);
           case _UpdatesItemType.installingApp:
