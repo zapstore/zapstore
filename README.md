@@ -7,6 +7,16 @@ The open app store powered by your social network
 ## Build from source
 
 ```bash
+# Using FVM (recommended for reproducible builds)
+# Note: do NOT use "stable" in FVM. This repo pins Flutter via .fvmrc.
+fvm install
+fvm flutter pub get
+fvm flutter build apk --split-per-abi --debug
+```
+
+Without FVM:
+
+```bash
 flutter pub get
 flutter build apk --split-per-abi --debug
 ```
