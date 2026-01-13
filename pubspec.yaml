@@ -1,8 +1,8 @@
 name: zapstore
-description: The open app store powered by your social network
+description: Zapstore mobile app
 publish_to: none
 
-version: 1.0.0-rc1+1000
+version: 1.0.0-rc2+1001
 
 environment:
   sdk: ^3.8.1
