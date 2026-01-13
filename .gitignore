@@ -1,4 +1,3 @@
-.fvmrc
 .vscode/settings.json
 
 # Miscellaneous
@@ -47,6 +46,9 @@ app.*.map.json
 
 /tmp
 /flutter_data
-.fvm/
+
+# FVM (commit only the version pin/config; never the SDK itself)
+!.fvmrc
+.fvm/**
 
 .env
