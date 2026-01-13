@@ -513,6 +513,7 @@ final class AndroidPackageManager extends PackageManager {
   @override
   Future<void> syncInstalledPackages() async {
     final syncGen = ++_syncGeneration;
+    state = state.copyWith(isScanning: true);
     try {
       // Single native call - getInstalledApps already returns canInstallSilently per-app
       final installedApps =
@@ -627,6 +628,8 @@ final class AndroidPackageManager extends PackageManager {
       }
     } catch (_) {
       // Don't clobber state on transient errors
+    } finally {
+      state = state.copyWith(isScanning: false);
     }
   }
 }

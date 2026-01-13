@@ -12,6 +12,7 @@ import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/widgets/zap_widgets.dart';
 
 import 'common/profile_avatar.dart';
+import 'common/profile_name_widget.dart';
 import 'version_pill_widget.dart';
 import 'install_button.dart';
 import '../theme.dart';
@@ -53,7 +54,7 @@ class AppCard extends HookConsumerWidget {
         ? _stripMarkdown(app!.description)
         : 'No description available';
 
-    Widget buildCard(Profile? publisher) => GestureDetector(
+    Widget buildCard(Profile? publisher, bool isPublisherLoading) => GestureDetector(
       onTap: () {
         final segments = GoRouterState.of(context).uri.pathSegments;
         final first = segments.isNotEmpty ? segments.first : 'search';
@@ -108,7 +109,7 @@ class AppCard extends HookConsumerWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           // App name with optional "by publisher" inline
-                          _buildAppNameWithPublisher(context, publisher),
+                          _buildAppNameWithPublisher(context, publisher, isPublisherLoading),
                           const SizedBox(height: 8),
                           Align(
                             alignment: Alignment.centerLeft,
@@ -169,7 +170,7 @@ class AppCard extends HookConsumerWidget {
       ),
     );
 
-    if (!needsPublisher) return buildCard(null);
+    if (!needsPublisher) return buildCard(null, false);
 
     return Consumer(
       builder: (context, ref, _) {
@@ -183,12 +184,11 @@ class AppCard extends HookConsumerWidget {
           ),
         );
 
-        final publisher = switch (publisherState) {
-          StorageData(:final models) => models.firstOrNull,
-          _ => null,
-        };
+        final publisher = publisherState.models.firstOrNull;
+        final isPublisherLoading =
+            publisherState is StorageLoading && publisher == null;
 
-        return buildCard(publisher);
+        return buildCard(publisher, isPublisherLoading);
       },
     );
   }
@@ -239,14 +239,18 @@ class AppCard extends HookConsumerWidget {
     );
   }
 
-  Widget _buildAppNameWithPublisher(BuildContext context, Profile? publisher) {
+  Widget _buildAppNameWithPublisher(
+    BuildContext context,
+    Profile? publisher,
+    bool isPublisherLoading,
+  ) {
     final appName = app!.name ?? app!.identifier;
     final titleStyle = context.textTheme.titleMedium?.copyWith(
       fontWeight: FontWeight.w900,
     );
 
-    // If no publisher or relay-signed, just show name
-    if (!showSignedBy || publisher == null || app!.isRelaySigned) {
+    // If not showing signed by or relay-signed, just show name
+    if (!showSignedBy || app!.isRelaySigned) {
       return Text(
         appName,
         style: titleStyle,
@@ -261,7 +265,6 @@ class AppCard extends HookConsumerWidget {
     );
     final publisherStyle = byStyle?.copyWith(fontWeight: FontWeight.w600);
     final avatarSize = context.textTheme.bodyMedium!.fontSize! * 1.4;
-    final displayName = publisher.nameOrNpub.abbreviateNpub();
 
     return Text.rich(
       TextSpan(
@@ -282,7 +285,16 @@ class AppCard extends HookConsumerWidget {
               ),
             ),
           ),
-          TextSpan(text: displayName, style: publisherStyle),
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: ProfileNameWidget(
+              pubkey: app!.event.pubkey,
+              profile: publisher,
+              isLoading: isPublisherLoading,
+              style: publisherStyle,
+              skeletonWidth: 80,
+            ),
+          ),
         ],
       ),
       softWrap: true,

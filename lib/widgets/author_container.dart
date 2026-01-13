@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:models/models.dart';
 import 'common/profile_avatar.dart';
+import 'common/profile_name_widget.dart';
 import '../utils/extensions.dart';
 
 /// Author container widget showing "Published by [profile]" text with avatar
@@ -16,6 +17,7 @@ class AuthorContainer extends StatelessWidget {
   final double? size;
   final App? app; // Optional app to check for Zapstore hiding logic
   final VoidCallback? onTap; // Optional tap handler
+  final bool isLoading; // Whether profile is still loading
 
   const AuthorContainer({
     super.key,
@@ -27,6 +29,7 @@ class AuthorContainer extends StatelessWidget {
     this.size,
     this.app,
     this.onTap,
+    this.isLoading = false,
   }) : assert(profile != null || pubkey != null,
             'Either profile or pubkey must be provided');
 
@@ -46,12 +49,6 @@ class AuthorContainer extends StatelessWidget {
     );
     final boldStyle = baseStyle?.copyWith(fontWeight: FontWeight.w600);
 
-    // Get display name: use profile.nameOrNpub if available, otherwise encode pubkey as npub
-    final displayName = profile?.nameOrNpub ??
-        (pubkey != null
-            ? Utils.encodeShareableFromString(pubkey!, type: 'npub')
-            : 'Unknown');
-
     final rowWidget = Text.rich(
       TextSpan(
         children: [
@@ -68,7 +65,16 @@ class AuthorContainer extends StatelessWidget {
               ),
             ),
           ),
-          TextSpan(text: displayName, style: boldStyle),
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: ProfileNameWidget(
+              pubkey: pubkey ?? profile!.pubkey,
+              profile: profile,
+              isLoading: isLoading,
+              style: boldStyle,
+              skeletonWidth: 100,
+            ),
+          ),
           if (afterText != null) TextSpan(text: afterText, style: baseStyle),
         ],
       ),

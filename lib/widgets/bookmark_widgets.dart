@@ -281,9 +281,10 @@ class _AddToStackDialogSignedIn extends HookConsumerWidget {
     final publicStacksState = ref.watch(
       query<AppStack>(
         authors: {signedInPubkey},
-        and: (stack) => {stack.apps},
+        and: (stack) => {
+          stack.apps.query(source: const LocalSource()),
+        },
         source: const LocalAndRemoteSource(relays: 'social', stream: false),
-        andSource: const LocalSource(),
         subscriptionPrefix: 'user-stacks-dialog',
         // Filter at query level: exclude saved-apps stack and stacks with no app references
         schemaFilter: (event) {

@@ -3,11 +3,14 @@ import 'package:skeletonizer/skeletonizer.dart';
 import 'package:models/models.dart';
 import '../theme.dart';
 import 'common/profile_avatar.dart';
+import 'common/profile_name_widget.dart';
 
 /// Profile header widget with skeleton loading state
+/// Shows avatar + name, with npub overlay during loading
 class ProfileHeader extends StatelessWidget {
   const ProfileHeader({
     super.key,
+    required this.pubkey,
     this.profile,
     this.isLoading = false,
     this.radius = 40,
@@ -15,6 +18,7 @@ class ProfileHeader extends StatelessWidget {
     this.additionalInfo,
   });
 
+  final String pubkey;
   final Profile? profile;
   final bool isLoading;
   final double radius;
@@ -23,69 +27,31 @@ class ProfileHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (isLoading || profile == null) {
-      return _buildSkeleton(context);
-    }
-
     return Container(
       padding: const EdgeInsets.all(16),
       child: Column(
         children: [
-          // Profile avatar
+          // Profile avatar (handles null profile with fallback)
           ProfileAvatar(profile: profile, radius: radius),
           const SizedBox(height: 16),
 
-          // Display name
-          Text(
-            profile!.name ?? profile!.nameOrNpub,
+          // Display name with loading state
+          ProfileNameWidget(
+            pubkey: pubkey,
+            profile: profile,
+            isLoading: isLoading,
             style: Theme.of(context).textTheme.headlineSmall,
-            textAlign: TextAlign.center,
+            skeletonWidth: 200,
           ),
 
-          if (additionalInfo != null) ...[
-            const SizedBox(height: 16),
-            additionalInfo!,
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSkeleton(BuildContext context) {
-    return SkeletonizerConfig(
-      data: AppColors.getSkeletonizerConfig(Theme.of(context).brightness),
-      child: Skeletonizer(
-        enabled: true,
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              // Profile avatar skeleton
-              CircleAvatar(
-                radius: radius,
-                backgroundColor: AppColors.darkSkeletonBase,
-                child: Icon(
-                  Icons.person,
-                  size: radius,
-                  color: AppColors.darkSkeletonHighlight,
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // Display name skeleton
-              Container(
-                height: 28,
-                width: 200,
-                decoration: BoxDecoration(
-                  color: AppColors.darkSkeletonBase,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-
-              if (showBio) ...[
-                const SizedBox(height: 8),
-                // Bio skeleton
-                Column(
+          // Bio skeleton during loading
+          if (isLoading && showBio) ...[
+            const SizedBox(height: 8),
+            SkeletonizerConfig(
+              data: AppColors.getSkeletonizerConfig(Theme.of(context).brightness),
+              child: Skeletonizer(
+                enabled: true,
+                child: Column(
                   children: List.generate(
                     2,
                     (index) => Padding(
@@ -101,22 +67,15 @@ class ProfileHeader extends StatelessWidget {
                     ),
                   ),
                 ),
-              ],
+              ),
+            ),
+          ],
 
-              if (additionalInfo != null) ...[
-                const SizedBox(height: 16),
-                Container(
-                  height: 40,
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: AppColors.darkSkeletonBase,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
+          if (additionalInfo != null) ...[
+            const SizedBox(height: 16),
+            additionalInfo!,
+          ],
+        ],
       ),
     );
   }

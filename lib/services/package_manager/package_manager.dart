@@ -57,6 +57,7 @@ class PackageManagerState extends Equatable {
   const PackageManagerState({
     this.installed = const {},
     this.operations = const {},
+    this.isScanning = false,
   });
 
   /// Map of appId → installed package info
@@ -65,18 +66,23 @@ class PackageManagerState extends Equatable {
   /// Map of appId → active install operation
   final Map<String, InstallOperation> operations;
 
+  /// Whether installed packages are currently being scanned
+  final bool isScanning;
+
   PackageManagerState copyWith({
     Map<String, PackageInfo>? installed,
     Map<String, InstallOperation>? operations,
+    bool? isScanning,
   }) {
     return PackageManagerState(
       installed: installed ?? this.installed,
       operations: operations ?? this.operations,
+      isScanning: isScanning ?? this.isScanning,
     );
   }
 
   @override
-  List<Object?> get props => [installed, operations];
+  List<Object?> get props => [installed, operations, isScanning];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

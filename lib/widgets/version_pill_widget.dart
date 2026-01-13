@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/widgets/app_detail_widgets.dart';
 import '../services/package_manager/package_manager.dart';
 import '../theme.dart';
 
@@ -27,11 +28,36 @@ class VersionPillWidget extends HookConsumerWidget {
       packageManagerProvider.select((s) => s.installed[app.identifier]),
     );
 
+    // Watch app with relationships to ensure Release and FileMetadata are loaded
+    final appState = ref.watch(
+      model<App>(
+        app,
+        and: (a) => {
+          a.latestRelease.query(
+            source: const LocalAndRemoteSource(
+              relays: 'AppCatalog',
+              stream: false,
+            ),
+            and: (release) => {
+              release.latestMetadata.query(),
+              release.latestAsset.query(),
+            },
+          ),
+        },
+      ),
+    );
+
+    // Get updated app with loaded relationships
+    final loadedApp = switch (appState) {
+      StorageData(:final models) => models.firstOrNull ?? app,
+      _ => app,
+    };
+
     // Resolve installed and available versions using AppExt
-    final installedVersion = app.installedPackage?.version;
-    final availableVersion = app.latestFileMetadata?.version;
-    final updateAvailable = app.hasUpdate;
-    final downgradeAvailable = app.hasDowngrade;
+    final installedVersion = loadedApp.installedPackage?.version;
+    final availableVersion = loadedApp.latestFileMetadata?.version;
+    final updateAvailable = loadedApp.hasUpdate;
+    final downgradeAvailable = loadedApp.hasDowngrade;
 
     // Dual version mode (when an update OR downgrade is available)
     if (showUpdateArrow &&
@@ -40,6 +66,7 @@ class VersionPillWidget extends HookConsumerWidget {
         availableVersion != null) {
       return _buildDualVersionPills(
         context,
+        loadedApp,
         installedVersion,
         availableVersion,
         isDowngrade: downgradeAvailable,
@@ -50,26 +77,39 @@ class VersionPillWidget extends HookConsumerWidget {
     final version = forceVersion ?? installedVersion ?? availableVersion;
 
     if (version == null || version.isEmpty) {
-      return const SizedBox.shrink();
+      return _buildSkeletonPill(context);
     }
 
     return _buildVersionPill(
       context,
+      loadedApp,
       version,
       AppColors.darkPillBackground,
       Colors.white,
     );
   }
 
+  Widget _buildSkeletonPill(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: SizedBox(
+        height: 24,
+        width: 60,
+        child: buildGradientLoader(context),
+      ),
+    );
+  }
+
   Widget _buildDualVersionPills(
     BuildContext context,
+    App loadedApp,
     String installedVersion,
     String availableVersion, {
     bool isDowngrade = false,
   }) {
     // Get version codes
-    final installedVersionCode = app.installedPackage?.versionCode;
-    final availableVersionCode = app.latestFileMetadata?.versionCode;
+    final installedVersionCode = loadedApp.installedPackage?.versionCode;
+    final availableVersionCode = loadedApp.latestFileMetadata?.versionCode;
 
     // When version strings are equal but version codes differ, show version codes in parentheses
     final showVersionCodes =
@@ -85,6 +125,7 @@ class VersionPillWidget extends HookConsumerWidget {
         Flexible(
           child: _buildVersionPill(
             context,
+            loadedApp,
             installedVersion,
             Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
             Theme.of(context).colorScheme.onSurface,
@@ -104,6 +145,7 @@ class VersionPillWidget extends HookConsumerWidget {
         Flexible(
           child: _buildVersionPill(
             context,
+            loadedApp,
             availableVersion,
             isDowngrade
                 ? Theme.of(context).colorScheme.outline.withValues(alpha: 0.3)
@@ -121,6 +163,7 @@ class VersionPillWidget extends HookConsumerWidget {
 
   Widget _buildVersionPill(
     BuildContext context,
+    App loadedApp,
     String version,
     Color backgroundColor,
     Color textColor, {
@@ -137,7 +180,7 @@ class VersionPillWidget extends HookConsumerWidget {
       if (isDowngrade) {
         // Downgrade forbidden
         statusIcon = Icon(Icons.block, size: 12, color: textColor);
-      } else if (!app.isInstalled) {
+      } else if (!loadedApp.isInstalled) {
         // Can install
         statusIcon = const Icon(
           Icons.download_rounded,
@@ -145,7 +188,7 @@ class VersionPillWidget extends HookConsumerWidget {
           color: Colors.white,
         );
       } else {
-        if (app.hasUpdate) {
+        if (loadedApp.hasUpdate) {
           // Can update
           statusIcon = const Icon(
             Icons.update_outlined,

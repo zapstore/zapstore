@@ -3,10 +3,12 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:zapstore/utils/extensions.dart';
 import '../theme.dart';
 import '../widgets/common/note_parser.dart';
 import '../widgets/common/profile_avatar.dart';
+import '../widgets/common/profile_name_widget.dart';
 import '../widgets/app_card.dart';
 import '../widgets/zap_widgets.dart';
 
@@ -39,9 +41,12 @@ class UserScreen extends HookConsumerWidget {
         },
         limit: 20,
         and: (app) => {
-          app.latestRelease,
-          app.latestRelease.value?.latestMetadata,
-          app.latestRelease.value?.latestAsset,
+          app.latestRelease.query(
+            and: (release) => {
+              release.latestMetadata.query(),
+              release.latestAsset.query(),
+            },
+          ),
         },
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
         subscriptionPrefix: 'user-apps',
@@ -58,12 +63,15 @@ class UserScreen extends HookConsumerWidget {
       query<AppStack>(
         authors: {pubkey},
         limit: 20,
-        and: (pack) => {pack.apps},
+        and: (pack) => {
+          pack.apps.query(
+            source: const LocalAndRemoteSource(
+              relays: 'AppCatalog',
+              stream: false,
+            ),
+          ),
+        },
         source: LocalAndRemoteSource(stream: false, relays: 'social'),
-        andSource: const LocalAndRemoteSource(
-          relays: 'AppCatalog',
-          stream: false,
-        ),
         subscriptionPrefix: 'user-screen-stacks',
         schemaFilter: appStackEventFilter,
       ),
@@ -72,76 +80,83 @@ class UserScreen extends HookConsumerWidget {
       ..sort((a, b) => b.event.createdAt.compareTo(a.event.createdAt));
 
     return Scaffold(
-      body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            // Header with avatar and name
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.only(top: 16),
-                child: _UserHeader(profile: profile, pubkey: pubkey),
+      body: CustomScrollView(
+        slivers: [
+          // Header with avatar and name
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: _UserHeader(
+                profile: profile,
+                pubkey: pubkey,
+                isLoading: profileState is StorageLoading && profile == null,
               ),
             ),
+          ),
 
-            // Zaps widget
-            SliverToBoxAdapter(child: _UserZapsList(apps: apps)),
+          // Zaps widget
+          SliverToBoxAdapter(child: _UserZapsList(apps: apps)),
 
-            // Bio section with max height
-            if (profile?.about != null && profile!.about!.isNotEmpty)
-              SliverToBoxAdapter(child: _UserBio(profile: profile)),
+          // Bio section with max height
+          if (profile?.about != null && profile!.about!.isNotEmpty)
+            SliverToBoxAdapter(child: _UserBio(profile: profile)),
 
-            // Apps section - only show if apps exist
-            if (apps.isNotEmpty) ...[
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
-                  child: Text(
-                    'Published Apps',
-                    style: context.textTheme.titleLarge,
-                  ),
+          // Apps section - only show if apps exist
+          if (apps.isNotEmpty) ...[
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+                child: Text(
+                  'Published Apps',
+                  style: context.textTheme.titleLarge,
                 ),
               ),
-              SliverList(
-                delegate: SliverChildBuilderDelegate((context, index) {
-                  final app = apps[index];
-                  return AppCard(app: app, showSignedBy: false);
-                }, childCount: apps.length),
-              ),
-            ],
-
-            // App stacks section - only show if stacks exist
-            if (stacks.isNotEmpty) ...[
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 32, 16, 8),
-                  child: Text(
-                    'App Stacks',
-                    style: context.textTheme.headlineMedium,
-                  ),
-                ),
-              ),
-              SliverList(
-                delegate: SliverChildBuilderDelegate((context, index) {
-                  final stack = stacks[index];
-                  return _StackLinkCard(stack: stack, pubkey: pubkey);
-                }, childCount: stacks.length),
-              ),
-            ],
-
-            // Bottom padding
-            const SliverToBoxAdapter(child: SizedBox(height: 32)),
+            ),
+            SliverList(
+              delegate: SliverChildBuilderDelegate((context, index) {
+                final app = apps[index];
+                return AppCard(app: app, showSignedBy: false);
+              }, childCount: apps.length),
+            ),
           ],
-        ),
+
+          // App stacks section - only show if stacks exist
+          if (stacks.isNotEmpty) ...[
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 32, 16, 8),
+                child: Text(
+                  'App Stacks',
+                  style: context.textTheme.headlineMedium,
+                ),
+              ),
+            ),
+            SliverList(
+              delegate: SliverChildBuilderDelegate((context, index) {
+                final stack = stacks[index];
+                return _StackLinkCard(stack: stack, pubkey: pubkey);
+              }, childCount: stacks.length),
+            ),
+          ],
+
+          // Bottom padding
+          const SliverToBoxAdapter(child: SizedBox(height: 32)),
+        ],
       ),
     );
   }
 }
 
 class _UserHeader extends StatelessWidget {
-  const _UserHeader({required this.profile, required this.pubkey});
+  const _UserHeader({
+    required this.profile,
+    required this.pubkey,
+    this.isLoading = false,
+  });
 
   final Profile? profile;
   final String pubkey;
+  final bool isLoading;
 
   @override
   Widget build(BuildContext context) {
@@ -155,16 +170,16 @@ class _UserHeader extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  profile?.nameOrNpub.abbreviateNpub() ??
-                      Utils.encodeShareableFromString(
-                        pubkey,
-                        type: 'npub',
-                      ).abbreviateNpub(),
+                ProfileNameWidget(
+                  pubkey: pubkey,
+                  profile: profile,
+                  isLoading: isLoading,
                   style: Theme.of(context).textTheme.headlineSmall,
                   maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+                  skeletonWidth: 180,
                 ),
+                const SizedBox(height: 4),
+                _NpubRow(pubkey: pubkey),
                 if (profile?.nip05 != null) ...[
                   const SizedBox(height: 4),
                   Row(
@@ -350,6 +365,50 @@ class _StackLinkCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _NpubRow extends StatelessWidget {
+  const _NpubRow({required this.pubkey});
+
+  final String pubkey;
+
+  @override
+  Widget build(BuildContext context) {
+    final npub = Utils.encodeShareableFromString(pubkey, type: 'npub');
+    // Longer abbreviation: show 12 chars from start + ... + 8 chars from end
+    final abbreviatedNpub =
+        '${npub.substring(0, 12)}...${npub.substring(npub.length - 8)}';
+
+    return GestureDetector(
+      onTap: () => launchUrl(
+        Uri.parse('https://npub.world/$npub'),
+        mode: LaunchMode.externalApplication,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.key,
+            size: 16,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            abbreviatedNpub,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Icon(
+            Icons.open_in_new,
+            size: 12,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ],
       ),
     );
   }

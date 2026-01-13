@@ -21,7 +21,7 @@ class SearchScreen extends HookConsumerWidget {
     final searchFocusNode = useFocusNode();
     final searchQuery = useState<String>('');
 
-    // Check app initialization state
+    // Check if storage is initialized
     final initState = ref.watch(appInitializationProvider);
 
     // Get platform from package manager
@@ -162,9 +162,12 @@ class _SearchResultsSection extends HookConsumerWidget {
           '#f': {platform},
         },
         and: (app) => {
-          app.latestRelease,
-          app.latestRelease.value?.latestMetadata,
-          app.latestRelease.value?.latestAsset,
+          app.latestRelease.query(
+            and: (release) => {
+              release.latestMetadata.query(),
+              release.latestAsset.query(),
+            },
+          ),
         },
         // Force the search to hit the default relay group (relay.zapstore.dev)
         // so a connection appears in Debug Info when searching.

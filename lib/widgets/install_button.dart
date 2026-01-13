@@ -72,21 +72,19 @@ class InstallButton extends ConsumerWidget {
         decoration: BoxDecoration(
           color: Theme.of(context).scaffoldBackgroundColor,
         ),
-        child: SafeArea(
-          child: Row(
-            children: [
-              Expanded(child: SizedBox(height: 48, child: button)),
-              // Show action buttons only for installed apps with no active operation
-              if (isInstalled && operation == null) ...[
-                if (hasUpdate) ...[
-                  const SizedBox(width: 8),
-                  _buildOpenIconButton(context, ref),
-                ],
+        child: Row(
+          children: [
+            Expanded(child: SizedBox(height: 48, child: button)),
+            // Show action buttons only for installed apps with no active operation
+            if (isInstalled && operation == null) ...[
+              if (hasUpdate) ...[
                 const SizedBox(width: 8),
-                _buildUninstallIconButton(context, ref),
+                _buildOpenIconButton(context, ref),
               ],
+              const SizedBox(width: 8),
+              _buildUninstallIconButton(context, ref),
             ],
-          ),
+          ],
         ),
       ),
     );

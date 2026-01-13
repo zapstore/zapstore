@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
+import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/services/updates_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'app_card.dart';
@@ -77,15 +78,22 @@ class LatestReleasesContainer extends HookConsumerWidget {
                   horizontal: 16,
                   vertical: 6,
                 ),
-                child: Text(
-                  'LATEST RELEASES',
-                  style: context.textTheme.labelLarge?.copyWith(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withValues(alpha: 0.85),
-                    letterSpacing: 1.5,
-                    fontWeight: FontWeight.bold,
-                  ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'LATEST RELEASES',
+                      style: context.textTheme.labelLarge?.copyWith(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.85),
+                        letterSpacing: 1.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const _LatestReleasesStatusDot(),
+                  ],
                 ),
               ),
               Expanded(
@@ -300,16 +308,19 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
           '#f': {'android-arm64-v8a'},
         },
         and: (app) => {
-          app.latestRelease,
-          app.latestRelease.value?.latestMetadata,
-          app.latestRelease.value?.latestAsset,
+          app.latestRelease.query(
+            source: const LocalAndRemoteSource(
+              relays: 'AppCatalog',
+              stream: false,
+            ),
+            and: (release) => {
+              release.latestMetadata.query(),
+              release.latestAsset.query(),
+            },
+          ),
         },
         // NOTE: It must stream=true
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: true),
-        andSource: const LocalAndRemoteSource(
-          relays: 'AppCatalog',
-          stream: false,
-        ), // No streaming for relationships
         subscriptionPrefix: 'latest',
       ),
       (previous, next) async {
@@ -423,5 +434,55 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
   void dispose() {
     _sub?.close();
     super.dispose();
+  }
+}
+
+/// Status dot showing connection state for 'latest' subscription
+class _LatestReleasesStatusDot extends ConsumerWidget {
+  const _LatestReleasesStatusDot();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final poolState = ref.watch(poolStateProvider);
+    final subscriptions = poolState?.subscriptions ?? {};
+
+    // Filter to only "latest" subscription
+    final latestSubs = subscriptions.entries
+        .where((e) => e.key.startsWith('latest'))
+        .map((e) => e.value);
+
+    // Check relay status for latest subscription
+    bool hasActiveConnection = false;
+
+    for (final sub in latestSubs) {
+      for (final relay in sub.relays.values) {
+        if (relay.phase == RelaySubPhase.streaming ||
+            relay.phase == RelaySubPhase.loading) {
+          hasActiveConnection = true;
+          break;
+        }
+      }
+      if (hasActiveConnection) break;
+    }
+
+    final statusColor = hasActiveConnection ? Colors.green : Colors.red;
+
+    return Container(
+      width: 8,
+      height: 8,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: statusColor,
+        boxShadow: hasActiveConnection
+            ? [
+                BoxShadow(
+                  color: statusColor.withValues(alpha: 0.4),
+                  blurRadius: 4,
+                  spreadRadius: 1,
+                ),
+              ]
+            : null,
+      ),
+    );
   }
 }

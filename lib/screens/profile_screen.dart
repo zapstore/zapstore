@@ -102,7 +102,7 @@ class _AuthenticationSection extends ConsumerWidget {
                     query<Profile>(
                       authors: {pubkey},
                       limit: 1,
-                      and: (profile) => {profile.contactList},
+                      and: (profile) => {profile.contactList.query()},
                       source: const LocalAndRemoteSource(
                         relays: {'social', 'vertex'},
                         stream: false,
@@ -349,6 +349,17 @@ class _DebugMessagesSection extends HookConsumerWidget {
     final closedSubscriptions = poolState?.closedSubscriptions ?? {};
     final logs = poolState?.logs ?? const [];
 
+    // Calculate unique relay URLs from subscriptions and logs (same logic as tab content)
+    final allRelayUrls = <String>{};
+    for (final sub in subscriptions.values) {
+      allRelayUrls.addAll(sub.relays.keys);
+    }
+    for (final log in logs) {
+      if (log.relayUrl != null) {
+        allRelayUrls.add(log.relayUrl!);
+      }
+    }
+
     void toggleSubscription(String id) {
       final next = {...expandedSubs.value};
       if (!next.remove(id)) {
@@ -392,8 +403,7 @@ class _DebugMessagesSection extends HookConsumerWidget {
                   onTap: () => selectedTab.value = 0,
                 ),
                 _TabButton(
-                  label:
-                      'Relays (${subscriptions.values.expand((s) => s.relays.keys).toSet().length})',
+                  label: 'Relays (${allRelayUrls.length})',
                   isSelected: selectedTab.value == 1,
                   onTap: () => selectedTab.value = 1,
                 ),
@@ -1568,7 +1578,7 @@ class _SavedAppsList extends ConsumerWidget {
     final savedAppsState = ref.watch(
       query<App>(
         tags: {'#d': identifiers},
-        and: (app) => {app.latestRelease},
+        and: (app) => {app.latestRelease.query()},
         source: const LocalSource(),
         subscriptionPrefix: 'profile-saved-apps',
       ),

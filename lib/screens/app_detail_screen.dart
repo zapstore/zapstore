@@ -34,7 +34,7 @@ class AppDetailScreen extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final platform = ref.read(packageManagerProvider.notifier).platform;
 
-    // Query app with relationships
+    // Query app with relationships including author profile
     final appState = ref.watch(
       query<App>(
         authors: authorPubkey != null ? {authorPubkey!} : null,
@@ -44,35 +44,82 @@ class AppDetailScreen extends HookConsumerWidget {
         },
         limit: 1,
         and: (a) => {
-          a.latestRelease,
-          a.latestRelease.value?.latestMetadata,
-          a.latestRelease.value?.latestAsset,
+          a.latestRelease.query(
+            and: (release) => {
+              release.latestMetadata.query(),
+              release.latestAsset.query(),
+            },
+          ),
         },
-        // stream=true ensures cached/local results render immediately; remote
-        // results will merge in as they arrive.
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
         subscriptionPrefix: 'app-detail-$appId',
       ),
     );
 
+    // Listen for query completion with no results - app removed from relay
+    ref.listen(
+      query<App>(
+        authors: authorPubkey != null ? {authorPubkey!} : null,
+        tags: {
+          '#d': {appId},
+          '#f': {platform},
+        },
+        limit: 1,
+        and: (a) => {
+          a.latestRelease.query(
+            and: (release) => {
+              release.latestMetadata.query(),
+              release.latestAsset.query(),
+            },
+          ),
+        },
+        source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
+        subscriptionPrefix: 'app-detail-$appId',
+      ),
+      (previous, next) async {
+        // When query completes with no models (app not found on relay)
+        if (next is StorageData<App> && next.models.isEmpty) {
+          // Remove stale local data for this app
+          await ref.storage.clear(
+            RequestFilter<App>(
+              tags: {
+                '#d': {appId},
+              },
+            ).toRequest(),
+          );
+          // Navigate back
+          if (context.mounted) {
+            context.pop();
+          }
+        }
+      },
+    );
+
     // Handle loading/error states when app not yet available
-    return switch (appState) {
-      StorageError(:final exception) => _ErrorScaffold(
-        message: exception.toString(),
-      ),
-      StorageData() => _AppDetailContent(
-        app: appState.models.firstOrNull,
-        appState: appState,
-      ),
-      StorageLoading() => const Scaffold(
+    final isLoading = appState is StorageLoading;
+    final app = appState.models.firstOrNull;
+
+    if (appState case StorageError(:final exception)) {
+      return _ErrorScaffold(message: exception.toString());
+    }
+
+    // Show skeleton only if loading with no models yet
+    if (isLoading && app == null) {
+      return const Scaffold(
         body: SafeArea(
           child: SingleChildScrollView(
             padding: EdgeInsets.all(16),
             child: AppDetailSkeleton(),
           ),
         ),
-      ),
-    };
+      );
+    }
+
+    return _AppDetailContent(
+      app: app,
+      appState: appState,
+      isLoading: isLoading,
+    );
   }
 }
 
@@ -105,8 +152,13 @@ class _ErrorScaffold extends StatelessWidget {
 class _AppDetailContent extends HookConsumerWidget {
   final App? app;
   final StorageState<App> appState;
+  final bool isLoading;
 
-  const _AppDetailContent({required this.app, required this.appState});
+  const _AppDetailContent({
+    required this.app,
+    required this.appState,
+    required this.isLoading,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -158,6 +210,7 @@ class _AppDetailContent extends HookConsumerWidget {
               ),
               InstallButton(app: app, release: latestRelease),
               _buildFloatingMenu(context, ref, app, isInstalled, isSignedIn),
+              if (isLoading) _buildLoadingIndicator(context),
             ],
           ),
         ),
@@ -377,7 +430,58 @@ class _AppDetailContent extends HookConsumerWidget {
 
             // Floating three-dot menu
             _buildFloatingMenu(context, ref, app, isInstalled, isSignedIn),
+
+            // Loading indicator while fetching more data
+            if (isLoading) _buildLoadingIndicator(context),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoadingIndicator(BuildContext context) {
+    return Positioned(
+      top: 8,
+      left: 0,
+      right: 0,
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: Theme.of(
+              context,
+            ).colorScheme.surface.withValues(alpha: 0.95),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.1),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Refreshing...',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.7),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -711,4 +815,3 @@ class _AppDetailContent extends HookConsumerWidget {
     }
   }
 }
-

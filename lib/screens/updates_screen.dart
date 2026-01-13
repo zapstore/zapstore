@@ -187,7 +187,7 @@ class _UpdatesListBodyWithInstallingAppIds extends ConsumerWidget {
     final installingAppsState = ref.watch(
       query<App>(
         tags: {'#d': installingAppIds},
-        and: (app) => {app.latestRelease},
+        and: (app) => {app.latestRelease.query()},
         source: const LocalAndRemoteSource(relays: 'AppCatalog'),
         subscriptionPrefix: 'installing-apps',
       ),

@@ -10,6 +10,7 @@ import 'package:zapstore/widgets/app_card.dart';
 import 'package:zapstore/widgets/author_container.dart';
 import 'package:zapstore/widgets/comments_section.dart';
 import 'package:zapstore/widgets/common/badges.dart';
+import 'package:zapstore/widgets/common/time_utils.dart';
 import 'package:zapstore/theme.dart';
 
 class AppStackScreen extends HookConsumerWidget {
@@ -20,7 +21,7 @@ class AppStackScreen extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Query stack with apps relationship
+    // Query stack with apps and author relationships
     final stackState = ref.watch(
       query<AppStack>(
         authors: authorPubkey != null ? {authorPubkey!} : null,
@@ -28,12 +29,15 @@ class AppStackScreen extends HookConsumerWidget {
           '#d': {stackId},
         },
         limit: 1,
-        and: (stack) => {stack.apps},
+        and: (stack) => {
+          stack.apps.query(
+            source: const LocalAndRemoteSource(
+              relays: 'AppCatalog',
+              stream: false,
+            ),
+          ),
+        },
         source: LocalAndRemoteSource(stream: true, relays: 'social'),
-        andSource: const LocalAndRemoteSource(
-          relays: 'AppCatalog',
-          stream: false,
-        ),
         subscriptionPrefix: 'app-stack-$stackId',
       ),
     );
@@ -46,11 +50,9 @@ class AppStackScreen extends HookConsumerWidget {
         stack: models.firstOrNull,
       ),
       StorageLoading() => Scaffold(
-        body: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: _AppStackSkeleton(),
-          ),
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: _AppStackSkeleton(),
         ),
       ),
     };
@@ -80,13 +82,19 @@ class _AppStackContentWithApps extends HookConsumerWidget {
     // Query apps with release and metadata relationships (same pattern as search/user screens)
     final appsState = ref.watch(
       query<App>(
-        tags: {'#d': appIdentifiers},
-        and: (app) => {
-          app.latestRelease,
-          app.latestRelease.value?.latestMetadata,
-          app.latestRelease.value?.latestAsset,
+        tags: {
+          '#d': appIdentifiers,
+          '#f': {'android-arm64-v8a'},
         },
-        source: const LocalAndRemoteSource(relays: 'AppCatalog'),
+        and: (app) => {
+          app.latestRelease.query(
+            and: (release) => {
+              release.latestMetadata.query(),
+              release.latestAsset.query(),
+            },
+          ),
+        },
+        source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
         subscriptionPrefix: 'app-stack-apps-${stack!.identifier}',
       ),
     );
@@ -147,10 +155,8 @@ class _AppStackContent extends HookConsumerWidget {
         ),
       ),
     );
-    final author = switch (authorState) {
-      StorageData(:final models) => models.firstOrNull,
-      _ => null,
-    };
+    final author = authorState.models.firstOrNull;
+    final isAuthorLoading = authorState is StorageLoading && author == null;
 
     // Sort apps: uninstalled first, keeping original order otherwise
     final packageManager = ref.watch(packageManagerProvider.notifier);
@@ -158,50 +164,52 @@ class _AppStackContent extends HookConsumerWidget {
     final totalApps = sortedApps.length;
 
     return Scaffold(
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.only(top: 16, bottom: 32),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Stack header
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: _StackHeader(stack: stack, author: author),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.only(top: 16, bottom: 32),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Stack header
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _StackHeader(
+                stack: stack,
+                author: author,
+                isAuthorLoading: isAuthorLoading,
               ),
-              const SizedBox(height: 24),
-              // Apps section header with count badge
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: [
-                    Text(
-                      'Apps in this stack',
-                      style: context.textTheme.titleLarge,
-                    ),
-                    const SizedBox(width: 8),
-                    CountBadge(
-                      count: totalApps,
-                      color: AppColors.darkPillBackground,
-                    ),
-                  ],
-                ),
+            ),
+            const SizedBox(height: 24),
+            // Apps section header with count badge
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  Text(
+                    'Apps in this stack',
+                    style: context.textTheme.titleLarge,
+                  ),
+                  const SizedBox(width: 8),
+                  CountBadge(
+                    count: totalApps,
+                    color: AppColors.darkPillBackground,
+                  ),
+                ],
               ),
-              const SizedBox(height: 12),
-              // Apps list
-              if (sortedApps.isEmpty)
-                _EmptyAppsPlaceholder()
-              else
-                ...sortedApps.map(
-                  (app) => AppCard(app: app, showUpdateArrow: app.hasUpdate),
-                ),
-              // Comments section
-              Padding(
-                padding: const EdgeInsets.only(top: 24),
-                child: StackCommentsSection(stack: stack),
+            ),
+            const SizedBox(height: 12),
+            // Apps list
+            if (sortedApps.isEmpty)
+              _EmptyAppsPlaceholder()
+            else
+              ...sortedApps.map(
+                (app) => AppCard(app: app, showUpdateArrow: app.hasUpdate),
               ),
-            ],
-          ),
+            // Comments section
+            Padding(
+              padding: const EdgeInsets.only(top: 24),
+              child: StackCommentsSection(stack: stack),
+            ),
+          ],
         ),
       ),
     );
@@ -229,10 +237,15 @@ class _AppStackContent extends HookConsumerWidget {
 
 /// Stack header with name and author
 class _StackHeader extends StatelessWidget {
-  const _StackHeader({required this.stack, this.author});
+  const _StackHeader({
+    required this.stack,
+    this.author,
+    this.isAuthorLoading = false,
+  });
 
   final AppStack stack;
   final Profile? author;
+  final bool isAuthorLoading;
 
   @override
   Widget build(BuildContext context) {
@@ -252,11 +265,36 @@ class _StackHeader extends StatelessWidget {
           beforeText: 'Published by',
           oneLine: true,
           size: 14,
+          isLoading: isAuthorLoading,
           onTap: () {
             final segments = GoRouterState.of(context).uri.pathSegments;
             final first = segments.isNotEmpty ? segments.first : 'search';
             context.push('/$first/user/${stack.pubkey}');
           },
+        ),
+        const SizedBox(height: 4),
+        // Last updated timestamp
+        Row(
+          children: [
+            Icon(
+              Icons.update,
+              size: 14,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              'Updated ',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+            TimeAgoText(
+              stack.event.createdAt,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+          ],
         ),
       ],
     );

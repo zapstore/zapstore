@@ -9,6 +9,7 @@ import 'package:zapstore/theme.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/auth_widgets.dart';
 import 'package:zapstore/widgets/common/profile_avatar.dart';
+import 'package:zapstore/widgets/common/profile_name_widget.dart';
 import 'package:zapstore/widgets/pill_widget.dart';
 
 /// Comments section for App detail screen
@@ -31,6 +32,7 @@ class CommentsSection extends HookConsumerWidget {
         },
         source: LocalAndRemoteSource(stream: true, relays: 'social'),
         subscriptionPrefix: 'app-comments',
+        and: (comment) => {comment.replies.query()},
       ),
     );
 
@@ -47,7 +49,12 @@ class CommentsSection extends HookConsumerWidget {
     return _CommentsSectionLayout(
       comments: comments,
       errorException: errorException,
-      addCommentButton: _AddCommentButton(fileMetadata: fileMetadata!),
+      addCommentButton: _AddCommentButton(
+        fileMetadata: fileMetadata!,
+        app: app,
+      ),
+      app: app,
+      fileMetadata: fileMetadata!,
     );
   }
 }
@@ -67,6 +74,7 @@ class StackCommentsSection extends HookConsumerWidget {
         },
         source: LocalAndRemoteSource(stream: true, relays: 'social'),
         subscriptionPrefix: 'stack-comments',
+        and: (comment) => {comment.replies.query()},
       ),
     );
 
@@ -84,6 +92,7 @@ class StackCommentsSection extends HookConsumerWidget {
       comments: comments,
       errorException: errorException,
       addCommentButton: _AddStackCommentButton(stack: stack),
+      stack: stack,
     );
   }
 }
@@ -94,14 +103,30 @@ class _CommentsSectionLayout extends StatelessWidget {
     required this.comments,
     required this.errorException,
     required this.addCommentButton,
+    this.app,
+    this.fileMetadata,
+    this.stack,
   });
 
   final List<Comment> comments;
   final Object? errorException;
   final Widget addCommentButton;
+  final App? app;
+  final FileMetadata? fileMetadata;
+  final AppStack? stack;
 
   @override
   Widget build(BuildContext context) {
+    // Filter to only root comments (those without a parent comment)
+    // A root comment has parentKind != 1111 (not replying to another comment)
+    final rootComments = comments
+        .where((c) => c.parentKind != 1111)
+        .toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    // Count total including replies
+    final totalCount = _countAllComments(rootComments);
+
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -112,8 +137,7 @@ class _CommentsSectionLayout extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text('Comments', style: Theme.of(context).textTheme.titleLarge),
-              if (comments.isNotEmpty)
-                _CommentCountBadge(count: comments.length),
+              if (totalCount > 0) _CommentCountBadge(count: totalCount),
             ],
           ),
           const SizedBox(height: 12),
@@ -125,20 +149,36 @@ class _CommentsSectionLayout extends StatelessWidget {
             _buildCommentsError(context, errorException!),
           ],
           // Comments list - only when there are comments
-          if (comments.isNotEmpty) ...[
+          if (rootComments.isNotEmpty) ...[
             const SizedBox(height: 16),
-            ...(comments.toList()
-                  ..sort((a, b) => b.createdAt.compareTo(a.createdAt)))
-                .map(
-                  (comment) => Padding(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    child: _CommentCard(comment: comment),
-                  ),
+            ...rootComments.map(
+              (comment) => Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: _ThreadedCommentCard(
+                  comment: comment,
+                  app: app,
+                  fileMetadata: fileMetadata,
+                  stack: stack,
+                  depth: 0,
                 ),
+              ),
+            ),
           ],
         ],
       ),
     );
+  }
+
+  int _countAllComments(List<Comment> comments) {
+    int count = 0;
+    for (final comment in comments) {
+      count++;
+      final replies = comment.replies.toList();
+      if (replies.isNotEmpty) {
+        count += _countAllComments(replies);
+      }
+    }
+    return count;
   }
 
   Widget _buildCommentsError(BuildContext context, Object exception) {
@@ -194,15 +234,38 @@ class _CommentCountBadge extends StatelessWidget {
   }
 }
 
-class _CommentCard extends HookConsumerWidget {
-  const _CommentCard({required this.comment});
+/// Threaded comment card that shows replies nested below
+class _ThreadedCommentCard extends HookConsumerWidget {
+  const _ThreadedCommentCard({
+    required this.comment,
+    required this.depth,
+    this.app,
+    this.fileMetadata,
+    this.stack,
+  });
 
   final Comment comment;
+  final int depth;
+  final App? app;
+  final FileMetadata? fileMetadata;
+  final AppStack? stack;
+
+  // Thread line colors for different depths
+  static const List<Color> _threadColors = [
+    Color(0xFF6366F1), // Indigo
+    Color(0xFF8B5CF6), // Violet
+    Color(0xFFA855F7), // Purple
+    Color(0xFFD946EF), // Fuchsia
+    Color(0xFFEC4899), // Pink
+  ];
+
+  Color _getThreadColor(int depth) {
+    return _threadColors[depth % _threadColors.length];
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // Query author profile with caching
-    // Query author profile (comment.event.pubkey is always present)
     final authorState = ref.watch(
       query<Profile>(
         authors: {comment.event.pubkey},
@@ -213,92 +276,209 @@ class _CommentCard extends HookConsumerWidget {
         ),
       ),
     );
-    final author = switch (authorState) {
-      StorageData(:final models) => models.firstOrNull,
-      _ => null,
-    };
+    final author = authorState.models.firstOrNull;
+    final isAuthorLoading = authorState is StorageLoading && author == null;
+
     // Extract version from v tag (per NIP-22 guidance)
     final version = comment.event.getFirstTagValue('v');
 
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ProfileAvatar(profile: author, radius: 16),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
+    // Get replies sorted by date
+    final replies = comment.replies.toList()
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
+    final isSignedIn = ref.watch(Signer.activePubkeyProvider) != null;
+    final isReply = depth > 0;
+    final threadColor = _getThreadColor(depth - 1);
+
+    final nameStyle = context.textTheme.titleSmall?.copyWith(
+      fontSize: (context.textTheme.titleSmall?.fontSize ?? 14) *
+          (isReply ? 0.78 : 0.82),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Comment card with thread line for replies
+        Container(
+          decoration: isReply
+              ? BoxDecoration(
+                  border: Border(
+                    left: BorderSide(
+                      color: threadColor,
+                      width: 3,
+                    ),
+                  ),
+                )
+              : null,
+          child: Container(
+            margin: isReply ? const EdgeInsets.only(left: 8) : null,
+            decoration: BoxDecoration(
+              color: isReply
+                  ? threadColor.withValues(alpha: 0.08)
+                  : Theme.of(context).cardColor,
+              borderRadius: BorderRadius.circular(8),
+              border: isReply
+                  ? null
+                  : Border.all(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .outline
+                          .withValues(alpha: 0.2),
+                    ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Wrap(
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              spacing: 6,
+                      ProfileAvatar(
+                        profile: author,
+                        radius: isReply ? 14 : 16,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
                               children: [
-                                Text(
-                                  author?.nameOrNpub ?? '',
-                                  style: context.textTheme.titleSmall?.copyWith(
-                                    fontSize:
-                                        (context
-                                                .textTheme
-                                                .titleSmall
-                                                ?.fontSize ??
-                                            14) *
-                                        0.82,
+                                Expanded(
+                                  child: Wrap(
+                                    crossAxisAlignment:
+                                        WrapCrossAlignment.center,
+                                    spacing: 6,
+                                    children: [
+                                      ProfileNameWidget(
+                                        pubkey: comment.event.pubkey,
+                                        profile: author,
+                                        isLoading: isAuthorLoading,
+                                        style: nameStyle,
+                                        skeletonWidth: 80,
+                                      ),
+                                      // Only show version on top-level comments
+                                      if (version != null && !isReply) ...[
+                                        Text(
+                                          'on',
+                                          style: context.textTheme.bodySmall
+                                              ?.copyWith(
+                                                  color: Colors.grey[600]),
+                                        ),
+                                        PillWidget(
+                                          TextSpan(text: version),
+                                          color: AppColors.darkPillBackground,
+                                          size: 8,
+                                        ),
+                                      ],
+                                    ],
                                   ),
                                 ),
-                                if (version != null) ...[
-                                  Text(
-                                    'on',
-                                    style: context.textTheme.bodySmall
-                                        ?.copyWith(color: Colors.grey[600]),
+                                Text(
+                                  DateFormat('MMM d, y')
+                                      .format(comment.createdAt),
+                                  style: context.textTheme.bodySmall?.copyWith(
+                                    color: Colors.grey[600],
+                                    fontSize: isReply ? 10 : null,
                                   ),
-                                  PillWidget(
-                                    TextSpan(text: version),
-                                    color: AppColors.darkPillBackground,
-                                    size: 8,
-                                  ),
-                                ],
+                                ),
                               ],
                             ),
-                          ),
-                          Text(
-                            DateFormat('MMM d, y').format(comment.createdAt),
-                            style: context.textTheme.bodySmall?.copyWith(
-                              color: Colors.grey[600],
+                            const SizedBox(height: 6),
+                            Text(
+                              comment.content,
+                              style: context.textTheme.bodyMedium?.copyWith(
+                                fontSize: isReply ? 13 : null,
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        comment.content,
-                        style: context.textTheme.bodyMedium,
+                            // Reply button
+                            if (isSignedIn) ...[
+                              const SizedBox(height: 6),
+                              GestureDetector(
+                                onTap: () => _showReplyComposer(context),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.reply,
+                                      size: 14,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .primary
+                                          .withValues(alpha: 0.7),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'Reply',
+                                      style:
+                                          context.textTheme.labelSmall?.copyWith(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .primary
+                                            .withValues(alpha: 0.7),
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
                       ),
                     ],
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ],
+          ),
         ),
+        // Render replies with minimal spacing
+        if (replies.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(left: 12, top: 6),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: replies
+                  .map(
+                    (reply) => Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: _ThreadedCommentCard(
+                        comment: reply,
+                        app: app,
+                        fileMetadata: fileMetadata,
+                        stack: stack,
+                        depth: depth + 1,
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+      ],
+    );
+  }
+
+  void _showReplyComposer(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => _ReplyComposer(
+        parentComment: comment,
+        app: app,
+        fileMetadata: fileMetadata,
+        stack: stack,
       ),
     );
   }
 }
 
 class _AddCommentButton extends ConsumerWidget {
-  const _AddCommentButton({required this.fileMetadata});
+  const _AddCommentButton({required this.fileMetadata, required this.app});
 
   final FileMetadata fileMetadata;
+  final App app;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -324,7 +504,7 @@ class _AddCommentButton extends ConsumerWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (context) => _CommentComposer(fileMetadata: fileMetadata),
+      builder: (context) => _CommentComposer(fileMetadata: fileMetadata, app: app),
     );
   }
 }
@@ -364,9 +544,10 @@ class _AddStackCommentButton extends ConsumerWidget {
 }
 
 class _CommentComposer extends HookConsumerWidget {
-  const _CommentComposer({required this.fileMetadata});
+  const _CommentComposer({required this.fileMetadata, required this.app});
 
   final FileMetadata fileMetadata;
+  final App app;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -375,10 +556,9 @@ class _CommentComposer extends HookConsumerWidget {
     // Rebuild on text changes so the Post button enables/disables correctly
     useListenable(textController);
 
-    final app = fileMetadata.release.value?.app.value;
-    final installedVersion = app?.installedPackage?.version;
+    final installedVersion = app.installedPackage?.version;
     final versionToComment = installedVersion ?? fileMetadata.version;
-    final appName = app?.name ?? 'this app';
+    final appName = app.name ?? 'this app';
 
     return Padding(
       padding: EdgeInsets.only(
@@ -480,17 +660,6 @@ class _CommentComposer extends HookConsumerWidget {
         return;
       }
 
-      final app = fileMetadata.release.value?.app.value;
-      if (app == null) {
-        if (context.mounted) {
-          context.showError(
-            'Unable to comment',
-            description: 'App information is not available. Try again later.',
-          );
-        }
-        return;
-      }
-
       // Get the version to comment on (installed version or latest release)
       final installedVersion = app.installedPackage?.version;
       final versionToComment = installedVersion ?? fileMetadata.version;
@@ -515,6 +684,218 @@ class _CommentComposer extends HookConsumerWidget {
     } catch (e) {
       if (context.mounted) {
         context.showError('Failed to post comment', description: '$e');
+      }
+    }
+  }
+}
+
+/// Reply composer for threaded comments
+class _ReplyComposer extends HookConsumerWidget {
+  const _ReplyComposer({
+    required this.parentComment,
+    this.app,
+    this.fileMetadata,
+    this.stack,
+  });
+
+  final Comment parentComment;
+  final App? app;
+  final FileMetadata? fileMetadata;
+  final AppStack? stack;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isSignedIn = ref.watch(Signer.activePubkeyProvider) != null;
+    final textController = useTextEditingController();
+    useListenable(textController);
+
+    // Query parent author profile
+    final parentAuthorState = ref.watch(
+      query<Profile>(
+        authors: {parentComment.pubkey},
+        source: const LocalAndRemoteSource(
+          relays: {'social', 'vertex'},
+          stream: false,
+          cachedFor: Duration(hours: 2),
+        ),
+      ),
+    );
+    final parentAuthor = switch (parentAuthorState) {
+      StorageData(:final models) => models.firstOrNull,
+      _ => null,
+    };
+
+    final replyingToName = parentAuthor?.nameOrNpub ?? 'comment';
+
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    'Reply to $replyingToName',
+                    style: context.textTheme.titleMedium,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close),
+                ),
+              ],
+            ),
+            // Show parent comment preview
+            Container(
+              margin: const EdgeInsets.only(top: 8, bottom: 16),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context)
+                    .colorScheme
+                    .surfaceContainerHighest
+                    .withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(8),
+                border: Border(
+                  left: BorderSide(
+                    color: Theme.of(context).colorScheme.outline,
+                    width: 3,
+                  ),
+                ),
+              ),
+              child: Text(
+                parentComment.content,
+                style: context.textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withValues(alpha: 0.7),
+                ),
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (!isSignedIn) ...[
+              const SignInPrompt(
+                message: 'Sign in to reply to this comment.',
+              ),
+            ] else ...[
+              TextField(
+                controller: textController,
+                decoration: const InputDecoration(
+                  hintText: 'Write your reply...',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 4,
+                autofocus: true,
+              ),
+            ],
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: AsyncButtonBuilder(
+                child: const Text('Post Reply'),
+                onPressed: () =>
+                    _publishReply(ref, textController.text, context),
+                builder: (context, child, callback, buttonState) {
+                  return FilledButton(
+                    onPressed: !isSignedIn
+                        ? null
+                        : buttonState.maybeWhen(
+                            loading: () => null,
+                            orElse: () => textController.text.trim().isEmpty
+                                ? null
+                                : callback,
+                          ),
+                    child: buttonState.maybeWhen(
+                      loading: () => const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Colors.white,
+                          ),
+                        ),
+                      ),
+                      orElse: () => child,
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _publishReply(
+    WidgetRef ref,
+    String content,
+    BuildContext context,
+  ) async {
+    if (content.trim().isEmpty) return;
+
+    try {
+      final signer = ref.read(Signer.activeSignerProvider);
+      if (signer == null) {
+        if (context.mounted) {
+          context.showError(
+            'Sign in required',
+            description: 'You need to sign in with Amber to post replies.',
+          );
+        }
+        return;
+      }
+
+      // Determine root model (App or AppStack)
+      final Model rootModel;
+      if (app != null) {
+        rootModel = app!;
+      } else if (stack != null) {
+        rootModel = stack!;
+      } else {
+        if (context.mounted) {
+          context.showError(
+            'Unable to reply',
+            description: 'Could not determine the root content.',
+          );
+        }
+        return;
+      }
+
+      final reply = PartialComment(
+        content: content.trim(),
+        rootModel: rootModel,
+        parentModel: parentComment,
+      );
+
+      // Add v tag for version if available (for App comments)
+      if (fileMetadata != null) {
+        final installedVersion = app?.installedPackage?.version;
+        final versionToComment = installedVersion ?? fileMetadata!.version;
+        reply.event.addTagValue('v', versionToComment);
+      }
+
+      final signedReply = await reply.signWith(signer);
+
+      await signedReply.save();
+      await signedReply.publish(source: RemoteSource(relays: 'social'));
+
+      if (context.mounted) {
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (context.mounted) {
+        context.showError('Failed to post reply', description: '$e');
       }
     }
   }

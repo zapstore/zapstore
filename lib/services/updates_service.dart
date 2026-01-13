@@ -66,6 +66,11 @@ class CategorizedAppsNotifier extends Notifier<CategorizedApps> {
     final installedPackages = pmState.installed.values.toList();
     final installedIds = pmState.installed.keys.toSet();
 
+    // Show loading while scanning for installed packages
+    if (pmState.isScanning && installedIds.isEmpty) {
+      return CategorizedApps.empty;
+    }
+
     if (installedIds.isEmpty) {
       _hasLoadedOnce = true;
       return const CategorizedApps(
@@ -87,15 +92,18 @@ class CategorizedAppsNotifier extends Notifier<CategorizedApps> {
           '#f': {platform},
         },
         and: (app) => {
-          app.latestRelease,
-          app.latestRelease.value?.latestMetadata,
-          app.latestRelease.value?.latestAsset,
+          app.latestRelease.query(
+            source: const LocalAndRemoteSource(
+              relays: 'AppCatalog',
+              stream: false,
+            ),
+            and: (release) => {
+              release.latestMetadata.query(),
+              release.latestAsset.query(),
+            },
+          ),
         },
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: true),
-        andSource: const LocalAndRemoteSource(
-          relays: 'AppCatalog',
-          stream: false,
-        ),
         subscriptionPrefix: 'updates',
       ),
     );

@@ -212,7 +212,10 @@ final appInitializationProvider = FutureProvider<void>((ref) async {
     initializationProvider(
       StorageConfiguration(
         databasePath: dbPath,
-        defaultQuerySource: LocalAndRemoteSource(relays: 'AppCatalog'),
+        defaultQuerySource: LocalAndRemoteSource(
+          relays: 'AppCatalog',
+          stream: false,
+        ),
         defaultRelays: {
           'default': {'wss://relay.zapstore.dev'},
           'bootstrap': {'wss://purplepag.es', 'wss://relay.zapstore.dev'},
@@ -229,18 +232,16 @@ final appInitializationProvider = FutureProvider<void>((ref) async {
     ).future,
   );
 
-  // Initialize package manager
+  // These run in background - don't block UI
   final packageManager = ref.read(packageManagerProvider.notifier);
-  await packageManager.syncInstalledPackages();
+  unawaited(packageManager.syncInstalledPackages());
 
-  // Initialize background update service (WorkManager + notifications)
   final backgroundService = ref.read(backgroundUpdateServiceProvider);
-  await backgroundService.initialize();
+  unawaited(backgroundService.initialize());
 
-  // Initialize market intent handling (for market:// URIs)
-  await ref.read(marketIntentServiceProvider).initialize();
+  unawaited(ref.read(marketIntentServiceProvider).initialize());
 
-  await _attemptAutoSignIn(ref);
+  unawaited(_attemptAutoSignIn(ref));
 });
 
 // AmberSigner provider for Nostr authentication
@@ -255,7 +256,7 @@ Future<void> _attemptAutoSignIn(Ref ref) async {
   }
 }
 
-/// Query AppCatalogRelayList after successful sign-in
+/// Query AppCatalogRelayList and ContactList after successful sign-in
 Future<void> onSignInSuccess(Ref ref) async {
   final pubkey = ref.read(Signer.activePubkeyProvider);
   if (pubkey == null) return;
@@ -268,6 +269,12 @@ Future<void> onSignInSuccess(Ref ref) async {
       RequestFilter<AppCatalogRelayList>(authors: {pubkey}).toRequest(),
       source: const RemoteSource(relays: 'bootstrap', stream: false),
     ),
+  );
+
+  // Fetch contact list for stack sorting (await to ensure it's cached)
+  await storage.query(
+    RequestFilter<ContactList>(authors: {pubkey}).toRequest(),
+    source: const RemoteSource(relays: 'social', stream: false),
   );
 }
 

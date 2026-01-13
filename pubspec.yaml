@@ -61,12 +61,12 @@ dependency_overrides:
     # path: ../../purplebase/models
     git:
       url: https://github.com/purplebase/models
-      ref: ca70b39
+      ref: 474d046
   purplebase:
     # path: ../../purplebase/purplebase
     git:
       url: https://github.com/purplebase/purplebase
-      ref: "6052022"
+      ref: 6881dfe
   amber_signer:
     # path: ../amber_signer
     git:

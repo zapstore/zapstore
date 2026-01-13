@@ -73,7 +73,7 @@ class RelevantWhoFollowContainer extends HookConsumerWidget {
       query<Zap>(
         tags: app.event.addressableIdTagMap,
         source: const LocalSource(),
-        and: (zap) => {zap.author, zap.zapRequest},
+        and: (zap) => {zap.author.query(), zap.zapRequest.query()},
         subscriptionPrefix: 'trust-zaps',
       ),
     );
@@ -87,7 +87,7 @@ class RelevantWhoFollowContainer extends HookConsumerWidget {
                 '#e': {latestMetadata.id},
               },
               source: const LocalSource(),
-              and: (zap) => {zap.author, zap.zapRequest},
+              and: (zap) => {zap.author.query(), zap.zapRequest.query()},
               subscriptionPrefix: 'trust-metadata-zaps',
             ),
           )
