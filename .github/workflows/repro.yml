@@ -1,0 +1,41 @@
+name: Reproducible APK Proof
+
+on:
+  workflow_dispatch:
+
+jobs:
+  repro:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Show runner info
+        run: |
+          uname -a
+          lscpu | sed -n '1,30p'
+          docker version
+          docker info | sed -n '1,80p'
+
+      - name: Make scripts executable
+        run: |
+          chmod +x repro/prove_repro.sh || true
+          chmod +x repro/build_in_container.sh || true
+
+      - name: Run reproducibility proof (Docker)
+        run: |
+          bash repro/prove_repro.sh
+
+      - name: Upload artifacts (.repro_out)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: repro-out-${{ github.sha }}
+          path: .repro_out
+          if-no-files-found: warn
