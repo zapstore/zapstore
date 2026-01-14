@@ -64,6 +64,7 @@ If hashes differ, use `diffoscope` (recommended) to inspect where the difference
 This is the most \"honest\" way to prove reproducibility because it removes most differences from your host environment.
 
 Requirements:
+
 - Docker
 - Internet access on first run (toolchain + dependencies need to be downloaded)
 
@@ -74,11 +75,63 @@ bash repro/prove_repro.sh
 ```
 
 Notes:
+
 - Builds happen in **two isolated linux/amd64 containers** (A and B) with **pinned** Flutter + Android cmdline-tools downloads (SHA-256 verified).
 - On Apple Silicon, `linux/amd64` runs under emulation and may be unstable for Flutter/Gradle builds. If you hit Dart VM crashes like `Unexpected EINTR errno`, run this script on an **x86_64 Linux** machine or CI runner (this is the strongest proof anyway).
 - The script copies the repo into the container filesystem before building (avoids macOS bind-mount quirks).
 - Default builds a **single** `release` APK (no split). Use `REPRO_SPLIT_PER_ABI=1` for the split-per-ABI hard mode.
 - Outputs are written to `.repro_out/` (ignored by git).
+
+### Expected result (success)
+
+You should see a final line like:
+
+- `OK: reproducible (hashes match)`
+
+And `.repro_out/` should contain two APKs (A and B) plus their `.sha256` files.
+
+### If it fails (what to do)
+
+#### Case A: Hashes differ
+
+The script will end with:
+
+- `ERROR: not reproducible (hashes differ)`
+
+Next steps:
+
+```bash
+ls -lah .repro_out
+diffoscope .repro_out/*.apk
+```
+
+If you don’t have `diffoscope`, do a quick unzip diff:
+
+```bash
+rm -rf /tmp/apkA /tmp/apkB
+mkdir -p /tmp/apkA /tmp/apkB
+unzip -q .repro_out/*-A-*.apk -d /tmp/apkA
+unzip -q .repro_out/*-B-*.apk -d /tmp/apkB
+diff -qr /tmp/apkA /tmp/apkB | head -n 80
+```
+
+#### Case B: Build is accidentally signed
+
+The script will fail if it detects `META-INF/*.RSA|*.DSA|*.EC` inside the APK.
+
+Fix:
+
+- Ensure `android/key.properties` is **not present** (or incomplete) in the repo/checkout used for the proof.
+
+#### Case C: Docker/host instability (Apple Silicon)
+
+If you see Dart VM crashes like `Unexpected EINTR errno` or exit code `134`, run the proof on:
+
+- **x86_64 Linux** (local machine/VM) or a **GitHub Actions** runner (recommended)
+
+### GitHub Actions
+
+There is a manual workflow at `.github/workflows/repro.yml` that runs the same proof on an Ubuntu runner and uploads `.repro_out/` as an artifact.
 
 ## Notes for F-Droid
 
