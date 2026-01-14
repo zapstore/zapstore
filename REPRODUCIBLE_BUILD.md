@@ -10,6 +10,7 @@ For reproducibility, always compare **unsigned APKs** (or APKs signed with the e
 - **Dart/Flutter packages**: pinned via `pubspec.lock`.
 - **Gradle**: pinned via `android/gradle/wrapper/gradle-wrapper.properties`.
 - **Java**: use **JDK 17** (changing JDK can change bytecode/packaging).
+- **SOURCE_DATE_EPOCH**: set to the current commit timestamp to stabilize time-based metadata.
 - **Archive determinism**: Gradle archive tasks use stable ordering and no timestamps (`android/build.gradle.kts`).
 - **Signing**: `release` is **signed only when a complete `android/key.properties` is present**; otherwise **release builds are unsigned** (`android/app/build.gradle.kts`).
 
@@ -27,6 +28,9 @@ For reproducibility, always compare **unsigned APKs** (or APKs signed with the e
 Important: ensure `android/key.properties` is **absent** (or incomplete) so the APK is **not signed**.
 
 ```bash
+# Standard reproducible-build timestamp (ties "build time" to the commit)
+export SOURCE_DATE_EPOCH="$(git log -1 --pretty=%ct)"
+
 java -version
 
 fvm install
