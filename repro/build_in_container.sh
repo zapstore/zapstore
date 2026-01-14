@@ -13,6 +13,14 @@ mkdir -p "${HOME}"
 
 mkdir -p "${WORK_ROOT}" "${OUT_DIR}"
 
+# Ensure cache dirs exist (paths come from the runner via env vars).
+if [ -n "${GRADLE_USER_HOME:-}" ]; then
+  mkdir -p "${GRADLE_USER_HOME}"
+fi
+if [ -n "${PUB_CACHE:-}" ]; then
+  mkdir -p "${PUB_CACHE}"
+fi
+
 echo "== Environment =="
 echo "TAG=${TAG}"
 echo "GRADLE_USER_HOME=${GRADLE_USER_HOME:-}"

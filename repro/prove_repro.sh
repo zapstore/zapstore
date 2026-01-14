@@ -81,15 +81,30 @@ run_one () {
   local tag="$1"
   echo "== Running container ${tag} =="
   docker rm -f "${NAME_PREFIX}_${tag}" >/dev/null 2>&1 || true
+
+  # Optional host-side caches (useful in CI with actions/cache).
+  # If provided, mount them into the container at stable paths.
+  local host_gradle_cache="${GRADLE_USER_HOME:-}"
+  local host_pub_cache="${PUB_CACHE:-}"
+
+  local -a cache_mounts=()
+  if [ -n "${host_gradle_cache}" ]; then
+    cache_mounts+=(-v "${host_gradle_cache}:/work/gradle:rw")
+  fi
+  if [ -n "${host_pub_cache}" ]; then
+    cache_mounts+=(-v "${host_pub_cache}:/work/pub-cache:rw")
+  fi
+
   docker run --rm --platform "${DOCKER_PLATFORM}" \
     --name "${NAME_PREFIX}_${tag}" \
     -e "BUILD_TAG=${tag}" \
-    -e "GRADLE_USER_HOME=/tmp/gradle" \
+    -e "GRADLE_USER_HOME=/work/gradle" \
     -e "GRADLE_OPTS=-Dorg.gradle.vfs.watch=false" \
-    -e "PUB_CACHE=/tmp/pub-cache" \
+    -e "PUB_CACHE=/work/pub-cache" \
     -e "REPRO_SPLIT_PER_ABI=${REPRO_SPLIT_PER_ABI:-0}" \
     -v "${ROOT_DIR}:/repo:ro" \
     -v "${OUT_DIR}:/out:rw" \
+    "${cache_mounts[@]}" \
     "${IMAGE_NAME}" \
     bash /repo/repro/build_in_container.sh
 }
