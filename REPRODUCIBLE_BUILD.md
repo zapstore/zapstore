@@ -133,6 +133,30 @@ If you see Dart VM crashes like `Unexpected EINTR errno` or exit code `134`, run
 
 There is a manual workflow at `.github/workflows/repro.yml` that runs the same proof on an Ubuntu runner and uploads `.repro_out/` as an artifact.
 
+## Host proof (not preferred)
+
+This repository also includes a host-side proof script:
+
+- `repro/prove_repro_host.sh`
+
+This is **not the preferred method** because it depends on your host environment (Java/Gradle/SDK quirks, filesystem differences, etc.). The Docker proof above is the most reliable and portable way to prove reproducibility.
+
+That said, the host script is useful as a quick local sanity check. It avoids a common false-negative: building in two different directories (e.g. two worktrees like `/tmp/zapstore-A` and `/tmp/zapstore-B`) can embed absolute paths into native libraries (such as `libapp.so`), producing different APK bytes even when the build is otherwise deterministic.
+
+Run:
+
+```bash
+bash repro/prove_repro_host.sh
+```
+
+Notes:
+
+- Requires the same prerequisites as a normal host build (see **Requirements** above; **JDK 17** recommended).
+- Builds happen twice in the **same working directory**, with `build/` and `.dart_tool/` wiped between runs.
+- Outputs are written to `.repro_out/host/` and compared via SHA-256.
+- If hashes differ, the script prints a short unzip diff and (if `diffoscope` is installed) writes a full report to `.repro_out/host/diffoscope.txt`.
+- If you see `Can't load Kernel binary: Invalid SDK hash.`, you can re-run with `REPRO_CLEAN_SDK=1` to clear Flutter SDK caches and force a fresh precache (slower, but typically removes the warning).
+
 ## Notes for F-Droid
 
 - F-Droid will build from source and **re-sign** the APK.
