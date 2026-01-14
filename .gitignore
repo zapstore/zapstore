@@ -47,6 +47,7 @@ app.*.map.json
 
 /tmp
 /flutter_data
+.repro_out/
 
 # FVM (commit only the version pin/config; never the SDK itself)
 !.fvmrc
