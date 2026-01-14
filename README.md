@@ -19,29 +19,7 @@ flutter pub get
 flutter build apk --split-per-abi --debug
 ```
 
-## Reproducible builds
-
-This repo pins:
-
-- **Flutter** via `.fvmrc` (do not use `stable` in FVM)
-- **Dart/Flutter dependencies** via `pubspec.lock`
-- **Android toolchain** via Gradle/AGP, and expects **JDK 17**
-
-Build "proof" (prints versions + builds):
-
-```bash
-# Use JDK 17 (set JAVA_HOME in your environment/CI if needed)
-# Examples:
-# export JAVA_HOME=$(/usr/libexec/java_home -v 17)            # macOS
-# export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64         # Ubuntu/Debian
-java -version
-
-fvm install
-fvm flutter --version
-fvm flutter pub get --enforce-lockfile
-
-fvm flutter build apk --split-per-abi --release
-```
+Reproducible builds: see [`REPRODUCIBLE_BUILD.md`](./REPRODUCIBLE_BUILD.md).
 
 APK will be available at `build/app/outputs/flutter-apk`.
 
