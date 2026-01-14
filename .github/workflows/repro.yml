@@ -1,6 +1,9 @@
 name: Reproducible APK Proof
 
 on:
+  push:
+    branches:
+      - "hvmelo/reproducible"
   workflow_dispatch:
 
 jobs:
