@@ -4,11 +4,11 @@ set -euo pipefail
 TAG="${BUILD_TAG:-X}"
 REPO_SRC="/repo"
 WORK_ROOT="/work"
-WORK_DIR="${WORK_ROOT}/src-${TAG}"
+WORK_DIR="${WORK_ROOT}/src"
 OUT_DIR="/out"
 
 # Make the container fully self-contained and writable even under stricter FS setups.
-export HOME="/tmp/home-${TAG}"
+export HOME="/tmp/home"
 mkdir -p "${HOME}"
 
 mkdir -p "${WORK_ROOT}" "${OUT_DIR}"
@@ -67,6 +67,14 @@ if [ -n "${GRADLE_USER_HOME:-}" ]; then
   mkdir -p "${GRADLE_USER_HOME}"
   {
     echo "org.gradle.vfs.watch=false"
+    # Avoid Gradle build cache influencing outputs across runs.
+    echo "org.gradle.caching=false"
+    # Avoid parallelism affecting packaging order.
+    echo "org.gradle.parallel=false"
+    # CI/container stability: avoid flaky Kotlin compile daemon startup.
+    # This removes intermittent "daemon has terminated unexpectedly on startup attempt #N".
+    echo "kotlin.compiler.execution.strategy=in-process"
+    echo "kotlin.daemon.enabled=false"
   } > "${GRADLE_USER_HOME}/gradle.properties"
 fi
 
