@@ -75,11 +75,17 @@ class AppInfoTable extends HookConsumerWidget {
 
     rows.add(_InfoRow(label: 'App ID', value: app.identifier));
 
-    // Author npub
-    final npub = Utils.encodeShareableFromString(app.pubkey, type: 'npub');
-    rows.add(
-      _InfoRow(label: 'Author npub', value: npub.abbreviate(), copyValue: npub),
-    );
+    if (!app.isRelaySigned) {
+      // Author npub
+      final npub = Utils.encodeShareableFromString(app.pubkey, type: 'npub');
+      rows.add(
+        _InfoRow(
+          label: 'Author npub',
+          value: npub.abbreviate(),
+          copyValue: npub,
+        ),
+      );
+    }
 
     if (fileMetadata?.hash != null) {
       final full = fileMetadata!.hash;
