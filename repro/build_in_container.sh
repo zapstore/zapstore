@@ -13,6 +13,11 @@ mkdir -p "${HOME}"
 
 mkdir -p "${WORK_ROOT}" "${OUT_DIR}"
 
+# Normalize locale/timezone to avoid non-deterministic formatting in tool outputs.
+export TZ="UTC"
+export LANG="C.UTF-8"
+export LC_ALL="C.UTF-8"
+
 # Ensure cache dirs exist (paths come from the runner via env vars).
 if [ -n "${GRADLE_USER_HOME:-}" ]; then
   mkdir -p "${GRADLE_USER_HOME}"
@@ -69,6 +74,7 @@ if [ -n "${GRADLE_USER_HOME:-}" ]; then
     echo "org.gradle.vfs.watch=false"
     # Avoid Gradle build cache influencing outputs across runs.
     echo "org.gradle.caching=false"
+    echo "org.gradle.configuration-cache=false"
     # Avoid parallelism affecting packaging order.
     echo "org.gradle.parallel=false"
     # CI/container stability: avoid flaky Kotlin compile daemon startup.
@@ -80,12 +86,12 @@ fi
 
 if [ "${REPRO_SPLIT_PER_ABI:-0}" = "1" ]; then
   echo "Building with --split-per-abi (hard mode)"
-  flutter build apk --release --split-per-abi
+  flutter build apk --release --split-per-abi --no-pub
   APK_PATH="$(ls -1 build/app/outputs/flutter-apk/*arm64-v8a*release*.apk | head -n 1)"
   OUT_APK="${OUT_DIR}/app-${SOURCE_DATE_EPOCH}-${TAG}-arm64-v8a-release.apk"
 else
   echo "Building single APK (default)"
-  flutter build apk --release
+  flutter build apk --release --no-pub
   APK_PATH="$(ls -1 build/app/outputs/flutter-apk/*release*.apk | head -n 1)"
   OUT_APK="${OUT_DIR}/app-${SOURCE_DATE_EPOCH}-${TAG}-release.apk"
 fi
