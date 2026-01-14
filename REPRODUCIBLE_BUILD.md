@@ -59,6 +59,27 @@ shasum -a 256 build/app/outputs/flutter-apk/*.apk
 
 If hashes differ, use `diffoscope` (recommended) to inspect where the difference comes from.
 
+## Docker proof (recommended)
+
+This is the most \"honest\" way to prove reproducibility because it removes most differences from your host environment.
+
+Requirements:
+- Docker
+- Internet access on first run (toolchain + dependencies need to be downloaded)
+
+Run:
+
+```bash
+bash repro/prove_repro.sh
+```
+
+Notes:
+- Builds happen in **two isolated linux/amd64 containers** (A and B) with **pinned** Flutter + Android cmdline-tools downloads (SHA-256 verified).
+- On Apple Silicon, `linux/amd64` runs under emulation and may be unstable for Flutter/Gradle builds. If you hit Dart VM crashes like `Unexpected EINTR errno`, run this script on an **x86_64 Linux** machine or CI runner (this is the strongest proof anyway).
+- The script copies the repo into the container filesystem before building (avoids macOS bind-mount quirks).
+- Default builds a **single** `release` APK (no split). Use `REPRO_SPLIT_PER_ABI=1` for the split-per-ABI hard mode.
+- Outputs are written to `.repro_out/` (ignored by git).
+
 ## Notes for F-Droid
 
 - F-Droid will build from source and **re-sign** the APK.
