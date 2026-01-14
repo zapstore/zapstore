@@ -41,32 +41,37 @@ android {
         versionName = flutter.versionName
     }
 
-    signingConfigs {
-        create("release") {
-            val alias = keystoreProperties["keyAlias"] as String?
-            val keyPass = keystoreProperties["keyPassword"] as String?
-            val storePath = keystoreProperties["storeFile"] as String?
-            val storePass = keystoreProperties["storePassword"] as String?
+    // Release signing is optional:
+    // - With a complete key.properties -> signed (for Play/GitHub releases)
+    // - Without key.properties (or incomplete) -> unsigned (for reproducible builds / F-Droid)
+    val releaseSigningConfig = if (keystorePropertiesFile.exists()) {
+        val alias = keystoreProperties.getProperty("keyAlias")?.trim().orEmpty()
+        val keyPass = keystoreProperties.getProperty("keyPassword")?.trim().orEmpty()
+        val storePath = keystoreProperties.getProperty("storeFile")?.trim().orEmpty()
+        val storePass = keystoreProperties.getProperty("storePassword")?.trim().orEmpty()
 
-            if (!storePath.isNullOrBlank()) {
-                storeFile = file(storePath)
-            }
-            if (!alias.isNullOrBlank()) {
+        val store = storePath.takeIf { it.isNotBlank() }?.let { file(it) }
+        val isComplete = alias.isNotBlank() && keyPass.isNotBlank() && store != null && store.exists() && storePass.isNotBlank()
+
+        if (isComplete) {
+            signingConfigs.create("release") {
+                storeFile = store
+                storePassword = storePass
                 keyAlias = alias
-            }
-            if (!keyPass.isNullOrBlank()) {
                 keyPassword = keyPass
             }
-            if (!storePass.isNullOrBlank()) {
-                storePassword = storePass
-            }
+        } else {
+            logger.warn("key.properties found but incomplete. Building unsigned release APK.")
+            null
         }
+    } else {
+        null
     }
 
     buildTypes {
         release {
-            // Use release signing config when key.properties is present
-            signingConfig = signingConfigs.getByName("release")
+            // Signed only when key.properties is present AND complete.
+            signingConfig = releaseSigningConfig
             // Enable code shrinking and resource optimization
             isMinifyEnabled = true
             isShrinkResources = true
