@@ -64,6 +64,28 @@ jobs:
         run: |
           bash repro/prove_repro.sh
 
+      - name: Install diff tools
+        if: failure()
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y diffoscope unzip
+
+      - name: Diff APKs (if present)
+        if: failure()
+        run: |
+          ls -la .repro_out || true
+          A="$(ls -1 .repro_out/*-A-release.apk 2>/dev/null | head -n1 || true)"
+          B="$(ls -1 .repro_out/*-B-release.apk 2>/dev/null | head -n1 || true)"
+          echo "A=$A"
+          echo "B=$B"
+          if [ -n "$A" ] && [ -n "$B" ]; then
+            diffoscope "$A" "$B" --text .repro_out/diffoscope.txt || true
+            mkdir -p /tmp/apkA /tmp/apkB
+            unzip -q "$A" -d /tmp/apkA
+            unzip -q "$B" -d /tmp/apkB
+            diff -qr /tmp/apkA /tmp/apkB | head -n 200 > .repro_out/unzip-diff.txt || true
+          fi
+
       - name: Upload artifacts (.repro_out)
         if: always()
         uses: actions/upload-artifact@v4
@@ -71,3 +93,4 @@ jobs:
           name: repro-out-${{ github.sha }}
           path: .repro_out
           if-no-files-found: warn
+          include-hidden-files: true
