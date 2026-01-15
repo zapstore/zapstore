@@ -53,7 +53,9 @@ echo "Docker platform: ${DOCKER_PLATFORM}"
 echo "Flutter: ${FLUTTER_VERSION}"
 echo "Flutter sha256: ${FLUTTER_SHA256}"
 echo "cmdline-tools sha256: ${CMDLINE_TOOLS_SHA256}"
-echo "split-per-abi: ${REPRO_SPLIT_PER_ABI:-0}"
+echo "split-per-abi: ${REPRO_SPLIT_PER_ABI:-1}"
+echo "target-platform: ${REPRO_TARGET_PLATFORM:-android-arm64}"
+echo "abi: ${REPRO_ABI:-arm64-v8a}"
 
 echo "== Building Docker image =="
 docker build --platform "${DOCKER_PLATFORM}" \
@@ -101,7 +103,9 @@ run_one () {
     -e "GRADLE_USER_HOME=/work/gradle" \
     -e "GRADLE_OPTS=-Dorg.gradle.vfs.watch=false" \
     -e "PUB_CACHE=/work/pub-cache" \
-    -e "REPRO_SPLIT_PER_ABI=${REPRO_SPLIT_PER_ABI:-0}" \
+    -e "REPRO_SPLIT_PER_ABI=${REPRO_SPLIT_PER_ABI:-1}" \
+    -e "REPRO_TARGET_PLATFORM=${REPRO_TARGET_PLATFORM:-android-arm64}" \
+    -e "REPRO_ABI=${REPRO_ABI:-arm64-v8a}" \
     -v "${ROOT_DIR}:/repo:ro" \
     -v "${OUT_DIR}:/out:rw" \
     "${cache_mounts[@]}" \
