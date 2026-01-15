@@ -30,6 +30,9 @@ echo "== Environment =="
 echo "TAG=${TAG}"
 echo "GRADLE_USER_HOME=${GRADLE_USER_HOME:-}"
 echo "PUB_CACHE=${PUB_CACHE:-}"
+echo "REPRO_TARGET_PLATFORM=${REPRO_TARGET_PLATFORM:-android-arm64}"
+echo "REPRO_SPLIT_PER_ABI=${REPRO_SPLIT_PER_ABI:-1}"
+echo "REPRO_ABI=${REPRO_ABI:-arm64-v8a}"
 
 echo "== Tool versions =="
 java -version
@@ -84,14 +87,25 @@ if [ -n "${GRADLE_USER_HOME:-}" ]; then
   } > "${GRADLE_USER_HOME}/gradle.properties"
 fi
 
-if [ "${REPRO_SPLIT_PER_ABI:-0}" = "1" ]; then
-  echo "Building with --split-per-abi (hard mode)"
-  flutter build apk --release --split-per-abi --no-pub
-  APK_PATH="$(ls -1 build/app/outputs/flutter-apk/*arm64-v8a*release*.apk | head -n 1)"
-  OUT_APK="${OUT_DIR}/app-${SOURCE_DATE_EPOCH}-${TAG}-arm64-v8a-release.apk"
+TARGET_PLATFORM="${REPRO_TARGET_PLATFORM:-android-arm64}"
+ABI_NAME="${REPRO_ABI:-arm64-v8a}"
+
+if [ "${REPRO_SPLIT_PER_ABI:-1}" = "1" ]; then
+  echo "Building with --split-per-abi (arm64 default)"
+  if [ -n "${TARGET_PLATFORM}" ]; then
+    flutter build apk --release --split-per-abi --target-platform "${TARGET_PLATFORM}" --no-pub
+  else
+    flutter build apk --release --split-per-abi --no-pub
+  fi
+  APK_PATH="$(ls -1 build/app/outputs/flutter-apk/*"${ABI_NAME}"*release*.apk | head -n 1)"
+  OUT_APK="${OUT_DIR}/app-${SOURCE_DATE_EPOCH}-${TAG}-${ABI_NAME}-release.apk"
 else
   echo "Building single APK (default)"
-  flutter build apk --release --no-pub
+  if [ -n "${TARGET_PLATFORM}" ]; then
+    flutter build apk --release --target-platform "${TARGET_PLATFORM}" --no-pub
+  else
+    flutter build apk --release --no-pub
+  fi
   APK_PATH="$(ls -1 build/app/outputs/flutter-apk/*release*.apk | head -n 1)"
   OUT_APK="${OUT_DIR}/app-${SOURCE_DATE_EPOCH}-${TAG}-release.apk"
 fi
