@@ -1,9 +1,9 @@
 name: Reproducible APK Proof
 
 on:
-  push:
-    branches:
-      - reproducible-build
+  # push:
+  #   branches:
+  #     - reproducible-build
   workflow_dispatch:
 
 jobs:
