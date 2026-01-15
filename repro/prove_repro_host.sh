@@ -8,8 +8,9 @@ set -euo pipefail
 #   bash repro/prove_repro_host.sh
 #
 # Options:
-#   REPRO_SPLIT_PER_ABI=1   Build with --split-per-abi (compares arm64-v8a by default)
-#   REPRO_ABI=arm64-v8a     ABI to compare when split-per-abi is enabled
+#   REPRO_SPLIT_PER_ABI=1   Build with --split-per-abi (default)
+#   REPRO_ABI=arm64-v8a     ABI to compare when split-per-abi is enabled (default)
+#   REPRO_TARGET_PLATFORM=android-arm64  Limit build to a single target platform (default)
 #   REPRO_OUT_DIR=.repro_out/host  Output directory (default)
 #   REPRO_CLEAN_SDK=1       Clear Flutter SDK caches + precache before building (slow)
 #   REPRO_KEEP_WORK=1       Keep intermediate extracted dirs on failure (default: 0)
@@ -20,8 +21,9 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REPRO_OUT_DIR="${REPRO_OUT_DIR:-${ROOT_DIR}/.repro_out/host}"
 REPRO_ABI="${REPRO_ABI:-arm64-v8a}"
 REPRO_KEEP_WORK="${REPRO_KEEP_WORK:-0}"
-REPRO_SPLIT_PER_ABI="${REPRO_SPLIT_PER_ABI:-0}"
+REPRO_SPLIT_PER_ABI="${REPRO_SPLIT_PER_ABI:-1}"
 REPRO_CLEAN_SDK="${REPRO_CLEAN_SDK:-0}"
+REPRO_TARGET_PLATFORM="${REPRO_TARGET_PLATFORM:-android-arm64}"
 
 _step_n=0
 step() {
@@ -92,6 +94,7 @@ build_once() {
   local out_dir="$2"
   local split="$3"
   local abi="$4"
+  local target_platform="$5"
 
   step "Build ${tag} (clean)"
 
@@ -102,10 +105,18 @@ build_once() {
 
   if [ "${split}" = "1" ]; then
     echo "Building with --split-per-abi (ABI to compare: ${abi})" >&2
-    run_checked fvm flutter build apk --release --split-per-abi
+    if [ -n "${target_platform}" ]; then
+      run_checked fvm flutter build apk --release --split-per-abi --target-platform "${target_platform}"
+    else
+      run_checked fvm flutter build apk --release --split-per-abi
+    fi
   else
     echo "Building single APK (default)" >&2
-    run_checked fvm flutter build apk --release
+    if [ -n "${target_platform}" ]; then
+      run_checked fvm flutter build apk --release --target-platform "${target_platform}"
+    else
+      run_checked fvm flutter build apk --release
+    fi
   fi
 
   local apk_path
@@ -153,6 +164,9 @@ main() {
   if [ "${REPRO_SPLIT_PER_ABI}" = "1" ]; then
     echo "ABI: ${REPRO_ABI}" >&2
   fi
+  if [ -n "${REPRO_TARGET_PLATFORM}" ]; then
+    echo "target-platform: ${REPRO_TARGET_PLATFORM}" >&2
+  fi
   echo "clean-sdk: ${REPRO_CLEAN_SDK}" >&2
 
   echo >&2
@@ -197,12 +211,12 @@ main() {
 
   local apkA apkB
   BUILD_RESULT_APK=""
-  build_once "A" "${REPRO_OUT_DIR}" "${REPRO_SPLIT_PER_ABI}" "${REPRO_ABI}"
+  build_once "A" "${REPRO_OUT_DIR}" "${REPRO_SPLIT_PER_ABI}" "${REPRO_ABI}" "${REPRO_TARGET_PLATFORM}"
   apkA="${BUILD_RESULT_APK}"
   [ -n "${apkA}" ] || die "Internal error: build A did not set BUILD_RESULT_APK"
 
   BUILD_RESULT_APK=""
-  build_once "B" "${REPRO_OUT_DIR}" "${REPRO_SPLIT_PER_ABI}" "${REPRO_ABI}"
+  build_once "B" "${REPRO_OUT_DIR}" "${REPRO_SPLIT_PER_ABI}" "${REPRO_ABI}" "${REPRO_TARGET_PLATFORM}"
   apkB="${BUILD_RESULT_APK}"
   [ -n "${apkB}" ] || die "Internal error: build B did not set BUILD_RESULT_APK"
 
