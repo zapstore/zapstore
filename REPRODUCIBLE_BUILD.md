@@ -79,7 +79,7 @@ Notes:
 - Builds happen in **two isolated linux/amd64 containers** (A and B) with **pinned** Flutter + Android cmdline-tools downloads (SHA-256 verified).
 - On Apple Silicon, `linux/amd64` runs under emulation and may be unstable for Flutter/Gradle builds. If you hit Dart VM crashes like `Unexpected EINTR errno`, run this script on an **x86_64 Linux** machine or CI runner (this is the strongest proof anyway).
 - The script copies the repo into the container filesystem before building (avoids macOS bind-mount quirks).
-- Default builds a **single** `release` APK (no split). Use `REPRO_SPLIT_PER_ABI=1` for the split-per-ABI hard mode.
+- Default builds **arm64-only** using `--split-per-abi` + `--target-platform android-arm64`. Set `REPRO_SPLIT_PER_ABI=0` if you want a single non-split APK, or override `REPRO_TARGET_PLATFORM`/`REPRO_ABI` if you need a different target.
 - Outputs are written to `.repro_out/` (ignored by git).
 
 ### Expected result (success)
@@ -155,6 +155,7 @@ Notes:
 - Builds happen twice in the **same working directory**, with `build/` and `.dart_tool/` wiped between runs.
 - Outputs are written to `.repro_out/host/` and compared via SHA-256.
 - If hashes differ, the script prints a short unzip diff and (if `diffoscope` is installed) writes a full report to `.repro_out/host/diffoscope.txt`.
+- By default it builds **arm64-only** using `--split-per-abi` + `--target-platform android-arm64`. Override with `REPRO_SPLIT_PER_ABI=0` or change `REPRO_TARGET_PLATFORM`/`REPRO_ABI` if needed.
 - If you see `Can't load Kernel binary: Invalid SDK hash.`, you can re-run with `REPRO_CLEAN_SDK=1` to clear Flutter SDK caches and force a fresh precache (slower, but typically removes the warning).
 
 ## Notes for F-Droid
