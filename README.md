@@ -7,9 +7,19 @@ The open app store powered by your social network
 ## Build from source
 
 ```bash
+fvm install
+fvm flutter pub get
+fvm flutter build apk --split-per-abi --debug
+```
+
+Without FVM:
+
+```bash
 flutter pub get
 flutter build apk --split-per-abi --debug
 ```
+
+Reproducible builds: see [`REPRODUCIBLE_BUILD.md`](./REPRODUCIBLE_BUILD.md).
 
 APK will be available at `build/app/outputs/flutter-apk`.
 
