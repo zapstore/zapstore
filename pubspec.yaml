@@ -83,10 +83,6 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
-  mcp_dart: ^0.5.3
-  bm25: ^2.2.3
-  archive: ^4.0.7
-  args: ^2.7.0
   flutter_launcher_icons: ^0.14.4
 
 # For information on the generic Dart part of this file, see the
