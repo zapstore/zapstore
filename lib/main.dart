@@ -201,7 +201,7 @@ class ZapstoreHome extends StatelessWidget {
 }
 
 final appInitializationProvider = FutureProvider<void>((ref) async {
-  final dir = await getApplicationDocumentsDirectory();
+  final dir = await getApplicationSupportDirectory();
   final dbPath = path.join(dir.path, 'zapstore.db');
 
   // Clear storage if requested from a clear all operation

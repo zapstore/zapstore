@@ -1,7 +1,9 @@
-import 'dart:io' show Directory, Platform;
+import 'dart:io' show Directory, File, Platform;
+import 'dart:ui' as ui;
 
-import 'package:background_downloader/background_downloader.dart';
+import 'package:background_downloader/background_downloader.dart' hide Request;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter/widgets.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:path/path.dart' as path;
@@ -9,7 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:workmanager/workmanager.dart';
-import 'package:zapstore/services/package_manager/android_package_manager.dart';
+import 'package:zapstore/services/package_manager/background_package_manager.dart';
 import 'package:zapstore/services/package_manager/dummy_package_manager.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/utils/extensions.dart';
@@ -42,6 +44,8 @@ const kAppCatalogRelaysKey = 'appCatalogRelays';
 /// This MUST be a top-level function (not a class method).
 @pragma('vm:entry-point')
 void callbackDispatcher() {
+  WidgetsFlutterBinding.ensureInitialized();
+  ui.DartPluginRegistrant.ensureInitialized();
   Workmanager().executeTask((task, inputData) async {
     switch (task) {
       case kBackgroundUpdateTaskName:
@@ -81,11 +85,8 @@ Future<bool> _performWeeklyCleanup() async {
         try {
           // Delete the file if it exists
           final filePath = await task.filePath();
-          final file = Directory(filePath).parent.listSync().firstWhere(
-            (f) => f.path.endsWith(task.filename),
-            orElse: () => Directory(''),
-          );
-          if (file.path.isNotEmpty) {
+          final file = File(filePath);
+          if (await file.exists()) {
             await file.delete();
           }
         } catch (_) {}
@@ -105,14 +106,14 @@ Future<bool> _performWeeklyCleanup() async {
       );
 
       if (await downloadDir.exists()) {
-        final files = downloadDir.listSync();
+        final entities = downloadDir.listSync();
         final cutoff = DateTime.now().subtract(_staleDownloadThreshold);
 
-        for (final file in files) {
-          if (file is! Directory) {
-            final stat = await file.stat();
+        for (final entity in entities) {
+          if (entity is File) {
+            final stat = await entity.stat();
             if (stat.modified.isBefore(cutoff)) {
-              await file.delete();
+              await entity.delete();
             }
           }
         }
@@ -145,7 +146,7 @@ Future<bool> _checkForUpdatesInBackground(Set<String>? appCatalogRelays) async {
         storageNotifierProvider.overrideWith(PurplebaseStorageNotifier.new),
         packageManagerProvider.overrideWith(
           (ref) => Platform.isAndroid
-              ? AndroidPackageManager(ref)
+              ? BackgroundPackageManager(ref)
               : DummyPackageManager(ref),
         ),
       ],
@@ -153,7 +154,7 @@ Future<bool> _checkForUpdatesInBackground(Set<String>? appCatalogRelays) async {
 
     try {
       // Initialize Purplebase with same DB path as main app
-      final dir = await getApplicationDocumentsDirectory();
+      final dir = await getApplicationSupportDirectory();
       final dbPath = path.join(dir.path, 'zapstore.db');
 
       await container.read(
@@ -188,18 +189,40 @@ Future<bool> _checkForUpdatesInBackground(Set<String>? appCatalogRelays) async {
         source: const RemoteSource(relays: 'AppCatalog', stream: false),
       );
 
-      // Load releases for all apps in a single query
+      // Load releases and their metadata/assets (required for hasUpdate)
       if (apps.isNotEmpty) {
-        final addressableIds = apps
-            .map((app) => app.event.addressableId)
-            .toSet();
-        await storage.query(
-          RequestFilter<Release>(tags: {'#a': addressableIds}).toRequest(),
-          source: const LocalAndRemoteSource(
-            relays: 'AppCatalog',
-            stream: false,
-          ),
-        );
+        final releaseFilters = apps
+            .map((app) => app.latestRelease.req?.filters.firstOrNull)
+            .nonNulls
+            .toList();
+        if (releaseFilters.isNotEmpty) {
+          final List<Release> releases = await storage.query(
+            Request<Release>(releaseFilters),
+            source: const RemoteSource(relays: 'AppCatalog', stream: false),
+          );
+
+          final metadataFilters = releases
+              .map((r) => r.latestMetadata.req?.filters.firstOrNull)
+              .nonNulls
+              .toList();
+          if (metadataFilters.isNotEmpty) {
+            await storage.query(
+              Request<FileMetadata>(metadataFilters),
+              source: const RemoteSource(relays: 'AppCatalog', stream: false),
+            );
+          }
+
+          final assetFilters = releases
+              .map((r) => r.latestAsset.req?.filters.firstOrNull)
+              .nonNulls
+              .toList();
+          if (assetFilters.isNotEmpty) {
+            await storage.query(
+              Request<SoftwareAsset>(assetFilters),
+              source: const RemoteSource(relays: 'AppCatalog', stream: false),
+            );
+          }
+        }
       }
 
       // Re-query apps from local to ensure relationships are loaded
@@ -255,6 +278,7 @@ Future<void> _showUpdateNotification(
     android: initializationSettingsAndroid,
   );
   await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+  await _ensureUpdateNotificationChannel(flutterLocalNotificationsPlugin);
 
   // Build notification content
   final title = updateCount == 1
@@ -366,23 +390,7 @@ class BackgroundUpdateService {
         // Navigation is handled by the app's normal launch flow
       },
     );
-
-    // Create notification channel on Android
-    final androidPlugin = flutterLocalNotificationsPlugin
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >();
-
-    if (androidPlugin != null) {
-      await androidPlugin.createNotificationChannel(
-        const AndroidNotificationChannel(
-          kUpdateNotificationChannelId,
-          kUpdateNotificationChannelName,
-          description: kUpdateNotificationChannelDescription,
-          importance: Importance.defaultImportance,
-        ),
-      );
-    }
+    await _ensureUpdateNotificationChannel(flutterLocalNotificationsPlugin);
   }
 
   /// Cancel background update checks
@@ -401,6 +409,26 @@ class BackgroundUpdateService {
       kBackgroundUpdateTaskName,
       constraints: Constraints(networkType: NetworkType.connected),
       inputData: {kAppCatalogRelaysKey: appCatalogRelays.toList()},
+    );
+  }
+}
+
+Future<void> _ensureUpdateNotificationChannel(
+  FlutterLocalNotificationsPlugin plugin,
+) async {
+  final androidPlugin = plugin
+      .resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin
+      >();
+
+  if (androidPlugin != null) {
+    await androidPlugin.createNotificationChannel(
+      const AndroidNotificationChannel(
+        kUpdateNotificationChannelId,
+        kUpdateNotificationChannelName,
+        description: kUpdateNotificationChannelDescription,
+        importance: Importance.defaultImportance,
+      ),
     );
   }
 }

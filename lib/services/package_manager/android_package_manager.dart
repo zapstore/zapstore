@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:models/models.dart';
+import 'package:zapstore/services/package_manager/installed_packages_snapshot.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 
 /// Install status values from native side.
@@ -587,6 +588,7 @@ final class AndroidPackageManager extends PackageManager {
       }
 
       state = state.copyWith(installed: {...packages, ...preserved});
+      await InstalledPackagesSnapshot.save(state.installed);
 
       // Clear operations for apps where the installed version matches the target version
       // This catches installs that succeeded but we missed the event
