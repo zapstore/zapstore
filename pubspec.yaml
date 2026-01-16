@@ -17,6 +17,8 @@ dependencies:
   flutter:
     sdk: flutter
 
+  bip340: ^0.3.0
+  crypto: ^3.0.0
   flutter_riverpod: ^2.6.1
   flutter_hooks: ^0.21.2
   path_provider: ^2.1.5

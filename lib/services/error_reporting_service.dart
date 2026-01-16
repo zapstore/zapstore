@@ -3,9 +3,12 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
+import 'package:zapstore/constants/app_constants.dart';
+import 'package:zapstore/services/crash_report_cache_service.dart';
+import 'package:zapstore/services/nip17_gift_wrap_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 
-/// Service for reporting errors via NIP-44 encrypted DMs to Zapstore team.
+/// Service for reporting errors via NIP-17 gift-wrapped messages to Zapstore team.
 ///
 /// Generates an ephemeral signer per report so errors can be sent even when
 /// the user is not signed in.
@@ -99,6 +102,37 @@ class ErrorReportingService {
     }
 
     return buffer.toString();
+  }
+
+  /// Send cached crash reports with user consent.
+  ///
+  /// Uses NIP-17 gift wrap for enhanced privacy:
+  /// - Ephemeral keys hide sender identity on relays
+  /// - NIP-44 encryption protects message content
+  /// - NIP-40 expiration tags ensure auto-deletion after 30 days
+  ///
+  /// [userComment] is an optional message from the user describing what happened.
+  Future<void> sendCachedCrashReports(
+    List<CrashReport> crashes, {
+    String? userComment,
+  }) async {
+    final giftWrapService = ref.read(nip17GiftWrapServiceProvider);
+
+    for (final crash in crashes) {
+      try {
+        // Format crash report with optional user comment
+        final report = crash.toReportString(userComment: userComment);
+
+        // Send using NIP-17 gift wrap with 30-day expiration
+        await giftWrapService.sendGiftWrappedMessage(
+          content: report,
+          recipientPubkey: kCrashReportPubkey,
+          expirationDays: 30,
+        );
+      } catch (e) {
+        // Silently fail individual reports - continue with others
+      }
+    }
   }
 }
 
