@@ -5,6 +5,7 @@ import 'package:models/models.dart';
 import 'package:zapstore/router.dart';
 import 'package:zapstore/services/updates_service.dart';
 import 'package:zapstore/widgets/common/badges.dart';
+import 'package:zapstore/widgets/crash_report_prompt_listener.dart';
 import 'package:zapstore/widgets/zapstore_update_prompt_listener.dart';
 import '../widgets/common/profile_avatar.dart';
 import '../theme.dart';
@@ -76,6 +77,7 @@ class MainScaffold extends StatelessWidget {
             },
           ),
           const ZapstoreUpdatePromptListener(),
+          const CrashReportPromptListener(),
         ],
       ),
     );
