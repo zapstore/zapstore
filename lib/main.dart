@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -12,6 +13,7 @@ import 'package:purplebase/purplebase.dart';
 import 'package:amber_signer/amber_signer.dart';
 import 'package:zapstore/services/app_restart_service.dart';
 import 'package:zapstore/services/background_update_service.dart';
+import 'package:zapstore/services/crash_report_cache_service.dart';
 import 'package:zapstore/router.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/theme.dart';
@@ -53,15 +55,26 @@ void main() {
   };
 }
 
-/// Global error handler that reports errors via NIP-44 encrypted DMs
+/// Global error handler that caches crashes for user-consented reporting
 void _errorHandler(Object exception, StackTrace? stack) {
-  // Report error asynchronously (fire and forget)
-  // TODO: Disabled until careful review
-  // unawaited(
-  //   _providerContainer
-  //       .read(errorReportingServiceProvider)
-  //       .reportError(exception, stack),
-  // );
+  // TODO: Uncomment before release - disabled for testing
+  // if (kDebugMode) return;
+
+  // Try to get app version from package manager
+  String? appVersion;
+  try {
+    final pmState = _providerContainer.read(packageManagerProvider);
+    appVersion = pmState.installed[kZapstoreAppIdentifier]?.version;
+  } catch (_) {
+    // Package manager may not be initialized yet
+  }
+
+  // Cache crash for later consent prompt (fire and forget)
+  unawaited(
+    _providerContainer
+        .read(crashReportCacheServiceProvider)
+        .cacheCrash(CrashReport.fromError(exception, stack, appVersion: appVersion)),
+  );
 }
 
 class ZapstoreApp extends HookConsumerWidget {
