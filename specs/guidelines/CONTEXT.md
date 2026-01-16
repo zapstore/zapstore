@@ -3,7 +3,7 @@
 This document provides **orientation only**.
 It does **not** define rules, behavior, or constraints.
 
-If anything in this file conflicts with files under `specs/00_foundation/`,
+If anything in this file conflicts with files under `specs/guidelines/`,
 this file is wrong.
 
 ---
@@ -14,6 +14,7 @@ Zapstore is a Flutter-based, local-first application store built on top of
 the Nostr protocol and Bitcoin Lightning payments.
 
 It allows users to:
+
 - discover apps published via Nostr,
 - verify and install applications safely,
 - and directly support developers through zaps.
@@ -39,10 +40,12 @@ growth, or engagement metrics.
 This repository is organized into three main packages:
 
 - **zapstore**
+
   - Flutter UI and application orchestration
   - Navigation, presentation, and user interaction
 
 - **purplebase**
+
   - Local-first storage, indexing, and relay synchronization
   - Background work and isolate execution
 
