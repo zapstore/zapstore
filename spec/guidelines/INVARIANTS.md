@@ -44,3 +44,29 @@ If any invariant is violated, the implementation is incorrect.
 
 - All user-visible processes must have explicit states (loading, empty, success, error).
 - Silent failures are unacceptable.
+
+
+## Reproducible Android builds (Invariant)
+
+Zapstore Android release artifacts MUST be bit-for-bit reproducible from the same git commit.
+
+### Toolchain inputs MUST be pinned
+- Flutter SDK version MUST be pinned via FVM (repo-controlled).
+- Gradle wrapper / Android Gradle Plugin versions MUST remain pinned.
+- Android compileSdk / buildTools / NDK versions MUST remain pinned in Gradle configuration.
+
+
+### Determinism-critical build configuration MUST remain intact
+
+- Java and Kotlin compilation MUST target Java 17.
+- Gradle archive tasks MUST use reproducible file order and MUST NOT preserve file timestamps.
+- Android release builds intended for verification MUST remain unsigned by default.
+- The Android build MUST avoid experimental or unstable DSL modes that affect Flutter compatibility or output stability.
+
+### Build outputs MUST be deterministic
+- Builds MUST NOT depend on wall-clock time (honor `SOURCE_DATE_EPOCH` where applicable).
+- Builds MUST NOT depend on host-specific paths or machine state (no absolute-path embedding).
+
+### MUST NOT change (without explicit discussion)
+- Do not introduce build flags/plugins that make outputs nondeterministic (timestamps, file order, random seeds).
+- Do not modify the reproducible-build path to include signing or environment-specific steps.
