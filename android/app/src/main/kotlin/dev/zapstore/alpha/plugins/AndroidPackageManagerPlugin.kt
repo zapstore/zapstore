@@ -25,6 +25,8 @@ import io.flutter.plugin.common.MethodChannel.Result
 import java.io.File
 import java.io.FileInputStream
 import java.security.MessageDigest
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 private const val TAG = "AndroidPackageManager"
 
@@ -646,7 +648,19 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
                 }
             }
             
-            // Step 6: Commit the session
+            // Step 6: Emit STARTED *before* commit to avoid race with SUCCESS broadcast
+            // For silent installs, the SUCCESS broadcast can arrive immediately after commit.
+            // We use a CountDownLatch to ensure STARTED is processed on main thread before
+            // we call commit(), which could trigger an immediate broadcast.
+            val startedLatch = CountDownLatch(1)
+            mainHandler.post {
+                emitInstallStatus(packageName, InstallStatus.STARTED)
+                startedLatch.countDown()
+            }
+            // Wait for STARTED to be emitted (timeout prevents deadlock if main thread is blocked)
+            startedLatch.await(1, TimeUnit.SECONDS)
+            
+            // Step 7: Commit the session - this triggers the install broadcast
             val intent = Intent(context.applicationContext, InstallResultReceiver::class.java).apply {
                 putExtra("sessionId", sessionId)
                 putExtra("packageName", packageName)
@@ -660,10 +674,6 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
             session.commit(pendingIntent.intentSender)
             session.close()
             session = null  // Prevent double-close in finally
-            
-            mainHandler.post {
-                emitInstallStatus(packageName, InstallStatus.STARTED)
-            }
             
         } catch (e: SecurityException) {
             // Clean up session on error
