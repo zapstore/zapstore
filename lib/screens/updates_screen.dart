@@ -61,7 +61,7 @@ class _ConnectionStatusIndicator extends ConsumerWidget {
 
     final statusColor = hasActiveConnection ? Colors.green : Colors.grey;
     final statusText = hasActiveConnection
-        ? 'Connected · Checking for updates'
+        ? 'Connected · Streaming updates'
         : 'Offline';
 
     return Container(
