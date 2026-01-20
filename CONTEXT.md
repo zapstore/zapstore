@@ -53,18 +53,9 @@ If a guideline seems wrong or incomplete, report it as a Spec Issue.
 | `test/**` | Shared | Yes |
 | `CONTEXT.md` | Human | No |
 
-## Key Dependencies
-
-- **models** / **purplebase**: Nostr SDK (local-first storage, relay sync, domain models).
-  See package README in pub cache. Basic usage patterns in `spec/guidelines/ARCHITECTURE.md`.
-- **amber_signer**: NIP-55 Android signer integration.
-- **background_downloader**: Download management with pause/resume.
-
 ## Working Rules
 
 - Prefer small, localized changes. Avoid unrelated refactors.
 - After dependency changes, run: `fvm flutter pub get`
 - Fix any analyze/lint errors introduced by your changes.
-- Do not use polling or artificial `Future.delayed`; await Futures/Streams correctly.
-- Keep `lib/widgets/common` generic and reusable.
 - Assume Android as default target unless instructed otherwise.
