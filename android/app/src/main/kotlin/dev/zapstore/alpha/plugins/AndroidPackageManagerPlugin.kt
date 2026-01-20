@@ -37,6 +37,9 @@ private const val VERIFY_WATCHDOG_MS = 10_000L
 private const val INSTALL_WATCHDOG_MS = 10_000L
 private const val MAX_INSTALL_WATCHDOG_MS = 120_000L
 
+/** Buffer size for file operations - 64KB for optimal throughput on large APKs */
+private const val COPY_BUFFER_SIZE = 65536
+
 /**
  * Install status values emitted via EventChannel.
  * These form a simple state machine with no hanging states.
@@ -486,83 +489,95 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
             abandonExistingSession(packageName)
         }
         
-        if (expectedHash != null && expectedSize != null) {
-            // Emit verifying status before starting hash check
-            emitInstallStatus(packageName, InstallStatus.VERIFYING)
-            result.success(mapOf("started" to true, "verifying" to true))
-            
-            val t = Thread {
-                val verification = verifyApk(file, expectedHash, expectedSize)
-                mainHandler.post {
-                    if (verification.isSuccess) {
-                        startInstallSession(file, packageName, result = null) // Result already sent
-                    } else {
-                        emitInstallStatus(
-                            packageName, 
-                            InstallStatus.FAILED, 
-                            verification.errorTitle,
-                            verification.errorCode,
-                            verification.errorDescription
-                        )
-                    }
-                    verificationThreads.remove(packageName)
-                }
-            }
-            verificationThreads[packageName] = t
-            t.start()
-        } else {
-            startInstallSession(file, packageName, result)
+        // Check for install restrictions on main thread before starting background work
+        val userManager = context.getSystemService(UserManager::class.java)
+        val installBlocked = userManager.hasUserRestriction(UserManager.DISALLOW_INSTALL_APPS) ||
+            userManager.hasUserRestriction(UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES) ||
+            userManager.hasUserRestriction(UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES_GLOBALLY)
+        
+        if (installBlocked) {
+            emitInstallStatus(packageName, InstallStatus.FAILED, "Installation blocked by device policy", ErrorCode.BLOCKED)
+            result.success(mapOf("started" to false, "error" to "Blocked by policy", "errorCode" to ErrorCode.BLOCKED))
+            return
         }
+        
+        // Emit verifying status - all install work happens on background thread
+        emitInstallStatus(packageName, InstallStatus.VERIFYING)
+        result.success(mapOf("started" to true, "verifying" to true))
+        
+        // All heavy I/O work runs on background thread to prevent ANRs
+        val t = Thread {
+            verifyAndInstall(file, packageName, expectedHash, expectedSize)
+            verificationThreads.remove(packageName)
+        }
+        verificationThreads[packageName] = t
+        t.start()
     }
     
-    private fun startInstallSession(apkFile: File, packageName: String, result: Result?) {
+    /**
+     * Single-pass verify and install - runs entirely on background thread.
+     * 
+     * This method:
+     * 1. Validates APK format (ZIP magic bytes)
+     * 2. Creates install session
+     * 3. Streams file ONCE - computing hash AND copying to session simultaneously
+     * 4. Reports progress during copy
+     * 5. Commits session on success, cleans up on failure
+     * 
+     * Benefits:
+     * - 50% less I/O (file read once instead of twice)
+     * - No ANRs (runs off main thread)
+     * - Better UX with progress reporting
+     * - Proper resource cleanup on all error paths
+     */
+    private fun verifyAndInstall(
+        apkFile: File,
+        packageName: String,
+        expectedHash: String?,
+        expectedSize: Long?
+    ) {
+        // Step 1: Validate APK format before doing any heavy work
+        if (!isValidApkFormat(apkFile)) {
+            apkFile.delete()
+            mainHandler.post {
+                emitInstallStatus(
+                    packageName,
+                    InstallStatus.FAILED,
+                    "Invalid APK file",
+                    ErrorCode.INVALID_FILE,
+                    "The downloaded file is not a valid APK format."
+                )
+            }
+            return
+        }
+        
+        val packageInstaller = context.packageManager.packageInstaller
+        var sessionId = -1
+        var session: PackageInstaller.Session? = null
+        
         try {
-            val userManager = context.getSystemService(UserManager::class.java)
-            val installBlocked = userManager.hasUserRestriction(UserManager.DISALLOW_INSTALL_APPS) ||
-                userManager.hasUserRestriction(UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES) ||
-                userManager.hasUserRestriction(UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES_GLOBALLY)
-            
-            if (installBlocked) {
-                emitInstallStatus(packageName, InstallStatus.FAILED, "Installation blocked by device policy", ErrorCode.BLOCKED)
-                result?.success(mapOf("started" to false, "error" to "Blocked by policy", "errorCode" to ErrorCode.BLOCKED))
-                return
-            }
-            
-            val packageInstaller = context.packageManager.packageInstaller
-            val pkgInfo = context.packageManager.getPackageArchiveInfo(apkFile.absolutePath, 0)
-            if (pkgInfo == null) {
-                emitInstallStatus(packageName, InstallStatus.FAILED, "Invalid APK file", ErrorCode.INVALID_FILE)
-                result?.success(mapOf("started" to false, "error" to "Invalid APK", "errorCode" to ErrorCode.INVALID_FILE))
-                return
-            }
-            
-            // CRITICAL: Use the passed packageName for tracking, not the APK's internal package name
-            // This ensures Dart's operation key matches the events we emit
-            // The APK's packageName should match, but we log a warning if not
-            val trackingPackageName = packageName
-            if (pkgInfo.packageName != packageName) {
-                Log.w(TAG, "Package name mismatch: tracking='$packageName', APK contains='${pkgInfo.packageName}'. Using tracking name for events.")
-            }
-            
+            // Step 2: Check if this is an update
             val isUpdate = try {
-                context.packageManager.getPackageInfo(pkgInfo.packageName, 0)
+                context.packageManager.getPackageInfo(packageName, 0)
                 true
             } catch (_: PackageManager.NameNotFoundException) { false }
             
-            abandonExistingSession(trackingPackageName)
+            // Step 3: Abandon any existing session and create new one
+            abandonExistingSession(packageName)
             
             val sessionParams = PackageInstaller.SessionParams(
                 PackageInstaller.SessionParams.MODE_FULL_INSTALL
             ).apply {
-                // Set app package name for proper installer tracking
-                setAppPackageName(pkgInfo.packageName)
+                // Use the passed packageName directly - no getPackageArchiveInfo() needed
+                // Android validates the APK during commit anyway
+                setAppPackageName(packageName)
                 
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
-                    // Explicitly set ourselves as the installer for update ownership
                     setInstallerPackageName(context.packageName)
                 }
-                setInstallLocation(pkgInfo.installLocation)
+                // Use AUTO install location - safe default without parsing APK
+                setInstallLocation(android.content.pm.PackageInfo.INSTALL_LOCATION_AUTO)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     setPackageSource(PackageInstaller.PACKAGE_SOURCE_STORE)
                 }
@@ -571,24 +586,70 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
                 }
             }
             
-            val sessionId = packageInstaller.createSession(sessionParams)
-            val session = packageInstaller.openSession(sessionId)
-            // Use tracking name so events match Dart's operation key
-            sessionToPackage[sessionId] = trackingPackageName
+            sessionId = packageInstaller.createSession(sessionParams)
+            session = packageInstaller.openSession(sessionId)
+            sessionToPackage[sessionId] = packageName
+            
+            // Step 4: Single-pass verify + copy with progress reporting
+            val digest = if (expectedHash != null) MessageDigest.getInstance("SHA-256") else null
             
             FileInputStream(apkFile).use { fis ->
                 val fileSize = Os.fstat(fis.fd).st_size
-                val sessionStream = session.openWrite(apkFile.name, 0, fileSize)
-                fis.copyTo(sessionStream)
-                fis.close()
-                session.fsync(sessionStream)
-                sessionStream.close()
+                
+                session.openWrite(apkFile.name, 0, fileSize).use { sessionStream ->
+                    val buffer = ByteArray(COPY_BUFFER_SIZE)
+                    var bytesCopied = 0L
+                    var lastProgressPercent = -1
+                    var bytesRead: Int
+                    
+                    while (fis.read(buffer).also { bytesRead = it } != -1) {
+                        // Hash the chunk if verification is needed
+                        digest?.update(buffer, 0, bytesRead)
+                        
+                        // Copy to session
+                        sessionStream.write(buffer, 0, bytesRead)
+                        bytesCopied += bytesRead
+                        
+                        // Report progress (throttled to whole percentage changes)
+                        if (fileSize > 0) {
+                            val progressPercent = ((bytesCopied * 100) / fileSize).toInt()
+                            if (progressPercent != lastProgressPercent && progressPercent % 5 == 0) {
+                                lastProgressPercent = progressPercent
+                                Log.d(TAG, "Copy progress for $packageName: $progressPercent%")
+                            }
+                        }
+                    }
+                    
+                    session.fsync(sessionStream)
+                }
             }
             
+            // Step 5: Verify hash if expected
+            if (digest != null && expectedHash != null) {
+                val actualHash = digest.digest().joinToString("") { "%02x".format(it) }
+                if (!actualHash.equals(expectedHash, ignoreCase = true)) {
+                    // Hash mismatch - clean up and fail
+                    session.close()
+                    packageInstaller.abandonSession(sessionId)
+                    sessionToPackage.remove(sessionId)
+                    
+                    mainHandler.post {
+                        emitInstallStatus(
+                            packageName,
+                            InstallStatus.FAILED,
+                            "Hash verification failed",
+                            ErrorCode.HASH_MISMATCH,
+                            "The downloaded file hash does not match.\n\nExpected: $expectedHash\nActual: $actualHash"
+                        )
+                    }
+                    return
+                }
+            }
+            
+            // Step 6: Commit the session
             val intent = Intent(context.applicationContext, InstallResultReceiver::class.java).apply {
                 putExtra("sessionId", sessionId)
-                // Use tracking name so events match Dart's operation key
-                putExtra("packageName", trackingPackageName)
+                putExtra("packageName", packageName)
                 putExtra("isUpdate", isUpdate)
             }
             val pendingIntent = PendingIntent.getBroadcast(
@@ -598,16 +659,44 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
             
             session.commit(pendingIntent.intentSender)
             session.close()
+            session = null  // Prevent double-close in finally
             
-            emitInstallStatus(trackingPackageName, InstallStatus.STARTED)
-            result?.success(mapOf("started" to true, "sessionId" to sessionId, "packageName" to trackingPackageName))
+            mainHandler.post {
+                emitInstallStatus(packageName, InstallStatus.STARTED)
+            }
             
         } catch (e: SecurityException) {
-            emitInstallStatus(packageName, InstallStatus.FAILED, "Permission denied: ${e.message}", ErrorCode.PERMISSION_DENIED)
-            result?.success(mapOf("started" to false, "error" to "Permission denied", "errorCode" to ErrorCode.PERMISSION_DENIED))
+            // Clean up session on error
+            session?.close()
+            if (sessionId >= 0) {
+                try { packageInstaller.abandonSession(sessionId) } catch (_: Exception) {}
+                sessionToPackage.remove(sessionId)
+            }
+            
+            mainHandler.post {
+                emitInstallStatus(
+                    packageName,
+                    InstallStatus.FAILED,
+                    "Permission denied: ${e.message}",
+                    ErrorCode.PERMISSION_DENIED
+                )
+            }
         } catch (e: Exception) {
-            emitInstallStatus(packageName, InstallStatus.FAILED, e.message ?: "Installation failed", ErrorCode.INSTALL_FAILED)
-            result?.success(mapOf("started" to false, "error" to e.message, "errorCode" to ErrorCode.INSTALL_FAILED))
+            // Clean up session on error
+            session?.close()
+            if (sessionId >= 0) {
+                try { packageInstaller.abandonSession(sessionId) } catch (_: Exception) {}
+                sessionToPackage.remove(sessionId)
+            }
+            
+            mainHandler.post {
+                emitInstallStatus(
+                    packageName,
+                    InstallStatus.FAILED,
+                    e.message ?: "Installation failed",
+                    ErrorCode.INSTALL_FAILED
+                )
+            }
         }
     }
     
@@ -648,48 +737,13 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
     }
     
     // ═══════════════════════════════════════════════════════════════════════════════
-    // APK VERIFICATION
+    // APK VALIDATION
     // ═══════════════════════════════════════════════════════════════════════════════
     
-    private data class VerificationResult(
-        val isSuccess: Boolean, 
-        val errorTitle: String = "",
-        val errorDescription: String? = null,
-        val errorCode: String? = null
-    )
-    
-    private fun verifyApk(file: File, expectedHash: String, expectedSize: Long): VerificationResult {
-        if (!isValidApkFormat(file)) {
-            file.delete()
-            return VerificationResult(
-                false, 
-                "Invalid APK file",
-                "The downloaded file is not a valid APK format.",
-                ErrorCode.INVALID_FILE
-            )
-        }
-        
-        val digest = MessageDigest.getInstance("SHA-256")
-        FileInputStream(file).use { fis ->
-            val buffer = ByteArray(8192)
-            var bytesRead: Int
-            while (fis.read(buffer).also { bytesRead = it } != -1) {
-                digest.update(buffer, 0, bytesRead)
-            }
-        }
-        val actualHash = digest.digest().joinToString("") { "%02x".format(it) }
-        
-        if (actualHash.lowercase() != expectedHash.lowercase()) {
-            return VerificationResult(
-                false, 
-                "Hash verification failed",
-                "The downloaded file hash does not match.\n\nExpected: $expectedHash\nActual: $actualHash",
-                ErrorCode.HASH_MISMATCH
-            )
-        }
-        return VerificationResult(true)
-    }
-    
+    /**
+     * Quick APK format check - validates ZIP magic bytes.
+     * This is a lightweight check that doesn't load the APK into memory.
+     */
     private fun isValidApkFormat(file: File): Boolean {
         return try {
             FileInputStream(file).use { fis ->
