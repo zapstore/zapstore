@@ -7,19 +7,9 @@ The open app store powered by your social network
 ## Build from source
 
 ```bash
-fvm install
-fvm flutter pub get
-fvm flutter build apk --split-per-abi --debug
-```
-
-Without FVM:
-
-```bash
 flutter pub get
 flutter build apk --split-per-abi --debug
 ```
-
-Reproducible builds: see [`REPRODUCIBLE_BUILD.md`](./REPRODUCIBLE_BUILD.md).
 
 APK will be available at `build/app/outputs/flutter-apk`.
 
@@ -27,6 +17,14 @@ APK will be available at `build/app/outputs/flutter-apk`.
   <img src="./assets/images/badge.png"
   alt="Get it on ZapStore" width="200">
 </a>
+
+> **Note on releases and reproducibility**
+>
+> Zapstore Android release APKs are expected to be **bit-for-bit reproducible** from
+> the same git commit.
+>
+> Builds intended for verification (e.g. F-Droid or release auditing) must follow
+> the pinned toolchain and deterministic build invariants described in `INVARIANTS.md`.
 
 ## Contributing
 
