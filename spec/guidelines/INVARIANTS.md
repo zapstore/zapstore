@@ -46,7 +46,7 @@ If any invariant is violated, the implementation is incorrect.
 - Silent failures are unacceptable.
 
 
-## Reproducible Android builds (Invariant)
+## Reproducible Android builds
 
 Zapstore Android release artifacts MUST be bit-for-bit reproducible from the same git commit.
 
