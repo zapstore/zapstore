@@ -50,6 +50,7 @@ object InstallStatus {
     const val STARTED = "started"
     const val VERIFYING = "verifying"
     const val PENDING_USER_ACTION = "pendingUserAction"
+    const val INSTALLING = "installing"  // User accepted, system is now installing
     const val ALREADY_IN_PROGRESS = "alreadyInProgress"
     const val SUCCESS = "success"
     const val FAILED = "failed"
@@ -99,6 +100,15 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
 
     /** Track verification threads so we can "ping" and avoid false timeouts */
     private val verificationThreads = mutableMapOf<String, Thread>()
+
+    /** Track sessions that are pending user action (so we can detect when user accepts) */
+    private val sessionsPendingUserAction = mutableSetOf<Int>()
+
+    /** Track sessions that have emitted INSTALLING status (to avoid duplicates) */
+    private val sessionsInstalling = mutableSetOf<Int>()
+
+    /** Session callback to detect progress after user confirms install */
+    private var sessionCallback: PackageInstaller.SessionCallback? = null
     
     private var eventSink: EventChannel.EventSink? = null
     
@@ -140,6 +150,9 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
             if (status == InstallStatus.PENDING_USER_ACTION && confirmIntent != null) {
                 pendingUserActionIntents[pkg] = confirmIntent
                 
+                // Track this session as pending user action so SessionCallback can detect acceptance
+                instance?.sessionsPendingUserAction?.add(sessionId)
+                
                 // Auto-launch dialog if app is in foreground
                 if (isAppInForeground) {
                     launchConfirmDialog(pkg, confirmIntent)
@@ -150,6 +163,8 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
             if (status in listOf(InstallStatus.SUCCESS, InstallStatus.FAILED, InstallStatus.CANCELLED)) {
                 sessionToPackage.remove(sessionId)
                 pendingUserActionIntents.remove(pkg)
+                instance?.sessionsPendingUserAction?.remove(sessionId)
+                instance?.sessionsInstalling?.remove(sessionId)
                 
                 if (status != InstallStatus.SUCCESS) {
                     abandonSession(sessionId)
@@ -182,12 +197,27 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
         
         private fun launchConfirmDialog(packageName: String, intent: Intent) {
             val ctx = appContext ?: return
-            try {
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                ctx.startActivity(intent)
-                Log.d(TAG, "Launched confirmation dialog for $packageName")
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to launch confirmation dialog for $packageName", e)
+            val inst = instance
+            
+            // Post with delay to ensure the system is ready to show the dialog.
+            // Without this, the dialog may not appear when the broadcast arrives
+            // immediately after session.commit() while the app is still processing.
+            val launcher: () -> Unit = {
+                try {
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    ctx.startActivity(intent)
+                    Log.d(TAG, "Launched confirmation dialog for $packageName")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to launch confirmation dialog for $packageName", e)
+                }
+                Unit
+            }
+            
+            if (inst != null) {
+                inst.mainHandler.postDelayed(launcher, 100)
+            } else {
+                // Fallback if instance not available
+                Handler(Looper.getMainLooper()).postDelayed(launcher, 100)
             }
         }
         
@@ -223,6 +253,9 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
             ProcessLifecycleOwner.get().lifecycle.addObserver(this)
         }
         
+        // Register session callback to detect when user accepts install dialog
+        registerSessionCallback()
+        
         cleanupStaleSessions()
         Log.d(TAG, "AndroidPackageManagerPlugin initialized")
     }
@@ -231,6 +264,7 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
         mainHandler.post {
             ProcessLifecycleOwner.get().lifecycle.removeObserver(this)
         }
+        unregisterSessionCallback()
         methodChannel.setMethodCallHandler(null)
         eventChannel.setStreamHandler(null)
         eventSink = null
@@ -260,6 +294,57 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
         // App went to background
         isAppInForeground = false
         Log.d(TAG, "App backgrounded")
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // SESSION CALLBACK (Detect when user accepts install dialog)
+    // ═══════════════════════════════════════════════════════════════════════════════
+    
+    private fun registerSessionCallback() {
+        sessionCallback = object : PackageInstaller.SessionCallback() {
+            override fun onCreated(sessionId: Int) {}
+            override fun onBadgingChanged(sessionId: Int) {}
+            override fun onActiveChanged(sessionId: Int, active: Boolean) {}
+            
+            override fun onProgressChanged(sessionId: Int, progress: Float) {
+                // When we see progress on a session that was pending user action,
+                // it means the user accepted and the system is now installing.
+                val pkg = sessionToPackage[sessionId] ?: return
+                
+                // Only emit INSTALLING once per session
+                if (sessionId in sessionsPendingUserAction && sessionId !in sessionsInstalling) {
+                    sessionsInstalling.add(sessionId)
+                    sessionsPendingUserAction.remove(sessionId)
+                    Log.d(TAG, "User accepted install for $pkg (progress=$progress)")
+                    onInstallResult(
+                        sessionId = sessionId,
+                        status = InstallStatus.INSTALLING,
+                        packageName = pkg,
+                        message = "Installing..."
+                    )
+                }
+            }
+            
+            override fun onFinished(sessionId: Int, success: Boolean) {
+                // Clean up tracking
+                sessionsPendingUserAction.remove(sessionId)
+                sessionsInstalling.remove(sessionId)
+            }
+        }
+        
+        context.packageManager.packageInstaller.registerSessionCallback(sessionCallback!!, mainHandler)
+        Log.d(TAG, "Registered session callback")
+    }
+    
+    private fun unregisterSessionCallback() {
+        sessionCallback?.let {
+            try {
+                context.packageManager.packageInstaller.unregisterSessionCallback(it)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to unregister session callback", e)
+            }
+        }
+        sessionCallback = null
     }
     
     // ═══════════════════════════════════════════════════════════════════════════════
@@ -394,7 +479,7 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
                 // Start watchdog for verify stage
                 scheduleWatchdog(appId, VERIFY_WATCHDOG_MS)
             }
-            InstallStatus.STARTED, InstallStatus.PENDING_USER_ACTION -> {
+            InstallStatus.STARTED, InstallStatus.PENDING_USER_ACTION, InstallStatus.INSTALLING -> {
                 // Start/refresh watchdog for install stage
                 scheduleWatchdog(appId, INSTALL_WATCHDOG_MS)
             }

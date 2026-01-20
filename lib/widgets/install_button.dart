@@ -146,12 +146,12 @@ class InstallButton extends ConsumerWidget {
           isWarning: true,
         ),
 
-        ReadyToInstall() => _buildAsyncButton(
+        ReadyToInstall() => _buildSimpleButton(
           context,
-          ref,
-          text: isInstalled ? 'Update' : 'Install',
-          onPressed: () => _triggerInstall(ref),
+          'Waiting...',
+          null, // Not tappable - system advances automatically
           fontSize: fontSize,
+          showSpinner: true,
         ),
 
         Installing(:final isSilent) => _buildSimpleButton(
@@ -537,11 +537,6 @@ class InstallButton extends ConsumerWidget {
   void _resumeDownload(WidgetRef ref) {
     final pm = ref.read(packageManagerProvider.notifier);
     pm.resumeDownload(app.identifier);
-  }
-
-  Future<void> _triggerInstall(WidgetRef ref) async {
-    final pm = ref.read(packageManagerProvider.notifier);
-    await pm.triggerInstall(app.identifier);
   }
 
   Future<void> _retryInstall(WidgetRef ref) async {
