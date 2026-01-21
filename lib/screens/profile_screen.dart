@@ -26,6 +26,7 @@ import 'package:zapstore/services/updates_service.dart';
 import 'package:zapstore/widgets/common/note_parser.dart';
 import 'package:zapstore/widgets/nwc_widgets.dart';
 import 'package:zapstore/widgets/latest_releases_container.dart';
+import 'package:skeletonizer/skeletonizer.dart';
 
 // Note: Relay debugging features have been removed as they depend on internal APIs
 // that are no longer public in purplebase 0.3.3+
@@ -1407,6 +1408,17 @@ class _AppCatalogRelayManagementSection extends HookConsumerWidget {
     final relayUrlController = useTextEditingController();
     final isOperating = useState(false);
     final selectedProtocol = useState<String>('wss://');
+    final hasText = useState(false);
+
+    // Listen to text changes to enable/disable add button
+    useEffect(() {
+      void listener() {
+        hasText.value = relayUrlController.text.trim().isNotEmpty;
+      }
+
+      relayUrlController.addListener(listener);
+      return () => relayUrlController.removeListener(listener);
+    }, [relayUrlController]);
 
     // Watch the named provider (can be invalidated after save/publish)
     final relayListState = ref.watch(_appCatalogRelayListProvider);
@@ -1457,9 +1469,7 @@ class _AppCatalogRelayManagementSection extends HookConsumerWidget {
                     child: Icon(
                       Icons.info_outline,
                       size: 16,
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.onSurface.withValues(alpha: 0.6),
+                      color: Theme.of(context).colorScheme.primary,
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -1492,107 +1502,166 @@ class _AppCatalogRelayManagementSection extends HookConsumerWidget {
                 ),
               )
             else
-              ...relays.map((relayUrl) {
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 200),
+                child: SkeletonizerConfig(
+                  data: AppColors.getSkeletonizerConfig(
+                    Theme.of(context).brightness,
                   ),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest
-                        .withValues(alpha: 0.3),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.outline.withValues(alpha: 0.2),
+                  child: Skeletonizer(
+                    enabled: isOperating.value,
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      physics: relays.length > 4
+                          ? const BouncingScrollPhysics()
+                          : const NeverScrollableScrollPhysics(),
+                      itemCount: relays.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 6),
+                      itemBuilder: (context, index) {
+                        final relayUrl = relays[index];
+                        return Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerHighest
+                                .withValues(alpha: 0.3),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.outline.withValues(alpha: 0.2),
+                            ),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              SizedBox(
+                                width: 24,
+                                child: Center(
+                                  child: Icon(
+                                    Icons.cloud,
+                                    size: 16,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  relayUrl,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontFamily: 'monospace',
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                              SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: IconButton(
+                                  icon: Icon(
+                                    Icons.close,
+                                    size: 18,
+                                    color: Theme.of(context).colorScheme.error,
+                                  ),
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints.tightFor(
+                                    width: 24,
+                                    height: 24,
+                                  ),
+                                  onPressed: isOperating.value
+                                      ? null
+                                      : () => _removeAppCatalogRelay(
+                                          context,
+                                          ref,
+                                          existingRelayList,
+                                          relayUrl,
+                                          isOperating,
+                                        ),
+                                  tooltip: 'Remove app catalog relay',
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
                     ),
                   ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.cloud,
-                        size: 16,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          relayUrl,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontFamily: 'monospace',
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        icon: Icon(
-                          Icons.close,
-                          size: 18,
-                          color: Theme.of(context).colorScheme.error,
-                        ),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        onPressed: isOperating.value
-                            ? null
-                            : () => _removeAppCatalogRelay(
-                                context,
-                                ref,
-                                existingRelayList,
-                                relayUrl,
-                                isOperating,
-                              ),
-                        tooltip: 'Remove app catalog relay',
-                      ),
-                    ],
-                  ),
-                );
-              }),
+                ),
+              ),
 
             const SizedBox(height: 8),
 
             // Add relay input
             Row(
               children: [
-                DropdownButton<String>(
-                  value: selectedProtocol.value,
-                  items: const [
-                    DropdownMenuItem(
-                      value: 'wss://',
-                      child: Text('wss://'),
-                    ),
-                    DropdownMenuItem(
-                      value: 'ws://',
-                      child: Text('ws://'),
-                    ),
-                  ],
-                  onChanged: isOperating.value
-                      ? null
-                      : (value) {
-                          if (value != null) {
-                            selectedProtocol.value = value;
-                          }
-                        },
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontFamily: 'monospace',
-                    fontWeight: FontWeight.w500,
-                  ),
-                  underline: const SizedBox.shrink(),
-                  isDense: true,
-                ),
-                const SizedBox(width: 8),
                 Expanded(
                   child: TextField(
                     controller: relayUrlController,
+                    enabled: !isOperating.value,
                     decoration: InputDecoration(
                       hintText: 'relay.example.com',
                       hintStyle: TextStyle(
+                        fontSize: 12,
                         color: Theme.of(
                           context,
                         ).colorScheme.onSurface.withValues(alpha: 0.4),
+                      ),
+                      prefixIcon: Padding(
+                        padding: const EdgeInsets.only(left: 8),
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerHighest
+                                .withValues(alpha: 0.7),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<String>(
+                                value: selectedProtocol.value,
+                                items: const [
+                                  DropdownMenuItem(
+                                    value: 'wss://',
+                                    child: Text('wss://'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'ws://',
+                                    child: Text('ws://'),
+                                  ),
+                                ],
+                                onChanged: isOperating.value
+                                    ? null
+                                    : (value) {
+                                        if (value != null) {
+                                          selectedProtocol.value = value;
+                                        }
+                                      },
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontFamily: 'monospace',
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                isDense: true,
+                                iconSize: 14,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      prefixIconConstraints: const BoxConstraints(
+                        minWidth: 70,
+                        minHeight: 0,
                       ),
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: 12,
@@ -1613,9 +1682,9 @@ class _AppCatalogRelayManagementSection extends HookConsumerWidget {
                             if (value.trim().isNotEmpty) {
                               // Remove protocol if user typed it manually
                               final cleaned = value.trim().replaceFirst(
-                                    RegExp(r'^(ws|wss)://'),
-                                    '',
-                                  );
+                                RegExp(r'^(ws|wss)://'),
+                                '',
+                              );
                               _addAppCatalogRelay(
                                 context,
                                 ref,
@@ -1635,9 +1704,9 @@ class _AppCatalogRelayManagementSection extends HookConsumerWidget {
                     if (url.isNotEmpty) {
                       // Remove protocol if user typed it manually
                       final cleaned = url.replaceFirst(
-                            RegExp(r'^(ws|wss)://'),
-                            '',
-                          );
+                        RegExp(r'^(ws|wss)://'),
+                        '',
+                      );
                       await _addAppCatalogRelay(
                         context,
                         ref,
@@ -1653,8 +1722,10 @@ class _AppCatalogRelayManagementSection extends HookConsumerWidget {
                       loading: () => true,
                       orElse: () => false,
                     );
+                    final isDisabled =
+                        isLoading || isOperating.value || !hasText.value;
                     return IconButton(
-                      onPressed: isLoading || isOperating.value ? null : callback,
+                      onPressed: isDisabled ? null : callback,
                       icon: isLoading
                           ? const SizedBox(
                               width: 20,
@@ -1664,8 +1735,17 @@ class _AppCatalogRelayManagementSection extends HookConsumerWidget {
                           : const Icon(Icons.add),
                       tooltip: 'Add relay',
                       style: IconButton.styleFrom(
-                        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                        foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
+                        backgroundColor: isDisabled
+                            ? Theme.of(context)
+                                  .colorScheme
+                                  .surfaceContainerHighest
+                                  .withValues(alpha: 0.3)
+                            : Theme.of(context).colorScheme.primaryContainer,
+                        foregroundColor: isDisabled
+                            ? Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withValues(alpha: 0.4)
+                            : Theme.of(context).colorScheme.onPrimaryContainer,
                       ),
                     );
                   },
@@ -1742,7 +1822,6 @@ class _AppCatalogRelayManagementSection extends HookConsumerWidget {
       ref.read(updatesRefreshProvider.notifier).state++;
       ref.read(latestReleasesRefreshProvider.notifier).state++;
 
-
       controller.clear();
 
       if (context.mounted) {
@@ -1770,6 +1849,10 @@ class _AppCatalogRelayManagementSection extends HookConsumerWidget {
       return;
     }
 
+    // Capture a stable context reference before async operations
+    // The itemBuilder context may become invalid after widget rebuilds
+    final navigatorContext = Navigator.of(context).context;
+
     try {
       isOperating.value = true;
 
@@ -1792,6 +1875,11 @@ class _AppCatalogRelayManagementSection extends HookConsumerWidget {
         signedRelayList,
       }, source: const RemoteSource(relays: 'bootstrap'));
 
+      // Show success toast using stable context
+      if (navigatorContext.mounted) {
+        navigatorContext.showInfo('App catalog relay removed');
+      }
+
       // Increment refresh token to force UI refresh
       ref.read(_appCatalogRelaysRefreshProvider.notifier).state++;
 
@@ -1803,13 +1891,9 @@ class _AppCatalogRelayManagementSection extends HookConsumerWidget {
 
       // Cancel subscriptions tied to the removed relay only
       await _cancelAppCatalogSubscriptions(ref, {relayUrl});
-
-      if (context.mounted) {
-        context.showInfo('App catalog relay removed');
-      }
     } catch (e) {
-      if (context.mounted) {
-        context.showError(
+      if (navigatorContext.mounted) {
+        navigatorContext.showError(
           'Failed to remove app catalog relay',
           description: '$e',
         );
@@ -1828,8 +1912,9 @@ class _AppCatalogRelayManagementSection extends HookConsumerWidget {
     final targets = relaysToCancel.map((r) => r.toLowerCase()).toSet();
 
     for (final sub in subscriptions.values) {
-      final hasTargetRelay =
-          sub.relays.keys.any((relay) => targets.contains(relay.toLowerCase()));
+      final hasTargetRelay = sub.relays.keys.any(
+        (relay) => targets.contains(relay.toLowerCase()),
+      );
       if (hasTargetRelay) {
         await ref.storage.cancel(sub.request);
       }

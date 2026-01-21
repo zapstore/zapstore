@@ -71,14 +71,47 @@ bool _isValidRelayHost(String host) {
   return true;
 }
 
-/// Checks if a relay URL already exists in the set.
-/// Normalizes both URLs before comparison for robustness.
-bool isDuplicateRelay(String normalizedUrl, Set<String> existingRelays) {
-  for (final existing in existingRelays) {
-    final existingNormalized = validateAndNormalizeRelayUrl(existing);
-    if (existingNormalized == null) continue;
+/// Normalizes a relay URL for comparison, including default ports.
+/// Returns a canonical form: scheme://host:port/path
+/// where port is always explicit (defaults: 443 for wss, 80 for ws).
+String? _normalizeForComparison(String url) {
+  final normalized = validateAndNormalizeRelayUrl(url);
+  if (normalized == null) return null;
 
-    if (existingNormalized == normalizedUrl) {
+  final uri = Uri.parse(normalized);
+  final defaultPort = uri.scheme == 'wss' ? 443 : 80;
+  final port = uri.hasPort && uri.port != 0 ? uri.port : defaultPort;
+
+  final buffer = StringBuffer()
+    ..write(uri.scheme)
+    ..write('://')
+    ..write(uri.host.toLowerCase())
+    ..write(':')
+    ..write(port);
+
+  var path = uri.path;
+  while (path.endsWith('/')) {
+    path = path.substring(0, path.length - 1);
+  }
+  if (path.isNotEmpty) {
+    buffer.write(path);
+  }
+
+  return buffer.toString();
+}
+
+/// Checks if a relay URL already exists in the set.
+/// Normalizes both URLs before comparison, considering default ports.
+/// Treats wss://relay.com and wss://relay.com:443 as duplicates.
+bool isDuplicateRelay(String normalizedUrl, Set<String> existingRelays) {
+  final newUrlCanonical = _normalizeForComparison(normalizedUrl);
+  if (newUrlCanonical == null) return false;
+
+  for (final existing in existingRelays) {
+    final existingCanonical = _normalizeForComparison(existing);
+    if (existingCanonical == null) continue;
+
+    if (existingCanonical == newUrlCanonical) {
       return true;
     }
   }
