@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:async_button_builder/async_button_builder.dart';
 import 'package:collection/collection.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
@@ -1732,6 +1733,21 @@ class _AboutSection extends ConsumerWidget {
                 launchUrl(Uri.parse('https://github.com/zapstore/zapstore'));
               },
             ),
+            if (kDebugMode) ...[
+              const Divider(),
+              ListTile(
+                leading: Icon(Icons.bug_report, color: Colors.red),
+                title: const Text('Test Crash'),
+                subtitle: const Text('Trigger a test crash for debugging'),
+                contentPadding: EdgeInsets.zero,
+                onTap: () {
+                  // Use Future.delayed to escape Flutter's widget error handling
+                  Future.delayed(Duration.zero, () {
+                    throw StateError('Test crash triggered from Profile screen');
+                  });
+                },
+              ),
+            ],
           ],
         ),
       ),

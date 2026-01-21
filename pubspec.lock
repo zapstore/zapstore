@@ -107,7 +107,7 @@ packages:
     source: hosted
     version: "0.2.2"
   bip340:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: bip340
       sha256: b7bcd70a860e605046006adaa72bc4f7453f4d31d7ba74a4ad9d5de387a0fc0b
@@ -219,7 +219,7 @@ packages:
     source: hosted
     version: "0.3.5+1"
   crypto:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: crypto
       sha256: c8ea0233063ba03258fbcf2ca4d6dadfefe14f02fab57702265467a19f27fadf

@@ -39,6 +39,11 @@ bool appStackEventFilter(Map<String, dynamic> event) {
   return false;
 }
 
+/// Public key for receiving crash reports
+/// (npub137t4ugj4zama3fx6s0vejlltuslyy9s2h76clypzp57675kr7vyqrd60v8)
+const kCrashReportPubkey =
+    '8f975e22551777d8a4da83d9997febe43e42160abfb58f90220d3daf52c3f308';
+
 /// Amber signer package ID
 const kAmberPackageId = 'com.greenart7c3.nostrsigner';
 
