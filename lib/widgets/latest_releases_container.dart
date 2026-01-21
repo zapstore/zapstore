@@ -7,6 +7,9 @@ import 'package:zapstore/services/updates_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'app_card.dart';
 
+/// Refresh token for latest releases subscriptions.
+final latestReleasesRefreshProvider = StateProvider<int>((ref) => 0);
+
 class LatestReleasesContainer extends HookConsumerWidget {
   const LatestReleasesContainer({
     super.key,
@@ -300,6 +303,7 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
 
   void _startQuery() {
     _sub?.close();
+    final refreshToken = ref.read(latestReleasesRefreshProvider);
 
     _sub = ref.listen<StorageState<App>>(
       query<App>(
@@ -321,7 +325,7 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
         },
         // NOTE: It must stream=true
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: true),
-        subscriptionPrefix: 'latest',
+        subscriptionPrefix: 'latest-$refreshToken',
       ),
       (previous, next) async {
         // Always mirror storage state and ensure olderApps don't duplicate the live head

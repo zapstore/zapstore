@@ -17,15 +17,47 @@ import 'package:zapstore/main.dart';
 import 'package:zapstore/services/bookmarks_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/utils/relay_utils.dart';
 import 'package:zapstore/widgets/common/profile_avatar.dart';
 import 'package:zapstore/widgets/app_card.dart';
 import 'package:zapstore/theme.dart';
 import 'package:zapstore/services/notification_service.dart';
+import 'package:zapstore/services/updates_service.dart';
 import 'package:zapstore/widgets/common/note_parser.dart';
 import 'package:zapstore/widgets/nwc_widgets.dart';
+import 'package:zapstore/widgets/latest_releases_container.dart';
 
 // Note: Relay debugging features have been removed as they depend on internal APIs
 // that are no longer public in purplebase 0.3.3+
+
+/// Refresh token for app catalog relay list query.
+/// Invalidate this provider to force a re-fetch of the relay list.
+final _appCatalogRelaysRefreshProvider = StateProvider<int>((ref) => 0);
+
+/// Provider for the user's app catalog relay list.
+/// Watches the active pubkey and refresh token to enable invalidation.
+final _appCatalogRelayListProvider =
+    Provider<StorageState<AppCatalogRelayList>?>((ref) {
+      final pubkey = ref.watch(Signer.activePubkeyProvider);
+      final refreshToken = ref.watch(_appCatalogRelaysRefreshProvider);
+
+      if (pubkey == null) {
+        return null;
+      }
+
+      return ref.watch(
+        query<AppCatalogRelayList>(
+          authors: {pubkey},
+          limit: 1,
+          source: const LocalAndRemoteSource(
+            relays: 'bootstrap',
+            stream: false,
+          ),
+          // Include refresh token to force new query after modifications
+          subscriptionPrefix: 'user-appcatalog-relays-$refreshToken',
+        ),
+      );
+    });
 
 /// Profile screen for authentication and app settings
 class ProfileScreen extends ConsumerWidget {
@@ -61,6 +93,11 @@ class ProfileScreen extends ConsumerWidget {
 
           // Lightning Wallet Section
           const NWCConnectionCard(),
+
+          const SizedBox(height: 16),
+
+          // App Catalog Relay Management Section
+          const _AppCatalogRelayManagementSection(),
 
           const SizedBox(height: 16),
 
@@ -1350,6 +1387,453 @@ class _EmptyState extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// App Catalog Relay Management Section - manages app catalog relays (kind 10067)
+/// These are relays for discovering apps, NOT social relays like Damus/Primal.
+class _AppCatalogRelayManagementSection extends HookConsumerWidget {
+  const _AppCatalogRelayManagementSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
+
+    // Only show when user is signed in
+    if (signedInPubkey == null) {
+      return const SizedBox.shrink();
+    }
+
+    final relayUrlController = useTextEditingController();
+    final isOperating = useState(false);
+    final selectedProtocol = useState<String>('wss://');
+
+    // Watch the named provider (can be invalidated after save/publish)
+    final relayListState = ref.watch(_appCatalogRelayListProvider);
+
+    final existingRelayList = relayListState?.models.firstOrNull;
+    final relays = (existingRelayList?.readRelays ?? <String>{}).toList()
+      ..sort();
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Row(
+              children: [
+                Icon(Icons.dns, color: Theme.of(context).colorScheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'App Catalog Relays',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                if (isOperating.value)
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+
+            // Info text
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Icon(
+                      Icons.info_outline,
+                      size: 16,
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.6),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'These relays are used to discover apps. Not for social content like Damus or Primal.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.7),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Current relays list
+            if (relays.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'Using default catalog relays. Add a relay to override.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.55),
+                  ),
+                ),
+              )
+            else
+              ...relays.map((relayUrl) {
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surfaceContainerHighest
+                        .withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.outline.withValues(alpha: 0.2),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.cloud,
+                        size: 16,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          relayUrl,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontFamily: 'monospace',
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: Icon(
+                          Icons.close,
+                          size: 18,
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: isOperating.value
+                            ? null
+                            : () => _removeAppCatalogRelay(
+                                context,
+                                ref,
+                                existingRelayList,
+                                relayUrl,
+                                isOperating,
+                              ),
+                        tooltip: 'Remove app catalog relay',
+                      ),
+                    ],
+                  ),
+                );
+              }),
+
+            const SizedBox(height: 8),
+
+            // Add relay input
+            Row(
+              children: [
+                DropdownButton<String>(
+                  value: selectedProtocol.value,
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'wss://',
+                      child: Text('wss://'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'ws://',
+                      child: Text('ws://'),
+                    ),
+                  ],
+                  onChanged: isOperating.value
+                      ? null
+                      : (value) {
+                          if (value != null) {
+                            selectedProtocol.value = value;
+                          }
+                        },
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontFamily: 'monospace',
+                    fontWeight: FontWeight.w500,
+                  ),
+                  underline: const SizedBox.shrink(),
+                  isDense: true,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: relayUrlController,
+                    decoration: InputDecoration(
+                      hintText: 'relay.example.com',
+                      hintStyle: TextStyle(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.4),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      isDense: true,
+                    ),
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontFamily: 'monospace',
+                    ),
+                    onSubmitted: isOperating.value
+                        ? null
+                        : (value) {
+                            if (value.trim().isNotEmpty) {
+                              // Remove protocol if user typed it manually
+                              final cleaned = value.trim().replaceFirst(
+                                    RegExp(r'^(ws|wss)://'),
+                                    '',
+                                  );
+                              _addAppCatalogRelay(
+                                context,
+                                ref,
+                                existingRelayList,
+                                '${selectedProtocol.value}$cleaned',
+                                relayUrlController,
+                                isOperating,
+                              );
+                            }
+                          },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                AsyncButtonBuilder(
+                  onPressed: () async {
+                    final url = relayUrlController.text.trim();
+                    if (url.isNotEmpty) {
+                      // Remove protocol if user typed it manually
+                      final cleaned = url.replaceFirst(
+                            RegExp(r'^(ws|wss)://'),
+                            '',
+                          );
+                      await _addAppCatalogRelay(
+                        context,
+                        ref,
+                        existingRelayList,
+                        '${selectedProtocol.value}$cleaned',
+                        relayUrlController,
+                        isOperating,
+                      );
+                    }
+                  },
+                  builder: (context, child, callback, buttonState) {
+                    final isLoading = buttonState.maybeWhen(
+                      loading: () => true,
+                      orElse: () => false,
+                    );
+                    return IconButton(
+                      onPressed: isLoading || isOperating.value ? null : callback,
+                      icon: isLoading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.add),
+                      tooltip: 'Add relay',
+                      style: IconButton.styleFrom(
+                        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                        foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
+                      ),
+                    );
+                  },
+                  child: const SizedBox.shrink(),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _addAppCatalogRelay(
+    BuildContext context,
+    WidgetRef ref,
+    AppCatalogRelayList? existingRelayList,
+    String relayUrl,
+    TextEditingController controller,
+    ValueNotifier<bool> isOperating,
+  ) async {
+    // Validate and normalize URL
+    final normalizedUrl = validateAndNormalizeRelayUrl(relayUrl);
+    if (normalizedUrl == null) {
+      context.showError(
+        'Invalid app catalog relay URL',
+        description: 'Must be a valid WebSocket URL (ws:// or wss://)',
+      );
+      return;
+    }
+
+    // Check for duplicates (case-insensitive on host)
+    final existingRelays = existingRelayList?.readRelays ?? <String>{};
+    if (isDuplicateRelay(normalizedUrl, existingRelays)) {
+      context.showError(
+        'App catalog relay already exists',
+        description: 'This relay is already in your list.',
+      );
+      return;
+    }
+
+    final signer = ref.read(Signer.activeSignerProvider);
+    if (signer == null) {
+      context.showError('Sign in required');
+      return;
+    }
+
+    try {
+      isOperating.value = true;
+
+      // Create partial model with existing relays
+      final partialRelayList = PartialAppCatalogRelayList();
+      for (final relay in existingRelays) {
+        partialRelayList.addReadRelay(relay);
+      }
+      // Add the new relay (normalized)
+      partialRelayList.addReadRelay(normalizedUrl);
+
+      // Sign the event
+      final signedRelayList = await partialRelayList.signWith(signer);
+
+      // Save locally and publish to bootstrap relays
+      await ref.storage.save({signedRelayList});
+      await ref.storage.publish({
+        signedRelayList,
+      }, source: const RemoteSource(relays: 'bootstrap'));
+
+      // Increment refresh token to force UI refresh
+      ref.read(_appCatalogRelaysRefreshProvider.notifier).state++;
+
+      // Invalidate latest releases to force new query with updated relays
+      // This will make the new relay appear in Debug Info immediately
+      ref.invalidate(latestReleasesProvider);
+      ref.read(updatesRefreshProvider.notifier).state++;
+      ref.read(latestReleasesRefreshProvider.notifier).state++;
+
+
+      controller.clear();
+
+      if (context.mounted) {
+        context.showInfo('App catalog relay added');
+      }
+    } catch (e) {
+      if (context.mounted) {
+        context.showError('Failed to add app catalog relay', description: '$e');
+      }
+    } finally {
+      isOperating.value = false;
+    }
+  }
+
+  Future<void> _removeAppCatalogRelay(
+    BuildContext context,
+    WidgetRef ref,
+    AppCatalogRelayList? existingRelayList,
+    String relayUrl,
+    ValueNotifier<bool> isOperating,
+  ) async {
+    final signer = ref.read(Signer.activeSignerProvider);
+    if (signer == null) {
+      context.showError('Sign in required');
+      return;
+    }
+
+    try {
+      isOperating.value = true;
+
+      final existingRelays = existingRelayList?.readRelays ?? <String>{};
+
+      // Create partial model with all relays except the one being removed
+      final partialRelayList = PartialAppCatalogRelayList();
+      for (final relay in existingRelays) {
+        if (relay != relayUrl) {
+          partialRelayList.addReadRelay(relay);
+        }
+      }
+
+      // Sign the event
+      final signedRelayList = await partialRelayList.signWith(signer);
+
+      // Save locally and publish to bootstrap relays
+      await ref.storage.save({signedRelayList});
+      await ref.storage.publish({
+        signedRelayList,
+      }, source: const RemoteSource(relays: 'bootstrap'));
+
+      // Increment refresh token to force UI refresh
+      ref.read(_appCatalogRelaysRefreshProvider.notifier).state++;
+
+      // Invalidate latest releases to force new query with updated relays
+      // This will make the removed relay disappear from Debug Info immediately
+      ref.invalidate(latestReleasesProvider);
+      ref.read(updatesRefreshProvider.notifier).state++;
+      ref.read(latestReleasesRefreshProvider.notifier).state++;
+
+      // Cancel subscriptions tied to the removed relay only
+      await _cancelAppCatalogSubscriptions(ref, {relayUrl});
+
+      if (context.mounted) {
+        context.showInfo('App catalog relay removed');
+      }
+    } catch (e) {
+      if (context.mounted) {
+        context.showError(
+          'Failed to remove app catalog relay',
+          description: '$e',
+        );
+      }
+    } finally {
+      isOperating.value = false;
+    }
+  }
+
+  Future<void> _cancelAppCatalogSubscriptions(
+    WidgetRef ref,
+    Set<String> relaysToCancel,
+  ) async {
+    final poolState = ref.read(poolStateProvider);
+    final subscriptions = poolState?.subscriptions ?? const {};
+    final targets = relaysToCancel.map((r) => r.toLowerCase()).toSet();
+
+    for (final sub in subscriptions.values) {
+      final hasTargetRelay =
+          sub.relays.keys.any((relay) => targets.contains(relay.toLowerCase()));
+      if (hasTargetRelay) {
+        await ref.storage.cancel(sub.request);
+      }
+    }
   }
 }
 
