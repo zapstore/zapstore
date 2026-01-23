@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:async_button_builder/async_button_builder.dart';
+import 'package:auto_size_text/auto_size_text.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -1379,12 +1380,14 @@ class _DataManagementSection extends ConsumerWidget {
                   color: Theme.of(context).colorScheme.error,
                 ),
               ),
-              title: Text(
+              title: AutoSizeText(
                 'Clear local storage',
                 style: TextStyle(
                   color: Theme.of(context).colorScheme.error,
                   fontWeight: FontWeight.w600,
                 ),
+                maxLines: 1,
+                minFontSize: 12,
               ),
               contentPadding: EdgeInsets.zero,
               onTap: () => _showClearAllDataDialog(context, ref),
@@ -1403,7 +1406,7 @@ class _DataManagementSection extends ConsumerWidget {
           children: [
             Icon(Icons.warning, color: Theme.of(context).colorScheme.error),
             const SizedBox(width: 8),
-            const Text('Clear local storage'),
+            Flexible(child: const Text('Clear local storage')),
           ],
         ),
         content: const Text(
