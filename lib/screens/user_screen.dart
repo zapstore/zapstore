@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -382,34 +383,50 @@ class _NpubRow extends StatelessWidget {
     final abbreviatedNpub =
         '${npub.substring(0, 12)}...${npub.substring(npub.length - 8)}';
 
-    return GestureDetector(
-      onTap: () => launchUrl(
-        Uri.parse('https://npub.world/$npub'),
-        mode: LaunchMode.externalApplication,
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.key,
-            size: 16,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-          const SizedBox(width: 4),
-          Text(
-            abbreviatedNpub,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurface,
-            ),
-          ),
-          const SizedBox(width: 4),
-          Icon(
-            Icons.open_in_new,
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        GestureDetector(
+          onTap: () {
+            Clipboard.setData(ClipboardData(text: npub));
+          },
+          child: Icon(
+            Icons.copy,
             size: 12,
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
-        ],
-      ),
+        ),
+        const SizedBox(width: 4),
+        GestureDetector(
+          onTap: () => launchUrl(
+            Uri.parse('https://npub.world/$npub'),
+            mode: LaunchMode.externalApplication,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.key,
+                size: 16,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                abbreviatedNpub,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Icon(
+                Icons.open_in_new,
+                size: 12,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
