@@ -7,9 +7,6 @@ import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/version_utils.dart';
 
-/// Refresh token for updates subscriptions.
-final updatesRefreshProvider = StateProvider<int>((ref) => 0);
-
 /// Categorized apps state
 class CategorizedApps {
   const CategorizedApps({
@@ -86,7 +83,6 @@ class CategorizedAppsNotifier extends Notifier<CategorizedApps> {
     }
 
     final platform = ref.read(packageManagerProvider.notifier).platform;
-    final refreshToken = ref.watch(updatesRefreshProvider);
 
     // Query apps with relationships loaded via `and:`
     final appsState = ref.watch(
@@ -108,7 +104,7 @@ class CategorizedAppsNotifier extends Notifier<CategorizedApps> {
           ),
         },
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: true),
-        subscriptionPrefix: 'updates-$refreshToken',
+        subscriptionPrefix: 'updates',
       ),
     );
 
@@ -117,15 +113,13 @@ class CategorizedAppsNotifier extends Notifier<CategorizedApps> {
         isLoading: !_hasLoadedOnce,
       ),
       StorageError() => CategorizedApps.empty.copyWith(isLoading: false),
-      StorageData(:final models) =>
-          _categorize(models, installedPackages, refreshToken),
+      StorageData(:final models) => _categorize(models, installedPackages),
     };
   }
 
   CategorizedApps _categorize(
     List<App> apps,
     List<PackageInfo> installedPackages,
-    int refreshToken,
   ) {
     _hasLoadedOnce = true;
 
@@ -183,7 +177,7 @@ class CategorizedAppsNotifier extends Notifier<CategorizedApps> {
     upToDateApps.sort(byName);
 
     // Fetch author profiles in background (fire and forget)
-    _fetchAuthors(installedApps, refreshToken);
+    _fetchAuthors(installedApps);
 
     return CategorizedApps(
       automaticUpdates: automaticUpdates,
@@ -202,7 +196,7 @@ class CategorizedAppsNotifier extends Notifier<CategorizedApps> {
     return canUpgrade(installed.version, latest.version);
   }
 
-  void _fetchAuthors(Iterable<App> apps, int refreshToken) {
+  void _fetchAuthors(Iterable<App> apps) {
     final authorPubkeys = apps.map((a) => a.event.pubkey).toSet();
     if (authorPubkeys.isEmpty) return;
     unawaited(
@@ -213,7 +207,7 @@ class CategorizedAppsNotifier extends Notifier<CategorizedApps> {
           cachedFor: Duration(hours: 2),
           stream: false,
         ),
-        subscriptionPrefix: 'updates-profiles-$refreshToken',
+        subscriptionPrefix: 'updates-profiles',
       ),
     );
   }

@@ -5,8 +5,8 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: "4d065ba"
-      resolved-ref: "4d065badcef18ea397dff40c46fcce114ecca12a"
+      ref: "6cbedbe"
+      resolved-ref: "6cbedbe6ae58a952c564979002258840921b041b"
       url: "https://github.com/purplebase/amber_signer"
     source: git
     version: "0.2.0"
