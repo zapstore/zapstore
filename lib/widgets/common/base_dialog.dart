@@ -5,10 +5,12 @@ import 'package:flutter/material.dart';
 Future<T?> showBaseDialog<T>({
   required BuildContext context,
   required Widget dialog,
+  bool barrierDismissible = true,
 }) {
   return showDialog<T>(
     context: context,
     barrierColor: Colors.black.withValues(alpha: 0.25),
+    barrierDismissible: barrierDismissible,
     builder: (context) => dialog,
   );
 }

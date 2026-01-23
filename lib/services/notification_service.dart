@@ -31,11 +31,16 @@ extension ContextX on BuildContext {
     final allActions = <(String, Future<void> Function())>[
       ...actions,
       if (description != null)
-        ('Copy', () async {
-          await Clipboard.setData(ClipboardData(text: '$title\n\n$description'));
-        }),
+        (
+          'Copy',
+          () async {
+            await Clipboard.setData(
+              ClipboardData(text: '$title\n\n$description'),
+            );
+          },
+        ),
     ];
-    
+
     _showCustomToast(
       context: this,
       title: title,
@@ -128,10 +133,7 @@ class _ToastOverlayState extends State<_ToastOverlay>
     _slideAnimation = Tween<Offset>(
       begin: const Offset(0, -1),
       end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeOutCubic,
-    ));
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
 
     _controller.forward();
     _startAutoClose();
@@ -143,8 +145,8 @@ class _ToastOverlayState extends State<_ToastOverlay>
     final duration = hasActions
         ? const Duration(seconds: 10)
         : widget.type == _ToastType.error
-            ? const Duration(seconds: 8)
-            : const Duration(seconds: 6);
+        ? const Duration(seconds: 8)
+        : const Duration(seconds: 6);
 
     Future.delayed(duration, () {
       if (mounted && !_isHovered) {
@@ -179,7 +181,9 @@ class _ToastOverlayState extends State<_ToastOverlay>
 
     final borderColor = isError
         ? const Color(0xFFB91C1C).withValues(alpha: 0.8) // Darker red border
-        : const Color(0xFF0369A1).withValues(alpha: 0.8); // Even darker blue border (sky-700)
+        : const Color(
+            0xFF0369A1,
+          ).withValues(alpha: 0.8); // Even darker blue border (sky-700)
 
     final accentColor = Colors.white;
 
@@ -300,7 +304,7 @@ class _ToastContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasExtraContent = description != null || actions.isNotEmpty;
-    
+
     // Use Stack to position X at top-right always
     return Stack(
       children: [
@@ -309,8 +313,8 @@ class _ToastContent extends StatelessWidget {
           padding: const EdgeInsets.only(right: 36), // Space for X button
           child: Row(
             // Center align when no description, top align when there's extra content
-            crossAxisAlignment: hasExtraContent 
-                ? CrossAxisAlignment.start 
+            crossAxisAlignment: hasExtraContent
+                ? CrossAxisAlignment.start
                 : CrossAxisAlignment.center,
             children: [
               // Icon
@@ -321,11 +325,7 @@ class _ToastContent extends StatelessWidget {
                   color: iconBgColor,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(
-                  icon,
-                  color: accentColor,
-                  size: 20,
-                ),
+                child: Icon(icon, color: accentColor, size: 20),
               ),
               const SizedBox(width: 14),
               // Text content
@@ -366,14 +366,16 @@ class _ToastContent extends StatelessWidget {
                         spacing: 8,
                         runSpacing: 8,
                         children: actions
-                            .map((action) => _ToastActionButton(
-                                  label: action.$1,
-                                  onPressed: () async {
-                                    await action.$2();
-                                    onDismiss();
-                                  },
-                                  accentColor: accentColor,
-                                ))
+                            .map(
+                              (action) => _ToastActionButton(
+                                label: action.$1,
+                                onPressed: () {
+                                  onDismiss();
+                                  action.$2();
+                                },
+                                accentColor: accentColor,
+                              ),
+                            )
                             .toList(),
                       ),
                     ],
