@@ -172,7 +172,7 @@ class _SearchResultsSection extends HookConsumerWidget {
         // Force the search to hit the default relay group (relay.zapstore.dev)
         // so a connection appears in Debug Info when searching.
         source: const RemoteSource(relays: 'AppCatalog', stream: false),
-        subscriptionPrefix: 'search-results',
+        subscriptionPrefix: 'app-search-results',
       ),
     );
 

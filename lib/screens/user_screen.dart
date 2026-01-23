@@ -49,7 +49,7 @@ class UserScreen extends HookConsumerWidget {
           ),
         },
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
-        subscriptionPrefix: 'user-apps',
+        subscriptionPrefix: 'app-user-apps',
       ),
     );
 
