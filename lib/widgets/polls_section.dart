@@ -242,13 +242,16 @@ class _PollCard extends HookConsumerWidget {
     final author = authorState.models.firstOrNull;
     final isAuthorLoading = authorState is StorageLoading && author == null;
 
-    // Query all responses for this poll
+    // Use poll-specified relays if available, otherwise fall back to social
+    final pollRelays = poll.relays.isNotEmpty ? poll.relays : {'social'};
+
+    // Query all responses for this poll from poll-specified relays
     final responsesState = ref.watch(
       query<PollResponse>(
         tags: {
           '#e': {poll.event.id},
         },
-        source: LocalAndRemoteSource(stream: true, relays: 'social'),
+        source: LocalAndRemoteSource(stream: true, relays: pollRelays),
       ),
     );
 
@@ -257,9 +260,14 @@ class _PollCard extends HookConsumerWidget {
       _ => [],
     };
 
-    // Deduplicate: one vote per pubkey (latest wins)
+    // Filter out votes created after poll expiry (per NIP-88)
+    final validResponses = poll.endsAt != null
+        ? allResponses.where((r) => r.createdAt.isBefore(poll.endsAt!)).toList()
+        : allResponses;
+
+    // Deduplicate: one vote per pubkey (latest valid vote wins)
     final responsesByPubkey = <String, PollResponse>{};
-    for (final response in allResponses) {
+    for (final response in validResponses) {
       final existing = responsesByPubkey[response.pubkey];
       if (existing == null || response.createdAt.isAfter(existing.createdAt)) {
         responsesByPubkey[response.pubkey] = response;
@@ -272,29 +280,47 @@ class _PollCard extends HookConsumerWidget {
         ? responsesByPubkey[currentUserPubkey]
         : null;
 
+    // Get valid option IDs for this poll
+    final validOptionIds = poll.options.map((o) => o.id).toSet();
+
     // Calculate vote counts per option
+    // For singlechoice: only count first response tag (per NIP-88)
+    // For multiplechoice: count all response tags
     final voteCounts = <String, int>{};
     for (final option in poll.options) {
       voteCounts[option.id] = 0;
     }
+    int validVoterCount = 0;
     for (final response in uniqueResponses) {
-      for (final optionId in response.selectedOptionIds) {
-        voteCounts[optionId] = (voteCounts[optionId] ?? 0) + 1;
+      final optionIds = poll.pollType == PollType.singlechoice
+          ? [response.firstSelectedOptionId].whereType<String>()
+          : response.selectedOptionIds;
+
+      // Check if voter has at least one valid option
+      bool hasValidVote = false;
+      for (final optionId in optionIds) {
+        if (validOptionIds.contains(optionId)) {
+          voteCounts[optionId] = (voteCounts[optionId] ?? 0) + 1;
+          hasValidVote = true;
+        }
       }
+      if (hasValidVote) validVoterCount++;
     }
 
-    final totalVotes = uniqueResponses.length;
+    // Use valid voter count for percentage calculation (excludes invalid votes)
+    final totalVotes = validVoterCount;
     final isExpired = poll.isExpired;
 
     // Track selected options for voting (before submission)
+    // Convert List to Set for UI toggle behavior
     final selectedOptions = useState<Set<String>>(
-      userVote?.selectedOptionIds ?? {},
+      userVote?.selectedOptionIds.toSet() ?? {},
     );
 
     // Update selected options when user vote changes
     useEffect(() {
       if (userVote != null) {
-        selectedOptions.value = userVote.selectedOptionIds;
+        selectedOptions.value = userVote.selectedOptionIds.toSet();
       }
       return null;
     }, [userVote?.event.id]);
@@ -378,8 +404,10 @@ class _PollCard extends HookConsumerWidget {
                   totalVotes > 0 ? (voteCount / totalVotes * 100) : 0.0;
               final isSelected = selectedOptions.value.contains(option.id);
               final hasUserVoted = userVote != null;
-              final userVotedForThis =
-                  userVote?.selectedOptionIds.contains(option.id) ?? false;
+              // For singlechoice: only first option counts per NIP-88
+              final userVotedForThis = poll.pollType == PollType.singlechoice
+                  ? userVote?.firstSelectedOptionId == option.id
+                  : userVote?.selectedOptionIds.contains(option.id) ?? false;
 
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8),
@@ -649,13 +677,16 @@ class _VoteButton extends HookConsumerWidget {
 
       final response = PartialPollResponse(
         poll: poll,
-        selectedOptionIds: selectedOptionIds,
+        selectedOptionIds: selectedOptionIds.toList(), // Convert Set to List
       );
 
       final signedResponse = await response.signWith(signer);
 
       await signedResponse.save();
-      await signedResponse.publish(source: RemoteSource(relays: 'social'));
+
+      // Publish to poll-specified relays per NIP-88, fallback to social
+      final relays = poll.relays.isNotEmpty ? poll.relays : {'social'};
+      await signedResponse.publish(source: RemoteSource(relays: relays));
 
       if (context.mounted) {
         context.showInfo(hasExistingVote ? 'Vote updated!' : 'Vote submitted!');
@@ -989,18 +1020,22 @@ class _CreatePollComposer extends HookConsumerWidget {
         endsAt = DateTime.now().add(Duration(days: expirationDays));
       }
 
+      // Use social relays for polls
+      const defaultRelays = {'social'};
+
       final poll = PartialPoll(
         content: question.trim(),
         options: options,
         pollType: pollType,
         endsAt: endsAt,
         targetModel: app,
+        relays: defaultRelays, // Hint where votes should be published
       );
 
       final signedPoll = await poll.signWith(signer);
 
       await signedPoll.save();
-      await signedPoll.publish(source: RemoteSource(relays: 'social'));
+      await signedPoll.publish(source: RemoteSource(relays: defaultRelays));
 
       if (context.mounted) {
         Navigator.pop(context);

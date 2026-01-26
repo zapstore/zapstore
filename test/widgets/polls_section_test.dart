@@ -21,14 +21,20 @@ Set<String> get _zapstoreTeamHex => _zapstoreTeamNpubs.map((npub) {
 /// (extracted from polls_section.dart for testing)
 bool canCreatePoll(String? signedInPubkey, String appPubkey) {
   if (signedInPubkey == null) return false;
-  // App developer can create polls on their own app
   if (signedInPubkey == appPubkey) return true;
-  // Zapstore team can create polls on any app
   return _zapstoreTeamHex.contains(signedInPubkey);
 }
 
+/// Filter out votes created after poll expiry (per NIP-88)
+List<MockPollResponse> filterValidResponses(
+  List<MockPollResponse> responses,
+  DateTime? pollEndsAt,
+) {
+  if (pollEndsAt == null) return responses;
+  return responses.where((r) => r.createdAt.isBefore(pollEndsAt)).toList();
+}
+
 /// Deduplicate responses by pubkey (latest wins)
-/// (extracted from polls_section.dart for testing)
 Map<String, MockPollResponse> deduplicateResponses(
     List<MockPollResponse> responses) {
   final responsesByPubkey = <String, MockPollResponse>{};
@@ -41,34 +47,55 @@ Map<String, MockPollResponse> deduplicateResponses(
   return responsesByPubkey;
 }
 
-/// Calculate vote counts per option
-Map<String, int> calculateVoteCounts(
-  List<String> optionIds,
+/// Calculate vote counts per option (NIP-88 compliant)
+/// For singlechoice: only count first response tag
+/// For multiplechoice: count all response tags
+/// Returns (voteCounts, validVoterCount) - validVoterCount excludes invalid votes
+(Map<String, int>, int) calculateVoteCountsNip88(
+  Set<String> validOptionIds,
   List<MockPollResponse> responses,
+  bool isSingleChoice,
 ) {
   final voteCounts = <String, int>{};
-  for (final optionId in optionIds) {
+  for (final optionId in validOptionIds) {
     voteCounts[optionId] = 0;
   }
+
+  int validVoterCount = 0;
   for (final response in responses) {
-    for (final optionId in response.selectedOptionIds) {
-      voteCounts[optionId] = (voteCounts[optionId] ?? 0) + 1;
+    // For singlechoice: only first option counts (per NIP-88)
+    final optionIds = isSingleChoice
+        ? [response.firstSelectedOptionId].whereType<String>()
+        : response.selectedOptionIds;
+
+    bool hasValidVote = false;
+    for (final optionId in optionIds) {
+      if (validOptionIds.contains(optionId)) {
+        voteCounts[optionId] = (voteCounts[optionId] ?? 0) + 1;
+        hasValidVote = true;
+      }
     }
+    if (hasValidVote) validVoterCount++;
   }
-  return voteCounts;
+
+  return (voteCounts, validVoterCount);
 }
 
-/// Mock poll response for testing
+/// Mock poll response for testing (uses List to preserve order per NIP-88)
 class MockPollResponse {
   final String pubkey;
   final DateTime createdAt;
-  final Set<String> selectedOptionIds;
+  final List<String> selectedOptionIds; // List preserves order
 
   MockPollResponse({
     required this.pubkey,
     required this.createdAt,
     required this.selectedOptionIds,
   });
+
+  /// First selected option (for singlechoice polls per NIP-88)
+  String? get firstSelectedOptionId =>
+      selectedOptionIds.isEmpty ? null : selectedOptionIds.first;
 }
 
 void main() {
@@ -91,17 +118,60 @@ void main() {
     });
 
     test('returns true for zapstore team member on any app', () {
-      // First zapstore team member (converted from npub)
       final zapstoreTeamMember = _zapstoreTeamHex.first;
       expect(canCreatePoll(zapstoreTeamMember, appDevPubkey), isTrue);
     });
 
     test('npub to hex conversion works correctly', () {
-      // Verify that all npubs convert to valid 64-char hex strings
       for (final hex in _zapstoreTeamHex) {
         expect(hex.length, equals(64));
         expect(RegExp(r'^[0-9a-f]+$').hasMatch(hex), isTrue);
       }
+    });
+  });
+
+  group('filterValidResponses (post-expiry filtering)', () {
+    test('filters out votes after poll expiry', () {
+      final pollEndsAt = DateTime(2026, 1, 26, 12, 0);
+      final responses = [
+        MockPollResponse(
+          pubkey: 'user1',
+          createdAt: DateTime(2026, 1, 26, 10, 0), // Before expiry - valid
+          selectedOptionIds: ['opt0'],
+        ),
+        MockPollResponse(
+          pubkey: 'user2',
+          createdAt: DateTime(2026, 1, 26, 14, 0), // After expiry - invalid
+          selectedOptionIds: ['opt1'],
+        ),
+        MockPollResponse(
+          pubkey: 'user3',
+          createdAt: DateTime(2026, 1, 26, 11, 59), // Just before - valid
+          selectedOptionIds: ['opt0'],
+        ),
+      ];
+
+      final valid = filterValidResponses(responses, pollEndsAt);
+      expect(valid.length, equals(2));
+      expect(valid.map((r) => r.pubkey).toSet(), equals({'user1', 'user3'}));
+    });
+
+    test('returns all responses when poll has no expiry', () {
+      final responses = [
+        MockPollResponse(
+          pubkey: 'user1',
+          createdAt: DateTime(2026, 1, 26, 10, 0),
+          selectedOptionIds: ['opt0'],
+        ),
+        MockPollResponse(
+          pubkey: 'user2',
+          createdAt: DateTime(2099, 12, 31, 23, 59),
+          selectedOptionIds: ['opt1'],
+        ),
+      ];
+
+      final valid = filterValidResponses(responses, null);
+      expect(valid.length, equals(2));
     });
   });
 
@@ -111,19 +181,19 @@ void main() {
         MockPollResponse(
           pubkey: 'user1',
           createdAt: DateTime(2026, 1, 26, 10, 0),
-          selectedOptionIds: {'opt0'},
+          selectedOptionIds: ['opt0'],
         ),
         MockPollResponse(
           pubkey: 'user2',
           createdAt: DateTime(2026, 1, 26, 10, 0),
-          selectedOptionIds: {'opt1'},
+          selectedOptionIds: ['opt1'],
         ),
       ];
 
       final result = deduplicateResponses(responses);
       expect(result.length, equals(2));
-      expect(result['user1']!.selectedOptionIds, equals({'opt0'}));
-      expect(result['user2']!.selectedOptionIds, equals({'opt1'}));
+      expect(result['user1']!.selectedOptionIds, equals(['opt0']));
+      expect(result['user2']!.selectedOptionIds, equals(['opt1']));
     });
 
     test('keeps latest response when user votes multiple times', () {
@@ -131,18 +201,18 @@ void main() {
         MockPollResponse(
           pubkey: 'user1',
           createdAt: DateTime(2026, 1, 26, 10, 0),
-          selectedOptionIds: {'opt0'},
+          selectedOptionIds: ['opt0'],
         ),
         MockPollResponse(
           pubkey: 'user1',
           createdAt: DateTime(2026, 1, 26, 11, 0), // Later
-          selectedOptionIds: {'opt1'},
+          selectedOptionIds: ['opt1'],
         ),
       ];
 
       final result = deduplicateResponses(responses);
       expect(result.length, equals(1));
-      expect(result['user1']!.selectedOptionIds, equals({'opt1'}));
+      expect(result['user1']!.selectedOptionIds, equals(['opt1']));
     });
 
     test('handles empty list', () {
@@ -151,79 +221,121 @@ void main() {
     });
   });
 
-  group('calculateVoteCounts', () {
-    test('counts votes correctly for single-choice poll', () {
-      final optionIds = ['opt0', 'opt1', 'opt2'];
+  group('calculateVoteCountsNip88 - single choice', () {
+    test('only counts first response tag for singlechoice polls', () {
+      final validOptionIds = {'opt0', 'opt1', 'opt2'};
       final responses = [
         MockPollResponse(
           pubkey: 'user1',
           createdAt: DateTime.now(),
-          selectedOptionIds: {'opt0'},
+          // User sent multiple response tags, but only first should count
+          selectedOptionIds: ['opt0', 'opt1', 'opt2'],
         ),
         MockPollResponse(
           pubkey: 'user2',
           createdAt: DateTime.now(),
-          selectedOptionIds: {'opt0'},
-        ),
-        MockPollResponse(
-          pubkey: 'user3',
-          createdAt: DateTime.now(),
-          selectedOptionIds: {'opt1'},
+          selectedOptionIds: ['opt1'],
         ),
       ];
 
-      final counts = calculateVoteCounts(optionIds, responses);
-      expect(counts['opt0'], equals(2));
-      expect(counts['opt1'], equals(1));
-      expect(counts['opt2'], equals(0));
+      final (counts, voterCount) =
+          calculateVoteCountsNip88(validOptionIds, responses, true);
+      expect(counts['opt0'], equals(1)); // user1's first choice
+      expect(counts['opt1'], equals(1)); // user2's choice
+      expect(counts['opt2'], equals(0)); // ignored (not first)
+      expect(voterCount, equals(2));
     });
 
-    test('counts votes correctly for multi-choice poll', () {
-      final optionIds = ['opt0', 'opt1', 'opt2'];
+    test('first response tag order is preserved', () {
+      final validOptionIds = {'opt0', 'opt1'};
+      // Different order in tags
       final responses = [
         MockPollResponse(
           pubkey: 'user1',
           createdAt: DateTime.now(),
-          selectedOptionIds: {'opt0', 'opt1'}, // Voted for two options
+          selectedOptionIds: ['opt1', 'opt0'], // opt1 is first
+        ),
+      ];
+
+      final (counts, _) =
+          calculateVoteCountsNip88(validOptionIds, responses, true);
+      expect(counts['opt0'], equals(0));
+      expect(counts['opt1'], equals(1)); // Only first tag counts
+    });
+  });
+
+  group('calculateVoteCountsNip88 - multiple choice', () {
+    test('counts all response tags for multiplechoice polls', () {
+      final validOptionIds = {'opt0', 'opt1', 'opt2'};
+      final responses = [
+        MockPollResponse(
+          pubkey: 'user1',
+          createdAt: DateTime.now(),
+          selectedOptionIds: ['opt0', 'opt1'], // Both count
         ),
         MockPollResponse(
           pubkey: 'user2',
           createdAt: DateTime.now(),
-          selectedOptionIds: {'opt1', 'opt2'},
+          selectedOptionIds: ['opt1', 'opt2'],
         ),
       ];
 
-      final counts = calculateVoteCounts(optionIds, responses);
+      final (counts, voterCount) =
+          calculateVoteCountsNip88(validOptionIds, responses, false);
       expect(counts['opt0'], equals(1));
       expect(counts['opt1'], equals(2));
       expect(counts['opt2'], equals(1));
+      expect(voterCount, equals(2));
     });
+  });
 
-    test('returns zeros for poll with no votes', () {
-      final optionIds = ['opt0', 'opt1'];
-      final counts = calculateVoteCounts(optionIds, []);
-      expect(counts['opt0'], equals(0));
-      expect(counts['opt1'], equals(0));
-    });
-
-    test('counts votes for unknown options but they are not displayed', () {
-      // Unknown options get counted but since we only iterate over
-      // known optionIds when displaying, they are effectively ignored
-      final optionIds = ['opt0', 'opt1'];
+  group('calculateVoteCountsNip88 - invalid options', () {
+    test('ignores votes for unknown option IDs', () {
+      final validOptionIds = {'opt0', 'opt1'};
       final responses = [
         MockPollResponse(
           pubkey: 'user1',
           createdAt: DateTime.now(),
-          selectedOptionIds: {'opt0', 'unknown_option'},
+          selectedOptionIds: ['opt0', 'invalid_option'],
+        ),
+        MockPollResponse(
+          pubkey: 'user2',
+          createdAt: DateTime.now(),
+          selectedOptionIds: ['invalid_only'], // All invalid
         ),
       ];
 
-      final counts = calculateVoteCounts(optionIds, responses);
+      final (counts, voterCount) =
+          calculateVoteCountsNip88(validOptionIds, responses, false);
       expect(counts['opt0'], equals(1));
       expect(counts['opt1'], equals(0));
-      // Unknown option gets counted but won't be displayed in UI
-      // since we iterate over poll.options, not voteCounts keys
-      expect(counts['unknown_option'], equals(1));
+      expect(counts.containsKey('invalid_option'), isFalse);
+      // user2 has no valid votes, so not counted in voterCount
+      expect(voterCount, equals(1));
+    });
+
+    test('percentage calculation excludes invalid voters', () {
+      final validOptionIds = {'opt0', 'opt1'};
+      final responses = [
+        MockPollResponse(
+          pubkey: 'user1',
+          createdAt: DateTime.now(),
+          selectedOptionIds: ['opt0'],
+        ),
+        MockPollResponse(
+          pubkey: 'user2',
+          createdAt: DateTime.now(),
+          selectedOptionIds: ['invalid'], // Invalid - not counted
+        ),
+      ];
+
+      final (counts, voterCount) =
+          calculateVoteCountsNip88(validOptionIds, responses, true);
+
+      // Only 1 valid voter, so opt0 should be 100%
+      expect(voterCount, equals(1));
+      final percentage = voterCount > 0 ? (counts['opt0']! / voterCount * 100) : 0.0;
+      expect(percentage, equals(100.0));
     });
   });
 
@@ -244,6 +356,24 @@ void main() {
       const DateTime? endsAt = null;
       final isExpired = endsAt != null && DateTime.now().isAfter(endsAt);
       expect(isExpired, isFalse);
+    });
+  });
+
+  group('Response tag order preservation', () {
+    test('List preserves tag order unlike Set', () {
+      final response = MockPollResponse(
+        pubkey: 'user1',
+        createdAt: DateTime.now(),
+        selectedOptionIds: ['third', 'first', 'second'],
+      );
+
+      // List preserves insertion order
+      expect(response.selectedOptionIds[0], equals('third'));
+      expect(response.selectedOptionIds[1], equals('first'));
+      expect(response.selectedOptionIds[2], equals('second'));
+
+      // First selected option is the first in the list
+      expect(response.firstSelectedOptionId, equals('third'));
     });
   });
 }
