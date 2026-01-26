@@ -10,6 +10,13 @@ import 'package:zapstore/widgets/auth_widgets.dart';
 import 'package:zapstore/widgets/common/profile_avatar.dart';
 import 'package:zapstore/widgets/common/profile_name_widget.dart';
 
+/// Zapstore team npubs authorized to create polls on any app
+const _zapstoreTeamNpubs = {
+  'npub10r8xl2njyepcw2zwv3a6dyufj4e4ajx86hz6v4ehu4gnpupxxp7stjt2p8',
+  'npub1wf4pufsucer5va8g9p0rj5dnhvfeh6d8w0g6eayaep5dhps6rsgs43dgh9',
+  'npub1zafcms4xya5ap9zr7xxr0jlrtrattwlesytn2s42030lzu0dwlzqpd26k5',
+};
+
 /// Polls section for App detail screen (NIP-88)
 class PollsSection extends HookConsumerWidget {
   const PollsSection({super.key, required this.app});
@@ -18,9 +25,13 @@ class PollsSection extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Query polls tagged to this app
+    // Only show polls from app developer or zapstore team
+    final authorizedPubkeys = {app.pubkey, ..._zapstoreTeamNpubs};
+
+    // Query polls tagged to this app from authorized authors
     final pollsState = ref.watch(
       query<Poll>(
+        authors: authorizedPubkeys,
         tags: {
           '#a': {app.id},
         },
