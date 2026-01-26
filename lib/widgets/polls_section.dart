@@ -26,7 +26,15 @@ class PollsSection extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // Only show polls from app developer or zapstore team
-    final authorizedPubkeys = {app.pubkey, ..._zapstoreTeamNpubs};
+    // Convert npubs to hex for the query
+    final zapstoreTeamHex = _zapstoreTeamNpubs.map((npub) {
+      try {
+        return Utils.decodeShareableToString(npub);
+      } catch (_) {
+        return npub;
+      }
+    }).toSet();
+    final authorizedPubkeys = {app.pubkey, ...zapstoreTeamHex};
 
     // Query polls tagged to this app from authorized authors
     final pollsState = ref.watch(
