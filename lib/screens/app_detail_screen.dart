@@ -19,6 +19,7 @@ import 'package:zapstore/widgets/app_header.dart';
 import 'package:zapstore/widgets/app_info_table.dart';
 import 'package:zapstore/widgets/author_container.dart';
 import 'package:zapstore/widgets/comments_section.dart';
+import 'package:zapstore/widgets/polls_section.dart';
 import 'package:zapstore/widgets/download_text_container.dart';
 import 'package:zapstore/widgets/expandable_markdown.dart';
 import 'package:zapstore/widgets/install_button.dart';
@@ -410,6 +411,8 @@ class _AppDetailContent extends HookConsumerWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: AppInfoTable(app: app, fileMetadata: latestMetadata),
                   ),
+
+                  PollsSection(app: app),
 
                   CommentsSection(app: app, fileMetadata: latestMetadata),
 
