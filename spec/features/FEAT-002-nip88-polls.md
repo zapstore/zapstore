@@ -6,9 +6,8 @@ Allow app developers to create polls and gather feedback from users directly on 
 
 ## Non-Goals
 
-- Creating polls from within the zapstore app (initially view/vote only)
 - Displaying polls outside of app detail screens
-- Poll moderation or spam filtering
+- Poll moderation beyond author filtering (app developer + zapstore team only)
 - Weighted voting or WoT-based result curation (can be added later)
 - Real-time vote count updates (local-first, refresh-based)
 
@@ -30,6 +29,17 @@ Allow app developers to create polls and gather feedback from users directly on 
 - Vote submission shows loading state, then success/error feedback
 - User must be signed in to vote (prompt sign-in if not)
 
+### Poll Creation
+
+- App developers can create polls on their own app pages
+- Zapstore team members can create polls on any app page
+- Create button opens modal with:
+  - Question input
+  - Dynamic option list (2-10 options)
+  - Poll type selector (single/multiple choice)
+  - Optional expiration (1/3/7/14/30 days)
+- Poll signed via Amber and published to social relays
+
 ### States
 
 - **Loading**: Skeleton while fetching polls
@@ -50,15 +60,18 @@ Allow app developers to create polls and gather feedback from users directly on 
 
 ## Acceptance Criteria
 
-- [ ] Polls section visible on app detail screen when polls exist
-- [ ] Poll question and options display correctly
-- [ ] Vote counts show correctly (one vote per pubkey)
-- [ ] User can vote on active polls when signed in
-- [ ] User's existing vote is visually indicated
-- [ ] Expired polls show results but disable voting
-- [ ] Vote submission shows loading → success/error feedback
-- [ ] Unsigned users see prompt to sign in when attempting to vote
-- [ ] Empty state shown gracefully when no polls exist
+- [x] Polls section visible on app detail screen when polls exist
+- [x] Poll question and options display correctly
+- [x] Vote counts show correctly (one vote per pubkey)
+- [x] User can vote on active polls when signed in
+- [x] User's existing vote is visually indicated
+- [x] Expired polls show results but disable voting
+- [x] Vote submission shows loading → success/error feedback
+- [x] Unsigned users see prompt to sign in when attempting to vote
+- [x] Empty state shown gracefully when no polls exist
+- [x] Only polls from app developer or zapstore team are displayed
+- [x] App developers can create polls on their own app pages
+- [x] Zapstore team can create polls on any app page
 - [ ] Offline: cached polls display, voting disabled with explanation
 
 ## Technical Notes
