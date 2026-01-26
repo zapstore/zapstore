@@ -709,12 +709,24 @@ class _CreatePollComposer extends HookConsumerWidget {
     final pollType = useState(PollType.singlechoice);
     final hasExpiration = useState(false);
     final expirationDays = useState(7);
+    // Trigger rebuilds when text changes (instead of useListenable in loop)
+    final rebuildTrigger = useState(0);
 
-    // Rebuild on text changes
+    // Rebuild on question text changes
     useListenable(questionController);
-    for (final controller in optionControllers.value) {
-      useListenable(controller);
-    }
+
+    // Set up listeners for option controllers to trigger rebuilds
+    useEffect(() {
+      void listener() => rebuildTrigger.value++;
+      for (final controller in optionControllers.value) {
+        controller.addListener(listener);
+      }
+      return () {
+        for (final controller in optionControllers.value) {
+          controller.removeListener(listener);
+        }
+      };
+    }, [optionControllers.value]);
 
     // Clean up controllers on dispose
     useEffect(() {
