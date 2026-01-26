@@ -36,10 +36,19 @@ class InstalledPackagesSnapshot {
         'installed': list,
       });
       await tmp.writeAsString(payload, flush: true);
-      if (await file.exists()) {
-        await file.delete();
+      // Atomic replace: rename() on Linux/Android atomically replaces destination
+      try {
+        await tmp.rename(file.path);
+      } catch (renameError) {
+        // Rename failed - try to preserve tmp file for recovery
+        if (kDebugMode) {
+          debugPrint(
+              '[InstalledPackagesSnapshot] Atomic rename failed: $renameError');
+          debugPrint('[InstalledPackagesSnapshot] Temp file preserved at: ${tmp.path}');
+        }
+        // Don't delete tmp - leave it for manual recovery if needed
+        rethrow;
       }
-      await tmp.rename(file.path);
     } catch (e) {
       // Best-effort snapshot only.
       if (kDebugMode) {

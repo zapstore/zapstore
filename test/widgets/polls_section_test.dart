@@ -1,85 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:models/models.dart';
-
-// Zapstore team npubs (same as in polls_section.dart)
-const _zapstoreTeamNpubs = {
-  'npub10r8xl2njyepcw2zwv3a6dyufj4e4ajx86hz6v4ehu4gnpupxxp7stjt2p8',
-  'npub1wf4pufsucer5va8g9p0rj5dnhvfeh6d8w0g6eayaep5dhps6rsgs43dgh9',
-  'npub1zafcms4xya5ap9zr7xxr0jlrtrattwlesytn2s42030lzu0dwlzqpd26k5',
-};
-
-// Convert zapstore team npubs to hex (for testing)
-Set<String> get _zapstoreTeamHex => _zapstoreTeamNpubs.map((npub) {
-      try {
-        return Utils.decodeShareableToString(npub);
-      } catch (_) {
-        return npub;
-      }
-    }).toSet();
-
-/// Check if a pubkey is authorized to create polls on an app
-/// (extracted from polls_section.dart for testing)
-bool canCreatePoll(String? signedInPubkey, String appPubkey) {
-  if (signedInPubkey == null) return false;
-  if (signedInPubkey == appPubkey) return true;
-  return _zapstoreTeamHex.contains(signedInPubkey);
-}
-
-/// Filter out votes created after poll expiry (per NIP-88)
-List<MockPollResponse> filterValidResponses(
-  List<MockPollResponse> responses,
-  DateTime? pollEndsAt,
-) {
-  if (pollEndsAt == null) return responses;
-  return responses.where((r) => r.createdAt.isBefore(pollEndsAt)).toList();
-}
-
-/// Deduplicate responses by pubkey (latest wins)
-Map<String, MockPollResponse> deduplicateResponses(
-    List<MockPollResponse> responses) {
-  final responsesByPubkey = <String, MockPollResponse>{};
-  for (final response in responses) {
-    final existing = responsesByPubkey[response.pubkey];
-    if (existing == null || response.createdAt.isAfter(existing.createdAt)) {
-      responsesByPubkey[response.pubkey] = response;
-    }
-  }
-  return responsesByPubkey;
-}
-
-/// Calculate vote counts per option (NIP-88 compliant)
-/// For singlechoice: only count first response tag
-/// For multiplechoice: count all response tags
-/// Returns (voteCounts, validVoterCount) - validVoterCount excludes invalid votes
-(Map<String, int>, int) calculateVoteCountsNip88(
-  Set<String> validOptionIds,
-  List<MockPollResponse> responses,
-  bool isSingleChoice,
-) {
-  final voteCounts = <String, int>{};
-  for (final optionId in validOptionIds) {
-    voteCounts[optionId] = 0;
-  }
-
-  int validVoterCount = 0;
-  for (final response in responses) {
-    // For singlechoice: only first option counts (per NIP-88)
-    final optionIds = isSingleChoice
-        ? [response.firstSelectedOptionId].whereType<String>()
-        : response.selectedOptionIds;
-
-    bool hasValidVote = false;
-    for (final optionId in optionIds) {
-      if (validOptionIds.contains(optionId)) {
-        voteCounts[optionId] = (voteCounts[optionId] ?? 0) + 1;
-        hasValidVote = true;
-      }
-    }
-    if (hasValidVote) validVoterCount++;
-  }
-
-  return (voteCounts, validVoterCount);
-}
+import 'package:zapstore/widgets/polls_utils.dart';
 
 /// Mock poll response for testing (uses List to preserve order per NIP-88)
 class MockPollResponse {
@@ -98,8 +18,21 @@ class MockPollResponse {
       selectedOptionIds.isEmpty ? null : selectedOptionIds.first;
 }
 
+/// Deduplicate responses by pubkey (latest wins)
+Map<String, MockPollResponse> deduplicateResponses(
+    List<MockPollResponse> responses) {
+  final responsesByPubkey = <String, MockPollResponse>{};
+  for (final response in responses) {
+    final existing = responsesByPubkey[response.pubkey];
+    if (existing == null || response.createdAt.isAfter(existing.createdAt)) {
+      responsesByPubkey[response.pubkey] = response;
+    }
+  }
+  return responsesByPubkey;
+}
+
 void main() {
-  group('canCreatePoll', () {
+  group('canCreatePoll (from polls_utils)', () {
     const appDevPubkey =
         'abcd1234567890abcd1234567890abcd1234567890abcd1234567890abcd1234';
     const randomUserPubkey =
@@ -118,12 +51,12 @@ void main() {
     });
 
     test('returns true for zapstore team member on any app', () {
-      final zapstoreTeamMember = _zapstoreTeamHex.first;
+      final zapstoreTeamMember = zapstoreTeamHex.first;
       expect(canCreatePoll(zapstoreTeamMember, appDevPubkey), isTrue);
     });
 
     test('npub to hex conversion works correctly', () {
-      for (final hex in _zapstoreTeamHex) {
+      for (final hex in zapstoreTeamHex) {
         expect(hex.length, equals(64));
         expect(RegExp(r'^[0-9a-f]+$').hasMatch(hex), isTrue);
       }
@@ -151,9 +84,37 @@ void main() {
         ),
       ];
 
-      final valid = filterValidResponses(responses, pollEndsAt);
+      final valid = filterValidResponses(
+        responses: responses,
+        pollEndsAt: pollEndsAt,
+        getCreatedAt: (r) => r.createdAt,
+      );
       expect(valid.length, equals(2));
       expect(valid.map((r) => r.pubkey).toSet(), equals({'user1', 'user3'}));
+    });
+
+    test('includes votes at exact poll end time (NIP-88 compliance)', () {
+      final pollEndsAt = DateTime(2026, 1, 26, 12, 0);
+      final responses = [
+        MockPollResponse(
+          pubkey: 'user1',
+          createdAt: DateTime(2026, 1, 26, 12, 0), // Exactly at end - valid
+          selectedOptionIds: ['opt0'],
+        ),
+        MockPollResponse(
+          pubkey: 'user2',
+          createdAt: DateTime(2026, 1, 26, 12, 0, 0, 1), // Just after - invalid
+          selectedOptionIds: ['opt1'],
+        ),
+      ];
+
+      final valid = filterValidResponses(
+        responses: responses,
+        pollEndsAt: pollEndsAt,
+        getCreatedAt: (r) => r.createdAt,
+      );
+      expect(valid.length, equals(1));
+      expect(valid.first.pubkey, equals('user1'));
     });
 
     test('returns all responses when poll has no expiry', () {
@@ -170,7 +131,11 @@ void main() {
         ),
       ];
 
-      final valid = filterValidResponses(responses, null);
+      final valid = filterValidResponses(
+        responses: responses,
+        pollEndsAt: null,
+        getCreatedAt: (r) => r.createdAt,
+      );
       expect(valid.length, equals(2));
     });
   });
@@ -221,7 +186,7 @@ void main() {
     });
   });
 
-  group('calculateVoteCountsNip88 - single choice', () {
+  group('calculateVoteCounts - single choice', () {
     test('only counts first response tag for singlechoice polls', () {
       final validOptionIds = {'opt0', 'opt1', 'opt2'};
       final responses = [
@@ -238,12 +203,17 @@ void main() {
         ),
       ];
 
-      final (counts, voterCount) =
-          calculateVoteCountsNip88(validOptionIds, responses, true);
-      expect(counts['opt0'], equals(1)); // user1's first choice
-      expect(counts['opt1'], equals(1)); // user2's choice
-      expect(counts['opt2'], equals(0)); // ignored (not first)
-      expect(voterCount, equals(2));
+      final result = calculateVoteCounts(
+        validOptionIds: validOptionIds,
+        responses: responses,
+        isSingleChoice: true,
+        getFirstOptionId: (r) => r.firstSelectedOptionId,
+        getAllOptionIds: (r) => r.selectedOptionIds,
+      );
+      expect(result.counts['opt0'], equals(1)); // user1's first choice
+      expect(result.counts['opt1'], equals(1)); // user2's choice
+      expect(result.counts['opt2'], equals(0)); // ignored (not first)
+      expect(result.validVoterCount, equals(2));
     });
 
     test('first response tag order is preserved', () {
@@ -257,14 +227,19 @@ void main() {
         ),
       ];
 
-      final (counts, _) =
-          calculateVoteCountsNip88(validOptionIds, responses, true);
-      expect(counts['opt0'], equals(0));
-      expect(counts['opt1'], equals(1)); // Only first tag counts
+      final result = calculateVoteCounts(
+        validOptionIds: validOptionIds,
+        responses: responses,
+        isSingleChoice: true,
+        getFirstOptionId: (r) => r.firstSelectedOptionId,
+        getAllOptionIds: (r) => r.selectedOptionIds,
+      );
+      expect(result.counts['opt0'], equals(0));
+      expect(result.counts['opt1'], equals(1)); // Only first tag counts
     });
   });
 
-  group('calculateVoteCountsNip88 - multiple choice', () {
+  group('calculateVoteCounts - multiple choice', () {
     test('counts all response tags for multiplechoice polls', () {
       final validOptionIds = {'opt0', 'opt1', 'opt2'};
       final responses = [
@@ -280,16 +255,21 @@ void main() {
         ),
       ];
 
-      final (counts, voterCount) =
-          calculateVoteCountsNip88(validOptionIds, responses, false);
-      expect(counts['opt0'], equals(1));
-      expect(counts['opt1'], equals(2));
-      expect(counts['opt2'], equals(1));
-      expect(voterCount, equals(2));
+      final result = calculateVoteCounts(
+        validOptionIds: validOptionIds,
+        responses: responses,
+        isSingleChoice: false,
+        getFirstOptionId: (r) => r.firstSelectedOptionId,
+        getAllOptionIds: (r) => r.selectedOptionIds,
+      );
+      expect(result.counts['opt0'], equals(1));
+      expect(result.counts['opt1'], equals(2));
+      expect(result.counts['opt2'], equals(1));
+      expect(result.validVoterCount, equals(2));
     });
   });
 
-  group('calculateVoteCountsNip88 - invalid options', () {
+  group('calculateVoteCounts - invalid options', () {
     test('ignores votes for unknown option IDs', () {
       final validOptionIds = {'opt0', 'opt1'};
       final responses = [
@@ -305,13 +285,18 @@ void main() {
         ),
       ];
 
-      final (counts, voterCount) =
-          calculateVoteCountsNip88(validOptionIds, responses, false);
-      expect(counts['opt0'], equals(1));
-      expect(counts['opt1'], equals(0));
-      expect(counts.containsKey('invalid_option'), isFalse);
-      // user2 has no valid votes, so not counted in voterCount
-      expect(voterCount, equals(1));
+      final result = calculateVoteCounts(
+        validOptionIds: validOptionIds,
+        responses: responses,
+        isSingleChoice: false,
+        getFirstOptionId: (r) => r.firstSelectedOptionId,
+        getAllOptionIds: (r) => r.selectedOptionIds,
+      );
+      expect(result.counts['opt0'], equals(1));
+      expect(result.counts['opt1'], equals(0));
+      expect(result.counts.containsKey('invalid_option'), isFalse);
+      // user2 has no valid votes, so not counted in validVoterCount
+      expect(result.validVoterCount, equals(1));
     });
 
     test('percentage calculation excludes invalid voters', () {
@@ -329,12 +314,19 @@ void main() {
         ),
       ];
 
-      final (counts, voterCount) =
-          calculateVoteCountsNip88(validOptionIds, responses, true);
+      final result = calculateVoteCounts(
+        validOptionIds: validOptionIds,
+        responses: responses,
+        isSingleChoice: true,
+        getFirstOptionId: (r) => r.firstSelectedOptionId,
+        getAllOptionIds: (r) => r.selectedOptionIds,
+      );
 
       // Only 1 valid voter, so opt0 should be 100%
-      expect(voterCount, equals(1));
-      final percentage = voterCount > 0 ? (counts['opt0']! / voterCount * 100) : 0.0;
+      expect(result.validVoterCount, equals(1));
+      final percentage = result.validVoterCount > 0
+          ? (result.counts['opt0']! / result.validVoterCount * 100)
+          : 0.0;
       expect(percentage, equals(100.0));
     });
   });

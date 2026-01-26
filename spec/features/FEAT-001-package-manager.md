@@ -50,7 +50,7 @@ Manages the complete lifecycle: download → verify → install, with pause/resu
 
 Operations follow this sealed class hierarchy (`install_operation.dart`):
 
-```
+```text
 DownloadQueued → Downloading ↔ DownloadPaused
                       ↓
                  Verifying
@@ -87,7 +87,7 @@ These are non-negotiable. Violations mean the implementation is broken.
 
 ## Integration Boundaries
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │ PackageManager (Dart)                                       │
 │   - State machine owner                                     │

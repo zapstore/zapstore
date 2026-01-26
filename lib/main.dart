@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:io' show Platform;
+import 'dart:io' show File, Platform;
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
@@ -203,6 +203,27 @@ class ZapstoreHome extends StatelessWidget {
 final appInitializationProvider = FutureProvider<void>((ref) async {
   final dir = await getApplicationSupportDirectory();
   final dbPath = path.join(dir.path, 'zapstore.db');
+
+  // Migrate database from old location (Documents) to new location (Support)
+  // This preserves existing users' data after the directory change
+  final oldDir = await getApplicationDocumentsDirectory();
+  final oldDbPath = path.join(oldDir.path, 'zapstore.db');
+  final oldDbFile = File(oldDbPath);
+  final newDbFile = File(dbPath);
+
+  if (await oldDbFile.exists() && !await newDbFile.exists()) {
+    try {
+      // Ensure the new directory exists
+      await newDbFile.parent.create(recursive: true);
+      // Copy the old database to the new location
+      await oldDbFile.copy(dbPath);
+      // Delete the old file after successful copy
+      await oldDbFile.delete();
+    } catch (e) {
+      // Log but don't fail - user can still use app with fresh database
+      debugPrint('Database migration failed: $e');
+    }
+  }
 
   // Clear storage if requested from a clear all operation
   await maybeClearStorage(dbPath);

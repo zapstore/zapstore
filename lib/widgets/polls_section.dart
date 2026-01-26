@@ -9,13 +9,7 @@ import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/auth_widgets.dart';
 import 'package:zapstore/widgets/common/profile_avatar.dart';
 import 'package:zapstore/widgets/common/profile_name_widget.dart';
-
-/// Zapstore team npubs authorized to create polls on any app
-const _zapstoreTeamNpubs = {
-  'npub10r8xl2njyepcw2zwv3a6dyufj4e4ajx86hz6v4ehu4gnpupxxp7stjt2p8',
-  'npub1wf4pufsucer5va8g9p0rj5dnhvfeh6d8w0g6eayaep5dhps6rsgs43dgh9',
-  'npub1zafcms4xya5ap9zr7xxr0jlrtrattwlesytn2s42030lzu0dwlzqpd26k5',
-};
+import 'package:zapstore/widgets/polls_utils.dart';
 
 /// Polls section for App detail screen (NIP-88)
 class PollsSection extends HookConsumerWidget {
@@ -26,14 +20,6 @@ class PollsSection extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // Only show polls from app developer or zapstore team
-    // Convert npubs to hex for the query
-    final zapstoreTeamHex = _zapstoreTeamNpubs.map((npub) {
-      try {
-        return Utils.decodeShareableToString(npub);
-      } catch (_) {
-        return npub;
-      }
-    }).toSet();
     final authorizedPubkeys = {app.pubkey, ...zapstoreTeamHex};
 
     // Query polls tagged to this app from authorized authors
@@ -68,21 +54,9 @@ class PollsSection extends HookConsumerWidget {
 }
 
 /// Check if a pubkey is authorized to create polls on an app
-bool _canCreatePoll(String? signedInPubkey, App app) {
-  if (signedInPubkey == null) return false;
-  // App developer can create polls on their own app
-  if (signedInPubkey == app.pubkey) return true;
-  // Zapstore team can create polls on any app
-  // Convert npubs to hex for comparison
-  final zapstoreTeamHex = _zapstoreTeamNpubs.map((npub) {
-    try {
-      return Utils.decodeShareableToString(npub);
-    } catch (_) {
-      return npub;
-    }
-  }).toSet();
-  return zapstoreTeamHex.contains(signedInPubkey);
-}
+/// Delegates to shared utility function for testability
+bool _canCreatePoll(String? signedInPubkey, App app) =>
+    canCreatePoll(signedInPubkey, app.pubkey);
 
 /// Layout for polls section
 class _PollsSectionLayout extends ConsumerWidget {
@@ -261,8 +235,9 @@ class _PollCard extends HookConsumerWidget {
     };
 
     // Filter out votes created after poll expiry (per NIP-88)
+    // Votes at exactly the end time are included (!isAfter = at or before)
     final validResponses = poll.endsAt != null
-        ? allResponses.where((r) => r.createdAt.isBefore(poll.endsAt!)).toList()
+        ? allResponses.where((r) => !r.createdAt.isAfter(poll.endsAt!)).toList()
         : allResponses;
 
     // Deduplicate: one vote per pubkey (latest valid vote wins)
@@ -767,14 +742,16 @@ class _CreatePollComposer extends HookConsumerWidget {
       };
     }, [optionControllers.value]);
 
-    // Clean up controllers on dispose
+    // Clean up controllers when list changes or widget unmounts
+    // Capture current controllers to dispose them properly
     useEffect(() {
+      final controllersSnapshot = List<TextEditingController>.from(optionControllers.value);
       return () {
-        for (final controller in optionControllers.value) {
+        for (final controller in controllersSnapshot) {
           controller.dispose();
         }
       };
-    }, []);
+    }, [optionControllers.value]);
 
     final canSubmit = questionController.text.trim().isNotEmpty &&
         optionControllers.value
