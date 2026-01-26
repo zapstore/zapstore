@@ -59,8 +59,25 @@ class PollsSection extends HookConsumerWidget {
   }
 }
 
+/// Check if a pubkey is authorized to create polls on an app
+bool _canCreatePoll(String? signedInPubkey, App app) {
+  if (signedInPubkey == null) return false;
+  // App developer can create polls on their own app
+  if (signedInPubkey == app.pubkey) return true;
+  // Zapstore team can create polls on any app
+  // Convert npubs to hex for comparison
+  final zapstoreTeamHex = _zapstoreTeamNpubs.map((npub) {
+    try {
+      return Utils.decodeShareableToString(npub);
+    } catch (_) {
+      return npub;
+    }
+  }).toSet();
+  return zapstoreTeamHex.contains(signedInPubkey);
+}
+
 /// Layout for polls section
-class _PollsSectionLayout extends StatelessWidget {
+class _PollsSectionLayout extends ConsumerWidget {
   const _PollsSectionLayout({
     required this.polls,
     required this.errorException,
@@ -74,7 +91,10 @@ class _PollsSectionLayout extends StatelessWidget {
   final App app;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
+    final canCreate = _canCreatePoll(signedInPubkey, app);
+
     // Sort polls by creation date (newest first), expired polls at end
     final sortedPolls = [...polls]..sort((a, b) {
         // Expired polls go to the end
@@ -84,8 +104,8 @@ class _PollsSectionLayout extends StatelessWidget {
         return b.createdAt.compareTo(a.createdAt);
       });
 
-    // Don't render anything if no polls and not loading
-    if (sortedPolls.isEmpty && !isLoading && errorException == null) {
+    // Show section if: has polls, is loading, has error, OR user can create polls
+    if (sortedPolls.isEmpty && !isLoading && errorException == null && !canCreate) {
       return const SizedBox.shrink();
     }
 
@@ -103,6 +123,11 @@ class _PollsSectionLayout extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
+          // Create Poll button for authorized users
+          if (canCreate) ...[
+            _CreatePollButton(app: app),
+            const SizedBox(height: 12),
+          ],
           // Loading state
           if (isLoading) ...[
             const Center(
@@ -630,6 +655,340 @@ class _VoteButton extends HookConsumerWidget {
     } catch (e) {
       if (context.mounted) {
         context.showError('Failed to submit vote', description: '$e');
+      }
+    }
+  }
+}
+
+/// Button to create a new poll
+class _CreatePollButton extends StatelessWidget {
+  const _CreatePollButton({required this.app});
+
+  final App app;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: FilledButton.icon(
+        onPressed: () => _showCreatePollComposer(context),
+        icon: const Icon(Icons.poll_outlined),
+        label: const Text('Create Poll'),
+        style: FilledButton.styleFrom(
+          backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+          foregroundColor: Theme.of(context).colorScheme.onSurface,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      ),
+    );
+  }
+
+  void _showCreatePollComposer(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => _CreatePollComposer(app: app),
+    );
+  }
+}
+
+/// Modal for creating a new poll
+class _CreatePollComposer extends HookConsumerWidget {
+  const _CreatePollComposer({required this.app});
+
+  final App app;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final questionController = useTextEditingController();
+    final optionControllers = useState<List<TextEditingController>>([
+      TextEditingController(),
+      TextEditingController(),
+    ]);
+    final pollType = useState(PollType.singlechoice);
+    final hasExpiration = useState(false);
+    final expirationDays = useState(7);
+
+    // Rebuild on text changes
+    useListenable(questionController);
+    for (final controller in optionControllers.value) {
+      useListenable(controller);
+    }
+
+    // Clean up controllers on dispose
+    useEffect(() {
+      return () {
+        for (final controller in optionControllers.value) {
+          controller.dispose();
+        }
+      };
+    }, []);
+
+    final canSubmit = questionController.text.trim().isNotEmpty &&
+        optionControllers.value
+            .where((c) => c.text.trim().isNotEmpty)
+            .length >= 2;
+
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.85,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    'Create Poll for ${app.name ?? app.identifier}',
+                    style: context.textTheme.titleMedium,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            // Scrollable content
+            Flexible(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Question input
+                    TextField(
+                      controller: questionController,
+                      decoration: const InputDecoration(
+                        labelText: 'Question',
+                        hintText: 'What would you like to ask?',
+                        border: OutlineInputBorder(),
+                      ),
+                      maxLines: 2,
+                      autofocus: true,
+                    ),
+                    const SizedBox(height: 16),
+                    // Options
+                    Text(
+                      'Options (minimum 2)',
+                      style: context.textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 8),
+                    ...optionControllers.value.asMap().entries.map((entry) {
+                      final index = entry.key;
+                      final controller = entry.value;
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: controller,
+                                decoration: InputDecoration(
+                                  labelText: 'Option ${index + 1}',
+                                  border: const OutlineInputBorder(),
+                                ),
+                              ),
+                            ),
+                            if (optionControllers.value.length > 2)
+                              IconButton(
+                                onPressed: () {
+                                  final list = [...optionControllers.value];
+                                  list[index].dispose();
+                                  list.removeAt(index);
+                                  optionControllers.value = list;
+                                },
+                                icon: const Icon(Icons.remove_circle_outline),
+                                color: Colors.red,
+                              ),
+                          ],
+                        ),
+                      );
+                    }),
+                    if (optionControllers.value.length < 10)
+                      TextButton.icon(
+                        onPressed: () {
+                          optionControllers.value = [
+                            ...optionControllers.value,
+                            TextEditingController(),
+                          ];
+                        },
+                        icon: const Icon(Icons.add),
+                        label: const Text('Add Option'),
+                      ),
+                    const SizedBox(height: 16),
+                    // Poll type
+                    Text(
+                      'Poll Type',
+                      style: context.textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 8),
+                    SegmentedButton<PollType>(
+                      segments: const [
+                        ButtonSegment(
+                          value: PollType.singlechoice,
+                          label: Text('Single Choice'),
+                        ),
+                        ButtonSegment(
+                          value: PollType.multiplechoice,
+                          label: Text('Multiple Choice'),
+                        ),
+                      ],
+                      selected: {pollType.value},
+                      onSelectionChanged: (selected) {
+                        pollType.value = selected.first;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    // Expiration
+                    SwitchListTile(
+                      title: const Text('Set Expiration'),
+                      value: hasExpiration.value,
+                      onChanged: (value) => hasExpiration.value = value,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                    if (hasExpiration.value) ...[
+                      Row(
+                        children: [
+                          const Text('Expires in '),
+                          DropdownButton<int>(
+                            value: expirationDays.value,
+                            items: [1, 3, 7, 14, 30].map((days) {
+                              return DropdownMenuItem(
+                                value: days,
+                                child: Text('$days ${days == 1 ? 'day' : 'days'}'),
+                              );
+                            }).toList(),
+                            onChanged: (value) {
+                              if (value != null) expirationDays.value = value;
+                            },
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Submit button
+            SizedBox(
+              width: double.infinity,
+              child: AsyncButtonBuilder(
+                child: const Text('Create Poll'),
+                onPressed: () => _createPoll(
+                  ref,
+                  context,
+                  questionController.text,
+                  optionControllers.value.map((c) => c.text).toList(),
+                  pollType.value,
+                  hasExpiration.value ? expirationDays.value : null,
+                ),
+                builder: (context, child, callback, buttonState) {
+                  return FilledButton(
+                    onPressed: !canSubmit
+                        ? null
+                        : buttonState.maybeWhen(
+                            loading: () => null,
+                            orElse: () => callback,
+                          ),
+                    child: buttonState.maybeWhen(
+                      loading: () => const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      ),
+                      orElse: () => child,
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _createPoll(
+    WidgetRef ref,
+    BuildContext context,
+    String question,
+    List<String> optionTexts,
+    PollType pollType,
+    int? expirationDays,
+  ) async {
+    try {
+      final signer = ref.read(Signer.activeSignerProvider);
+      if (signer == null) {
+        if (context.mounted) {
+          context.showError(
+            'Sign in required',
+            description: 'You need to sign in with Amber to create polls.',
+          );
+        }
+        return;
+      }
+
+      // Filter out empty options and create PollOption objects
+      final options = optionTexts
+          .where((text) => text.trim().isNotEmpty)
+          .toList()
+          .asMap()
+          .entries
+          .map((e) => PollOption(
+                id: 'opt${e.key}',
+                label: e.value.trim(),
+              ))
+          .toList();
+
+      if (options.length < 2) {
+        if (context.mounted) {
+          context.showError('At least 2 options are required');
+        }
+        return;
+      }
+
+      // Calculate expiration
+      DateTime? endsAt;
+      if (expirationDays != null) {
+        endsAt = DateTime.now().add(Duration(days: expirationDays));
+      }
+
+      final poll = PartialPoll(
+        content: question.trim(),
+        options: options,
+        pollType: pollType,
+        endsAt: endsAt,
+        targetModel: app,
+      );
+
+      final signedPoll = await poll.signWith(signer);
+
+      await signedPoll.save();
+      await signedPoll.publish(source: RemoteSource(relays: 'social'));
+
+      if (context.mounted) {
+        Navigator.pop(context);
+        context.showInfo('Poll created!');
+      }
+    } catch (e) {
+      if (context.mounted) {
+        context.showError('Failed to create poll', description: '$e');
       }
     }
   }
