@@ -71,7 +71,7 @@ dependency_overrides:
     # path: ../amber_signer
     git:
       url: https://github.com/purplebase/amber_signer
-      ref: 4d065ba
+      ref: 6cbedbe
 
 dev_dependencies:
   flutter_test:

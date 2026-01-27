@@ -9,6 +9,7 @@ import 'package:zapstore/screens/user_screen.dart';
 import 'package:zapstore/screens/search_screen.dart';
 import 'package:zapstore/screens/updates_screen.dart';
 import 'package:zapstore/screens/profile_screen.dart';
+import 'package:zapstore/services/package_manager/package_manager.dart';
 
 /// Root paths for each navigation branch (used for back navigation handling)
 const kBranchRoots = ['/search', '/updates', '/profile'];
@@ -128,4 +129,25 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
     ],
   );
+
+  // Listen for route changes to trigger actions
+  void onRouteChange() {
+    final currentPath = router.routerDelegate.currentConfiguration.uri.path;
+    final isUpdatesRoute = currentPath.startsWith('/updates');
+    final wasUpdatesRoute = previousPath?.startsWith('/updates') ?? false;
+
+    // Sync installed packages when navigating TO the updates branch
+    if (isUpdatesRoute && !wasUpdatesRoute) {
+      unawaited(
+        ref.read(packageManagerProvider.notifier).syncInstalledPackages(),
+      );
+    }
+
+    previousPath = currentPath;
+  }
+
+  router.routerDelegate.addListener(onRouteChange);
+  ref.onDispose(() => router.routerDelegate.removeListener(onRouteChange));
+
+  return router;
 });

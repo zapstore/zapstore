@@ -40,9 +40,9 @@ class _ConnectionStatusIndicator extends ConsumerWidget {
     final poolState = ref.watch(poolStateProvider);
     final subscriptions = poolState?.subscriptions ?? {};
 
-    // Filter to only "updates" subscription
+    // Filter to only "app-updates" subscription
     final updatesSubs = subscriptions.entries
-        .where((e) => e.key.startsWith('updates'))
+        .where((e) => e.key.startsWith('app-updates'))
         .map((e) => e.value);
 
     // Check relay status for updates subscription only
@@ -61,7 +61,7 @@ class _ConnectionStatusIndicator extends ConsumerWidget {
 
     final statusColor = hasActiveConnection ? Colors.green : Colors.grey;
     final statusText = hasActiveConnection
-        ? 'Connected · Checking for updates'
+        ? 'Connected · Streaming updates'
         : 'Offline';
 
     return Container(
@@ -147,16 +147,7 @@ class _UpdatesContent extends HookConsumerWidget {
         .map((entry) => entry.key)
         .toSet();
 
-    if (activeAppIds.isEmpty) {
-      return _UpdatesListBody(
-        automaticUpdates: automaticUpdates,
-        manualUpdates: manualUpdates,
-        installingApps: const [],
-        upToDateApps: upToDateApps,
-        uncatalogedApps: uncatalogedApps,
-      );
-    }
-
+    // Always use the same widget type to preserve scroll position
     return _UpdatesListBodyWithInstallingAppIds(
       installingAppIds: activeAppIds,
       automaticUpdates: automaticUpdates,
@@ -184,27 +175,32 @@ class _UpdatesListBodyWithInstallingAppIds extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final installingAppsState = ref.watch(
-      query<App>(
-        tags: {'#d': installingAppIds},
-        and: (app) => {app.latestRelease.query()},
-        source: const LocalAndRemoteSource(relays: 'AppCatalog'),
-        subscriptionPrefix: 'installing-apps',
-      ),
-    );
-
     final updateAppIds = {
       ...automaticUpdates.map((a) => a.identifier),
       ...manualUpdates.map((a) => a.identifier),
     };
 
-    final installingApps = installingAppsState.models
-        .where(
-          (app) =>
-              installingAppIds.contains(app.identifier) &&
-              !updateAppIds.contains(app.identifier),
-        )
-        .toList();
+    // Only query for installing apps if there are active operations
+    final List<App> installingApps;
+    if (installingAppIds.isEmpty) {
+      installingApps = const [];
+    } else {
+      final installingAppsState = ref.watch(
+        query<App>(
+          tags: {'#d': installingAppIds},
+          and: (app) => {app.latestRelease.query()},
+          source: const LocalAndRemoteSource(relays: 'AppCatalog'),
+          subscriptionPrefix: 'installing-apps',
+        ),
+      );
+      installingApps = installingAppsState.models
+          .where(
+            (app) =>
+                installingAppIds.contains(app.identifier) &&
+                !updateAppIds.contains(app.identifier),
+          )
+          .toList();
+    }
 
     return _UpdatesListBody(
       automaticUpdates: automaticUpdates,

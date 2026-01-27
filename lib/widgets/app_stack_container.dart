@@ -31,11 +31,7 @@ String? _extractIdentifier(String addressableId) {
 List<String> _getPreviewIdentifiers(AppStack stack) {
   final rawTags = _getRawAppTagValues(stack).toList()
     ..shuffle(Random(stack.id.hashCode));
-  return rawTags
-      .take(3)
-      .map(_extractIdentifier)
-      .whereType<String>()
-      .toList();
+  return rawTags.take(3).map(_extractIdentifier).whereType<String>().toList();
 }
 
 /// Sort app stacks: franzap/following first, then by recency
@@ -67,10 +63,12 @@ List<AppStack> _sortStacks(
     others.sort((a, b) => b.event.createdAt.compareTo(a.event.createdAt));
     return [...followed, ...others];
   } else {
-    final franzapStacks =
-        stacks.where((s) => s.pubkey == kFranzapPubkey).toList();
-    final otherStacks =
-        stacks.where((s) => s.pubkey != kFranzapPubkey).toList();
+    final franzapStacks = stacks
+        .where((s) => s.pubkey == kFranzapPubkey)
+        .toList();
+    final otherStacks = stacks
+        .where((s) => s.pubkey != kFranzapPubkey)
+        .toList();
 
     franzapStacks.shuffle(random);
     otherStacks.sort((a, b) => b.event.createdAt.compareTo(a.event.createdAt));
@@ -198,8 +196,10 @@ class AppStackContainer extends HookConsumerWidget {
             scrollController.position.maxScrollExtent - 200) {
           // Load more if we haven't shown all stacks yet
           if (visibleCount.value < sortedStacks.length) {
-            visibleCount.value = (visibleCount.value + _kBatchSize)
-                .clamp(0, sortedStacks.length);
+            visibleCount.value = (visibleCount.value + _kBatchSize).clamp(
+              0,
+              sortedStacks.length,
+            );
           }
         }
       }
@@ -231,9 +231,13 @@ class AppStackContainer extends HookConsumerWidget {
                     if (col * 2 < displayedStacks.length)
                       _StackCard(
                         stack: displayedStacks[col * 2],
-                        author: authorsMap[displayedStacks[col * 2].event.pubkey],
-                        isAuthorLoading: isAuthorLoading(displayedStacks[col * 2].event.pubkey),
-                        previewIdentifiers: stackPreviewIds[displayedStacks[col * 2].id] ?? [],
+                        author:
+                            authorsMap[displayedStacks[col * 2].event.pubkey],
+                        isAuthorLoading: isAuthorLoading(
+                          displayedStacks[col * 2].event.pubkey,
+                        ),
+                        previewIdentifiers:
+                            stackPreviewIds[displayedStacks[col * 2].id] ?? [],
                         appsMap: appsMap,
                       ),
                     // Bottom item
@@ -241,9 +245,16 @@ class AppStackContainer extends HookConsumerWidget {
                       const SizedBox(height: 10),
                       _StackCard(
                         stack: displayedStacks[col * 2 + 1],
-                        author: authorsMap[displayedStacks[col * 2 + 1].event.pubkey],
-                        isAuthorLoading: isAuthorLoading(displayedStacks[col * 2 + 1].event.pubkey),
-                        previewIdentifiers: stackPreviewIds[displayedStacks[col * 2 + 1].id] ?? [],
+                        author:
+                            authorsMap[displayedStacks[col * 2 + 1]
+                                .event
+                                .pubkey],
+                        isAuthorLoading: isAuthorLoading(
+                          displayedStacks[col * 2 + 1].event.pubkey,
+                        ),
+                        previewIdentifiers:
+                            stackPreviewIds[displayedStacks[col * 2 + 1].id] ??
+                            [],
                         appsMap: appsMap,
                       ),
                     ],
@@ -450,9 +461,7 @@ class _AppIconsRow extends StatelessWidget {
                 aspectRatio: 1,
                 child: Container(
                   decoration: BoxDecoration(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .surfaceContainerHighest
+                    color: Theme.of(context).colorScheme.surfaceContainerHighest
                         .withValues(alpha: 0.8),
                     borderRadius: BorderRadius.circular(10),
                   ),
@@ -481,10 +490,9 @@ class _AppIconsRow extends StatelessWidget {
               aspectRatio: 1,
               child: Container(
                 decoration: BoxDecoration(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .surfaceContainerHighest
-                      .withValues(alpha: 0.5),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
                   borderRadius: BorderRadius.circular(10),
                 ),
               ),
@@ -520,10 +528,14 @@ class _AppIconTile extends StatelessWidget {
                     fit: BoxFit.cover,
                     fadeInDuration: const Duration(milliseconds: 200),
                     placeholder: (_, __) => Container(
-                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.surfaceContainerHighest,
                     ),
                     errorWidget: (_, __, ___) => Container(
-                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.surfaceContainerHighest,
                       child: const Icon(
                         Icons.broken_image_outlined,
                         size: 16,
@@ -532,7 +544,9 @@ class _AppIconTile extends StatelessWidget {
                     ),
                   )
                 : Container(
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
                     child: const Icon(
                       Icons.apps_outlined,
                       size: 16,

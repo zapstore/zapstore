@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:models/models.dart';
+import 'package:zapstore/services/package_manager/installed_packages_snapshot.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 
 /// Install status values from native side.
@@ -14,6 +15,7 @@ enum InstallStatus {
   started,
   verifying,
   pendingUserAction,
+  installing, // User accepted, system is now installing
   alreadyInProgress,
   success,
   failed,
@@ -26,6 +28,7 @@ extension InstallStatusX on InstallStatus {
       'started' => InstallStatus.started,
       'verifying' => InstallStatus.verifying,
       'pendingUserAction' => InstallStatus.pendingUserAction,
+      'installing' => InstallStatus.installing,
       'alreadyInProgress' => InstallStatus.alreadyInProgress,
       'success' => InstallStatus.success,
       'failed' => InstallStatus.failed,
@@ -166,6 +169,17 @@ final class AndroidPackageManager extends PackageManager {
           setOperation(
             appId,
             Installing(target: target, filePath: filePath, isSilent: isSilent),
+          );
+        }
+        break;
+
+      case InstallStatus.installing:
+        // User accepted the install dialog, system is now installing.
+        // Transition to Installing with isSilent=true to show "Installing..."
+        if (filePath != null) {
+          setOperation(
+            appId,
+            Installing(target: target, filePath: filePath, isSilent: true),
           );
         }
         break;
@@ -587,6 +601,7 @@ final class AndroidPackageManager extends PackageManager {
       }
 
       state = state.copyWith(installed: {...packages, ...preserved});
+      await InstalledPackagesSnapshot.save(state.installed);
 
       // Clear operations for apps where the installed version matches the target version
       // This catches installs that succeeded but we missed the event

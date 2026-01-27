@@ -731,25 +731,46 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
   }
 
   void _processQueuedDownload() {
-    var activeDownloads = countOperations<Downloading>();
+    final activeDownloads = countOperations<Downloading>();
     if (activeDownloads >= maxConcurrentDownloads) return;
 
-    // Start downloads until we fill all available slots
+    // Collect queued items first to avoid iterating while modifying state
+    final queuedItems = <String, DownloadQueued>{};
     for (final entry in state.operations.entries) {
-      if (activeDownloads >= maxConcurrentDownloads) break;
-
       if (entry.value is DownloadQueued) {
-        final queued = entry.value as DownloadQueued;
-        final downloadUrl = queued.target.urls.firstOrNull;
-        if (downloadUrl != null) {
+        queuedItems[entry.key] = entry.value as DownloadQueued;
+      }
+    }
+
+    if (queuedItems.isEmpty) return;
+
+    // Start downloads until we fill all available slots
+    var started = 0;
+    for (final entry in queuedItems.entries) {
+      if (activeDownloads + started >= maxConcurrentDownloads) break;
+
+      final queued = entry.value;
+      final downloadUrl = queued.target.urls.firstOrNull;
+      if (downloadUrl != null) {
+        unawaited(
           _startDownloadTask(
             entry.key,
             queued.target,
             downloadUrl,
             displayName: queued.displayName,
-          );
-          activeDownloads++;
-        }
+          ),
+        );
+        started++;
+      } else {
+        // No URL - fail the operation so it doesn't stay queued forever
+        setOperation(
+          entry.key,
+          OperationFailed(
+            target: queued.target,
+            type: FailureType.downloadFailed,
+            message: 'No download URL available',
+          ),
+        );
       }
     }
   }
