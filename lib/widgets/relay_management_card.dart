@@ -124,7 +124,17 @@ class RelayManagementCard extends HookConsumerWidget {
 
     void removeRelay(String relayUrl) {
       final currentRelays = pendingRelays.value ?? savedRelays;
-      pendingRelays.value = currentRelays.where((r) => r != relayUrl).toList();
+      final newRelays = currentRelays.where((r) => r != relayUrl).toList();
+      // App catalog relays can never be empty - show error if trying to remove last
+      if (newRelays.isEmpty) {
+        context.showError(
+          'Cannot remove last relay',
+          description: 'App catalog relays cannot be empty. '
+              'Add another relay before removing this one.',
+        );
+        return;
+      }
+      pendingRelays.value = newRelays;
     }
 
     Future<void> applyChanges() async {

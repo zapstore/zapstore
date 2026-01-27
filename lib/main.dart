@@ -219,7 +219,8 @@ final appInitializationProvider = FutureProvider<void>((ref) async {
         ),
         defaultRelays: {
           'default': {'wss://relay.zapstore.dev'},
-          'bootstrap': {'wss://purplepag.es', 'wss://relay.zapstore.dev'},
+          'bootstrap': {'wss://relay.zapstore.dev'},
+          // TODO: add 'wss://purplepag.es' back when it's fixed
           'AppCatalog': {'wss://relay.zapstore.dev'},
           'social': {
             'wss://relay.damus.io',
