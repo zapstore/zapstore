@@ -104,7 +104,7 @@ class CategorizedAppsNotifier extends Notifier<CategorizedApps> {
           ),
         },
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: true),
-        subscriptionPrefix: 'updates',
+        subscriptionPrefix: 'app-updates',
       ),
     );
 

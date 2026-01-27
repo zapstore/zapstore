@@ -1483,80 +1483,111 @@ class _SavedAppsHeading extends ConsumerWidget {
       return const SizedBox.shrink();
     }
 
-    final savedAppsAsync = ref.watch(bookmarksProvider);
-
-    return savedAppsAsync.when(
-      loading: () => const SizedBox.shrink(),
-      error: (_, __) => const SizedBox.shrink(),
-      data: (addressableIds) {
-        if (addressableIds.isEmpty) {
-          return const SizedBox.shrink();
-        }
-
-        final identifiers = addressableIds
-            .map((id) {
-              final parts = id.split(':');
-              return parts.length >= 3 ? parts[2] : null;
-            })
-            .whereType<String>()
-            .toSet();
-
-        if (identifiers.isEmpty) {
-          return const SizedBox.shrink();
-        }
-
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0),
-          child: Text('Saved Apps', style: context.textTheme.headlineSmall),
-        );
-      },
+    // Always show heading when signed in
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+      child: Text('Saved Apps', style: context.textTheme.headlineSmall),
     );
   }
 }
 
-class _SavedAppsSection extends HookConsumerWidget {
+class _SavedAppsSection extends ConsumerWidget {
   const _SavedAppsSection();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
-    final hasLoadedOnce = useState(false);
-
-    if (signedInPubkey == null) {
-      return const SizedBox.shrink();
-    }
+    if (signedInPubkey == null) return const SizedBox.shrink();
 
     final savedAppsAsync = ref.watch(bookmarksProvider);
 
-    return savedAppsAsync.when(
-      loading: () => _savedAppsLoadingCard(context),
-      error: (_, __) => const SizedBox.shrink(),
-      data: (addressableIds) {
-        if (addressableIds.isEmpty) {
-          return const SizedBox.shrink();
-        }
+    // Keep previous value during refresh, if available.
+    final addressableIds = savedAppsAsync.valueOrNull;
 
-        final identifiers = addressableIds
-            .map((id) {
-              final parts = id.split(':');
-              return parts.length >= 3 ? parts[2] : null;
-            })
-            .whereType<String>()
-            .toSet();
+    // Show loading only on first load (when no value exists yet).
+    if (addressableIds == null) {
+      return _savedAppsLoadingCard(context);
+    }
 
-        if (identifiers.isEmpty) {
-          return const SizedBox.shrink();
-        }
+    final identifiers = _toIdentifiers(addressableIds);
+    return _SavedAppsList(identifiers: identifiers);
+  }
 
-        return _SavedAppsList(
-          identifiers: identifiers,
-          hasLoadedOnce: hasLoadedOnce,
-        );
-      },
+  Set<String> _toIdentifiers(Set<String> addressableIds) {
+    return addressableIds
+        .map((id) => id.split(':'))
+        .where((parts) => parts.length >= 3)
+        .map((parts) => parts[2])
+        .toSet();
+  }
+
+  Widget _savedAppsLoadingCard(BuildContext context) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Center(
+        child: CircularProgressIndicator(
+          color: Theme.of(context).colorScheme.primary,
+        ),
+      ),
+    ),
+  );
+}
+
+class _SavedAppsList extends ConsumerWidget {
+  const _SavedAppsList({required this.identifiers});
+
+  final Set<String> identifiers;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // No bookmarks saved - show empty state without querying
+    if (identifiers.isEmpty) {
+      return _emptyState(context);
+    }
+
+    final savedAppsState = ref.watch(
+      query<App>(
+        tags: {'#d': identifiers},
+        and: (app) => {app.latestRelease.query()},
+        source: const LocalSource(),
+        subscriptionPrefix: 'profile-saved-apps',
+      ),
+    );
+
+    final isLoading = savedAppsState is StorageLoading;
+
+    final savedApps = savedAppsState.models.toList()
+      ..sort(
+        (a, b) => (a.name ?? a.identifier).toLowerCase().compareTo(
+          (b.name ?? b.identifier).toLowerCase(),
+        ),
+      );
+
+    // Show spinner only when we truly have nothing to render yet
+    // If we're refreshing but still have models, keep showing the list
+    if (isLoading && savedApps.isEmpty) {
+      return _loadingCard(context);
+    }
+
+    if (savedApps.isEmpty) {
+      return _emptyState(context);
+    }
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final app in savedApps)
+              AppCard(app: app, showUpdateArrow: false, showDescription: false),
+          ],
+        ),
+      ),
     );
   }
 
-  Widget _savedAppsLoadingCard(BuildContext context) {
+  Widget _loadingCard(BuildContext context) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -1568,75 +1599,15 @@ class _SavedAppsSection extends HookConsumerWidget {
       ),
     );
   }
-}
 
-class _SavedAppsList extends ConsumerWidget {
-  const _SavedAppsList({
-    required this.identifiers,
-    required this.hasLoadedOnce,
-  });
-
-  final Set<String> identifiers;
-  final ValueNotifier<bool> hasLoadedOnce;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final savedAppsState = ref.watch(
-      query<App>(
-        tags: {'#d': identifiers},
-        and: (app) => {app.latestRelease.query()},
-        source: const LocalSource(),
-        subscriptionPrefix: 'profile-saved-apps',
-      ),
-    );
-
-    final savedApps = savedAppsState.models.toList()
-      ..sort(
-        (a, b) => (a.name ?? a.identifier).toLowerCase().compareTo(
-          (b.name ?? b.identifier).toLowerCase(),
-        ),
-      );
-
-    // Check if we have loaded at least once - defer state update to after build
-    if (savedApps.isNotEmpty && !hasLoadedOnce.value) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        hasLoadedOnce.value = true;
-      });
-    }
-
-    // Show loading state only if we haven't loaded any apps yet
-    if (savedApps.isEmpty && !hasLoadedOnce.value) {
-      return Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Center(
-            child: CircularProgressIndicator(
-              color: Theme.of(context).colorScheme.primary,
-            ),
-          ),
-        ),
-      );
-    }
-
-    // Hide if no apps after loading
-    if (savedApps.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: savedApps
-              .map(
-                (app) => AppCard(
-                  app: app,
-                  showUpdateArrow: false,
-                  showDescription: false,
-                ),
-              )
-              .toList(),
+  Widget _emptyState(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Text(
+        'No saved apps yet',
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
         ),
       ),
     );
