@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:async_button_builder/async_button_builder.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
+import 'package:zapstore/router.dart';
 import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/services/secure_storage_service.dart';
 import 'package:zapstore/utils/extensions.dart';
@@ -392,98 +395,116 @@ class ZapAmountDialog extends HookConsumerWidget {
           onPressed: selectedAmount.value > 0
               ? () async {
                   try {
-                    final navigator = Navigator.of(context);
+                    final rootNavigator = Navigator.of(
+                      context,
+                      rootNavigator: true,
+                    );
+                    final toastContext =
+                        rootNavigatorKey.currentState?.overlay?.context;
+                    final amount = selectedAmount.value;
+                    final comment = commentController.text.trim();
 
-                    // Prepare signer (ephemeral if needed)
-                    var signer = ref.read(Signer.activeSignerProvider);
-                    if (signer == null) {
-                      signer = Bip340PrivateKeySigner(
-                        Utils.generateRandomHex64(),
-                        ref.ref,
-                      );
-                      await signer.signIn(registerSigner: false);
+                    // Close dialog immediately on tap (no loading state)
+                    if (context.mounted) {
+                      rootNavigator.pop(true);
                     }
 
-                    // Read NWC from secure storage
-                    final nwcString = (knownHasNwc == false)
-                        ? null
-                        : await secureStorage.getNWCString();
-
-                    // Build zap request
-                    final latestMetadata = app.latestFileMetadata;
-                    final author = app.author.value;
-
-                    if (latestMetadata == null || author == null) {
-                      throw Exception(
-                        'App or author not ready. Please try again.',
-                      );
-                    }
-
-                    final socialRelays = await ref
-                        .read(storageNotifierProvider.notifier)
-                        .resolveRelays('social');
-
-                    final zapRequest = PartialZapRequest();
-                    zapRequest.amount = selectedAmount.value * 1000; // msats
-                    final c = commentController.text.trim();
-                    if (c.isNotEmpty) zapRequest.comment = c;
-                    zapRequest.linkProfileByPubkey(author.pubkey);
-                    zapRequest.linkModel(app);
-                    zapRequest.linkModel(latestMetadata);
-                    zapRequest.relays = socialRelays;
-
-                    final signedZapRequest = await zapRequest.signWith(signer);
-
-                    if (nwcString != null && nwcString.isNotEmpty) {
-                      final amount = selectedAmount.value;
-
-                      // Execute payment and wait for result
+                    unawaited(() async {
                       try {
-                        await _executeZapPayment(
-                          signedZapRequest,
-                          nwcString,
-                          ref.ref,
+                        // Prepare signer (ephemeral if needed)
+                        var signer = ref.read(Signer.activeSignerProvider);
+                        if (signer == null) {
+                          signer = Bip340PrivateKeySigner(
+                            Utils.generateRandomHex64(),
+                            ref.ref,
+                          );
+                          await signer.signIn(registerSigner: false);
+                        }
+
+                        // Read NWC from secure storage
+                        final nwcString = (knownHasNwc == false)
+                            ? null
+                            : await secureStorage.getNWCString();
+
+                        // Build zap request
+                        final latestMetadata = app.latestFileMetadata;
+                        final author = app.author.value;
+
+                        if (latestMetadata == null || author == null) {
+                          throw Exception(
+                            'App or author not ready. Please try again.',
+                          );
+                        }
+
+                        final socialRelays = await ref
+                            .read(storageNotifierProvider.notifier)
+                            .resolveRelays('social');
+
+                        final zapRequest = PartialZapRequest();
+                        zapRequest.amount = amount * 1000; // msats
+                        if (comment.isNotEmpty) zapRequest.comment = comment;
+                        zapRequest.linkProfileByPubkey(author.pubkey);
+                        zapRequest.linkModel(app);
+                        zapRequest.linkModel(latestMetadata);
+                        zapRequest.relays = socialRelays;
+
+                        final signedZapRequest = await zapRequest.signWith(
+                          signer,
                         );
-                        if (context.mounted) {
-                          context.showInfo('⚡ Zap sent! $amount sats');
-                          navigator.pop(true);
+
+                        if (nwcString != null && nwcString.isNotEmpty) {
+                          await _executeZapPayment(
+                            signedZapRequest,
+                            nwcString,
+                            ref.ref,
+                          );
+                          if (toastContext != null && toastContext.mounted) {
+                            toastContext.showInfo('⚡ Zap sent! $amount sats');
+                          }
+                        } else {
+                          final invoice = await signedZapRequest.getInvoice();
+                          if (toastContext != null && toastContext.mounted) {
+                            toastContext.showInfo(
+                              'Lightning invoice ready',
+                              description:
+                                  'Copy the invoice and pay with your Lightning wallet. Setup NWC to zap directly from the app.',
+                              actions: [
+                                (
+                                  'Copy Invoice',
+                                  () async {
+                                    await Clipboard.setData(
+                                      ClipboardData(text: invoice),
+                                    );
+                                  },
+                                ),
+                                (
+                                  'Zap with NWC',
+                                  () async {
+                                    final navContext = rootNavigator.context;
+                                    if (navContext.mounted) {
+                                      await showBaseDialog<void>(
+                                        context: navContext,
+                                        dialog: NWCZapDialog(
+                                          signedZapRequest: signedZapRequest,
+                                          amount: amount,
+                                        ),
+                                      );
+                                    }
+                                  },
+                                ),
+                              ],
+                            );
+                          }
                         }
                       } catch (e) {
-                        if (context.mounted) {
-                          context.showError('Zap failed', description: '$e');
-                          navigator.pop(false);
+                        if (toastContext != null && toastContext.mounted) {
+                          toastContext.showError(
+                            'Zap failed',
+                            description: '$e',
+                          );
                         }
                       }
-                    } else {
-                      final invoice = await signedZapRequest.getInvoice();
-                      if (context.mounted) {
-                        navigator.pop(true);
-                        context.showInfo(
-                          'Lightning invoice ready',
-                          description:
-                              'Copy the invoice and pay with your Lightning wallet. Setup NWC to zap directly from the app.',
-                          actions: [
-                            (
-                              'Copy Invoice',
-                              () async {
-                                await Clipboard.setData(
-                                  ClipboardData(text: invoice),
-                                );
-                              },
-                            ),
-                            (
-                              'Setup NWC',
-                              () async {
-                                await showBaseDialog<bool>(
-                                  context: context,
-                                  dialog: const NWCConnectionDialogInline(),
-                                );
-                              },
-                            ),
-                          ],
-                        );
-                      }
-                    }
+                    }());
                   } catch (e) {
                     if (context.mounted) {
                       context.showError('Zap failed', description: '$e');
@@ -580,25 +601,31 @@ class CustomAmountDialog extends HookWidget {
   }
 }
 
-/// Inline NWC connection dialog used in zap flow
-class NWCConnectionDialogInline extends HookConsumerWidget {
-  const NWCConnectionDialogInline({super.key});
+/// Inline NWC dialog that also executes the zap after connecting
+class NWCZapDialog extends HookConsumerWidget {
+  const NWCZapDialog({
+    super.key,
+    required this.signedZapRequest,
+    required this.amount,
+  });
+
+  final ZapRequest signedZapRequest;
+  final int amount;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final controller = useTextEditingController();
-    final isLoading = useState(false);
     final secureStorage = ref.watch(secureStorageServiceProvider);
 
     return BaseDialog(
       titleIcon: const Text('⚡️'),
       titleIconColor: Colors.orange,
-      title: const BaseDialogTitle('Nostr Wallet Connect'),
+      title: const BaseDialogTitle('Zap with NWC'),
       maxWidth: double.maxFinite,
       content: BaseDialogContent(
         children: [
           Text(
-            'Enter your NWC connection string from your Lightning wallet:',
+            'Enter your NWC connection string to zap $amount sats:',
             style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(height: 16),
@@ -618,7 +645,6 @@ class NWCConnectionDialogInline extends HookConsumerWidget {
               ),
             ),
             maxLines: 3,
-            enabled: !isLoading.value,
           ),
           const SizedBox(height: 12),
           Text(
@@ -629,60 +655,53 @@ class NWCConnectionDialogInline extends HookConsumerWidget {
       ),
       actions: [
         BaseDialogAction(
-          onPressed: isLoading.value
-              ? null
-              : () => Navigator.pop(context, false),
+          onPressed: () => Navigator.pop(context),
           child: const Text('Cancel'),
         ),
         FilledButton(
-          onPressed: isLoading.value
-              ? null
-              : () async {
-                  final nwcString = controller.text;
-                  if (nwcString.trim().isEmpty) {
-                    context.showError(
-                      'Missing connection string',
-                      description:
-                          'Get a NWC connection string from your Lightning wallet (e.g., Alby, Zeus, Coinos).',
-                    );
-                    return;
-                  }
-                  if (!nwcString.trim().startsWith('nostr+walletconnect://')) {
-                    context.showError(
-                      'Invalid NWC format',
-                      description:
-                          'Connection string should start with nostr+walletconnect://',
-                    );
-                    return;
-                  }
-                  isLoading.value = true;
-                  try {
-                    await secureStorage.setNWCString(nwcString.trim());
-                    if (context.mounted) {
-                      Navigator.pop(context, true);
-                      context.showInfo(
-                        '⚡ Lightning wallet connected successfully!',
-                      );
-                    }
-                  } catch (e) {
-                    if (context.mounted) {
-                      context.showError(
-                        'Wallet connection failed',
-                        description:
-                            'Could not connect to the wallet. Verify the connection string and try again.\n\n$e',
-                      );
-                    }
-                  } finally {
-                    isLoading.value = false;
-                  }
-                },
-          child: isLoading.value
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Connect'),
+          onPressed: () async {
+            final nwcString = controller.text;
+            if (nwcString.trim().isEmpty) {
+              context.showError(
+                'Missing connection string',
+                description:
+                    'Get a NWC connection string from your Lightning wallet (e.g., Alby, Zeus, Coinos).',
+              );
+              return;
+            }
+            if (!nwcString.trim().startsWith('nostr+walletconnect://')) {
+              context.showError(
+                'Invalid NWC format',
+                description:
+                    'Connection string should start with nostr+walletconnect://',
+              );
+              return;
+            }
+
+            final toastContext =
+                rootNavigatorKey.currentState?.overlay?.context;
+
+            // Close dialog immediately on tap (no loading state)
+            if (context.mounted) {
+              Navigator.pop(context);
+            }
+
+            unawaited(() async {
+              try {
+                await secureStorage.setNWCString(nwcString.trim());
+                ref.invalidate(hasNwcStringProvider);
+                await _executeZapPayment(signedZapRequest, nwcString, ref.ref);
+                if (toastContext != null && toastContext.mounted) {
+                  toastContext.showInfo('⚡ Zap sent! $amount sats');
+                }
+              } catch (e) {
+                if (toastContext != null && toastContext.mounted) {
+                  toastContext.showError('Zap failed', description: '$e');
+                }
+              }
+            }());
+          },
+          child: Text('Zap $amount sats'),
         ),
       ],
     );
