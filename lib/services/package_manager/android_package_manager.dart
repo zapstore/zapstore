@@ -15,6 +15,7 @@ enum InstallStatus {
   started,
   verifying,
   pendingUserAction,
+  installing, // User accepted, system is now installing
   alreadyInProgress,
   success,
   failed,
@@ -27,6 +28,7 @@ extension InstallStatusX on InstallStatus {
       'started' => InstallStatus.started,
       'verifying' => InstallStatus.verifying,
       'pendingUserAction' => InstallStatus.pendingUserAction,
+      'installing' => InstallStatus.installing,
       'alreadyInProgress' => InstallStatus.alreadyInProgress,
       'success' => InstallStatus.success,
       'failed' => InstallStatus.failed,
@@ -167,6 +169,17 @@ final class AndroidPackageManager extends PackageManager {
           setOperation(
             appId,
             Installing(target: target, filePath: filePath, isSilent: isSilent),
+          );
+        }
+        break;
+
+      case InstallStatus.installing:
+        // User accepted the install dialog, system is now installing.
+        // Transition to Installing with isSilent=true to show "Installing..."
+        if (filePath != null) {
+          setOperation(
+            appId,
+            Installing(target: target, filePath: filePath, isSilent: true),
           );
         }
         break;
