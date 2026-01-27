@@ -25,6 +25,7 @@ import io.flutter.plugin.common.MethodChannel.Result
 import java.io.File
 import java.io.FileInputStream
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -99,7 +100,7 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
     private val watchdogDeadlineMs = mutableMapOf<String, Long>()
 
     /** Track verification threads so we can "ping" and avoid false timeouts */
-    private val verificationThreads = mutableMapOf<String, Thread>()
+    private val verificationThreads = ConcurrentHashMap<String, Thread>()
 
     /** Track sessions that are pending user action (so we can detect when user accepts) */
     private val sessionsPendingUserAction = mutableSetOf<Int>()
@@ -116,7 +117,7 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
         private var instance: AndroidPackageManagerPlugin? = null
         
         /** Map sessionId to packageName for reverse lookup in broadcasts */
-        private val sessionToPackage = mutableMapOf<Int, String>()
+        private val sessionToPackage = ConcurrentHashMap<Int, String>()
         
         /** Pending user action intents - stored for re-launch when app returns to foreground */
         private val pendingUserActionIntents = mutableMapOf<String, Intent>()
