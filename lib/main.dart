@@ -12,6 +12,7 @@ import 'package:purplebase/purplebase.dart';
 import 'package:amber_signer/amber_signer.dart';
 import 'package:zapstore/services/app_restart_service.dart';
 import 'package:zapstore/services/background_update_service.dart';
+import 'package:zapstore/services/secure_storage_service.dart';
 import 'package:zapstore/router.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/theme.dart';
@@ -218,7 +219,8 @@ final appInitializationProvider = FutureProvider<void>((ref) async {
         ),
         defaultRelays: {
           'default': {'wss://relay.zapstore.dev'},
-          'bootstrap': {'wss://purplepag.es', 'wss://relay.zapstore.dev'},
+          'bootstrap': {'wss://relay.zapstore.dev'},
+          // TODO: add 'wss://purplepag.es' back when it's fixed
           'AppCatalog': {'wss://relay.zapstore.dev'},
           'social': {
             'wss://relay.damus.io',
@@ -245,7 +247,10 @@ final appInitializationProvider = FutureProvider<void>((ref) async {
 });
 
 // AmberSigner provider for Nostr authentication
-final amberSignerProvider = Provider<AmberSigner>(AmberSigner.new);
+// Uses SecureStoragePubkeyPersistence to survive database clears
+final amberSignerProvider = Provider<AmberSigner>(
+  (ref) => AmberSigner(ref, persistence: SecureStoragePubkeyPersistence()),
+);
 
 Future<void> _attemptAutoSignIn(Ref ref) async {
   try {

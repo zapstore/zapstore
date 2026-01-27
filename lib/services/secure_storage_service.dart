@@ -1,3 +1,4 @@
+import 'package:amber_signer/amber_signer.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -34,8 +35,27 @@ class SecureStorageService {
     final value = await _storage.read(key: _nwcKey);
     return value?.isNotEmpty == true;
   }
+}
 
-  /// Check if the install permission dialog has been shown
+/// Persists the AmberSigner pubkey in flutter_secure_storage.
+/// This survives app data clears (database deletion) and is encrypted.
+class SecureStoragePubkeyPersistence implements AmberPubkeyPersistence {
+  static const _key = 'amber_pubkey';
+
+  @override
+  Future<void> persistPubkey(String pubkey) async {
+    await SecureStorageService._storage.write(key: _key, value: pubkey);
+  }
+
+  @override
+  Future<String?> loadPubkey() async {
+    return SecureStorageService._storage.read(key: _key);
+  }
+
+  @override
+  Future<void> clearPubkey() async {
+    await SecureStorageService._storage.delete(key: _key);
+  }
 }
 
 final secureStorageServiceProvider = Provider<SecureStorageService>(

@@ -23,9 +23,7 @@ import 'package:zapstore/theme.dart';
 import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/widgets/common/note_parser.dart';
 import 'package:zapstore/widgets/nwc_widgets.dart';
-
-// Note: Relay debugging features have been removed as they depend on internal APIs
-// that are no longer public in purplebase 0.3.3+
+import 'package:zapstore/widgets/relay_management_card.dart';
 
 /// Profile screen for authentication and app settings
 class ProfileScreen extends ConsumerWidget {
@@ -61,6 +59,11 @@ class ProfileScreen extends ConsumerWidget {
 
           // Lightning Wallet Section
           const NWCConnectionCard(),
+
+          const SizedBox(height: 16),
+
+          // App Catalog Relay Management Section
+          const RelayManagementCard(),
 
           const SizedBox(height: 16),
 
@@ -1410,8 +1413,8 @@ class _DataManagementSection extends ConsumerWidget {
           ],
         ),
         content: const Text(
-          'Clears all cached data (except NWC secret) and restarts the app. '
-          'You will be signed out.',
+          'Clears all cached data and restarts the app. '
+          'Your sign-in and wallet connection will be preserved.',
         ),
         actions: [
           TextButton(
