@@ -321,7 +321,7 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
         },
         // NOTE: It must stream=true
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: true),
-        subscriptionPrefix: 'latest',
+        subscriptionPrefix: 'app-latest',
       ),
       (previous, next) async {
         // Always mirror storage state and ensure olderApps don't duplicate the live head
@@ -446,9 +446,9 @@ class _LatestReleasesStatusDot extends ConsumerWidget {
     final poolState = ref.watch(poolStateProvider);
     final subscriptions = poolState?.subscriptions ?? {};
 
-    // Filter to only "latest" subscription
+    // Filter to only "app-latest" subscription
     final latestSubs = subscriptions.entries
-        .where((e) => e.key.startsWith('latest'))
+        .where((e) => e.key.startsWith('app-latest'))
         .map((e) => e.value);
 
     // Check relay status for latest subscription

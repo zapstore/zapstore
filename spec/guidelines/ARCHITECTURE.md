@@ -95,4 +95,8 @@ onPressed: () async {
 }
 ```
 
+### Subscription prefix naming
+
+All queries using the `AppCatalog` relay group MUST prefix their `subscriptionPrefix` with `app-`. This is used in the backend.
+
 For detailed API, see models/purplebase READMEs in pub cache.

@@ -735,7 +735,7 @@ class DebugVersionsSection extends HookConsumerWidget {
         tags: app.event.addressableIdTagMap,
         and: (release) => {release.latestMetadata.query(), release.latestAsset.query()},
         source: LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
-        subscriptionPrefix: 'debug-releases',
+        subscriptionPrefix: 'app-debug-releases',
       ),
     );
 

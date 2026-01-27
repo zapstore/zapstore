@@ -40,9 +40,9 @@ class _ConnectionStatusIndicator extends ConsumerWidget {
     final poolState = ref.watch(poolStateProvider);
     final subscriptions = poolState?.subscriptions ?? {};
 
-    // Filter to only "updates" subscription
+    // Filter to only "app-updates" subscription
     final updatesSubs = subscriptions.entries
-        .where((e) => e.key.startsWith('updates'))
+        .where((e) => e.key.startsWith('app-updates'))
         .map((e) => e.value);
 
     // Check relay status for updates subscription only
