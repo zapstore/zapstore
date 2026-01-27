@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:zapstore/router.dart';
 import 'package:zapstore/theme.dart';
 
 extension ContextX on BuildContext {
@@ -68,7 +69,9 @@ void _showCustomToast({
   _currentToast?.remove();
   _currentToast = null;
 
-  final overlay = Overlay.of(context);
+  final overlay =
+      rootNavigatorKey.currentState?.overlay ?? Overlay.maybeOf(context);
+  if (overlay == null) return;
 
   late OverlayEntry entry;
   entry = OverlayEntry(

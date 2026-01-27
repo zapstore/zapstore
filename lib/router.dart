@@ -1,3 +1,4 @@
+import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
@@ -11,6 +12,8 @@ import 'package:zapstore/screens/profile_screen.dart';
 
 /// Root paths for each navigation branch (used for back navigation handling)
 const kBranchRoots = ['/search', '/updates', '/profile'];
+
+final rootNavigatorKey = GlobalKey<NavigatorState>();
 
 typedef _ResolvedRoute = ({String identifier, String? author});
 
@@ -71,6 +74,7 @@ GoRoute _userRoute() {
 
 final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
+    navigatorKey: rootNavigatorKey,
     initialLocation: '/search',
     routes: [
       // Top-level route for market:// intents

@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:async_button_builder/async_button_builder.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
+import 'package:zapstore/router.dart';
 import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/services/secure_storage_service.dart';
 import 'package:zapstore/utils/extensions.dart';
@@ -202,7 +205,6 @@ Future<bool> showZapDialog(
 ) async {
   final result = await showBaseDialog<bool>(
     context: context,
-    barrierDismissible: false,
     dialog: ZapAmountDialog(
       app: app,
       isRelaySigned: app.isRelaySigned,
@@ -230,7 +232,6 @@ class ZapAmountDialog extends HookConsumerWidget {
     final selectedAmount = useState<int>(2100);
     final commentController = useTextEditingController();
     final customAmount = useState<int?>(null);
-    final isLoading = useState(false);
     final quickAmounts = useMemoized(
       () => [
         (label: '🤙 2100', value: 2100),
@@ -245,304 +246,299 @@ class ZapAmountDialog extends HookConsumerWidget {
     final hasNwc = ref.watch(hasNwcStringProvider);
     final knownHasNwc = hasNwc.valueOrNull;
 
-    // Prevent closing dialog during zap execution
-    return PopScope(
-      canPop: !isLoading.value,
-      child: BaseDialog(
-        titleIcon: const Text('⚡️'),
-        titleIconColor: Colors.orange,
-        title: Text(
-          isRelaySigned ? 'Zap the relay' : 'Zap ${app.name}',
-          style: Theme.of(context).textTheme.headlineSmall,
+    return BaseDialog(
+      titleIcon: const Text('⚡️'),
+      titleIconColor: Colors.orange,
+      title: Text(
+        isRelaySigned ? 'Zap the relay' : 'Zap ${app.name}',
+        style: Theme.of(context).textTheme.headlineSmall,
+      ),
+      content: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
         ),
-        content: Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
-          ),
-          child: BaseDialogContent(
-            children: [
-              const SizedBox(height: 4),
+        child: BaseDialogContent(
+          children: [
+            const SizedBox(height: 4),
 
-              // Relay-signed app explanation
-              if (isRelaySigned) ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Icon(
-                          Icons.info_outline,
-                          size: 20,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text.rich(
-                          TextSpan(
-                            style: Theme.of(context).textTheme.bodyMedium,
-                            children: [
-                              const TextSpan(text: 'This app was indexed by '),
-                              if (author != null) ...[
-                                WidgetSpan(
-                                  alignment: PlaceholderAlignment.middle,
-                                  child: ProfileAvatar(
-                                    profile: author,
-                                    radius: 9,
-                                  ),
-                                ),
-                                const WidgetSpan(
-                                  alignment: PlaceholderAlignment.middle,
-                                  child: SizedBox(width: 4),
-                                ),
-                                TextSpan(
-                                  text: author!.nameOrNpub,
-                                  style: Theme.of(context).textTheme.bodyMedium
-                                      ?.copyWith(fontWeight: FontWeight.bold),
-                                ),
-                              ] else
-                                TextSpan(
-                                  text: 'a relay',
-                                  style: Theme.of(context).textTheme.bodyMedium
-                                      ?.copyWith(fontWeight: FontWeight.bold),
-                                ),
-                              const TextSpan(
-                                text:
-                                    ', not directly published by a developer. Your zap will help support the service.\nIf you know the developer, ask them to self-publish to earn sats!',
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+            // Relay-signed app explanation
+            if (isRelaySigned) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                const SizedBox(height: 16),
-              ],
-
-              if (pubkey == null) ...[
-                const SignInPrompt(
-                  message:
-                      'Zapping anonymously. Sign in to zap with your identity.',
-                ),
-                const SizedBox(height: 12),
-              ],
-
-              // Quick amount buttons (always visible)
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  ...quickAmounts.map((q) {
-                    final isSelected = selectedAmount.value == q.value;
-                    return FilterChip(
-                      label: Text(q.label),
-                      selected: isSelected,
-                      showCheckmark: false,
-                      side: BorderSide.none,
-                      onSelected: (selected) {
-                        selectedAmount.value = q.value;
-                      },
-                    );
-                  }),
-                  FilterChip(
-                    label: Text(
-                      customAmount.value == null
-                          ? '💎 Custom'
-                          : '💎 ${formatSatsCompact(customAmount.value!)}',
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Icon(
+                        Icons.info_outline,
+                        size: 20,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
                     ),
-                    selected:
-                        customAmount.value != null &&
-                        selectedAmount.value == customAmount.value,
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text.rich(
+                        TextSpan(
+                          style: Theme.of(context).textTheme.bodyMedium,
+                          children: [
+                            const TextSpan(text: 'This app was indexed by '),
+                            if (author != null) ...[
+                              WidgetSpan(
+                                alignment: PlaceholderAlignment.middle,
+                                child: ProfileAvatar(
+                                  profile: author,
+                                  radius: 9,
+                                ),
+                              ),
+                              const WidgetSpan(
+                                alignment: PlaceholderAlignment.middle,
+                                child: SizedBox(width: 4),
+                              ),
+                              TextSpan(
+                                text: author!.nameOrNpub,
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(fontWeight: FontWeight.bold),
+                              ),
+                            ] else
+                              TextSpan(
+                                text: 'a relay',
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(fontWeight: FontWeight.bold),
+                              ),
+                            const TextSpan(
+                              text:
+                                  ', not directly published by a developer. Your zap will help support the service.\nIf you know the developer, ask them to self-publish to earn sats!',
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            if (pubkey == null) ...[
+              const SignInPrompt(
+                message:
+                    'Zapping anonymously. Sign in to zap with your identity.',
+              ),
+              const SizedBox(height: 12),
+            ],
+
+            // Quick amount buttons (always visible)
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ...quickAmounts.map((q) {
+                  final isSelected = selectedAmount.value == q.value;
+                  return FilterChip(
+                    label: Text(q.label),
+                    selected: isSelected,
                     showCheckmark: false,
                     side: BorderSide.none,
-                    onSelected: (selected) async {
-                      final amount = await showBaseDialog<int>(
-                        context: context,
-                        dialog: const CustomAmountDialog(),
-                      );
-                      if (amount != null && amount > 0) {
-                        customAmount.value = amount;
-                        selectedAmount.value = amount;
-                      }
+                    onSelected: (selected) {
+                      selectedAmount.value = q.value;
                     },
+                  );
+                }),
+                FilterChip(
+                  label: Text(
+                    customAmount.value == null
+                        ? '💎 Custom'
+                        : '💎 ${formatSatsCompact(customAmount.value!)}',
                   ),
-                ],
-              ),
-
-              const SizedBox(height: 12),
-              TextField(
-                controller: commentController,
-                decoration: const InputDecoration(
-                  labelText: 'Add a comment (optional)',
-                  border: OutlineInputBorder(),
+                  selected:
+                      customAmount.value != null &&
+                      selectedAmount.value == customAmount.value,
+                  showCheckmark: false,
+                  side: BorderSide.none,
+                  onSelected: (selected) async {
+                    final amount = await showBaseDialog<int>(
+                      context: context,
+                      dialog: const CustomAmountDialog(),
+                    );
+                    if (amount != null && amount > 0) {
+                      customAmount.value = amount;
+                      selectedAmount.value = amount;
+                    }
+                  },
                 ),
-                maxLines: 2,
+              ],
+            ),
+
+            const SizedBox(height: 12),
+            TextField(
+              controller: commentController,
+              decoration: const InputDecoration(
+                labelText: 'Add a comment (optional)',
+                border: OutlineInputBorder(),
               ),
-            ],
-          ),
+              maxLines: 2,
+            ),
+          ],
         ),
-        actions: [
-          BaseDialogAction(
-            onPressed: isLoading.value
-                ? null
-                : () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          AsyncButtonBuilder(
-            onPressed: selectedAmount.value > 0
-                ? () async {
-                    try {
-                      final rootNavigator = Navigator.of(
-                        context,
-                        rootNavigator: true,
-                      );
+      ),
+      actions: [
+        BaseDialogAction(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Cancel'),
+        ),
+        AsyncButtonBuilder(
+          onPressed: selectedAmount.value > 0
+              ? () async {
+                  try {
+                    final rootNavigator = Navigator.of(
+                      context,
+                      rootNavigator: true,
+                    );
+                    final toastContext =
+                        rootNavigatorKey.currentState?.overlay?.context;
+                    final amount = selectedAmount.value;
+                    final comment = commentController.text.trim();
 
-                      // Prepare signer (ephemeral if needed)
-                      var signer = ref.read(Signer.activeSignerProvider);
-                      if (signer == null) {
-                        signer = Bip340PrivateKeySigner(
-                          Utils.generateRandomHex64(),
-                          ref.ref,
+                    // Close dialog immediately on tap (no loading state)
+                    if (context.mounted) {
+                      rootNavigator.pop(true);
+                    }
+
+                    unawaited(() async {
+                      try {
+                        // Prepare signer (ephemeral if needed)
+                        var signer = ref.read(Signer.activeSignerProvider);
+                        if (signer == null) {
+                          signer = Bip340PrivateKeySigner(
+                            Utils.generateRandomHex64(),
+                            ref.ref,
+                          );
+                          await signer.signIn(registerSigner: false);
+                        }
+
+                        // Read NWC from secure storage
+                        final nwcString = (knownHasNwc == false)
+                            ? null
+                            : await secureStorage.getNWCString();
+
+                        // Build zap request
+                        final latestMetadata = app.latestFileMetadata;
+                        final author = app.author.value;
+
+                        if (latestMetadata == null || author == null) {
+                          throw Exception(
+                            'App or author not ready. Please try again.',
+                          );
+                        }
+
+                        final socialRelays = await ref
+                            .read(storageNotifierProvider.notifier)
+                            .resolveRelays('social');
+
+                        final zapRequest = PartialZapRequest();
+                        zapRequest.amount = amount * 1000; // msats
+                        if (comment.isNotEmpty) zapRequest.comment = comment;
+                        zapRequest.linkProfileByPubkey(author.pubkey);
+                        zapRequest.linkModel(app);
+                        zapRequest.linkModel(latestMetadata);
+                        zapRequest.relays = socialRelays;
+
+                        final signedZapRequest = await zapRequest.signWith(
+                          signer,
                         );
-                        await signer.signIn(registerSigner: false);
-                      }
 
-                      // Read NWC from secure storage
-                      final nwcString = (knownHasNwc == false)
-                          ? null
-                          : await secureStorage.getNWCString();
-
-                      // Build zap request
-                      final latestMetadata = app.latestFileMetadata;
-                      final author = app.author.value;
-
-                      if (latestMetadata == null || author == null) {
-                        throw Exception(
-                          'App or author not ready. Please try again.',
-                        );
-                      }
-
-                      final socialRelays = await ref
-                          .read(storageNotifierProvider.notifier)
-                          .resolveRelays('social');
-
-                      final zapRequest = PartialZapRequest();
-                      zapRequest.amount = selectedAmount.value * 1000; // msats
-                      final c = commentController.text.trim();
-                      if (c.isNotEmpty) zapRequest.comment = c;
-                      zapRequest.linkProfileByPubkey(author.pubkey);
-                      zapRequest.linkModel(app);
-                      zapRequest.linkModel(latestMetadata);
-                      zapRequest.relays = socialRelays;
-
-                      final signedZapRequest = await zapRequest.signWith(
-                        signer,
-                      );
-
-                      if (nwcString != null && nwcString.isNotEmpty) {
-                        final amount = selectedAmount.value;
-
-                        // Execute payment and wait for result
-                        isLoading.value = true;
-                        try {
+                        if (nwcString != null && nwcString.isNotEmpty) {
                           await _executeZapPayment(
                             signedZapRequest,
                             nwcString,
                             ref.ref,
                           );
-                          if (context.mounted) {
-                            context.showInfo('⚡ Zap sent! $amount sats');
-                            rootNavigator.pop(true);
+                          if (toastContext != null && toastContext.mounted) {
+                            toastContext.showInfo('⚡ Zap sent! $amount sats');
                           }
-                        } catch (e) {
-                          if (context.mounted) {
-                            context.showError('Zap failed', description: '$e');
-                            rootNavigator.pop(false);
-                          }
-                        } finally {
-                          isLoading.value = false;
-                        }
-                      } else {
-                        final invoice = await signedZapRequest.getInvoice();
-                        if (context.mounted) {
-                          rootNavigator.pop(true);
-                          context.showInfo(
-                            'Lightning invoice ready',
-                            description:
-                                'Copy the invoice and pay with your Lightning wallet. Setup NWC to zap directly from the app.',
-                            actions: [
-                              (
-                                'Copy Invoice',
-                                () async {
-                                  await Clipboard.setData(
-                                    ClipboardData(text: invoice),
-                                  );
-                                },
-                              ),
-                              (
-                                'Zap with NWC',
-                                () async {
-                                  final navContext = rootNavigator.context;
-                                  if (navContext.mounted) {
-                                    await showBaseDialog<void>(
-                                      context: navContext,
-                                      barrierDismissible: false,
-                                      dialog: NWCZapDialog(
-                                        signedZapRequest: signedZapRequest,
-                                        amount: selectedAmount.value,
-                                      ),
+                        } else {
+                          final invoice = await signedZapRequest.getInvoice();
+                          if (toastContext != null && toastContext.mounted) {
+                            toastContext.showInfo(
+                              'Lightning invoice ready',
+                              description:
+                                  'Copy the invoice and pay with your Lightning wallet. Setup NWC to zap directly from the app.',
+                              actions: [
+                                (
+                                  'Copy Invoice',
+                                  () async {
+                                    await Clipboard.setData(
+                                      ClipboardData(text: invoice),
                                     );
-                                  }
-                                },
-                              ),
-                            ],
+                                  },
+                                ),
+                                (
+                                  'Zap with NWC',
+                                  () async {
+                                    final navContext = rootNavigator.context;
+                                    if (navContext.mounted) {
+                                      await showBaseDialog<void>(
+                                        context: navContext,
+                                        dialog: NWCZapDialog(
+                                          signedZapRequest: signedZapRequest,
+                                          amount: amount,
+                                        ),
+                                      );
+                                    }
+                                  },
+                                ),
+                              ],
+                            );
+                          }
+                        }
+                      } catch (e) {
+                        if (toastContext != null && toastContext.mounted) {
+                          toastContext.showError(
+                            'Zap failed',
+                            description: '$e',
                           );
                         }
                       }
-                    } catch (e) {
-                      if (context.mounted) {
-                        context.showError('Zap failed', description: '$e');
-                        Navigator.of(context).pop(false);
-                      }
+                    }());
+                  } catch (e) {
+                    if (context.mounted) {
+                      context.showError('Zap failed', description: '$e');
+                      Navigator.of(context).pop(false);
                     }
                   }
-                : null,
-            builder: (context, child, callback, state) {
-              return FilledButton(
-                onPressed: state.maybeWhen(
-                  loading: () => null,
-                  orElse: () => callback,
+                }
+              : null,
+          builder: (context, child, callback, state) {
+            return FilledButton(
+              onPressed: state.maybeWhen(
+                loading: () => null,
+                orElse: () => callback,
+              ),
+              child: state.maybeWhen(
+                loading: () => Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ],
                 ),
-                child: state.maybeWhen(
-                  loading: () => Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: const [
-                      SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    ],
-                  ),
-                  orElse: () => Text(
-                    'Send ${formatSatsWithSeparators(selectedAmount.value)} sats',
-                  ),
+                orElse: () => Text(
+                  'Send ${formatSatsWithSeparators(selectedAmount.value)} sats',
                 ),
-              );
-            },
-            child: const SizedBox.shrink(),
-          ),
-        ],
-      ),
+              ),
+            );
+          },
+          child: const SizedBox.shrink(),
+        ),
+      ],
     );
   }
 }
@@ -619,112 +615,95 @@ class NWCZapDialog extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final controller = useTextEditingController();
-    final isLoading = useState(false);
     final secureStorage = ref.watch(secureStorageServiceProvider);
 
-    // Prevent closing dialog during loading (back button + tap outside)
-    return PopScope(
-      canPop: !isLoading.value,
-      child: BaseDialog(
-        titleIcon: const Text('⚡️'),
-        titleIconColor: Colors.orange,
-        title: const BaseDialogTitle('Zap with NWC'),
-        maxWidth: double.maxFinite,
-        content: BaseDialogContent(
-          children: [
-            Text(
-              'Enter your NWC connection string to zap $amount sats:',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: controller,
-              decoration: InputDecoration(
-                labelText: 'NWC Connection String',
-                hintText: 'nostr+walletconnect://...',
-                border: const OutlineInputBorder(),
-                suffixIcon: IconButton(
-                  icon: const Icon(Icons.paste),
-                  onPressed: () async {
-                    final data = await Clipboard.getData('text/plain');
-                    final t = data?.text;
-                    if (t != null) controller.text = t;
-                  },
-                ),
-              ),
-              maxLines: 3,
-              enabled: !isLoading.value,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Alby, Coinos, and others support NWC.',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ],
-        ),
-        actions: [
-          BaseDialogAction(
-            onPressed: isLoading.value ? null : () => Navigator.pop(context),
-            child: const Text('Cancel'),
+    return BaseDialog(
+      titleIcon: const Text('⚡️'),
+      titleIconColor: Colors.orange,
+      title: const BaseDialogTitle('Zap with NWC'),
+      maxWidth: double.maxFinite,
+      content: BaseDialogContent(
+        children: [
+          Text(
+            'Enter your NWC connection string to zap $amount sats:',
+            style: Theme.of(context).textTheme.bodyMedium,
           ),
-          FilledButton(
-            onPressed: isLoading.value
-                ? null
-                : () async {
-                    final nwcString = controller.text;
-                    if (nwcString.trim().isEmpty) {
-                      context.showError(
-                        'Missing connection string',
-                        description:
-                            'Get a NWC connection string from your Lightning wallet (e.g., Alby, Zeus, Coinos).',
-                      );
-                      return;
-                    }
-                    if (!nwcString.trim().startsWith(
-                      'nostr+walletconnect://',
-                    )) {
-                      context.showError(
-                        'Invalid NWC format',
-                        description:
-                            'Connection string should start with nostr+walletconnect://',
-                      );
-                      return;
-                    }
-                    isLoading.value = true;
-                    try {
-                      // Save NWC for future use
-                      await secureStorage.setNWCString(nwcString.trim());
-                      ref.invalidate(hasNwcStringProvider);
-
-                      // Execute the zap
-                      await _executeZapPayment(
-                        signedZapRequest,
-                        nwcString,
-                        ref.ref,
-                      );
-
-                      if (context.mounted) {
-                        Navigator.pop(context);
-                        context.showInfo('⚡ Zap sent! $amount sats');
-                      }
-                    } catch (e) {
-                      if (context.mounted) {
-                        context.showError('Zap failed', description: '$e');
-                      }
-                    } finally {
-                      isLoading.value = false;
-                    }
-                  },
-            child: isLoading.value
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : Text('Zap $amount sats'),
+          const SizedBox(height: 16),
+          TextField(
+            controller: controller,
+            decoration: InputDecoration(
+              labelText: 'NWC Connection String',
+              hintText: 'nostr+walletconnect://...',
+              border: const OutlineInputBorder(),
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.paste),
+                onPressed: () async {
+                  final data = await Clipboard.getData('text/plain');
+                  final t = data?.text;
+                  if (t != null) controller.text = t;
+                },
+              ),
+            ),
+            maxLines: 3,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Alby, Coinos, and others support NWC.',
+            style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
       ),
+      actions: [
+        BaseDialogAction(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () async {
+            final nwcString = controller.text;
+            if (nwcString.trim().isEmpty) {
+              context.showError(
+                'Missing connection string',
+                description:
+                    'Get a NWC connection string from your Lightning wallet (e.g., Alby, Zeus, Coinos).',
+              );
+              return;
+            }
+            if (!nwcString.trim().startsWith('nostr+walletconnect://')) {
+              context.showError(
+                'Invalid NWC format',
+                description:
+                    'Connection string should start with nostr+walletconnect://',
+              );
+              return;
+            }
+
+            final toastContext =
+                rootNavigatorKey.currentState?.overlay?.context;
+
+            // Close dialog immediately on tap (no loading state)
+            if (context.mounted) {
+              Navigator.pop(context);
+            }
+
+            unawaited(() async {
+              try {
+                await secureStorage.setNWCString(nwcString.trim());
+                ref.invalidate(hasNwcStringProvider);
+                await _executeZapPayment(signedZapRequest, nwcString, ref.ref);
+                if (toastContext != null && toastContext.mounted) {
+                  toastContext.showInfo('⚡ Zap sent! $amount sats');
+                }
+              } catch (e) {
+                if (toastContext != null && toastContext.mounted) {
+                  toastContext.showError('Zap failed', description: '$e');
+                }
+              }
+            }());
+          },
+          child: Text('Zap $amount sats'),
+        ),
+      ],
     );
   }
 }
