@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -74,7 +76,9 @@ GoRoute _userRoute() {
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
-  return GoRouter(
+  String? previousPath;
+
+  final router = GoRouter(
     navigatorKey: rootNavigatorKey,
     initialLocation: '/search',
     routes: [
