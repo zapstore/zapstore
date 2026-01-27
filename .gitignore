@@ -52,3 +52,5 @@ app.*.map.json
 .fvm/**
 
 .env
+
+reference/*

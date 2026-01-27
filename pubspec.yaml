@@ -61,7 +61,7 @@ dependency_overrides:
     # path: ../../purplebase/models
     git:
       url: https://github.com/purplebase/models
-      ref: 474d046
+      ref: 6a3ba13
   purplebase:
     # path: ../../purplebase/purplebase
     git:
