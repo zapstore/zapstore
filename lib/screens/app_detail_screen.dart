@@ -196,6 +196,7 @@ class _AppDetailContent extends HookConsumerWidget {
     final isInstalled = installedPackage != null;
 
     // Show skeleton while relationships are loading
+    // Always show loading indicator here - relationships are still pending
     if (latestRelease == null || latestMetadata == null) {
       return Scaffold(
         body: SafeArea(
@@ -210,7 +211,7 @@ class _AppDetailContent extends HookConsumerWidget {
               ),
               InstallButton(app: app, release: latestRelease),
               _buildFloatingMenu(context, ref, app, isInstalled, isSignedIn),
-              if (isLoading) _buildLoadingIndicator(context),
+              _buildLoadingIndicator(context),
             ],
           ),
         ),
