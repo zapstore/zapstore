@@ -168,10 +168,12 @@ class RelayManagementCard extends HookConsumerWidget {
       if (confirmed != true || !context.mounted) return;
 
       isApplying.value = true;
+      var loadingDialogShown = false;
 
       try {
         final signer = ref.read(Signer.activeSignerProvider);
         if (signer == null) {
+          isApplying.value = false;
           if (context.mounted) {
             context.showError('Sign in required');
           }
@@ -192,6 +194,7 @@ class RelayManagementCard extends HookConsumerWidget {
 
         // Show loading dialog
         if (context.mounted) {
+          loadingDialogShown = true;
           showDialog(
             context: context,
             barrierDismissible: false,
@@ -216,7 +219,9 @@ class RelayManagementCard extends HookConsumerWidget {
       } catch (e) {
         isApplying.value = false;
         if (context.mounted) {
-          Navigator.of(context, rootNavigator: true).pop();
+          if (loadingDialogShown) {
+            Navigator.of(context, rootNavigator: true).pop();
+          }
           context.showError(
             'Failed to apply relay changes',
             description: '$e',
@@ -490,6 +495,7 @@ class RelayManagementCard extends HookConsumerWidget {
   /// Validates and normalizes a relay URL.
   /// Uses wss:// unless ws:// is explicitly specified.
   /// If no protocol is provided, wss:// is assumed.
+  /// Normalizes default ports (443 for wss, 80 for ws) by omitting them.
   static String? _validateAndNormalizeRelayUrl(String input) {
     var url = input.trim();
 
@@ -507,10 +513,16 @@ class RelayManagementCard extends HookConsumerWidget {
         ? uri.path.substring(0, uri.path.length - 1)
         : uri.path;
 
+    // Normalize default ports: omit 443 for wss and 80 for ws
+    final isDefaultPort = (scheme == 'wss' && uri.port == 443) ||
+        (scheme == 'ws' && uri.port == 80);
+    final normalizedPort =
+        uri.hasPort && !isDefaultPort ? uri.port : null;
+
     return Uri(
       scheme: scheme,
       host: uri.host.toLowerCase(),
-      port: uri.hasPort ? uri.port : null,
+      port: normalizedPort,
       path: path.isEmpty ? null : path,
     ).toString();
   }
