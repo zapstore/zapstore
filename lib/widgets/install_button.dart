@@ -106,7 +106,7 @@ class InstallButton extends ConsumerWidget {
       return switch (operation) {
         DownloadQueued() => _buildSimpleButton(
           context,
-          'Queued',
+          'Queued for download',
           null,
           fontSize: fontSize,
           showSpinner: true,
@@ -148,7 +148,7 @@ class InstallButton extends ConsumerWidget {
 
         ReadyToInstall() => _buildSimpleButton(
           context,
-          'Waiting...',
+          'Queued for ${isInstalled ? 'update' : 'install'}',
           null, // Not tappable - system advances automatically
           fontSize: fontSize,
           showSpinner: true,
