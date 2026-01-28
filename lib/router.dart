@@ -12,6 +12,7 @@ import 'package:zapstore/screens/search_screen.dart';
 import 'package:zapstore/screens/updates_screen.dart';
 import 'package:zapstore/screens/profile_screen.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
+import 'package:zapstore/services/updates_service.dart';
 
 /// Root paths for each navigation branch (used for back navigation handling)
 const kBranchRoots = ['/search', '/updates', '/profile'];
@@ -140,10 +141,16 @@ final routerProvider = Provider<GoRouter>((ref) {
     final isUpdatesRoute = currentPath.startsWith('/updates');
     final wasUpdatesRoute = previousPath?.startsWith('/updates') ?? false;
 
-    // Sync installed packages when navigating TO the updates branch
+    // Sync installed packages and refresh app data when navigating TO the updates branch
     if (isUpdatesRoute && !wasUpdatesRoute) {
       unawaited(
-        ref.read(packageManagerProvider.notifier).syncInstalledPackages(),
+        ref.read(packageManagerProvider.notifier).syncInstalledPackages().then((
+          _,
+        ) {
+          // Trigger a recalculation of apps after sync
+          // (introduced after seeing cases of stale versions)
+          ref.invalidate(categorizedAppsProvider);
+        }),
       );
     }
 
