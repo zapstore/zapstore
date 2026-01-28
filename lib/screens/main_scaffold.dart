@@ -253,7 +253,11 @@ class MobileScaffold extends ConsumerWidget {
                                   borderRadius: BorderRadius.circular(16),
                                 )
                               : null,
-                          child: ProfileAvatar(profile: profile, radius: 14),
+                          child: ProfileAvatar(
+                            profile: profile,
+                            pubkey: pubkey,
+                            radius: 14,
+                          ),
                         )
                       : const Icon(Icons.person_rounded),
                 ),
@@ -371,6 +375,7 @@ class DesktopScaffold extends ConsumerWidget {
                                   : null,
                               child: ProfileAvatar(
                                 profile: profile,
+                                pubkey: pubkey,
                                 radius: 14,
                               ),
                             )

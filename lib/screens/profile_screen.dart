@@ -132,6 +132,10 @@ class _AuthenticationSection extends ConsumerWidget {
     String pubkey,
     Profile? profile,
   ) {
+    // Generate abbreviated npub for fallback display
+    final npub = Utils.encodeShareableFromString(pubkey, type: 'npub');
+    final abbreviatedNpub = npub.abbreviateNpub();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -139,58 +143,34 @@ class _AuthenticationSection extends ConsumerWidget {
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ProfileAvatar(profile: profile, radius: 32),
+            ProfileAvatar(profile: profile, pubkey: pubkey, radius: 32),
             const SizedBox(width: 16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          profile?.nameOrNpub ?? '',
-                          style: context.textTheme.titleLarge,
-                        ),
-                      ),
-                      // Smaller Sign Out button
-                      FilledButton.icon(
-                        onPressed: () => _signOut(context, ref),
-                        icon: const Icon(Icons.logout, size: 14),
-                        label: const Text(
-                          'Sign Out',
-                          style: TextStyle(fontSize: 12),
-                        ),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: Colors.red.shade900,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          minimumSize: const Size(0, 0),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                      ),
-                    ],
+                  // Name/npub
+                  Text(
+                    profile?.nameOrNpub ?? abbreviatedNpub,
+                    style: context.textTheme.titleMedium,
                   ),
                   const SizedBox(height: 8),
                   // Profile bio with NoteParser (non-interactive)
-                  if ((profile?.about?.trim().isNotEmpty ?? false))
+                  if ((profile?.about?.trim().isNotEmpty ?? false)) ...[
                     NoteParser.parse(
                       context,
                       profile!.about!,
-                      textStyle: context.textTheme.bodyMedium,
+                      textStyle: context.textTheme.bodySmall,
                       onNostrEntity: (entity) => NostrEntityWidget(
                         entity: entity,
                         colorPair: [
                           Theme.of(context).colorScheme.primary,
                           Theme.of(context).colorScheme.secondary,
                         ],
-                        // No tap callbacks - make it non-interactive
                       ),
                     ),
-                  const SizedBox(height: 12),
+                    const SizedBox(height: 8),
+                  ],
                   // Link to full profile view
                   InkWell(
                     onTap: () => context.push('/profile/user/$pubkey'),
@@ -210,6 +190,26 @@ class _AuthenticationSection extends ConsumerWidget {
                           color: Theme.of(context).colorScheme.primary,
                         ),
                       ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Sign Out button
+                  FilledButton.icon(
+                    onPressed: () => _signOut(context, ref),
+                    icon: const Icon(Icons.logout, size: 14),
+                    label: const Text(
+                      'Sign Out',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.red.shade900,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      minimumSize: const Size(0, 0),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
                   ),
                 ],

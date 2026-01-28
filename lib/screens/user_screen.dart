@@ -165,7 +165,7 @@ class _UserHeader extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
-          ProfileAvatar(profile: profile, radius: 40),
+          ProfileAvatar(profile: profile, pubkey: pubkey, radius: 40),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
