@@ -201,6 +201,8 @@ class ZapstoreHome extends StatelessWidget {
   }
 }
 
+const _kDefaultAppCatalogRelay = 'wss://relay.zapstore.dev';
+
 final appInitializationProvider = FutureProvider<void>((ref) async {
   final dir = await getApplicationSupportDirectory();
   final dbPath = path.join(dir.path, 'zapstore.db');
@@ -208,7 +210,13 @@ final appInitializationProvider = FutureProvider<void>((ref) async {
   // Clear storage if requested from a clear all operation
   await maybeClearStorage(dbPath);
 
-  // Initialize storage
+  // Load local relay config BEFORE storage init
+  // This ensures custom relays work even when signed out
+  final secureStorage = ref.read(secureStorageServiceProvider);
+  final localRelays = await secureStorage.getAppCatalogRelays();
+  final appCatalogRelays = localRelays ?? {_kDefaultAppCatalogRelay};
+
+  // Initialize storage with local relay config
   await ref.read(
     initializationProvider(
       StorageConfiguration(
@@ -218,10 +226,10 @@ final appInitializationProvider = FutureProvider<void>((ref) async {
           stream: false,
         ),
         defaultRelays: {
-          'default': {'wss://relay.zapstore.dev'},
-          'bootstrap': {'wss://relay.zapstore.dev'},
+          'default': {_kDefaultAppCatalogRelay},
+          'bootstrap': {_kDefaultAppCatalogRelay},
           // TODO: add 'wss://purplepag.es' back when it's fixed
-          'AppCatalog': {'wss://relay.zapstore.dev'},
+          'AppCatalog': appCatalogRelays,
           'social': {
             'wss://relay.damus.io',
             'wss://relay.primal.net',

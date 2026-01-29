@@ -6,10 +6,12 @@ import 'package:models/models.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/services/app_restart_service.dart';
 import 'package:zapstore/services/notification_service.dart';
+import 'package:zapstore/services/secure_storage_service.dart';
 import 'package:zapstore/theme.dart';
 import 'package:zapstore/utils/extensions.dart';
 
-/// Provider for the user's app catalog relay list.
+/// Provider for the user's app catalog relay list (from signed 10067 event).
+/// Returns null when signed out.
 final _appCatalogRelayListProvider =
     Provider<StorageState<AppCatalogRelayList>?>((ref) {
       final pubkey = ref.watch(Signer.activePubkeyProvider);
@@ -31,6 +33,7 @@ final _appCatalogRelayListProvider =
       );
     });
 
+
 /// App Catalog Relay Management Card - manages app catalog relays (kind 10067)
 /// These are relays for discovering apps, NOT social relays like Damus/Primal.
 ///
@@ -44,11 +47,7 @@ class RelayManagementCard extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
-
-    // Only show when user is signed in
-    if (signedInPubkey == null) {
-      return const SizedBox.shrink();
-    }
+    final isSignedIn = signedInPubkey != null;
 
     final relayUrlController = useTextEditingController();
     final hasText = useState(false);
@@ -57,27 +56,50 @@ class RelayManagementCard extends HookConsumerWidget {
     // Watch pool state for relay connection status
     final poolState = ref.watch(poolStateProvider);
 
-    // Watch remote relay list
-    final relayListState = ref.watch(_appCatalogRelayListProvider);
+    // Load local relays once - they only change on app restart
+    final localRelaysFuture = useMemoized(
+      () => ref.read(secureStorageServiceProvider).getAppCatalogRelays(),
+    );
+    final localRelaysSnapshot = useFuture(localRelaysFuture);
+    final localRelays = localRelaysSnapshot.data?.toList()?..sort();
+    final hasLocalRelays = localRelays != null && localRelays.isNotEmpty;
+
+    // Only check 10067 if no local relays are stored
+    // This makes secure storage the authoritative local source
+    final relayListState = hasLocalRelays
+        ? null
+        : ref.watch(_appCatalogRelayListProvider);
     final existingRelayList = relayListState?.models.firstOrNull;
-    final savedRelays = (existingRelayList?.readRelays ?? <String>{}).toList()
+    final remoteRelays = (existingRelayList?.readRelays ?? <String>{}).toList()
       ..sort();
 
-    // If no relays saved, show default relay
-    final effectiveSavedRelays = savedRelays.isEmpty
-        ? [_kDefaultRelay]
-        : savedRelays;
+    // Determine effective saved relays:
+    // 1. Local secure storage (if set) - always wins
+    // 2. Remote 10067 (if signed in and no local relays)
+    // 3. Default relay
+    List<String> effectiveSavedRelays;
+    if (hasLocalRelays) {
+      effectiveSavedRelays = localRelays;
+    } else if (remoteRelays.isNotEmpty) {
+      effectiveSavedRelays = remoteRelays;
+    } else {
+      effectiveSavedRelays = [_kDefaultRelay];
+    }
 
     // Local pending state - initialized from effective saved relays
     final pendingRelays = useState<List<String>?>(null);
 
+    // Determine if data is still loading
+    final isLoading = localRelaysSnapshot.connectionState == ConnectionState.waiting ||
+        (!hasLocalRelays && relayListState is StorageLoading);
+
     // Initialize pending from effective saved when first loaded
     useEffect(() {
-      if (pendingRelays.value == null && relayListState is StorageData) {
+      if (pendingRelays.value == null && !isLoading) {
         pendingRelays.value = effectiveSavedRelays;
       }
       return null;
-    }, [relayListState]);
+    }, [isLoading, effectiveSavedRelays]);
 
     // Current display relays (pending if modified, else effective saved)
     final displayRelays = pendingRelays.value ?? effectiveSavedRelays;
@@ -110,7 +132,7 @@ class RelayManagementCard extends HookConsumerWidget {
       }
 
       // Check for duplicates
-      final currentRelays = pendingRelays.value ?? savedRelays;
+      final currentRelays = pendingRelays.value ?? effectiveSavedRelays;
       if (_isDuplicateRelay(normalizedUrl, currentRelays.toSet())) {
         context.showError(
           'Relay already exists',
@@ -124,7 +146,7 @@ class RelayManagementCard extends HookConsumerWidget {
     }
 
     void removeRelay(String relayUrl) {
-      final currentRelays = pendingRelays.value ?? savedRelays;
+      final currentRelays = pendingRelays.value ?? effectiveSavedRelays;
       final newRelays = currentRelays.where((r) => r != relayUrl).toList();
       // App catalog relays can never be empty - show error if trying to remove last
       if (newRelays.isEmpty) {
@@ -140,65 +162,57 @@ class RelayManagementCard extends HookConsumerWidget {
     }
 
     Future<void> applyChanges() async {
-      final confirmed = await showDialog<bool>(
+      // Show confirmation dialog with privacy option (only when signed in)
+      final result = await showDialog<({bool confirmed, bool makePrivate})>(
         context: context,
-        builder: (context) => AlertDialog(
-          title: Row(
-            children: [
-              Icon(Icons.dns, color: Theme.of(context).colorScheme.primary),
-              const SizedBox(width: 8),
-              Flexible(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Text('Apply Relay Changes'),
-                ),
-              ),
-            ],
-          ),
-          content: const Text(
-            'Changing app catalog relays will clear cached app data and restart the app. '
-            'Your sign-in and wallet connection will be preserved.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Apply Changes'),
-            ),
-          ],
-        ),
+        builder: (context) => _ApplyRelayChangesDialog(isSignedIn: isSignedIn),
       );
 
-      if (confirmed != true || !context.mounted) return;
+      if (result?.confirmed != true || !context.mounted) return;
 
       isApplying.value = true;
       var loadingDialogShown = false;
 
       try {
-        final signer = ref.read(Signer.activeSignerProvider);
-        if (signer == null) {
-          isApplying.value = false;
-          if (context.mounted) {
-            context.showError('Sign in required');
+        final secureStorage = ref.read(secureStorageServiceProvider);
+        final relaysToSave = displayRelays.toSet();
+
+        // Always save to local secure storage (works signed out or in)
+        await secureStorage.setAppCatalogRelays(relaysToSave);
+
+        // If signed in, also publish 10067 event for cross-device sync
+        if (isSignedIn) {
+          final signer = ref.read(Signer.activeSignerProvider);
+          if (signer == null) {
+            isApplying.value = false;
+            if (context.mounted) {
+              context.showError('Sign in required to publish relay list');
+            }
+            return;
           }
-          return;
-        }
 
-        // Create and sign the relay list (use displayRelays which reflects user's intent)
-        final partialRelayList = PartialAppCatalogRelayList();
-        for (final relay in displayRelays) {
-          partialRelayList.addReadRelay(relay);
-        }
-        final signedRelayList = await partialRelayList.signWith(signer);
+          // Create relay list (private or public based on user choice)
+          final PartialAppCatalogRelayList partialRelayList;
+          if (result!.makePrivate) {
+            // Encrypted: all relays in content field
+            partialRelayList = PartialAppCatalogRelayList.withEncryptedRelays(
+              publicRelays: {},
+              privateRelays: relaysToSave,
+            );
+          } else {
+            // Public: relays in r tags
+            partialRelayList = PartialAppCatalogRelayList();
+            for (final relay in displayRelays) {
+              partialRelayList.addReadRelay(relay);
+            }
+          }
+          final signedRelayList = await partialRelayList.signWith(signer);
 
-        // Publish to bootstrap relays
-        await ref.storage.publish({
-          signedRelayList,
-        }, source: const RemoteSource(relays: 'bootstrap'));
+          // Publish to bootstrap relays
+          await ref.storage.publish({
+            signedRelayList,
+          }, source: const RemoteSource(relays: 'bootstrap'));
+        }
 
         // Show loading dialog
         if (context.mounted) {
@@ -281,7 +295,9 @@ class RelayManagementCard extends HookConsumerWidget {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      'These relays are used to discover apps, not social content. Modify this list at your own risk.',
+                      isSignedIn
+                          ? 'These relays are used to discover apps, not social content. Modify this list at your own risk.'
+                          : 'These relays are used to discover apps. Sign in to sync relay settings across devices.',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(
                           context,
@@ -597,5 +613,96 @@ class RelayManagementCard extends HookConsumerWidget {
       RelaySubPhase.disconnected => 1,
       RelaySubPhase.closed => 0,
     };
+  }
+}
+
+/// Dialog for confirming relay changes with privacy option.
+class _ApplyRelayChangesDialog extends HookWidget {
+  const _ApplyRelayChangesDialog({required this.isSignedIn});
+
+  final bool isSignedIn;
+
+  @override
+  Widget build(BuildContext context) {
+    final makePrivate = useState(false);
+
+    return AlertDialog(
+      title: Row(
+        children: [
+          Icon(Icons.dns, color: Theme.of(context).colorScheme.primary),
+          const SizedBox(width: 8),
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text('Apply Relay Changes'),
+            ),
+          ),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Changing app catalog relays will clear cached app data and restart the app. '
+            'Your sign-in and wallet connection will be preserved.',
+          ),
+          if (isSignedIn) ...[
+            const SizedBox(height: 16),
+            CheckboxListTile(
+              value: makePrivate.value,
+              onChanged: (v) => makePrivate.value = v ?? false,
+              title: const Text('Make relay selection private'),
+              subtitle: const Text(
+                'Encrypted — only you can see these relays',
+              ),
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+            ),
+          ],
+          if (!isSignedIn) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.info_outline,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Sign in to sync relay settings across devices.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, null),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(
+            context,
+            (confirmed: true, makePrivate: makePrivate.value),
+          ),
+          child: const Text('Apply Changes'),
+        ),
+      ],
+    );
   }
 }

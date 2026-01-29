@@ -1,9 +1,12 @@
+import 'dart:convert';
+
 import 'package:amber_signer/amber_signer.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-/// Service for securely storing sensitive data (NWC connection strings)
-/// using platform-native secure storage (Keychain on iOS, KeyStore on Android).
+/// Service for securely storing sensitive data (NWC connection strings,
+/// app catalog relays) using platform-native secure storage
+/// (Keychain on iOS, KeyStore on Android).
 ///
 /// This does NOT require user authentication - data is encrypted at rest
 /// by the platform's secure storage mechanism.
@@ -13,6 +16,7 @@ class SecureStorageService {
   static const _storage = FlutterSecureStorage();
 
   static const _nwcKey = 'nwc_connection_string';
+  static const _appCatalogRelaysKey = 'app_catalog_relays';
 
   /// Get the stored NWC connection string
   Future<String?> getNWCString() async {
@@ -34,6 +38,38 @@ class SecureStorageService {
   Future<bool> hasNWCString() async {
     final value = await _storage.read(key: _nwcKey);
     return value?.isNotEmpty == true;
+  }
+
+  // =========================================================================
+  // App Catalog Relays
+  // =========================================================================
+
+  /// Get the stored app catalog relay URLs.
+  ///
+  /// Returns null if no relays have been stored (use defaults).
+  /// Returns empty set if user explicitly cleared all relays (invalid state,
+  /// but handled gracefully).
+  Future<Set<String>?> getAppCatalogRelays() async {
+    final json = await _storage.read(key: _appCatalogRelaysKey);
+    if (json == null || json.isEmpty) return null;
+    try {
+      final list = jsonDecode(json) as List;
+      return Set<String>.from(list.cast<String>());
+    } catch (e) {
+      // Corrupted data - treat as unset
+      return null;
+    }
+  }
+
+  /// Store app catalog relay URLs.
+  ///
+  /// This is the local source of truth for relay configuration,
+  /// used to initialize the app before sign-in.
+  Future<void> setAppCatalogRelays(Set<String> relays) async {
+    await _storage.write(
+      key: _appCatalogRelaysKey,
+      value: jsonEncode(relays.toList()),
+    );
   }
 }
 
