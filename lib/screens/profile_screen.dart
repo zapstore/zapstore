@@ -1409,7 +1409,13 @@ class _DataManagementSection extends ConsumerWidget {
           children: [
             Icon(Icons.warning, color: Theme.of(context).colorScheme.error),
             const SizedBox(width: 8),
-            Flexible(child: const Text('Clear local storage')),
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text('Clear local storage'),
+              ),
+            ),
           ],
         ),
         content: const Text(

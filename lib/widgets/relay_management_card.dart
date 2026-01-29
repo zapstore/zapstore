@@ -12,24 +12,24 @@ import 'package:zapstore/utils/extensions.dart';
 /// Provider for the user's app catalog relay list.
 final _appCatalogRelayListProvider =
     Provider<StorageState<AppCatalogRelayList>?>((ref) {
-  final pubkey = ref.watch(Signer.activePubkeyProvider);
+      final pubkey = ref.watch(Signer.activePubkeyProvider);
 
-  if (pubkey == null) {
-    return null;
-  }
+      if (pubkey == null) {
+        return null;
+      }
 
-  return ref.watch(
-    query<AppCatalogRelayList>(
-      authors: {pubkey},
-      limit: 1,
-      source: const LocalAndRemoteSource(
-        relays: 'bootstrap',
-        stream: false,
-      ),
-      subscriptionPrefix: 'user-appcatalog-relays',
-    ),
-  );
-});
+      return ref.watch(
+        query<AppCatalogRelayList>(
+          authors: {pubkey},
+          limit: 1,
+          source: const LocalAndRemoteSource(
+            relays: 'bootstrap',
+            stream: false,
+          ),
+          subscriptionPrefix: 'user-appcatalog-relays',
+        ),
+      );
+    });
 
 /// App Catalog Relay Management Card - manages app catalog relays (kind 10067)
 /// These are relays for discovering apps, NOT social relays like Damus/Primal.
@@ -64,8 +64,9 @@ class RelayManagementCard extends HookConsumerWidget {
       ..sort();
 
     // If no relays saved, show default relay
-    final effectiveSavedRelays =
-        savedRelays.isEmpty ? [_kDefaultRelay] : savedRelays;
+    final effectiveSavedRelays = savedRelays.isEmpty
+        ? [_kDefaultRelay]
+        : savedRelays;
 
     // Local pending state - initialized from effective saved relays
     final pendingRelays = useState<List<String>?>(null);
@@ -129,7 +130,8 @@ class RelayManagementCard extends HookConsumerWidget {
       if (newRelays.isEmpty) {
         context.showError(
           'Cannot remove last relay',
-          description: 'App catalog relays cannot be empty. '
+          description:
+              'App catalog relays cannot be empty. '
               'Add another relay before removing this one.',
         );
         return;
@@ -145,7 +147,13 @@ class RelayManagementCard extends HookConsumerWidget {
             children: [
               Icon(Icons.dns, color: Theme.of(context).colorScheme.primary),
               const SizedBox(width: 8),
-              const Text('Apply Relay Changes'),
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text('Apply Relay Changes'),
+                ),
+              ),
             ],
           ),
           content: const Text(
@@ -273,7 +281,7 @@ class RelayManagementCard extends HookConsumerWidget {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      'These relays are used to discover apps, not for social content.',
+                      'These relays are used to discover apps, not social content. Modify this list at your own risk.',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(
                           context,
@@ -313,8 +321,10 @@ class RelayManagementCard extends HookConsumerWidget {
                     final relayUrl = displayRelays[index];
 
                     // Get relay connection status from pool state
-                    final statusColor =
-                        _getRelayStatusColor(poolState, relayUrl);
+                    final statusColor = _getRelayStatusColor(
+                      poolState,
+                      relayUrl,
+                    );
 
                     return Container(
                       width: double.infinity,
@@ -348,8 +358,9 @@ class RelayManagementCard extends HookConsumerWidget {
                               boxShadow: statusColor != Colors.grey
                                   ? [
                                       BoxShadow(
-                                        color:
-                                            statusColor.withValues(alpha: 0.4),
+                                        color: statusColor.withValues(
+                                          alpha: 0.4,
+                                        ),
                                         blurRadius: 4,
                                         spreadRadius: 1,
                                       ),
@@ -448,10 +459,8 @@ class RelayManagementCard extends HookConsumerWidget {
                   tooltip: 'Add relay',
                   style: IconButton.styleFrom(
                     backgroundColor: isApplying.value || !hasText.value
-                        ? Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerHighest
-                            .withValues(alpha: 0.3)
+                        ? Theme.of(context).colorScheme.surfaceContainerHighest
+                              .withValues(alpha: 0.3)
                         : Theme.of(context).colorScheme.primaryContainer,
                     foregroundColor: isApplying.value || !hasText.value
                         ? Theme.of(
@@ -514,10 +523,10 @@ class RelayManagementCard extends HookConsumerWidget {
         : uri.path;
 
     // Normalize default ports: omit 443 for wss and 80 for ws
-    final isDefaultPort = (scheme == 'wss' && uri.port == 443) ||
+    final isDefaultPort =
+        (scheme == 'wss' && uri.port == 443) ||
         (scheme == 'ws' && uri.port == 80);
-    final normalizedPort =
-        uri.hasPort && !isDefaultPort ? uri.port : null;
+    final normalizedPort = uri.hasPort && !isDefaultPort ? uri.port : null;
 
     return Uri(
       scheme: scheme,

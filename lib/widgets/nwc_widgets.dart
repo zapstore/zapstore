@@ -29,10 +29,7 @@ class NWCConnectionCard extends HookConsumerWidget {
                   color: Theme.of(context).colorScheme.primary,
                 ),
                 const SizedBox(width: 8),
-                Text(
-                  'Lightning Wallet',
-                  style: context.textTheme.titleMedium,
-                ),
+                Text('Lightning Wallet', style: context.textTheme.titleMedium),
               ],
             ),
             const SizedBox(height: 12),
@@ -170,7 +167,11 @@ class NWCConnectionCard extends HookConsumerWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Remove Wallet Connection'),
+        title: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text('Remove Wallet Connection'),
+        ),
         content: const Text(
           'Are you sure you want to remove your Lightning wallet connection? You won\'t be able to send zaps until you reconnect.',
         ),
@@ -224,8 +225,18 @@ class NWCConnectionDialog extends HookWidget {
     final isLoading = useState(false);
 
     return AlertDialog(
-      title: const Row(
-        children: [Icon(Icons.flash_on), SizedBox(width: 8), Text('NWC')],
+      title: Row(
+        children: [
+          Icon(Icons.flash_on),
+          const SizedBox(width: 8),
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text('NWC'),
+            ),
+          ),
+        ],
       ),
       content: SizedBox(
         width: double.maxFinite,
@@ -254,13 +265,8 @@ class NWCConnectionDialog extends HookWidget {
                   },
                 ),
               ),
-              maxLines: 3,
+              maxLines: 1,
               enabled: !isLoading.value,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Compatible wallets: Alby, Coinos, and others that support NWC.',
-              style: context.textTheme.bodySmall,
             ),
           ],
         ),

@@ -90,9 +90,13 @@ class BaseDialogTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      text,
-      style: style ?? const TextStyle(fontWeight: FontWeight.bold),
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerLeft,
+      child: Text(
+        text,
+        style: style ?? const TextStyle(fontWeight: FontWeight.bold),
+      ),
     );
   }
 }
