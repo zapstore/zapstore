@@ -728,10 +728,12 @@ class _AppDetailContent extends HookConsumerWidget {
       }
 
       // Create new partial stack with updated list
+      final platform = ref.read(packageManagerProvider.notifier).platform;
       final partialStack = PartialAppStack.withEncryptedApps(
         name: 'Saved Apps',
         identifier: kAppBookmarksIdentifier,
         apps: existingAppIds,
+        platform: platform,
       );
 
       // Sign (encrypts the content)
