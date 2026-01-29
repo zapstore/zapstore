@@ -243,7 +243,7 @@ final appInitializationProvider = FutureProvider<void>((ref) async {
 
   unawaited(ref.read(marketIntentServiceProvider).initialize());
 
-  unawaited(_attemptAutoSignIn(ref));
+  await _attemptAutoSignIn(ref);
 });
 
 // AmberSigner provider for Nostr authentication
@@ -269,11 +269,9 @@ Future<void> onSignInSuccess(Ref ref) async {
   final storage =
       ref.read(storageNotifierProvider.notifier) as PurplebaseStorageNotifier;
 
-  unawaited(
-    storage.query(
-      RequestFilter<AppCatalogRelayList>(authors: {pubkey}).toRequest(),
-      source: const RemoteSource(relays: 'bootstrap', stream: false),
-    ),
+  await storage.query(
+    RequestFilter<AppCatalogRelayList>(authors: {pubkey}).toRequest(),
+    source: const RemoteSource(relays: 'bootstrap', stream: false),
   );
 
   // Fetch contact list for stack sorting (await to ensure it's cached)
