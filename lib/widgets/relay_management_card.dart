@@ -180,6 +180,12 @@ class RelayManagementCard extends HookConsumerWidget {
         // Always save to local secure storage (works signed out or in)
         await secureStorage.setAppCatalogRelays(relaysToSave);
 
+        // Verify write succeeded by reading back
+        final verified = await secureStorage.getAppCatalogRelays();
+        if (verified == null || !verified.containsAll(relaysToSave)) {
+          throw StateError('Failed to persist relay configuration');
+        }
+
         // If signed in, also publish 10067 event for cross-device sync
         if (isSignedIn) {
           final signer = ref.read(Signer.activeSignerProvider);
