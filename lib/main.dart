@@ -269,18 +269,13 @@ Future<void> _attemptAutoSignIn(Ref ref) async {
   }
 }
 
-/// Query AppCatalogRelayList and ContactList after successful sign-in
+/// Query ContactList after successful sign-in
 Future<void> onSignInSuccess(Ref ref) async {
   final pubkey = ref.read(Signer.activePubkeyProvider);
   if (pubkey == null) return;
 
   final storage =
       ref.read(storageNotifierProvider.notifier) as PurplebaseStorageNotifier;
-
-  await storage.query(
-    RequestFilter<AppCatalogRelayList>(authors: {pubkey}).toRequest(),
-    source: const RemoteSource(relays: 'bootstrap', stream: false),
-  );
 
   // Fetch contact list for stack sorting (await to ensure it's cached)
   await storage.query(

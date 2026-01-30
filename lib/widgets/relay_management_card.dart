@@ -2,43 +2,17 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:models/models.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/services/app_restart_service.dart';
 import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/services/secure_storage_service.dart';
-import 'package:zapstore/theme.dart';
-import 'package:zapstore/utils/extensions.dart';
 
-/// Provider for the user's app catalog relay list (from signed 10067 event).
-/// Returns null when signed out.
-final _appCatalogRelayListProvider =
-    Provider<StorageState<AppCatalogRelayList>?>((ref) {
-      final pubkey = ref.watch(Signer.activePubkeyProvider);
-
-      if (pubkey == null) {
-        return null;
-      }
-
-      return ref.watch(
-        query<AppCatalogRelayList>(
-          authors: {pubkey},
-          limit: 1,
-          source: const LocalAndRemoteSource(
-            relays: 'bootstrap',
-            stream: false,
-          ),
-          subscriptionPrefix: 'user-appcatalog-relays',
-        ),
-      );
-    });
-
-
-/// App Catalog Relay Management Card - manages app catalog relays (kind 10067)
+/// App Catalog Relay Management Card - manages app catalog relays.
 /// These are relays for discovering apps, NOT social relays like Damus/Primal.
 ///
+/// Relay configuration is stored locally in secure storage.
 /// Changes are accumulated in memory and applied with "Apply Changes" which
-/// publishes the relay list and restarts the app with a fresh database.
+/// saves the relay list and restarts the app with a fresh database.
 class RelayManagementCard extends HookConsumerWidget {
   const RelayManagementCard({super.key});
 
@@ -46,9 +20,6 @@ class RelayManagementCard extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
-    final isSignedIn = signedInPubkey != null;
-
     final relayUrlController = useTextEditingController();
     final hasText = useState(false);
     final isApplying = useState(false);
@@ -62,36 +33,18 @@ class RelayManagementCard extends HookConsumerWidget {
     );
     final localRelaysSnapshot = useFuture(localRelaysFuture);
     final localRelays = localRelaysSnapshot.data?.toList()?..sort();
-    final hasLocalRelays = localRelays != null && localRelays.isNotEmpty;
 
-    // Only check 10067 if no local relays are stored
-    // This makes secure storage the authoritative local source
-    final relayListState = hasLocalRelays
-        ? null
-        : ref.watch(_appCatalogRelayListProvider);
-    final existingRelayList = relayListState?.models.firstOrNull;
-    final remoteRelays = (existingRelayList?.readRelays ?? <String>{}).toList()
-      ..sort();
-
-    // Determine effective saved relays:
-    // 1. Local secure storage (if set) - always wins
-    // 2. Remote 10067 (if signed in and no local relays)
-    // 3. Default relay
-    List<String> effectiveSavedRelays;
-    if (hasLocalRelays) {
-      effectiveSavedRelays = localRelays;
-    } else if (remoteRelays.isNotEmpty) {
-      effectiveSavedRelays = remoteRelays;
-    } else {
-      effectiveSavedRelays = [_kDefaultRelay];
-    }
+    // Use local relays if set, otherwise default
+    final effectiveSavedRelays = (localRelays != null && localRelays.isNotEmpty)
+        ? localRelays
+        : [_kDefaultRelay];
 
     // Local pending state - initialized from effective saved relays
     final pendingRelays = useState<List<String>?>(null);
 
     // Determine if data is still loading
-    final isLoading = localRelaysSnapshot.connectionState == ConnectionState.waiting ||
-        (!hasLocalRelays && relayListState is StorageLoading);
+    final isLoading =
+        localRelaysSnapshot.connectionState == ConnectionState.waiting;
 
     // Initialize pending from effective saved when first loaded
     useEffect(() {
@@ -162,22 +115,49 @@ class RelayManagementCard extends HookConsumerWidget {
     }
 
     Future<void> applyChanges() async {
-      // Show confirmation dialog with privacy option (only when signed in)
-      final result = await showDialog<({bool confirmed, bool makePrivate})>(
+      // Show confirmation dialog
+      final confirmed = await showDialog<bool>(
         context: context,
-        builder: (context) => _ApplyRelayChangesDialog(isSignedIn: isSignedIn),
+        builder: (context) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.dns, color: Theme.of(context).colorScheme.primary),
+              const SizedBox(width: 8),
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text('Apply Relay Changes'),
+                ),
+              ),
+            ],
+          ),
+          content: const Text(
+            'Changing app catalog relays will clear cached app data and restart the app. '
+            'Your sign-in and wallet connection will be preserved.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Apply Changes'),
+            ),
+          ],
+        ),
       );
 
-      if (result?.confirmed != true || !context.mounted) return;
+      if (confirmed != true || !context.mounted) return;
 
       isApplying.value = true;
-      var loadingDialogShown = false;
 
       try {
         final secureStorage = ref.read(secureStorageServiceProvider);
         final relaysToSave = displayRelays.toSet();
 
-        // Always save to local secure storage (works signed out or in)
+        // Save to local secure storage
         await secureStorage.setAppCatalogRelays(relaysToSave);
 
         // Verify write succeeded by reading back
@@ -186,70 +166,15 @@ class RelayManagementCard extends HookConsumerWidget {
           throw StateError('Failed to persist relay configuration');
         }
 
-        // If signed in, also publish 10067 event for cross-device sync
-        if (isSignedIn) {
-          final signer = ref.read(Signer.activeSignerProvider);
-          if (signer == null) {
-            isApplying.value = false;
-            if (context.mounted) {
-              context.showError('Sign in required to publish relay list');
-            }
-            return;
-          }
-
-          // Create relay list (private or public based on user choice)
-          final PartialAppCatalogRelayList partialRelayList;
-          if (result!.makePrivate) {
-            // Encrypted: all relays in content field
-            partialRelayList = PartialAppCatalogRelayList.withEncryptedRelays(
-              publicRelays: {},
-              privateRelays: relaysToSave,
-            );
-          } else {
-            // Public: relays in r tags
-            partialRelayList = PartialAppCatalogRelayList();
-            for (final relay in displayRelays) {
-              partialRelayList.addReadRelay(relay);
-            }
-          }
-          final signedRelayList = await partialRelayList.signWith(signer);
-
-          // Publish to bootstrap relays
-          await ref.storage.publish({
-            signedRelayList,
-          }, source: const RemoteSource(relays: 'bootstrap'));
-        }
-
-        // Show loading dialog
-        if (context.mounted) {
-          loadingDialogShown = true;
-          showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (dialogContext) => const AlertDialog(
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(
-                    color: AppColors.darkSkeletonHighlight,
-                    backgroundColor: AppColors.darkSkeletonBase,
-                  ),
-                  SizedBox(height: 16),
-                  Text('Restarting...'),
-                ],
-              ),
-            ),
-          );
-        }
+        // Delay to ensure the platform-side write is fully committed
+        // before the native restart kills the process
+        await Future<void>.delayed(const Duration(milliseconds: 800));
 
         // Restart app with database clear
         await restartApp();
       } catch (e) {
         isApplying.value = false;
         if (context.mounted) {
-          if (loadingDialogShown) {
-            Navigator.of(context, rootNavigator: true).pop();
-          }
           context.showError(
             'Failed to apply relay changes',
             description: '$e',
@@ -301,9 +226,7 @@ class RelayManagementCard extends HookConsumerWidget {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      isSignedIn
-                          ? 'These relays are used to discover apps, not social content. Modify this list at your own risk.'
-                          : 'These relays are used to discover apps. Sign in to sync relay settings across devices.',
+                      'These relays are used to discover apps, not social content. Modify this list at your own risk.',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(
                           context,
@@ -438,7 +361,7 @@ class RelayManagementCard extends HookConsumerWidget {
                     controller: relayUrlController,
                     enabled: !isApplying.value,
                     decoration: InputDecoration(
-                      hintText: 'wss://relay.example.com',
+                      hintText: 'relay.example.com',
                       hintStyle: TextStyle(
                         fontSize: 12,
                         color: Theme.of(
@@ -619,96 +542,5 @@ class RelayManagementCard extends HookConsumerWidget {
       RelaySubPhase.disconnected => 1,
       RelaySubPhase.closed => 0,
     };
-  }
-}
-
-/// Dialog for confirming relay changes with privacy option.
-class _ApplyRelayChangesDialog extends HookWidget {
-  const _ApplyRelayChangesDialog({required this.isSignedIn});
-
-  final bool isSignedIn;
-
-  @override
-  Widget build(BuildContext context) {
-    final makePrivate = useState(false);
-
-    return AlertDialog(
-      title: Row(
-        children: [
-          Icon(Icons.dns, color: Theme.of(context).colorScheme.primary),
-          const SizedBox(width: 8),
-          Flexible(
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
-              child: Text('Apply Relay Changes'),
-            ),
-          ),
-        ],
-      ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Changing app catalog relays will clear cached app data and restart the app. '
-            'Your sign-in and wallet connection will be preserved.',
-          ),
-          if (isSignedIn) ...[
-            const SizedBox(height: 16),
-            CheckboxListTile(
-              value: makePrivate.value,
-              onChanged: (v) => makePrivate.value = v ?? false,
-              title: const Text('Make relay selection private'),
-              subtitle: const Text(
-                'Encrypted — only you can see these relays',
-              ),
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              controlAffinity: ListTileControlAffinity.leading,
-            ),
-          ],
-          if (!isSignedIn) ...[
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.info_outline,
-                    size: 16,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Sign in to sync relay settings across devices.',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, null),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(
-            context,
-            (confirmed: true, makePrivate: makePrivate.value),
-          ),
-          child: const Text('Apply Changes'),
-        ),
-      ],
-    );
   }
 }

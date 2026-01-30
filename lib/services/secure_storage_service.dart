@@ -13,7 +13,15 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 class SecureStorageService {
   SecureStorageService();
 
-  static const _storage = FlutterSecureStorage();
+  // Use explicit options for reliability across platforms
+  static final _storage = FlutterSecureStorage(
+    aOptions: const AndroidOptions(
+      encryptedSharedPreferences: true,
+    ),
+    iOptions: const IOSOptions(
+      accessibility: KeychainAccessibility.first_unlock,
+    ),
+  );
 
   static const _nwcKey = 'nwc_connection_string';
   static const _appCatalogRelaysKey = 'app_catalog_relays';
