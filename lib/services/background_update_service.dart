@@ -14,6 +14,7 @@ import 'package:workmanager/workmanager.dart';
 import 'package:zapstore/services/package_manager/background_package_manager.dart';
 import 'package:zapstore/services/package_manager/dummy_package_manager.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
+import 'package:zapstore/services/secure_storage_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 
 /// Unique task name for background update checking
@@ -36,6 +37,9 @@ const kUpdateNotificationChannelDescription =
 
 /// Stale download threshold for cleanup
 const _staleDownloadThreshold = Duration(days: 7);
+
+/// Threshold for re-notifying about the same updates (72 hours)
+const _notificationReminderThreshold = Duration(hours: 72);
 
 /// Input data key for AppCatalog relay URLs
 const kAppCatalogRelaysKey = 'appCatalogRelays';
@@ -236,20 +240,12 @@ Future<bool> _checkForUpdatesInBackground(Set<String>? appCatalogRelays) async {
         source: const LocalSource(),
       );
 
-      // Count updates
-      int updateCount = 0;
-      final updatableAppNames = <String>[];
+      // Collect apps with updates
+      final updatableApps = appsWithRelations.where((app) => app.hasUpdate).toList();
 
-      for (final app in appsWithRelations) {
-        if (app.hasUpdate) {
-          updateCount++;
-          updatableAppNames.add(app.name ?? app.identifier);
-        }
-      }
-
-      // Show notification if updates found
-      if (updateCount > 0) {
-        await _showUpdateNotification(updateCount, updatableAppNames);
+      // Show notification if updates found (throttled to once per 72h)
+      if (updatableApps.isNotEmpty) {
+        await _showUpdateNotificationIfNeeded(updatableApps);
       }
 
       return true;
@@ -263,50 +259,51 @@ Future<bool> _checkForUpdatesInBackground(Set<String>? appCatalogRelays) async {
   }
 }
 
-/// Show a local notification for available updates
-Future<void> _showUpdateNotification(
-  int updateCount,
-  List<String> appNames,
-) async {
-  final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+/// Show a local notification for available updates, throttled to once per 72h.
+Future<void> _showUpdateNotificationIfNeeded(List<App> updates) async {
+  final secureStorage = SecureStorageService();
 
-  // Initialize notifications (needed in background isolate)
-  const initializationSettingsAndroid = AndroidInitializationSettings(
-    '@mipmap/ic_launcher',
-  );
-  const initializationSettings = InitializationSettings(
-    android: initializationSettingsAndroid,
-  );
-  await flutterLocalNotificationsPlugin.initialize(initializationSettings);
-  await _ensureUpdateNotificationChannel(flutterLocalNotificationsPlugin);
+  // Skip if notified recently
+  final lastNotified = await secureStorage.getLastUpdateNotificationTime();
+  if (lastNotified != null &&
+      DateTime.now().difference(lastNotified) < _notificationReminderThreshold) {
+    return;
+  }
 
-  // Build notification content
-  final title = updateCount == 1
+  // Show the notification
+  final plugin = FlutterLocalNotificationsPlugin();
+  const initSettings = InitializationSettings(
+    android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+  );
+  await plugin.initialize(initSettings);
+  await _ensureUpdateNotificationChannel(plugin);
+
+  final appNames = updates.map((a) => a.name ?? a.identifier).toList();
+  final title = updates.length == 1
       ? '1 app update available'
-      : '$updateCount app updates available';
-
+      : '${updates.length} app updates available';
   final body = appNames.length <= 3
       ? appNames.join(', ')
       : '${appNames.take(3).join(', ')} and ${appNames.length - 3} more';
 
-  const androidDetails = AndroidNotificationDetails(
-    kUpdateNotificationChannelId,
-    kUpdateNotificationChannelName,
-    channelDescription: kUpdateNotificationChannelDescription,
-    importance: Importance.defaultImportance,
-    priority: Priority.defaultPriority,
-    showWhen: true,
-    autoCancel: true,
-  );
-
-  const notificationDetails = NotificationDetails(android: androidDetails);
-
-  await flutterLocalNotificationsPlugin.show(
-    0, // Notification ID
+  await plugin.show(
+    0,
     title,
     body,
-    notificationDetails,
+    const NotificationDetails(
+      android: AndroidNotificationDetails(
+        kUpdateNotificationChannelId,
+        kUpdateNotificationChannelName,
+        channelDescription: kUpdateNotificationChannelDescription,
+        importance: Importance.defaultImportance,
+        priority: Priority.defaultPriority,
+        showWhen: true,
+        autoCancel: true,
+      ),
+    ),
   );
+
+  await secureStorage.setLastUpdateNotificationTime(DateTime.now());
 }
 
 /// Service for managing background update checks

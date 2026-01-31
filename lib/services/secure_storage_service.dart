@@ -49,6 +49,29 @@ class SecureStorageService {
   }
 
   // =========================================================================
+  // Update Notification Throttling
+  // =========================================================================
+
+  static const _lastUpdateNotificationKey = 'last_update_notification';
+
+  /// Get the last time an update notification was shown.
+  Future<DateTime?> getLastUpdateNotificationTime() async {
+    final value = await _storage.read(key: _lastUpdateNotificationKey);
+    if (int.tryParse(value ?? '') case final ms?) {
+      return DateTime.fromMillisecondsSinceEpoch(ms);
+    }
+    return null;
+  }
+
+  /// Store the last update notification time.
+  Future<void> setLastUpdateNotificationTime(DateTime time) async {
+    await _storage.write(
+      key: _lastUpdateNotificationKey,
+      value: '${time.millisecondsSinceEpoch}',
+    );
+  }
+
+  // =========================================================================
   // App Catalog Relays
   // =========================================================================
 
