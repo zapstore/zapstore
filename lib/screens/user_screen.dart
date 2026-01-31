@@ -1,15 +1,16 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:zapstore/services/notification_service.dart';
+import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/utils/extensions.dart';
 import '../theme.dart';
 import '../widgets/common/note_parser.dart';
-import '../widgets/common/profile_avatar.dart';
-import '../widgets/common/profile_name_widget.dart';
+import '../widgets/common/profile_identity_row.dart';
 import '../widgets/app_card.dart';
 import '../widgets/zap_widgets.dart';
 
@@ -138,6 +139,10 @@ class UserScreen extends HookConsumerWidget {
                 return _StackLinkCard(stack: stack, pubkey: pubkey);
               }, childCount: stacks.length),
             ),
+            // Republish stacks button - only for signed-in user viewing their own profile
+            SliverToBoxAdapter(
+              child: _RepublishStacksButton(stacks: stacks, pubkey: pubkey),
+            ),
           ],
 
           // Bottom padding
@@ -163,54 +168,11 @@ class _UserHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        children: [
-          ProfileAvatar(profile: profile, pubkey: pubkey, radius: 40),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ProfileNameWidget(
-                  pubkey: pubkey,
-                  profile: profile,
-                  isLoading: isLoading,
-                  style: Theme.of(context).textTheme.headlineSmall,
-                  maxLines: 2,
-                  skeletonWidth: 180,
-                ),
-                const SizedBox(height: 4),
-                _NpubRow(pubkey: pubkey),
-                if (profile?.nip05 != null) ...[
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.verified,
-                        size: 16,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          profile!.nip05!,
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurfaceVariant,
-                              ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
+      child: ProfileIdentityRow(
+        pubkey: pubkey,
+        profile: profile,
+        isLoading: isLoading,
+        avatarRadius: 40,
       ),
     );
   }
@@ -371,66 +333,6 @@ class _StackLinkCard extends StatelessWidget {
   }
 }
 
-class _NpubRow extends StatelessWidget {
-  const _NpubRow({required this.pubkey});
-
-  final String pubkey;
-
-  @override
-  Widget build(BuildContext context) {
-    final npub = Utils.encodeShareableFromString(pubkey, type: 'npub');
-    // Longer abbreviation: show 12 chars from start + ... + 8 chars from end
-    final abbreviatedNpub =
-        '${npub.substring(0, 12)}...${npub.substring(npub.length - 8)}';
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        GestureDetector(
-          onTap: () {
-            Clipboard.setData(ClipboardData(text: npub));
-          },
-          child: Icon(
-            Icons.copy,
-            size: 12,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(width: 4),
-        GestureDetector(
-          onTap: () => launchUrl(
-            Uri.parse('https://npub.world/$npub'),
-            mode: LaunchMode.externalApplication,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.key,
-                size: 16,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                abbreviatedNpub,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
-              ),
-              const SizedBox(width: 4),
-              Icon(
-                Icons.open_in_new,
-                size: 12,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 class _UserBio extends HookWidget {
   const _UserBio({required this.profile});
 
@@ -533,6 +435,138 @@ class _UserBio extends HookWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _RepublishStacksButton extends HookConsumerWidget {
+  const _RepublishStacksButton({
+    required this.stacks,
+    required this.pubkey,
+  });
+
+  final List<AppStack> stacks;
+  final String pubkey;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
+
+    // Only show if user is viewing their own profile
+    if (signedInPubkey == null || signedInPubkey != pubkey) {
+      return const SizedBox.shrink();
+    }
+
+    final isLoading = useState(false);
+    final progressCount = useState(0);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      child: FilledButton.icon(
+        onPressed: isLoading.value
+            ? null
+            : () async {
+                isLoading.value = true;
+                progressCount.value = 0;
+                try {
+                  final signer = ref.read(Signer.activeSignerProvider);
+                  if (signer == null) {
+                    if (context.mounted) {
+                      context.showError('Sign in required');
+                    }
+                    return;
+                  }
+
+                  final platform =
+                      ref.read(packageManagerProvider.notifier).platform;
+
+                  for (final stack in stacks) {
+                    // Get existing app IDs from the stack
+                    final appIds = stack.event.getTagSetValues('a').toList();
+
+                    // Check if it's an encrypted stack (has content but no 'a' tags)
+                    final isEncrypted =
+                        stack.content.isNotEmpty && appIds.isEmpty;
+
+                    if (isEncrypted) {
+                      // For encrypted stacks, decrypt, then re-encrypt with platform
+                      try {
+                        final decryptedContent = await signer.nip44Decrypt(
+                          stack.content,
+                          signedInPubkey,
+                        );
+                        final existingAppIds =
+                            (jsonDecode(decryptedContent) as List)
+                                .cast<String>();
+
+                        final partialStack = PartialAppStack.withEncryptedApps(
+                          name: stack.name ?? stack.identifier,
+                          identifier: stack.identifier,
+                          apps: existingAppIds,
+                          platform: platform,
+                        );
+
+                        final signedStack =
+                            await partialStack.signWith(signer);
+                        await ref.storage.save({signedStack});
+                        ref.storage.publish({
+                          signedStack,
+                        }, source: RemoteSource(relays: 'social'));
+                      } catch (e) {
+                        // Skip stacks that can't be decrypted
+                        continue;
+                      }
+                    } else {
+                      // For public stacks, rebuild with platform
+                      final partialStack = PartialAppStack(
+                        name: stack.name ?? stack.identifier,
+                        identifier: stack.identifier,
+                        platform: platform,
+                      );
+
+                      for (final appId in appIds) {
+                        partialStack.addApp(appId);
+                      }
+
+                      final signedStack = await partialStack.signWith(signer);
+                      await ref.storage.save({signedStack});
+                      ref.storage.publish({
+                        signedStack,
+                      }, source: RemoteSource(relays: 'social'));
+                    }
+
+                    progressCount.value++;
+                  }
+
+                  if (context.mounted) {
+                    context.showInfo(
+                      'Republished ${progressCount.value} stacks with platform tag',
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    context.showError(
+                      'Failed to republish stacks',
+                      description: '$e',
+                    );
+                  }
+                } finally {
+                  isLoading.value = false;
+                }
+              },
+        icon: isLoading.value
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.publish, size: 18),
+        label: Text(
+          isLoading.value
+              ? 'Republishing ${progressCount.value}/${stacks.length}...'
+              : 'Republish stacks (${stacks.length})',
+        ),
       ),
     );
   }

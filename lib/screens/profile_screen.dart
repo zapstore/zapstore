@@ -17,7 +17,7 @@ import 'package:zapstore/main.dart';
 import 'package:zapstore/services/bookmarks_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/utils/extensions.dart';
-import 'package:zapstore/widgets/common/profile_avatar.dart';
+import 'package:zapstore/widgets/common/profile_identity_row.dart';
 import 'package:zapstore/widgets/app_card.dart';
 import 'package:zapstore/theme.dart';
 import 'package:zapstore/services/notification_service.dart';
@@ -132,90 +132,73 @@ class _AuthenticationSection extends ConsumerWidget {
     String pubkey,
     Profile? profile,
   ) {
-    // Generate abbreviated npub for fallback display
-    final npub = Utils.encodeShareableFromString(pubkey, type: 'npub');
-    final abbreviatedNpub = npub.abbreviateNpub();
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Profile Information
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ProfileAvatar(profile: profile, pubkey: pubkey, radius: 32),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Name/npub
-                  Text(
-                    profile?.nameOrNpub ?? abbreviatedNpub,
-                    style: context.textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 8),
-                  // Profile bio with NoteParser (non-interactive)
-                  if ((profile?.about?.trim().isNotEmpty ?? false)) ...[
-                    NoteParser.parse(
-                      context,
-                      profile!.about!,
-                      textStyle: context.textTheme.bodySmall,
-                      onNostrEntity: (entity) => NostrEntityWidget(
-                        entity: entity,
-                        colorPair: [
-                          Theme.of(context).colorScheme.primary,
-                          Theme.of(context).colorScheme.secondary,
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                  // Link to full profile view
-                  InkWell(
-                    onTap: () => context.push('/profile/user/$pubkey'),
-                    child: Row(
-                      children: [
-                        Text(
-                          'View Full Profile',
-                          style: context.textTheme.bodySmall?.copyWith(
-                            color: Theme.of(context).colorScheme.primary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Icon(
-                          Icons.arrow_forward,
-                          size: 14,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  // Sign Out button
-                  FilledButton.icon(
-                    onPressed: () => _signOut(context, ref),
-                    icon: const Icon(Icons.logout, size: 14),
-                    label: const Text(
-                      'Sign Out',
-                      style: TextStyle(fontSize: 12),
-                    ),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: Colors.red.shade900,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      minimumSize: const Size(0, 0),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                  ),
-                ],
-              ),
+        // Profile identity row (avatar, name, npub, nip05)
+        ProfileIdentityRow(
+          pubkey: pubkey,
+          profile: profile,
+          avatarRadius: 32,
+          onCopiedNpub: () => context.showInfo('Copied npub to clipboard'),
+        ),
+        const SizedBox(height: 12),
+        // Profile bio with NoteParser (non-interactive)
+        if ((profile?.about?.trim().isNotEmpty ?? false)) ...[
+          NoteParser.parse(
+            context,
+            profile!.about!,
+            textStyle: context.textTheme.bodySmall,
+            onNostrEntity: (entity) => NostrEntityWidget(
+              entity: entity,
+              colorPair: [
+                Theme.of(context).colorScheme.primary,
+                Theme.of(context).colorScheme.secondary,
+              ],
             ),
-          ],
+          ),
+          const SizedBox(height: 8),
+        ],
+        // Link to full profile view
+        InkWell(
+          onTap: () => context.push('/profile/user/$pubkey'),
+          child: Row(
+            children: [
+              Text(
+                'View Full Profile',
+                style: context.textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Icon(
+                Icons.arrow_forward,
+                size: 14,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        // Sign Out button
+        FilledButton.icon(
+          onPressed: () => _signOut(context, ref),
+          icon: const Icon(Icons.logout, size: 14),
+          label: const Text(
+            'Sign Out',
+            style: TextStyle(fontSize: 12),
+          ),
+          style: FilledButton.styleFrom(
+            backgroundColor: Colors.red.shade900,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 6,
+            ),
+            minimumSize: const Size(0, 0),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
         ),
       ],
     );
