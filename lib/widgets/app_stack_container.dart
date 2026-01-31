@@ -9,6 +9,7 @@ import 'package:skeletonizer/skeletonizer.dart';
 import '../utils/extensions.dart';
 import '../utils/url_utils.dart';
 import '../theme.dart';
+import '../services/package_manager/package_manager.dart';
 import 'common/profile_avatar.dart';
 import 'common/profile_name_widget.dart';
 
@@ -94,10 +95,16 @@ class AppStackContainer extends HookConsumerWidget {
 
     final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
 
-    // Query 100 stacks WITHOUT loading apps (fast, from local storage)
+    // Get platform from package manager for filtering
+    final platform = ref.read(packageManagerProvider.notifier).platform;
+
+    // Query 30 stacks WITHOUT loading apps (fast, from local storage)
     final appStacksState = ref.watch(
       query<AppStack>(
-        limit: 100,
+        limit: 30,
+        tags: {
+          '#f': {platform},
+        },
         source: const LocalAndRemoteSource(relays: 'social'),
         subscriptionPrefix: 'app-stack',
         schemaFilter: appStackEventFilter,
