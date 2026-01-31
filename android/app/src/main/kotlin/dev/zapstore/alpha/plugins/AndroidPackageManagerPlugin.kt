@@ -656,16 +656,12 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
             val sessionParams = PackageInstaller.SessionParams(
                 PackageInstaller.SessionParams.MODE_FULL_INSTALL
             ).apply {
-                // Use the passed packageName directly - no getPackageArchiveInfo() needed
-                // Android validates the APK during commit anyway
                 setAppPackageName(packageName)
+                setInstallLocation(android.content.pm.PackageInfo.INSTALL_LOCATION_AUTO)
                 
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
-                    setInstallerPackageName(context.packageName)
                 }
-                // Use AUTO install location - safe default without parsing APK
-                setInstallLocation(android.content.pm.PackageInfo.INSTALL_LOCATION_AUTO)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     setPackageSource(PackageInstaller.PACKAGE_SOURCE_STORE)
                 }
