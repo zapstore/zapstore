@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:amber_signer/amber_signer.dart';
+import 'package:nip55_signer/nip55_signer.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -104,24 +104,53 @@ class SecureStorageService {
   }
 }
 
-/// Persists the AmberSigner pubkey in flutter_secure_storage.
+/// Persists NIP-55 signer session data in flutter_secure_storage.
 /// This survives app data clears (database deletion) and is encrypted.
-class SecureStoragePubkeyPersistence implements AmberPubkeyPersistence {
-  static const _key = 'amber_pubkey';
+class SecureStorageSignerPersistence implements Nip55SignerPersistence {
+  static const _pubkeyKey = 'nip55_pubkey';
+  static const _packageKey = 'nip55_signer_package';
+  // Legacy key for migration from amber_signer
+  static const _legacyPubkeyKey = 'amber_pubkey';
 
   @override
   Future<void> persistPubkey(String pubkey) async {
-    await SecureStorageService._storage.write(key: _key, value: pubkey);
+    await SecureStorageService._storage.write(key: _pubkeyKey, value: pubkey);
   }
 
   @override
   Future<String?> loadPubkey() async {
-    return SecureStorageService._storage.read(key: _key);
+    // Try new key first, then fall back to legacy key for migration
+    var pubkey = await SecureStorageService._storage.read(key: _pubkeyKey);
+    if (pubkey == null || pubkey.isEmpty) {
+      pubkey = await SecureStorageService._storage.read(key: _legacyPubkeyKey);
+      if (pubkey != null && pubkey.isNotEmpty) {
+        // Migrate to new key
+        await persistPubkey(pubkey);
+        await SecureStorageService._storage.delete(key: _legacyPubkeyKey);
+      }
+    }
+    return pubkey;
   }
 
   @override
   Future<void> clearPubkey() async {
-    await SecureStorageService._storage.delete(key: _key);
+    await SecureStorageService._storage.delete(key: _pubkeyKey);
+    await SecureStorageService._storage.delete(key: _legacyPubkeyKey);
+  }
+
+  @override
+  Future<void> persistSignerPackage(String packageName) async {
+    await SecureStorageService._storage.write(key: _packageKey, value: packageName);
+  }
+
+  @override
+  Future<String?> loadSignerPackage() async {
+    return SecureStorageService._storage.read(key: _packageKey);
+  }
+
+  @override
+  Future<void> clearSignerPackage() async {
+    await SecureStorageService._storage.delete(key: _packageKey);
   }
 }
 

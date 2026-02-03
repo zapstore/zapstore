@@ -24,6 +24,8 @@ import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/widgets/common/note_parser.dart';
 import 'package:zapstore/widgets/nwc_widgets.dart';
 import 'package:zapstore/widgets/relay_management_card.dart';
+import 'package:zapstore/widgets/signer_picker_sheet.dart';
+import 'package:zapstore/constants/app_constants.dart';
 
 /// Profile screen for authentication and app settings
 class ProfileScreen extends ConsumerWidget {
@@ -205,9 +207,6 @@ class _AuthenticationSection extends ConsumerWidget {
   }
 
   Widget _buildSignInOptions(BuildContext context, WidgetRef ref) {
-    final pmState = ref.watch(packageManagerProvider);
-    final isAmberInstalled = pmState.installed.containsKey(kAmberPackageId);
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -237,9 +236,7 @@ class _AuthenticationSection extends ConsumerWidget {
         const SizedBox(height: 12),
         SizedBox(
           width: double.infinity,
-          child: _SignInButtonWithAmberCheck(
-            isAmberInstalled: isAmberInstalled,
-          ),
+          child: const _SignInButton(),
         ),
       ],
     );
@@ -247,7 +244,7 @@ class _AuthenticationSection extends ConsumerWidget {
 
   Future<void> _signOut(BuildContext context, WidgetRef ref) async {
     try {
-      await ref.read(amberSignerProvider).signOut();
+      await ref.read(nip55SignerProvider).signOut();
     } catch (e) {
       if (context.mounted) {
         context.showError('Sign out failed', description: '$e');
@@ -256,20 +253,31 @@ class _AuthenticationSection extends ConsumerWidget {
   }
 }
 
-// Sign in button with Amber installation check
-class _SignInButtonWithAmberCheck extends ConsumerWidget {
-  const _SignInButtonWithAmberCheck({required this.isAmberInstalled});
-
-  final bool isAmberInstalled;
+// Sign in button with NIP-55 signer detection
+class _SignInButton extends ConsumerWidget {
+  const _SignInButton();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final availableSigners = ref.watch(availableSignersProvider).valueOrNull ?? [];
+    final hasSigners = availableSigners.isNotEmpty;
+
     return AsyncButtonBuilder(
       onPressed: () async {
-        if (!isAmberInstalled) {
+        if (!hasSigners) {
+          // No signer installed - navigate to Amber page as fallback
           context.push('/profile/app/$kAmberNaddr');
         } else {
-          await ref.read(amberSignerProvider).signIn();
+          String? packageName;
+
+          // If multiple signers, let user choose
+          if (availableSigners.length > 1) {
+            final selected = await showSignerPicker(context, availableSigners);
+            if (selected == null) return; // User cancelled
+            packageName = selected.packageName;
+          }
+
+          await ref.read(nip55SignerProvider).signIn(packageName: packageName);
         }
       },
       builder: (context, child, callback, state) {
@@ -299,9 +307,9 @@ class _SignInButtonWithAmberCheck extends ConsumerWidget {
                     const Icon(Icons.login, size: 16),
                     const SizedBox(width: 8),
                     Text(
-                      isAmberInstalled
-                          ? 'Sign in with Amber'
-                          : 'Install Amber to sign in',
+                      hasSigners
+                          ? 'Sign in with Nostr'
+                          : 'Install a signer to sign in',
                       style: const TextStyle(fontSize: 13),
                     ),
                   ],

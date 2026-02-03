@@ -5,8 +5,8 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:zapstore/constants/app_constants.dart';
 import 'package:zapstore/main.dart';
 import 'package:zapstore/services/notification_service.dart';
-import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/utils/debug_utils.dart';
+import 'package:zapstore/widgets/signer_picker_sheet.dart';
 
 /// Reusable sign-in prompt widget for dialogs and bottom sheets.
 /// Displays a styled tappable message prompting the user to sign in.
@@ -19,19 +19,19 @@ class SignInPrompt extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final pmState = ref.watch(packageManagerProvider);
-    final isAmberInstalled = pmState.installed.containsKey(kAmberPackageId);
+    final availableSigners = ref.watch(availableSignersProvider).valueOrNull ?? [];
     final isLoading = useState(false);
 
     Future<void> handleSignIn() async {
       if (isLoading.value) return;
 
-      if (!isAmberInstalled) {
+      if (availableSigners.isEmpty) {
+        // No NIP-55 signer installed - prompt to install Amber as fallback
         context.showInfo(
-          'Install Amber to sign in with your Nostr identity',
+          'Install a Nostr signer to sign in',
           actions: [
             (
-              'Open Amber',
+              'Install Amber',
               () async => context.push('/search/app/$kAmberNaddr'),
             ),
           ],
@@ -39,14 +39,26 @@ class SignInPrompt extends HookConsumerWidget {
       } else {
         isLoading.value = true;
         try {
-          await ref.read(amberSignerProvider).signIn();
+          String? packageName;
+
+          // If multiple signers, let user choose
+          if (availableSigners.length > 1) {
+            final selected = await showSignerPicker(context, availableSigners);
+            if (selected == null) {
+              isLoading.value = false;
+              return; // User cancelled
+            }
+            packageName = selected.packageName;
+          }
+
+          await ref.read(nip55SignerProvider).signIn(packageName: packageName);
           onSignInSuccess(ref.read(refProvider));
         } catch (e) {
           if (context.mounted) {
             context.showError(
               'Sign-in failed',
               description:
-                  'Amber could not complete the sign-in. Make sure Amber is installed and try again.\n\n$e',
+                  'The signer could not complete the sign-in. Make sure a Nostr signer is installed and try again.\n\n$e',
             );
           }
         } finally {

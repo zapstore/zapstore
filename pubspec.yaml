@@ -29,7 +29,9 @@ dependencies:
   easy_image_viewer: ^1.5.1
   models: ^0.3.0
   purplebase: ^0.3.0
-  amber_signer: ^0.1.0
+  nip55_signer:
+    git:
+      url: https://github.com/Letdown2491/nip55_signer
   hooks_riverpod: ^2.6.1
   path: ^1.9.1
   any_link_preview: ^3.0.3
@@ -67,11 +69,6 @@ dependency_overrides:
     git:
       url: https://github.com/purplebase/purplebase
       ref: 7cc9b52
-  amber_signer:
-    # path: ../amber_signer
-    git:
-      url: https://github.com/purplebase/amber_signer
-      ref: 6cbedbe
 
 dev_dependencies:
   flutter_test:
