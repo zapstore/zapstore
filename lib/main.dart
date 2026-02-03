@@ -9,7 +9,7 @@ import 'package:models/models.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:purplebase/purplebase.dart';
-import 'package:amber_signer/amber_signer.dart';
+import 'package:nip55_signer/nip55_signer.dart';
 import 'package:zapstore/services/app_restart_service.dart';
 import 'package:zapstore/services/background_update_service.dart';
 import 'package:zapstore/services/secure_storage_service.dart';
@@ -254,15 +254,30 @@ final appInitializationProvider = FutureProvider<void>((ref) async {
   await _attemptAutoSignIn(ref);
 });
 
-// AmberSigner provider for Nostr authentication
-// Uses SecureStoragePubkeyPersistence to survive database clears
-final amberSignerProvider = Provider<AmberSigner>(
-  (ref) => AmberSigner(ref, persistence: SecureStoragePubkeyPersistence()),
+// NIP-55 Signer provider for Nostr authentication
+// Uses SecureStorageSignerPersistence to survive database clears
+final nip55SignerProvider = Provider<Nip55Signer>(
+  (ref) => Nip55Signer(ref, persistence: SecureStorageSignerPersistence()),
 );
+
+// For backward compatibility - alias to nip55SignerProvider
+final amberSignerProvider = nip55SignerProvider;
+
+// Provider to get list of installed NIP-55 signer apps
+final availableSignersProvider = FutureProvider<List<SignerAppInfo>>((ref) async {
+  final signer = ref.read(nip55SignerProvider);
+  return signer.getInstalledSignerApps();
+});
+
+// Provider to check if any NIP-55 signer is installed
+final hasNostrSignerProvider = Provider<bool>((ref) {
+  final signers = ref.watch(availableSignersProvider).valueOrNull;
+  return signers != null && signers.isNotEmpty;
+});
 
 Future<void> _attemptAutoSignIn(Ref ref) async {
   try {
-    await ref.read(amberSignerProvider).attemptAutoSignIn();
+    await ref.read(nip55SignerProvider).attemptAutoSignIn();
     await onSignInSuccess(ref);
   } catch (e) {
     // Auto sign-in fails on first install — that's fine, just continue

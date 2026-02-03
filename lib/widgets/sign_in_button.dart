@@ -5,13 +5,13 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:zapstore/constants/app_constants.dart';
 import 'package:zapstore/main.dart';
 import 'package:zapstore/services/notification_service.dart';
-import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/utils/debug_utils.dart';
+import 'package:zapstore/widgets/signer_picker_sheet.dart';
 
 class SignInButton extends ConsumerWidget {
   const SignInButton({
     super.key,
-    this.label = 'Sign in with Amber',
+    this.label = 'Sign in with Nostr',
     this.minimal = false,
     this.requireNip55 = true,
   });
@@ -22,24 +22,33 @@ class SignInButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final pmState = ref.watch(packageManagerProvider);
-    final isAmberInstalled = pmState.installed.containsKey(kAmberPackageId);
+    final availableSigners = ref.watch(availableSignersProvider).valueOrNull ?? [];
 
     return AsyncButtonBuilder(
       onPressed: () async {
-        if (!isAmberInstalled) {
+        if (availableSigners.isEmpty) {
+          // No NIP-55 signer installed - prompt to install Amber as fallback
           context.showInfo(
-            'Install Amber to sign in with your Nostr identity',
+            'Install a Nostr signer to sign in',
             actions: [
               (
-                'Open Amber',
+                'Install Amber',
                 () async => context.push('/search/app/$kAmberNaddr'),
               ),
             ],
           );
         } else {
           try {
-            await ref.read(amberSignerProvider).signIn();
+            String? packageName;
+
+            // If multiple signers, let user choose
+            if (availableSigners.length > 1) {
+              final selected = await showSignerPicker(context, availableSigners);
+              if (selected == null) return; // User cancelled
+              packageName = selected.packageName;
+            }
+
+            await ref.read(nip55SignerProvider).signIn(packageName: packageName);
             await onSignInSuccess(ref.read(refProvider));
           } catch (e) {
             if (context.mounted) {

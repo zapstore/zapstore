@@ -654,7 +654,7 @@ class _CommentComposer extends HookConsumerWidget {
         if (context.mounted) {
           context.showError(
             'Sign in required',
-            description: 'You need to sign in with Amber to post comments.',
+            description: 'You need to sign in with Nostr to post comments.',
           );
         }
         return;
@@ -850,7 +850,7 @@ class _ReplyComposer extends HookConsumerWidget {
         if (context.mounted) {
           context.showError(
             'Sign in required',
-            description: 'You need to sign in with Amber to post replies.',
+            description: 'You need to sign in with Nostr to post replies.',
           );
         }
         return;
@@ -1007,7 +1007,7 @@ class _StackCommentComposer extends HookConsumerWidget {
         if (context.mounted) {
           context.showError(
             'Sign in required',
-            description: 'You need to sign in with Amber to post comments.',
+            description: 'You need to sign in with Nostr to post comments.',
           );
         }
         return;
