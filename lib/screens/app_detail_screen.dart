@@ -803,10 +803,6 @@ class _AppDetailContent extends HookConsumerWidget {
     try {
       final packageManager = ref.read(packageManagerProvider.notifier);
       await packageManager.uninstall(app.identifier);
-      // Only reaches here after successful uninstall
-      if (context.mounted) {
-        context.showInfo('${app.name ?? app.identifier} has been uninstalled');
-      }
     } catch (e) {
       if (context.mounted) {
         // Don't show error for user cancellation
