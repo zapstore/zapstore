@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Zapstore lightning bolt icon for notifications -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M13.5,2L6,13h5.5l-1,9L19,11h-5.5l1,-9z"/>
+</vector>

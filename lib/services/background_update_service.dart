@@ -241,7 +241,9 @@ Future<bool> _checkForUpdatesInBackground(Set<String>? appCatalogRelays) async {
       );
 
       // Collect apps with updates
-      final updatableApps = appsWithRelations.where((app) => app.hasUpdate).toList();
+      final updatableApps = appsWithRelations
+          .where((app) => app.hasUpdate)
+          .toList();
 
       // Show notification if updates found (throttled to once per 72h)
       if (updatableApps.isNotEmpty) {
@@ -266,14 +268,15 @@ Future<void> _showUpdateNotificationIfNeeded(List<App> updates) async {
   // Skip if notified recently
   final lastNotified = await secureStorage.getLastUpdateNotificationTime();
   if (lastNotified != null &&
-      DateTime.now().difference(lastNotified) < _notificationReminderThreshold) {
+      DateTime.now().difference(lastNotified) <
+          _notificationReminderThreshold) {
     return;
   }
 
   // Show the notification
   final plugin = FlutterLocalNotificationsPlugin();
   const initSettings = InitializationSettings(
-    android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+    android: AndroidInitializationSettings('@drawable/ic_notification'),
   );
   await plugin.initialize(initSettings);
   await _ensureUpdateNotificationChannel(plugin);
@@ -374,7 +377,7 @@ class BackgroundUpdateService {
     final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
     const initializationSettingsAndroid = AndroidInitializationSettings(
-      '@mipmap/ic_launcher',
+      '@drawable/ic_notification',
     );
     const initializationSettings = InitializationSettings(
       android: initializationSettingsAndroid,
@@ -407,6 +410,37 @@ class BackgroundUpdateService {
       constraints: Constraints(networkType: NetworkType.connected),
       inputData: {kAppCatalogRelaysKey: appCatalogRelays.toList()},
     );
+  }
+
+  /// Show a test notification directly (for testing)
+  Future<void> showTestNotification() async {
+    debugPrint('showTestNotification: starting');
+    final plugin = FlutterLocalNotificationsPlugin();
+    const initSettings = InitializationSettings(
+      android: AndroidInitializationSettings('@drawable/ic_notification'),
+    );
+    await plugin.initialize(initSettings);
+    debugPrint('showTestNotification: initialized');
+    await _ensureUpdateNotificationChannel(plugin);
+    debugPrint('showTestNotification: channel ensured');
+
+    await plugin.show(
+      0,
+      '2 app updates available',
+      'Test App, Another App',
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          kUpdateNotificationChannelId,
+          kUpdateNotificationChannelName,
+          channelDescription: kUpdateNotificationChannelDescription,
+          importance: Importance.high,
+          priority: Priority.high,
+          showWhen: true,
+          autoCancel: true,
+        ),
+      ),
+    );
+    debugPrint('showTestNotification: done');
   }
 }
 
