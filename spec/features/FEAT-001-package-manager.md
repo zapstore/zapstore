@@ -182,9 +182,15 @@ There is no third option. Timeouts, crashes, backgrounding, network loss—all p
 
 ### Concurrent Operations
 
-- Multiple downloads: up to 3 simultaneous, others queued
+- Multiple downloads: limited based on device capability (1-4 simultaneous), others queued
 - Multiple installs: 1 at a time, others wait in queue
+- Queue order: best-effort insertion order (not guaranteed)
 - Queue advances automatically after each completion
+
+### Device Adaptation
+
+- Download concurrency adapts to device RAM to prevent crashes on low-capability devices
+- Behavior degrades gracefully on constrained devices, never hangs
 
 ## Acceptance Criteria
 

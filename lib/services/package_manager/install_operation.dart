@@ -3,8 +3,8 @@ import 'package:models/models.dart';
 /// Stale download threshold - operations older than this will be cleaned up
 const staleOperationThreshold = Duration(days: 7);
 
-/// Maximum concurrent downloads allowed
-const maxConcurrentDownloads = 3;
+/// Delay between queueing operations to prevent UI flood
+const batchQueueDelayMs = 50;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // INSTALL OPERATION STATE MACHINE

@@ -3,7 +3,7 @@
 **Feature:** FEAT-001-package-manager.md
 **Status:** Complete
 
-## Problem Solved
+## Problem Solved (Phase 1 - Complete)
 
 Install sessions could complete in Android PackageInstaller even after Zapstore's watchdog timed out and reported failure. This caused:
 1. Apps "silently" installed without user awareness
@@ -12,7 +12,16 @@ Install sessions could complete in Android PackageInstaller even after Zapstore'
 
 Root cause: `abandonSession()` doesn't work after `session.commit()` is called.
 
-## Tasks Completed
+## Problem Solved (Phase 2 - Complete)
+
+User report: "Update All" crashes on low-RAM devices (Lenovo Tab M10 Plus, Android 13).
+
+Root causes identified and fixed:
+1. Fixed concurrent download limit (3) overwhelms low-RAM devices → Dynamic limit based on RAM
+2. State update floods when queueing many apps (20+) → Staggered 50ms delays
+3. Race conditions in implicit queue derivation → Explicit queue lists with processing lock
+
+## Tasks Completed (Phase 1)
 
 - [x] 1. Track committed sessions separately
   - Added `committedSessions` set to track sessions post-commit
@@ -32,6 +41,33 @@ Root cause: `abandonSession()` doesn't work after `session.commit()` is called.
   - Clears all tracking for package (best effort)
   - Returns `wasCommitted` flag to warn if Android may still complete
 
+## Tasks (Phase 2 - Batch Operation Robustness)
+
+- [x] 1. Add device capability detection (Dart)
+  - Added `device_info_plus` package dependency
+  - Created `DeviceCapabilitiesCache` in `device_capabilities.dart`
+  - Estimates RAM from Android device characteristics (SDK version, ABIs)
+  - Calculates `maxConcurrentDownloads` based on RAM tier:
+    - < 3GB: 1 concurrent download
+    - 3-4GB: 2 concurrent downloads
+    - 4-6GB: 3 concurrent downloads
+    - > 6GB: 4 concurrent downloads
+  - Initialized at app startup in `appInitializationProvider`
+
+- [x] 2. Implement explicit queue tracking
+  - Added `downloadQueue: List<String>` for ordered download queue
+  - Added `installQueue: List<String>` for ordered install queue
+  - Added `activeInstall: String?` as single source of truth for install slot
+  - Added `activeDownloads: Set<String>` for tracking active download slots
+  - Replaced implicit queue derivation with explicit membership
+  - Single `processQueue()` entry point with `_processingQueue` lock
+  - Protected members for subclass access
+
+- [x] 3. Add staggered batch queueing
+  - Added 50ms delay between state updates in `queueDownloads()`
+  - Defined `batchQueueDelayMs` constant in `install_operation.dart`
+  - Prevents Riverpod rebuild flood on "Update All" with many apps
+
 ## Decisions
 
 ### 2026-02-03 — Committed session handling
@@ -40,6 +76,26 @@ Root cause: `abandonSession()` doesn't work after `session.commit()` is called.
 **Options:** A) Ignore timeout for committed, B) Keep waiting, C) Show different status.
 **Decision:** Option B+C - Keep waiting and show "System is processing".
 **Rationale:** User needs feedback; Android will eventually complete or fail. No hanging states allowed.
+
+### 2026-02-04 — Explicit vs implicit queue
+
+**Context:** Current queue derived from operation state causes race conditions with 20+ apps.
+**Options:** A) Keep implicit + add more defensive checks, B) Explicit queue lists + lock.
+**Decision:** Option B - Explicit queue lists with processing lock.
+**Rationale:** Simpler to reason about, eliminates race conditions, easier debugging.
+
+### 2026-02-04 — Dynamic concurrent downloads
+
+**Context:** Fixed limit of 3 crashes low-RAM devices; too conservative for high-end devices.
+**Options:** A) Lower fixed limit, B) Dynamic based on RAM, C) User configurable.
+**Decision:** Option B - Dynamic based on device RAM.
+**Rationale:** Adapts to device capability without user intervention.
+
+### 2026-02-04 — Verification chunk size
+
+**Context:** Should chunk size (64KB) be dynamic based on device?
+**Decision:** Keep fixed at 64KB.
+**Rationale:** Memory savings negligible (640KB max for 10 concurrent ops), complexity not justified.
 
 ---
 

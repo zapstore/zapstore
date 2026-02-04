@@ -6,10 +6,12 @@ import 'package:equatable/equatable.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
+import 'package:zapstore/services/package_manager/device_capabilities.dart';
 import 'package:zapstore/services/package_manager/dummy_package_manager.dart';
 import 'package:zapstore/services/package_manager/install_operation.dart';
 import 'package:zapstore/utils/version_utils.dart';
 
+export 'device_capabilities.dart';
 export 'install_operation.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -96,6 +98,7 @@ class PackageManagerState extends Equatable {
 /// Architecture:
 /// - Download phase: Managed by background_downloader (can pause/resume/cancel)
 /// - Install phase: Platform-specific, event-driven (no hanging awaits)
+/// - Explicit queues: Ordered lists for downloads and installs (not derived from state)
 abstract class PackageManager extends StateNotifier<PackageManagerState> {
   PackageManager(this.ref) : super(const PackageManagerState()) {
     _downloaderInit = _initializeDownloader();
@@ -105,16 +108,44 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
   late final FileDownloader _downloader;
   late final Future<void> _downloaderInit;
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // EXPLICIT QUEUE TRACKING
+  // Queues are the source of truth for order; operations map is for UI state.
+  // Protected for subclass access (e.g., AndroidPackageManager).
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// Ordered download queue (appIds waiting for download slot)
+  @protected
+  final List<String> downloadQueue = [];
+
+  /// Ordered install queue (appIds waiting for install slot)
+  @protected
+  final List<String> installQueue = [];
+
+  /// Currently active downloads (appIds)
+  @protected
+  final Set<String> activeDownloads = {};
+
+  /// Currently active install (only 1 allowed due to Android PackageInstaller)
+  @protected
+  String? activeInstall;
+
+  /// Lock to prevent concurrent queue processing
+  bool _processingQueue = false;
+
+  /// Dynamic max concurrent downloads based on device capability
+  int get maxConcurrentDownloads =>
+      DeviceCapabilitiesCache.capabilities.maxConcurrentDownloads;
+
   Future<void> _ensureDownloaderReady() => _downloaderInit;
 
   /// Hook called when an app transitions into [ReadyToInstall].
   ///
-  /// Default behavior is to immediately start installation. Platforms that must
-  /// serialize installs (Android PackageInstaller UI) should override this to
-  /// queue/advance one install at a time.
+  /// Default behavior is to process the queue, which will start the install
+  /// if no other install is active. Subclasses can override for custom behavior.
   @protected
   void onInstallReady(String appId) {
-    unawaited(triggerInstall(appId));
+    unawaited(processQueue());
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -229,29 +260,20 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
       return false;
     }
 
-    // Check download slots - only count active downloads, not queued
-    final activeDownloads = countOperations<Downloading>();
-
-    if (activeDownloads >= maxConcurrentDownloads) {
-      setOperation(
-        appId,
-        DownloadQueued(target: target, displayName: displayName),
-      );
-      return true;
-    }
-
-    await _startDownloadTask(
+    // Add to explicit queue and set UI state
+    downloadQueue.add(appId);
+    setOperation(
       appId,
-      target,
-      downloadUrl,
-      displayName: displayName,
+      DownloadQueued(target: target, displayName: displayName),
     );
+
+    // Process queue to potentially start this download immediately
+    unawaited(processQueue());
     return true;
   }
 
-  /// Queue multiple downloads at once - immediately marks all as queued,
-  /// then starts up to [maxConcurrentDownloads] actual downloads.
-  /// This prevents UI confusion when "Update All" is tapped.
+  /// Queue multiple downloads at once - staggered to prevent UI flood.
+  /// This is the primary method for "Update All" functionality.
   Future<void> queueDownloads(
     List<({String appId, FileMetadata target, String? displayName})> items,
   ) async {
@@ -261,9 +283,11 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
     final toQueue = items.where((item) => !hasOperation(item.appId)).toList();
     if (toQueue.isEmpty) return;
 
-    // First, mark ALL items as queued immediately for responsive UI
-    for (final item in toQueue) {
+    // Queue items with staggered delays to prevent UI flood
+    for (var i = 0; i < toQueue.length; i++) {
+      final item = toQueue[i];
       final downloadUrl = item.target.urls.firstOrNull;
+
       if (downloadUrl == null || downloadUrl.isEmpty) {
         setOperation(
           item.appId,
@@ -274,15 +298,22 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
           ),
         );
       } else {
+        // Add to explicit queue
+        downloadQueue.add(item.appId);
         setOperation(
           item.appId,
           DownloadQueued(target: item.target, displayName: item.displayName),
         );
       }
+
+      // Stagger state updates to prevent Riverpod rebuild flood
+      if (i < toQueue.length - 1) {
+        await Future.delayed(const Duration(milliseconds: batchQueueDelayMs));
+      }
     }
 
-    // Now process the queue to start actual downloads
-    _processQueuedDownload();
+    // Process queue to start actual downloads
+    unawaited(processQueue());
   }
 
   Future<void> pauseDownload(String appId) async {
@@ -334,7 +365,13 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
       } catch (_) {}
     }
 
+    // Remove from queues
+    downloadQueue.remove(appId);
+    activeDownloads.remove(appId);
     clearOperation(appId);
+
+    // Advance queue
+    scheduleProcessQueue();
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -472,20 +509,13 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
     // Advance the requested app first (for responsive UX)
     if (toAdvance.containsKey(appId)) {
       final (target, filePath) = toAdvance.remove(appId)!;
-      // Permission is granted now: transition to ReadyToInstall and let the
-      // platform decide whether to auto-start or queue.
-      setOperation(appId, ReadyToInstall(target: target, filePath: filePath));
-      onInstallReady(appId);
+      _addToInstallQueue(appId, target, filePath);
     }
 
     // Advance remaining apps
     for (final entry in toAdvance.entries) {
       final (target, filePath) = entry.value;
-      setOperation(
-        entry.key,
-        ReadyToInstall(target: target, filePath: filePath),
-      );
-      onInstallReady(entry.key);
+      _addToInstallQueue(entry.key, target, filePath);
     }
   }
 
@@ -647,6 +677,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
           return;
         }
         // CDN also returned 404 - fail the operation
+        activeDownloads.remove(appId);
         setOperation(
           appId,
           OperationFailed(
@@ -655,7 +686,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
             message: 'File not found (404)',
           ),
         );
-        _processQueuedDownload();
+        scheduleProcessQueue();
         break;
 
       case TaskStatus.failed:
@@ -665,6 +696,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
           error = exception.toString();
           if (error.length > 200) error = '${error.substring(0, 197)}...';
         }
+        activeDownloads.remove(appId);
         setOperation(
           appId,
           OperationFailed(
@@ -673,12 +705,14 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
             message: error,
           ),
         );
-        _processQueuedDownload();
+        scheduleProcessQueue();
         break;
 
       case TaskStatus.canceled:
+        activeDownloads.remove(appId);
+        downloadQueue.remove(appId);
         clearOperation(appId);
-        _processQueuedDownload();
+        scheduleProcessQueue();
         break;
 
       default:
@@ -713,9 +747,12 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
     FileMetadata target,
     DownloadTask task,
   ) async {
+    // Remove from active downloads
+    activeDownloads.remove(appId);
+
     try {
       final filePath = await task.filePath();
-      _processQueuedDownload();
+      // Proceed to install (this will add to install queue when ready)
       await _proceedToInstall(appId, target, filePath);
     } catch (e) {
       setOperation(
@@ -726,53 +763,75 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
           message: 'Failed to access downloaded file: $e',
         ),
       );
-      _processQueuedDownload();
+    }
+
+    // Advance download queue
+    scheduleProcessQueue();
+  }
+
+  /// Unified queue processor with lock to prevent race conditions.
+  /// Handles both download and install queues.
+  @protected
+  Future<void> processQueue() async {
+    // Lock to prevent concurrent processing
+    if (_processingQueue) return;
+    _processingQueue = true;
+
+    try {
+      // Process download queue: fill available slots
+      while (activeDownloads.length < maxConcurrentDownloads &&
+          downloadQueue.isNotEmpty) {
+        final appId = downloadQueue.removeAt(0);
+        final op = getOperation(appId);
+
+        if (op is! DownloadQueued) {
+          // Operation was cancelled or changed, skip
+          continue;
+        }
+
+        final downloadUrl = op.target.urls.firstOrNull;
+        if (downloadUrl == null) {
+          setOperation(
+            appId,
+            OperationFailed(
+              target: op.target,
+              type: FailureType.downloadFailed,
+              message: 'No download URL available',
+            ),
+          );
+          continue;
+        }
+
+        activeDownloads.add(appId);
+        await _startDownloadTask(
+          appId,
+          op.target,
+          downloadUrl,
+          displayName: op.displayName,
+        );
+      }
+
+      // Process install queue: only 1 at a time (Android PackageInstaller limit)
+      if (activeInstall == null && installQueue.isNotEmpty) {
+        final appId = installQueue.removeAt(0);
+        final op = getOperation(appId);
+
+        if (op is ReadyToInstall) {
+          activeInstall = appId;
+          debugPrint('[PackageManager] Starting install for $appId');
+          unawaited(triggerInstall(appId));
+        }
+        // If operation changed, it will be picked up on next process cycle
+      }
+    } finally {
+      _processingQueue = false;
     }
   }
 
-  void _processQueuedDownload() {
-    final activeDownloads = countOperations<Downloading>();
-    if (activeDownloads >= maxConcurrentDownloads) return;
-
-    // Collect queued items first to avoid iterating while modifying state
-    final queuedItems = <String, DownloadQueued>{};
-    for (final entry in state.operations.entries) {
-      if (entry.value is DownloadQueued) {
-        queuedItems[entry.key] = entry.value as DownloadQueued;
-      }
-    }
-
-    if (queuedItems.isEmpty) return;
-
-    // Start downloads until we fill all available slots
-    var started = 0;
-    for (final entry in queuedItems.entries) {
-      if (activeDownloads + started >= maxConcurrentDownloads) break;
-
-      final queued = entry.value;
-      final downloadUrl = queued.target.urls.firstOrNull;
-      if (downloadUrl != null) {
-        unawaited(
-          _startDownloadTask(
-            entry.key,
-            queued.target,
-            downloadUrl,
-            displayName: queued.displayName,
-          ),
-        );
-        started++;
-      } else {
-        // No URL - fail the operation so it doesn't stay queued forever
-        setOperation(
-          entry.key,
-          OperationFailed(
-            target: queued.target,
-            type: FailureType.downloadFailed,
-            message: 'No download URL available',
-          ),
-        );
-      }
-    }
+  /// Schedule queue processing after a delay (for advancing after completion).
+  @protected
+  void scheduleProcessQueue() {
+    Future.delayed(const Duration(milliseconds: 500), processQueue);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -812,7 +871,15 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
       return;
     }
 
-    // Permission was already granted before we checked - just advance this app
+    // Permission was already granted - add to install queue
+    _addToInstallQueue(appId, target, filePath);
+  }
+
+  /// Add app to install queue and trigger processing.
+  void _addToInstallQueue(String appId, FileMetadata target, String filePath) {
+    if (!installQueue.contains(appId)) {
+      installQueue.add(appId);
+    }
     setOperation(appId, ReadyToInstall(target: target, filePath: filePath));
     onInstallReady(appId);
   }

@@ -242,6 +242,9 @@ final appInitializationProvider = FutureProvider<void>((ref) async {
     ).future,
   );
 
+  // Initialize device capabilities (used for dynamic download concurrency)
+  await DeviceCapabilitiesCache.initialize();
+
   // These run in background - don't block UI
   final packageManager = ref.read(packageManagerProvider.notifier);
   unawaited(packageManager.syncInstalledPackages());

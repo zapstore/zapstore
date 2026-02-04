@@ -225,7 +225,7 @@ final class AndroidPackageManager extends PackageManager {
         // but our state machine doesn't depend on it.
         unawaited(syncInstalledPackages());
         // Advance to next queued install
-        _advanceAfterDelay();
+        _onInstallComplete(appId);
         break;
 
       case InstallStatus.failed:
@@ -240,7 +240,7 @@ final class AndroidPackageManager extends PackageManager {
           ),
         );
         // Advance to next queued install
-        _advanceAfterDelay();
+        _onInstallComplete(appId);
         break;
 
       case InstallStatus.cancelled:
@@ -253,50 +253,24 @@ final class AndroidPackageManager extends PackageManager {
           clearOperation(appId);
         }
         // Advance to next queued install
-        _advanceAfterDelay();
+        _onInstallComplete(appId);
         break;
     }
   }
 
   @override
   void onInstallReady(String appId) {
-    _tryAdvanceNextInstall();
+    // Use base class queue processing
+    super.onInstallReady(appId);
   }
 
-  /// Advance to next install after a delay, giving Android time to clean up.
-  void _advanceAfterDelay() {
-    Future.delayed(const Duration(seconds: 1), _tryAdvanceNextInstall);
-  }
-
-  /// Try to start the next app in ReadyToInstall state.
-  /// Only advances if no other app is currently installing (one dialog at a time).
-  void _tryAdvanceNextInstall() {
-    // Check if any app is currently in an active install state
-    final hasActiveInstall = state.operations.values.any(
-      (op) =>
-          op is Verifying ||
-          op is Installing ||
-          op is SystemProcessing ||
-          op is Uninstalling,
-    );
-
-    if (hasActiveInstall) {
-      debugPrint('[PackageManager] Not advancing - install already active');
-      return;
+  /// Clear active install tracking and advance queue.
+  void _onInstallComplete(String appId) {
+    if (activeInstall == appId) {
+      activeInstall = null;
     }
-
-    // Get next app ready to install
-    final readyToInstall = getReadyToInstall();
-    if (readyToInstall.isEmpty) {
-      debugPrint('[PackageManager] No apps waiting in ReadyToInstall');
-      return;
-    }
-
-    final nextAppId = readyToInstall.first;
-    debugPrint('[PackageManager] Advancing to next install: $nextAppId');
-
-    // Trigger install (fire-and-forget, events will drive state)
-    unawaited(triggerInstall(nextAppId));
+    installQueue.remove(appId);
+    scheduleProcessQueue();
   }
 
   /// Convert native error code to FailureType.

@@ -55,6 +55,7 @@ dependencies:
   markdown: ^7.3.0
   workmanager: ^0.9.0+3
   flutter_local_notifications: ^19.5.0
+  device_info_plus: ^12.0.0
 
 dependency_overrides:
   models:
