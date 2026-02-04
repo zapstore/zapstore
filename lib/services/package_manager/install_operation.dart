@@ -6,6 +6,12 @@ const staleOperationThreshold = Duration(days: 7);
 /// Delay between queueing operations to prevent UI flood
 const batchQueueDelayMs = 50;
 
+/// Dart-side watchdog timeout (fallback if native events stop arriving)
+const watchdogTimeout = Duration(minutes: 5);
+
+/// How often the watchdog timer checks for stale operations
+const watchdogCheckInterval = Duration(seconds: 30);
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // INSTALL OPERATION STATE MACHINE
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -70,18 +76,21 @@ class DownloadPaused extends InstallOperation {
 class Verifying extends InstallOperation {
   final String filePath;
   final double progress;
+  final DateTime startedAt;
 
-  const Verifying({
+  Verifying({
     required super.target,
     required this.filePath,
     this.progress = 0.0,
-  });
+    DateTime? startedAt,
+  }) : startedAt = startedAt ?? DateTime.now();
 
   Verifying copyWith({double? progress}) {
     return Verifying(
       target: target,
       filePath: filePath,
       progress: progress ?? this.progress,
+      startedAt: startedAt,
     );
   }
 }
@@ -142,8 +151,13 @@ class Uninstalling extends InstallOperation {
 /// and is taking longer than expected. The system will eventually complete or fail.
 class SystemProcessing extends InstallOperation {
   final String filePath;
+  final DateTime startedAt;
 
-  const SystemProcessing({required super.target, required this.filePath});
+  SystemProcessing({
+    required super.target,
+    required this.filePath,
+    DateTime? startedAt,
+  }) : startedAt = startedAt ?? DateTime.now();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -156,7 +170,7 @@ class Completed extends InstallOperation {
   final DateTime completedAt;
 
   Completed({required super.target, DateTime? completedAt})
-      : completedAt = completedAt ?? DateTime.now();
+    : completedAt = completedAt ?? DateTime.now();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -226,6 +240,10 @@ extension InstallOperationX on InstallOperation {
       this is SystemProcessing ||
       this is Uninstalling;
 
+  /// Whether this operation needs watchdog monitoring (waiting for native events)
+  bool get needsWatchdog =>
+      this is Verifying || this is Installing || this is SystemProcessing;
+
   /// Whether this operation is in the verification phase
   bool get isVerifying => this is Verifying;
 
@@ -234,6 +252,14 @@ extension InstallOperationX on InstallOperation {
 
   /// Whether this operation is still in progress (not terminal)
   bool get isInProgress => !isTerminal;
+
+  /// Get start time for watchdog-monitored operations
+  DateTime? get startedAt => switch (this) {
+    Verifying(:final startedAt) => startedAt,
+    Installing(:final startedAt) => startedAt,
+    SystemProcessing(:final startedAt) => startedAt,
+    _ => null,
+  };
 
   /// Get file path if available
   String? get filePath => switch (this) {

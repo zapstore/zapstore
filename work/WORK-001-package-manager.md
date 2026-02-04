@@ -68,7 +68,104 @@ Root causes identified and fixed:
   - Defined `batchQueueDelayMs` constant in `install_operation.dart`
   - Prevents Riverpod rebuild flood on "Update All" with many apps
 
+## Problem Solved (Phase 3 - Complete)
+
+User report: Apps stuck in "Queued for update" / "Requesting update" state indefinitely after app restart.
+
+Root cause: When the app is killed during install phase, native Android retains pending install sessions but Dart's operations map starts fresh. On restart, native sends `pendingUserAction` events for sessions that Dart doesn't track. Previously these were ignored, leaving orphaned sessions that blocked the PackageInstaller.
+
+## Tasks Completed (Phase 3)
+
+- [x] 1. Abort orphaned native sessions on event receipt
+  - Modified `_handleInstallEvent()` to call `abortInstall(appId)` when receiving events for untracked appIds
+  - Satisfies FEAT-001 requirement: "If the app is killed during install, reset UI and clean up temp files on next launch"
+  - Allows user to retry from clean state
+
+- [x] 2. Prevent abort spam when native keeps sending events
+  - Added `_abortedOrphans: Set<String>` to track appIds already aborted
+  - Only call `abortInstall()` once per appId per session
+  - Clear from set in `setOperation()` override so future orphans can be aborted
+
+## Problem Solved (Phase 4 - Complete)
+
+User report: Multiple apps stuck in "Queued for update" state indefinitely, with no app actively installing.
+
+Root cause: In `processQueue()`, `activeInstall` is set BEFORE calling `triggerInstall()`. If `triggerInstall()` returns early (operation changed, or downloaded file not found), `activeInstall` is never cleared. This permanently blocks the install queue since `activeInstall != null` prevents any new installs from starting.
+
+## Tasks Completed (Phase 4)
+
+- [x] 1. Add `clearInstallSlot()` helper method in base class
+  - Clears `activeInstall` if it matches the appId
+  - Removes appId from `installQueue`
+  - Calls `scheduleProcessQueue()` to advance to next app
+  - Replaces duplicate `_onInstallComplete()` in android subclass
+
+- [x] 2. Fix `triggerInstall()` early return paths
+  - Call `clearInstallSlot(appId)` when operation is not ReadyToInstall
+  - Call `clearInstallSlot(appId)` when downloaded file is missing
+  - Prevents install queue from getting permanently stuck
+
+## Problem Solved (Phase 5 - Complete)
+
+Code audit found several potential hanging state bugs not covered by existing timeout mechanisms:
+
+1. `_performInstall` catch block didn't call `clearInstallSlot`, causing queue hang if exception escapes
+2. Restored downloads weren't added to `activeDownloads`, potentially exceeding concurrent limits
+3. Download resume failures during restoration were silently swallowed, causing permanent hang
+4. EventChannel disconnect was silently ignored with no reconnection
+5. No Dart-side watchdog as fallback if native events stop arriving
+
+## Tasks Completed (Phase 5)
+
+- [x] 1. Fix `_performInstall` catch block to call `clearInstallSlot`
+  - Ensures install queue advances even if exception escapes `install()` internal handling
+
+- [x] 2. Track restored downloads in `activeDownloads`
+  - Added `activeDownloads.add(appId)` in `_restoreOperation` for running downloads
+  - Prevents exceeding `maxConcurrentDownloads` limit after app restart
+
+- [x] 3. Handle download resume failures during restoration
+  - On resume failure, transition to `OperationFailed` instead of silent failure
+  - Prevents operations stuck in `Downloading` state with no active task
+
+- [x] 4. Add EventChannel reconnection logic
+  - Added `onError` and `onDone` handlers to event stream
+  - Automatic reconnection with 2-second delay on disconnect
+  - Prevents installs hanging forever if EventChannel breaks
+
+- [x] 5. Add Dart-side watchdog timer as fallback
+  - Added `startedAt` field to `Verifying` and `SystemProcessing` states
+  - Added `needsWatchdog` and `startedAt` getters to extension for uniform access
+  - Single 5-minute timeout for all watchdog-monitored states
+  - Timer runs every 30s, only when there are operations needing watchdog
+  - Transitions stale operations to `OperationFailed` state
+
+- [x] 6. Improve pause/resume error handling
+  - Added debug logging for pause failures
+  - Resume failure now transitions to `OperationFailed` instead of silent failure
+
 ## Decisions
+
+### 2026-02-04 — Dart-side watchdog timer
+
+**Context:** Native Kotlin has timeouts but if EventChannel breaks or native crashes before sending events, Dart operations hang forever.
+**Options:** A) Trust native completely, B) Add Dart watchdog as fallback, C) Duplicate all timeout logic in Dart.
+**Decision:** Option B - Dart-side watchdog as defense-in-depth.
+**Rationale:** Minimal complexity (~50 lines), only runs when needed, uses generous timeouts (2-10min) so it doesn't interfere with native handling but catches catastrophic failures.
+
+### 2026-02-04 — Install slot clearing on early return
+
+**Context:** `triggerInstall()` can bail early if operation changed or file is missing, but `activeInstall` was set before the call, blocking the queue forever.
+**Options:** A) Move `activeInstall` assignment inside `triggerInstall()` after validation, B) Have `triggerInstall()` clear slot on early returns, C) Return success boolean and only set slot if true.
+**Decision:** Option B - Clear install slot on early returns.
+**Rationale:** Minimal change, maintains existing flow, easy to audit. Added `clearInstallSlot()` to base class to consolidate the pattern.
+
+### 2026-02-04 — Orphaned session cleanup
+
+**Context:** Native install sessions persist across app restarts, but Dart state doesn't. Events arrive for untracked appIds.
+**Options:** A) Ignore events (existing), B) Abort orphaned sessions, C) Attempt to restore operations from native state.
+**Decision:** Option B - Abort orphaned sessions immediately.
+**Rationale:** Simplest fix that satisfies "no hanging states" invariant. User can retry from clean state. Option C adds complexity and may restore stale/invalid state.
 
 ### 2026-02-03 — Committed session handling
 
@@ -164,13 +261,19 @@ Every state MUST resolve to a terminal state. No exceptions.
 | `blocked` | Device policy |
 | `installTimeout` | Watchdog timeout (uncommitted only) |
 
-### Watchdog Timeouts
+### Watchdog Timeouts (Kotlin Native)
 
 | Phase | Initial | Max | Behavior |
 |-------|---------|-----|----------|
 | Verify | 10s | 10s | Fail if thread dead |
 | Install (uncommitted) | 10s | 120s | Abandon session, emit FAILED |
 | Install (committed) | 10s | ∞ | Cannot abandon; extend deadline, show "processing" |
+
+### Dart-side Watchdog (Fallback)
+
+Single 5-minute timeout for all watchdog-monitored states (Verifying, Installing, SystemProcessing).
+Timer runs every 30s, only when monitored operations exist.
+Defense-in-depth for cases where EventChannel breaks or native crashes before sending events.
 
 ### Session Tracking Maps
 

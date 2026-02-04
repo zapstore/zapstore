@@ -108,6 +108,9 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
   late final FileDownloader _downloader;
   late final Future<void> _downloaderInit;
 
+  /// Watchdog timer for detecting stale operations (Dart-side fallback)
+  Timer? _watchdogTimer;
+
   // ═══════════════════════════════════════════════════════════════════════════
   // EXPLICIT QUEUE TRACKING
   // Queues are the source of truth for order; operations map is for UI state.
@@ -164,34 +167,80 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
         ],
         androidConfig: [(Config.useCacheDir, false)],
       );
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('FileDownloader configure failed: $e');
+    }
 
-    _downloader.configureNotificationForGroup(
-      FileDownloader.defaultGroup,
-      running: const TaskNotification(
-        'Downloading {displayName}',
-        '{progress}',
-      ),
-      // No 'complete' notification - download completion immediately triggers install
-      // so showing "Download complete" is redundant and creates notification clutter
-      complete: null,
-      error: const TaskNotification('Download failed', '{displayName}'),
-      paused: const TaskNotification('Download paused', '{displayName}'),
-      progressBar: true,
-    );
+    // Note: We don't call configureNotificationForGroup because we handle
+    // our own UI for download progress. The package defaults to no notifications.
 
-    _downloader.registerCallbacks(
-      taskStatusCallback: _handleDownloadUpdate,
-      taskProgressCallback: _handleDownloadUpdate,
-    );
+    try {
+      _downloader.registerCallbacks(
+        taskStatusCallback: _handleDownloadUpdate,
+        taskProgressCallback: _handleDownloadUpdate,
+      );
+    } catch (e) {
+      debugPrint('FileDownloader registerCallbacks failed: $e');
+    }
 
     await _restoreOperations();
   }
 
   @override
   void dispose() {
+    _watchdogTimer?.cancel();
     _downloader.unregisterCallbacks();
     super.dispose();
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // WATCHDOG TIMER (Dart-side fallback for stale operations)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// Start or stop watchdog timer based on whether there are operations to monitor.
+  void _updateWatchdogTimer() {
+    final needsWatchdog = state.operations.values.any((op) => op.needsWatchdog);
+
+    if (needsWatchdog && _watchdogTimer == null) {
+      _watchdogTimer = Timer.periodic(watchdogCheckInterval, (_) {
+        _checkForStaleOperations();
+      });
+    } else if (!needsWatchdog && _watchdogTimer != null) {
+      _watchdogTimer?.cancel();
+      _watchdogTimer = null;
+    }
+  }
+
+  /// Check for operations stuck too long (Dart-side fallback if native events stop).
+  void _checkForStaleOperations() {
+    final now = DateTime.now();
+
+    for (final entry in state.operations.entries) {
+      final appId = entry.key;
+      final op = entry.value;
+      final startedAt = op.startedAt;
+
+      if (startedAt == null || now.difference(startedAt) <= watchdogTimeout) {
+        continue;
+      }
+
+      debugPrint(
+        '[PackageManager] Watchdog: $appId stuck in ${op.runtimeType}, '
+        'transitioning to error',
+      );
+      setOperation(
+        appId,
+        OperationFailed(
+          target: op.target,
+          type: FailureType.installFailed,
+          message: 'Operation timed out (no response from system)',
+          filePath: op.filePath,
+        ),
+      );
+      if (op is Installing || op is SystemProcessing) {
+        clearInstallSlot(appId);
+      }
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -225,12 +274,23 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
 
   void setOperation(String appId, InstallOperation op) {
     state = state.copyWith(operations: {...state.operations, appId: op});
+    _updateWatchdogTimer();
   }
 
   void clearOperation(String appId) {
     state = state.copyWith(
       operations: Map.from(state.operations)..remove(appId),
     );
+    _updateWatchdogTimer();
+  }
+
+  /// Clear all completed and failed operations from the map.
+  /// Called after the batch completion display timeout.
+  void clearCompletedOperations() {
+    final remaining = Map.of(state.operations)
+      ..removeWhere((_, op) => op is Completed || op is OperationFailed);
+    state = state.copyWith(operations: remaining);
+    _updateWatchdogTimer();
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -326,7 +386,10 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
       if (task is DownloadTask) {
         await _downloader.pause(task);
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[PackageManager] Failed to pause download for $appId: $e');
+      // Download library will handle the state via callbacks
+    }
   }
 
   Future<void> resumeDownload(String appId) async {
@@ -346,8 +409,29 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
             taskId: op.taskId,
           ),
         );
+      } else {
+        // Task not found - transition to error
+        debugPrint('[PackageManager] Resume failed: task not found for $appId');
+        setOperation(
+          appId,
+          OperationFailed(
+            target: op.target,
+            type: FailureType.downloadFailed,
+            message: 'Download task not found. Please try again.',
+          ),
+        );
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[PackageManager] Failed to resume download for $appId: $e');
+      setOperation(
+        appId,
+        OperationFailed(
+          target: op.target,
+          type: FailureType.downloadFailed,
+          message: 'Failed to resume download: $e',
+        ),
+      );
+    }
   }
 
   Future<void> cancelDownload(String appId) async {
@@ -378,10 +462,15 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
   // INSTALL OPERATIONS
   // ═══════════════════════════════════════════════════════════════════════════
 
-  /// Trigger install from ReadyToInstall state
+  /// Trigger install from ReadyToInstall state.
+  /// CRITICAL: Must clear install slot on any early return to prevent queue stall.
   Future<void> triggerInstall(String appId) async {
     final op = getOperation(appId);
-    if (op is! ReadyToInstall) return;
+    if (op is! ReadyToInstall) {
+      // Operation changed (e.g., cancelled) - clear slot and advance queue
+      clearInstallSlot(appId);
+      return;
+    }
 
     if (!await File(op.filePath).exists()) {
       setOperation(
@@ -392,6 +481,8 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
           message: 'Downloaded file not found. Please download again.',
         ),
       );
+      // CRITICAL: Clear install slot so queue can advance to next app
+      clearInstallSlot(appId);
       return;
     }
 
@@ -834,6 +925,17 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
     Future.delayed(const Duration(milliseconds: 500), processQueue);
   }
 
+  /// Clear the active install slot and advance the queue.
+  /// Call this when an install fails to start or completes.
+  @protected
+  void clearInstallSlot(String appId) {
+    if (activeInstall == appId) {
+      activeInstall = null;
+    }
+    installQueue.remove(appId);
+    scheduleProcessQueue();
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   // INSTALL FLOW
   // ═══════════════════════════════════════════════════════════════════════════
@@ -908,6 +1010,9 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
           appId,
           InstallCancelled(target: target, filePath: filePath),
         );
+        // CRITICAL: Clear install slot so queue can advance to next app.
+        // This handles exceptions that escape install()'s internal error handling.
+        clearInstallSlot(appId);
         return;
       }
 
@@ -936,6 +1041,9 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
           filePath: filePath,
         ),
       );
+      // CRITICAL: Clear install slot so queue can advance to next app.
+      // This handles exceptions that escape install()'s internal error handling.
+      clearInstallSlot(appId);
     }
   }
 
@@ -1006,6 +1114,8 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
       case TaskStatus.running:
       case TaskStatus.enqueued:
       case TaskStatus.waitingToRetry:
+        // Track as active download to respect maxConcurrentDownloads limit
+        activeDownloads.add(appId);
         setOperation(
           appId,
           Downloading(
@@ -1016,7 +1126,18 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
         );
         try {
           await _downloader.resume(task);
-        } catch (_) {}
+        } catch (e) {
+          // Resume failed - transition to error state to avoid hang
+          activeDownloads.remove(appId);
+          setOperation(
+            appId,
+            OperationFailed(
+              target: fileMetadata,
+              type: FailureType.downloadFailed,
+              message: 'Failed to resume download: $e',
+            ),
+          );
+        }
         break;
 
       case TaskStatus.paused:
@@ -1282,19 +1403,10 @@ class BatchProgress {
   /// Whether all operations are complete (all terminal)
   bool get isAllComplete => !hasInProgress && total > 0;
 
-  /// Status text for display
+  /// Status text for display - simple "X of Y completed" format
   String get statusText {
     if (total == 0) return '';
-
-    final completedText = '$completed of $total updated';
-
-    return switch (phase) {
-      BatchPhase.installing => '$completedText • Installing...',
-      BatchPhase.verifying => '$completedText • Verifying...',
-      BatchPhase.downloading => '$completedText • Downloading...',
-      BatchPhase.completed => '$completedText ✓',
-      BatchPhase.idle => completedText,
-    };
+    return '$completed of $total completed';
   }
 }
 
@@ -1344,12 +1456,12 @@ final batchProgressProvider = Provider<BatchProgress?>((ref) {
   final phase = installing > 0
       ? BatchPhase.installing
       : verifying > 0
-          ? BatchPhase.verifying
-          : downloading > 0
-              ? BatchPhase.downloading
-              : (completed > 0 && queued == 0)
-                  ? BatchPhase.completed
-                  : BatchPhase.idle;
+      ? BatchPhase.verifying
+      : downloading > 0
+      ? BatchPhase.downloading
+      : (completed > 0 && queued == 0)
+      ? BatchPhase.completed
+      : BatchPhase.idle;
 
   return BatchProgress(
     total: total,

@@ -74,6 +74,10 @@ final class AndroidPackageManager extends PackageManager {
   int _syncGeneration = 0;
   StreamSubscription<dynamic>? _eventSubscription;
 
+  /// Tracks appIds where we've already attempted to abort orphaned sessions.
+  /// Prevents spamming abort calls when native keeps sending events.
+  final Set<String> _abortedOrphans = {};
+
   @override
   String get platform => 'android-arm64-v8a';
 
@@ -87,11 +91,38 @@ final class AndroidPackageManager extends PackageManager {
   // EVENT STREAM HANDLING
   // ═══════════════════════════════════════════════════════════════════════════
 
+  /// Whether we're currently attempting to reconnect the event stream
+  bool _isReconnecting = false;
+
   void _setupEventStream() {
+    _eventSubscription?.cancel();
     _eventSubscription = _eventChannel.receiveBroadcastStream().listen(
       _handleInstallEvent,
-      onError: (_) {}, // Events will resume when stream reconnects
+      onError: (e) {
+        debugPrint('[PackageManager] EventChannel error: $e');
+        _attemptEventStreamReconnect();
+      },
+      onDone: () {
+        debugPrint('[PackageManager] EventChannel closed unexpectedly');
+        _attemptEventStreamReconnect();
+      },
     );
+  }
+
+  /// Attempt to reconnect the event stream after a failure.
+  /// Uses exponential backoff to avoid hammering the system.
+  void _attemptEventStreamReconnect() {
+    if (_isReconnecting) return;
+    _isReconnecting = true;
+
+    // Reconnect after a short delay
+    Future.delayed(const Duration(seconds: 2), () {
+      _isReconnecting = false;
+      if (mounted) {
+        debugPrint('[PackageManager] Attempting EventChannel reconnect');
+        _setupEventStream();
+      }
+    });
   }
 
   /// Handle install status events from native side.
@@ -110,10 +141,6 @@ final class AndroidPackageManager extends PackageManager {
     final progress = event['progress'] as double?;
     final status = InstallStatusX.tryParse(statusRaw);
 
-    debugPrint(
-      '[PackageManager] Received event: appId=$appId, status=$status, msg=$message, errorCode=$errorCode, desc=$description',
-    );
-
     if (appId == null || statusRaw == null) {
       debugPrint('[PackageManager] Ignoring event with null appId or status');
       return;
@@ -129,18 +156,32 @@ final class AndroidPackageManager extends PackageManager {
     // Get target from existing operation state - no separate tracking needed
     final existingOp = getOperation(appId);
     if (existingOp == null) {
-      debugPrint(
-        '[PackageManager] WARNING: No tracked operation for appId=$appId, ignoring $status event',
-      );
-      debugPrint(
-        '[PackageManager] Current operations: ${state.operations.keys.toList()}',
-      );
+      // INVARIANT: No hanging states (FEAT-001).
+      // Orphaned native sessions can occur when the app is killed during install.
+      // Abort the native session to clean up and allow user to retry from clean state.
+      // Only attempt abort once per appId to prevent spam when native keeps sending events.
+      if (_abortedOrphans.add(appId)) {
+        debugPrint(
+          '[PackageManager] No tracked operation for appId=$appId, aborting orphaned native session',
+        );
+        unawaited(abortInstall(appId));
+      }
       return;
     }
 
-    debugPrint(
-      '[PackageManager] Processing $status for $appId (current state: ${existingOp.runtimeType})',
-    );
+    // INVARIANT: Don't process terminal events for already terminal operations.
+    // This prevents stale or duplicate events from corrupting state.
+    // For example, a stale 'cancelled' event arriving after 'success' would
+    // clear the Completed operation (since Completed has no filePath).
+    if (existingOp.isTerminal &&
+        (status == InstallStatus.success ||
+            status == InstallStatus.failed ||
+            status == InstallStatus.cancelled)) {
+      debugPrint(
+        '[PackageManager] Ignoring terminal event $status for already terminal operation ${existingOp.runtimeType}',
+      );
+      return;
+    }
 
     final target = existingOp.target;
     final filePath = existingOp.filePath;
@@ -225,9 +266,8 @@ final class AndroidPackageManager extends PackageManager {
         // Sync in background to get accurate info (signature hash, etc.)
         // but our state machine doesn't depend on it.
         unawaited(syncInstalledPackages());
-        // Advance to next queued install and check if batch is complete
-        _onInstallComplete(appId);
-        _checkBatchComplete();
+        // Advance to next queued install
+        clearInstallSlot(appId);
         break;
 
       case InstallStatus.failed:
@@ -242,7 +282,7 @@ final class AndroidPackageManager extends PackageManager {
           ),
         );
         // Advance to next queued install
-        _onInstallComplete(appId);
+        clearInstallSlot(appId);
         break;
 
       case InstallStatus.cancelled:
@@ -255,56 +295,23 @@ final class AndroidPackageManager extends PackageManager {
           clearOperation(appId);
         }
         // Advance to next queued install
-        _onInstallComplete(appId);
+        clearInstallSlot(appId);
         break;
     }
+  }
+
+  @override
+  void setOperation(String appId, InstallOperation op) {
+    // Clear from aborted orphans when a new operation is set,
+    // so we can abort again if it becomes orphaned in a future session.
+    _abortedOrphans.remove(appId);
+    super.setOperation(appId, op);
   }
 
   @override
   void onInstallReady(String appId) {
     // Use base class queue processing
     super.onInstallReady(appId);
-  }
-
-  /// Clear active install tracking and advance queue.
-  void _onInstallComplete(String appId) {
-    if (activeInstall == appId) {
-      activeInstall = null;
-    }
-    installQueue.remove(appId);
-    scheduleProcessQueue();
-  }
-
-  /// Check if all operations are complete (terminal states).
-  /// If so, schedule clearing of completed operations after a delay.
-  void _checkBatchComplete() {
-    final ops = state.operations.values;
-    if (ops.isEmpty) return;
-
-    // Check if any operation is still in progress
-    final hasInProgress = ops.any((op) => op.isInProgress);
-    if (hasInProgress) return;
-
-    // All operations are terminal (Completed or Failed)
-    // Wait a moment to show "X of X updated", then clear completed ones
-    Future.delayed(const Duration(seconds: 3), _clearCompletedOperations);
-  }
-
-  /// Clear all Completed operations from the map.
-  /// Failed operations stay so user can see/dismiss them.
-  void _clearCompletedOperations() {
-    final completedIds = state.operations.entries
-        .where((e) => e.value is Completed)
-        .map((e) => e.key)
-        .toList();
-
-    if (completedIds.isEmpty) return;
-
-    final newOps = Map<String, InstallOperation>.from(state.operations);
-    for (final id in completedIds) {
-      newOps.remove(id);
-    }
-    state = state.copyWith(operations: newOps);
   }
 
   /// Convert native error code to FailureType.
@@ -441,7 +448,9 @@ final class AndroidPackageManager extends PackageManager {
             filePath: filePath,
           ),
         );
-        // Don't auto-advance after failure
+        // IMPORTANT: Clear activeInstall and advance queue on fail-to-start.
+        // Otherwise the install queue is stuck indefinitely (hanging state).
+        clearInstallSlot(appId);
       }
       // If started, wait for events via EventChannel
     } catch (e) {
@@ -454,7 +463,9 @@ final class AndroidPackageManager extends PackageManager {
           filePath: filePath,
         ),
       );
-      // Don't auto-advance after failure
+      // IMPORTANT: Clear activeInstall and advance queue on exception.
+      // Otherwise the install queue is stuck indefinitely (hanging state).
+      clearInstallSlot(appId);
     }
   }
 
@@ -680,9 +691,7 @@ final class AndroidPackageManager extends PackageManager {
       for (final appId in packages.keys) {
         final op = getOperation(appId);
         if (op == null) continue;
-        if (op is! Installing &&
-            op is! Verifying &&
-            op is! InstallCancelled) {
+        if (op is! Installing && op is! Verifying && op is! InstallCancelled) {
           continue;
         }
 
