@@ -220,12 +220,14 @@ final class AndroidPackageManager extends PackageManager {
         // database may not have committed yet, causing a race condition where
         // we get stale data and show "Update" instead of "Open".
         _updateInstalledPackage(appId, target);
-        clearOperation(appId);
+        // Transition to Completed state (stays in map for batch progress tracking)
+        setOperation(appId, Completed(target: target));
         // Sync in background to get accurate info (signature hash, etc.)
         // but our state machine doesn't depend on it.
         unawaited(syncInstalledPackages());
-        // Advance to next queued install
+        // Advance to next queued install and check if batch is complete
         _onInstallComplete(appId);
+        _checkBatchComplete();
         break;
 
       case InstallStatus.failed:
@@ -271,6 +273,38 @@ final class AndroidPackageManager extends PackageManager {
     }
     installQueue.remove(appId);
     scheduleProcessQueue();
+  }
+
+  /// Check if all operations are complete (terminal states).
+  /// If so, schedule clearing of completed operations after a delay.
+  void _checkBatchComplete() {
+    final ops = state.operations.values;
+    if (ops.isEmpty) return;
+
+    // Check if any operation is still in progress
+    final hasInProgress = ops.any((op) => op.isInProgress);
+    if (hasInProgress) return;
+
+    // All operations are terminal (Completed or Failed)
+    // Wait a moment to show "X of X updated", then clear completed ones
+    Future.delayed(const Duration(seconds: 3), _clearCompletedOperations);
+  }
+
+  /// Clear all Completed operations from the map.
+  /// Failed operations stay so user can see/dismiss them.
+  void _clearCompletedOperations() {
+    final completedIds = state.operations.entries
+        .where((e) => e.value is Completed)
+        .map((e) => e.key)
+        .toList();
+
+    if (completedIds.isEmpty) return;
+
+    final newOps = Map<String, InstallOperation>.from(state.operations);
+    for (final id in completedIds) {
+      newOps.remove(id);
+    }
+    state = state.copyWith(operations: newOps);
   }
 
   /// Convert native error code to FailureType.

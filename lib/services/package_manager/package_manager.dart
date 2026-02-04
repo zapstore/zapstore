@@ -1226,3 +1226,139 @@ final systemOnlyPackagesProvider =
         ),
       );
     });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BATCH PROGRESS (Fully Derived State)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Current phase of batch operations
+enum BatchPhase { downloading, verifying, installing, completed, idle }
+
+/// Batch progress summary - ALL state derived from operations map.
+///
+/// Key insight: total = operations.length (includes Completed state).
+/// When an operation succeeds, it transitions to Completed instead of being removed.
+/// This allows us to derive completed count without separate tracking.
+class BatchProgress {
+  const BatchProgress({
+    required this.total,
+    required this.completed,
+    required this.downloading,
+    required this.verifying,
+    required this.installing,
+    required this.queued,
+    required this.failed,
+    required this.phase,
+  });
+
+  /// Total operations (everything in the map, including completed)
+  final int total;
+
+  /// Operations that completed successfully
+  final int completed;
+
+  /// Operations currently downloading
+  final int downloading;
+
+  /// Operations currently verifying
+  final int verifying;
+
+  /// Operations currently installing
+  final int installing;
+
+  /// Operations waiting in queue
+  final int queued;
+
+  /// Operations that failed
+  final int failed;
+
+  /// Current dominant phase
+  final BatchPhase phase;
+
+  /// Whether any operations are in progress (not terminal)
+  bool get hasInProgress =>
+      downloading > 0 || verifying > 0 || installing > 0 || queued > 0;
+
+  /// Whether all operations are complete (all terminal)
+  bool get isAllComplete => !hasInProgress && total > 0;
+
+  /// Status text for display
+  String get statusText {
+    if (total == 0) return '';
+
+    final completedText = '$completed of $total updated';
+
+    return switch (phase) {
+      BatchPhase.installing => '$completedText • Installing...',
+      BatchPhase.verifying => '$completedText • Verifying...',
+      BatchPhase.downloading => '$completedText • Downloading...',
+      BatchPhase.completed => '$completedText ✓',
+      BatchPhase.idle => completedText,
+    };
+  }
+}
+
+/// Provider for batch progress - ALL state derived from operations map.
+///
+/// No parameters needed - derives everything from PackageManagerState.operations.
+final batchProgressProvider = Provider<BatchProgress?>((ref) {
+  final ops = ref.watch(packageManagerProvider.select((s) => s.operations));
+
+  // No operations = no banner
+  if (ops.isEmpty) return null;
+
+  // Count operations by type
+  int completed = 0,
+      downloading = 0,
+      verifying = 0,
+      installing = 0,
+      queued = 0,
+      failed = 0;
+
+  for (final op in ops.values) {
+    switch (op) {
+      case Completed():
+        completed++;
+      case DownloadQueued() || ReadyToInstall():
+        queued++;
+      case Downloading() || DownloadPaused():
+        downloading++;
+      case Verifying():
+        verifying++;
+      case Installing() || SystemProcessing():
+        installing++;
+      case OperationFailed():
+        failed++;
+      case InstallCancelled():
+        queued++; // User can retry
+      case AwaitingPermission():
+        queued++; // Waiting for permission
+      case Uninstalling():
+        installing++; // Count as install phase
+    }
+  }
+
+  final total = ops.length;
+
+  // Determine current phase (priority: installing > verifying > downloading > completed)
+  final phase = installing > 0
+      ? BatchPhase.installing
+      : verifying > 0
+          ? BatchPhase.verifying
+          : downloading > 0
+              ? BatchPhase.downloading
+              : (completed > 0 && queued == 0)
+                  ? BatchPhase.completed
+                  : BatchPhase.idle;
+
+  return BatchProgress(
+    total: total,
+    completed: completed,
+    downloading: downloading,
+    verifying: verifying,
+    installing: installing,
+    queued: queued,
+    failed: failed,
+    phase: phase,
+  );
+});

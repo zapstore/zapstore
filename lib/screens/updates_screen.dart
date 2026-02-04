@@ -7,6 +7,7 @@ import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/services/updates_service.dart';
 import 'package:zapstore/theme.dart';
 import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/widgets/batch_progress_banner.dart';
 import 'package:zapstore/widgets/common/badges.dart';
 import 'package:zapstore/widgets/app_card.dart';
 
@@ -105,6 +106,7 @@ class _ConnectionStatusIndicator extends ConsumerWidget {
 /// Item types for the updates list
 enum _UpdatesItemType {
   connectionStatus,
+  batchProgress,
   installingHeader,
   installingApp,
   automaticHeader,
@@ -292,6 +294,9 @@ class _UpdatesListBody extends StatelessWidget {
     // Always add connection status at the top
     items.add(const _UpdatesItem(_UpdatesItemType.connectionStatus));
 
+    // Add batch progress banner (shows only when operations are active)
+    items.add(const _UpdatesItem(_UpdatesItemType.batchProgress));
+
     if (installingApps.isNotEmpty) {
       items.add(const _UpdatesItem(_UpdatesItemType.installingHeader));
       for (final app in installingApps) {
@@ -337,6 +342,8 @@ class _UpdatesListBody extends StatelessWidget {
         switch (item.type) {
           case _UpdatesItemType.connectionStatus:
             return const _ConnectionStatusIndicator();
+          case _UpdatesItemType.batchProgress:
+            return const BatchProgressBanner();
           case _UpdatesItemType.installingHeader:
             return _InstallingHeader(count: installingApps.length);
           case _UpdatesItemType.installingApp:
@@ -441,6 +448,9 @@ class _UpdatesSectionHeader extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Check if any operations are active (disable button during batch operations)
+    final hasActiveOps = ref.watch(activeOperationsCountProvider) > 0;
+
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Wrap(
@@ -462,23 +472,32 @@ class _UpdatesSectionHeader extends ConsumerWidget {
             ],
           ),
           AsyncButtonBuilder(
-            onPressed: () async {
-              final pm = ref.read(packageManagerProvider.notifier);
-              final items = apps
-                  .where((app) => app.latestFileMetadata != null)
-                  .map(
-                    (app) => (
-                      appId: app.identifier,
-                      target: app.latestFileMetadata!,
-                      displayName: app.name,
-                    ),
-                  )
-                  .toList();
-              await pm.queueDownloads(items);
-            },
+            onPressed: hasActiveOps
+                ? null // Disable when operations in progress
+                : () async {
+                    final pm = ref.read(packageManagerProvider.notifier);
+                    final items = apps
+                        .where((app) => app.latestFileMetadata != null)
+                        .map(
+                          (app) => (
+                            appId: app.identifier,
+                            target: app.latestFileMetadata!,
+                            displayName: app.name,
+                          ),
+                        )
+                        .toList();
+                    await pm.queueDownloads(items);
+                  },
             builder: (context, child, callback, buttonState) {
-              const pillBg = AppColors.darkPillBackground;
               const pillText = Colors.white;
+              final isLoading = buttonState.maybeWhen(
+                loading: () => true,
+                orElse: () => false,
+              );
+              final isDisabled = hasActiveOps || isLoading;
+              final pillBg = isDisabled
+                  ? AppColors.darkPillBackground.withValues(alpha: 0.5)
+                  : AppColors.darkPillBackground;
 
               return TextButton.icon(
                 onPressed: buttonState.maybeWhen(
@@ -494,15 +513,18 @@ class _UpdatesSectionHeader extends ConsumerWidget {
                       color: pillText,
                     ),
                   ),
-                  orElse: () =>
-                      const Icon(Icons.download, size: 14, color: pillText),
+                  orElse: () => Icon(
+                    Icons.download,
+                    size: 14,
+                    color: isDisabled ? pillText.withValues(alpha: 0.5) : pillText,
+                  ),
                 ),
-                label: const Text(
+                label: Text(
                   'Update All',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
-                    color: pillText,
+                    color: isDisabled ? pillText.withValues(alpha: 0.5) : pillText,
                   ),
                 ),
                 style: TextButton.styleFrom(

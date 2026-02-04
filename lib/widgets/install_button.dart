@@ -204,6 +204,15 @@ class InstallButton extends ConsumerWidget {
             needsForceUpdate: needsForceUpdate,
             fontSize: fontSize,
           ),
+
+        Completed() => _buildAsyncButton(
+          context,
+          ref,
+          text: 'Open',
+          onPressed: () => _openApp(context, ref),
+          fontSize: fontSize,
+          needsTrustCheck: false,
+        ),
       };
     }
 

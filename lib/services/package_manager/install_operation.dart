@@ -147,6 +147,19 @@ class SystemProcessing extends InstallOperation {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// TERMINAL STATES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Operation completed successfully.
+/// Stays in operations map until batch completes (for progress tracking).
+class Completed extends InstallOperation {
+  final DateTime completedAt;
+
+  Completed({required super.target, DateTime? completedAt})
+      : completedAt = completedAt ?? DateTime.now();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // FAILURE STATE (Dismiss available)
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -215,6 +228,12 @@ extension InstallOperationX on InstallOperation {
 
   /// Whether this operation is in the verification phase
   bool get isVerifying => this is Verifying;
+
+  /// Whether this operation is in a terminal state (completed or failed)
+  bool get isTerminal => this is Completed || this is OperationFailed;
+
+  /// Whether this operation is still in progress (not terminal)
+  bool get isInProgress => !isTerminal;
 
   /// Get file path if available
   String? get filePath => switch (this) {

@@ -187,6 +187,23 @@ There is no third option. Timeouts, crashes, backgrounding, network loss—all p
 - Queue order: best-effort insertion order (not guaranteed)
 - Queue advances automatically after each completion
 
+### Batch Progress
+
+- When operations are in progress, show a summary banner on the updates screen
+- Works for both "Update All" and individual update taps
+- Banner displays current phase: downloading, verifying, or installing
+- Shows completion progress: "3 of 10 updated"
+- Shows count of failures if any
+- "Update All" button is disabled while operations are in progress
+- All progress state is fully derived from operations map:
+  - Successful operations transition to `Completed` state (stay in map)
+  - Total = operations.length (includes completed)
+  - Completed = count of `Completed` operations
+  - In-progress = Total - Completed - Failed
+  - Phase = derived from operation types currently active
+- When all operations reach terminal state, banner shows "X of X updated ✓"
+- After 3 seconds with no in-progress operations, completed operations auto-clear
+
 ### Device Adaptation
 
 - Download concurrency adapts to device RAM to prevent crashes on low-capability devices
@@ -209,6 +226,8 @@ There is no third option. Timeouts, crashes, backgrounding, network loss—all p
 - [ ] All errors show actionable messages
 - [ ] Multiple downloads queue correctly
 - [ ] Multiple installs proceed one at a time
+- [ ] Batch progress banner shows during "Update All"
+- [ ] "Update All" button disabled while operations in progress
 
 ## Notes
 
