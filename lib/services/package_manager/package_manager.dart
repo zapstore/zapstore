@@ -183,8 +183,8 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
       .map((e) => e.key)
       .toList();
 
-  List<String> getAwaitingUserAction() => state.operations.entries
-      .where((e) => e.value is AwaitingUserAction)
+  List<String> getInstallCancelled() => state.operations.entries
+      .where((e) => e.value is InstallCancelled)
       .map((e) => e.key)
       .toList();
 
@@ -365,10 +365,10 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
     await _performInstall(appId, op.target, op.filePath);
   }
 
-  /// Retry install from AwaitingUserAction state
+  /// Retry install from InstallCancelled state
   Future<void> retryInstall(String appId) async {
     final op = getOperation(appId);
-    if (op is! AwaitingUserAction) return;
+    if (op is! InstallCancelled) return;
 
     if (!await File(op.filePath).exists()) {
       setOperation(
@@ -839,7 +839,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
       if (message.contains('cancelled') || message.contains('ABORTED')) {
         setOperation(
           appId,
-          AwaitingUserAction(target: target, filePath: filePath),
+          InstallCancelled(target: target, filePath: filePath),
         );
         return;
       }
@@ -1132,10 +1132,10 @@ final readyToInstallCountProvider = Provider<int>((ref) {
   );
 });
 
-final awaitingUserActionCountProvider = Provider<int>((ref) {
+final installCancelledCountProvider = Provider<int>((ref) {
   return ref.watch(
     packageManagerProvider.select(
-      (s) => s.operations.values.whereType<AwaitingUserAction>().length,
+      (s) => s.operations.values.whereType<InstallCancelled>().length,
     ),
   );
 });

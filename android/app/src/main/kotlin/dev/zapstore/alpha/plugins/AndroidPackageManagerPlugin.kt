@@ -50,8 +50,10 @@ private const val COPY_BUFFER_SIZE = 65536
 object InstallStatus {
     const val STARTED = "started"
     const val VERIFYING = "verifying"
+    const val VERIFYING_PROGRESS = "verifyingProgress"  // Verification progress update
     const val PENDING_USER_ACTION = "pendingUserAction"
     const val INSTALLING = "installing"  // User accepted, system is now installing
+    const val SYSTEM_PROCESSING = "systemProcessing"  // Committed, cannot cancel
     const val ALREADY_IN_PROGRESS = "alreadyInProgress"
     const val SUCCESS = "success"
     const val FAILED = "failed"
@@ -107,6 +109,12 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
 
     /** Track sessions that have emitted INSTALLING status (to avoid duplicates) */
     private val sessionsInstalling = mutableSetOf<Int>()
+
+    /** Track sessions that have been committed (abandonSession won't work for these) */
+    private val committedSessions = mutableSetOf<Int>()
+
+    /** Track sessions that have already emitted SUCCESS (to avoid duplicates from onFinished) */
+    private val sessionsCompletedSuccessfully = mutableSetOf<Int>()
 
     /** Session callback to detect progress after user confirms install */
     private var sessionCallback: PackageInstaller.SessionCallback? = null
@@ -166,8 +174,11 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
                 pendingUserActionIntents.remove(pkg)
                 instance?.sessionsPendingUserAction?.remove(sessionId)
                 instance?.sessionsInstalling?.remove(sessionId)
+                instance?.committedSessions?.remove(sessionId)
                 
-                if (status != InstallStatus.SUCCESS) {
+                if (status == InstallStatus.SUCCESS) {
+                    instance?.sessionsCompletedSuccessfully?.add(sessionId)
+                } else {
                     abandonSession(sessionId)
                 }
             }
@@ -327,9 +338,25 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
             }
             
             override fun onFinished(sessionId: Int, success: Boolean) {
+                val pkg = sessionToPackage[sessionId]
+                Log.d(TAG, "SessionCallback.onFinished: sessionId=$sessionId, success=$success, pkg=$pkg")
+                
+                // If install succeeded and we have a tracked package, emit SUCCESS
+                // This catches installs that completed after timeout or missed the broadcast
+                if (success && pkg != null && sessionId !in sessionsCompletedSuccessfully) {
+                    sessionsCompletedSuccessfully.add(sessionId)
+                    Log.d(TAG, "Emitting SUCCESS from onFinished for $pkg (sessionId=$sessionId)")
+                    onInstallResult(
+                        sessionId = sessionId,
+                        status = InstallStatus.SUCCESS,
+                        packageName = pkg
+                    )
+                }
+                
                 // Clean up tracking
                 sessionsPendingUserAction.remove(sessionId)
                 sessionsInstalling.remove(sessionId)
+                committedSessions.remove(sessionId)
             }
         }
         
@@ -379,7 +406,8 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
         status: String, 
         message: String? = null,
         errorCode: String? = null,
-        description: String? = null
+        description: String? = null,
+        progress: Double? = null
     ) {
         val emitNow = emit@{
             // Update watchdog regardless of whether Dart is listening.
@@ -404,6 +432,9 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
             }
             if (description != null) {
                 event["description"] = description
+            }
+            if (progress != null) {
+                event["progress"] = progress
             }
             Log.d(TAG, "Emitting to Dart: $event")
             sink.success(event)
@@ -461,8 +492,23 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
                 return@postDelayed
             }
 
+            // Check if session is committed - if so, we can't abandon it
+            val sessionId = sessionToPackage.entries.find { it.value == appId }?.key
+            val isCommitted = sessionId != null && sessionId in committedSessions
+            
+            if (isCommitted) {
+                // Session is committed - Android is in control, we cannot abort
+                // Keep waiting and show "system processing" status
+                Log.w(TAG, "Watchdog: Session for $appId is committed (sessionId=$sessionId), system is processing. Cannot timeout.")
+                emitInstallStatus(appId, InstallStatus.SYSTEM_PROCESSING, "System is processing...")
+                // Extend deadline significantly - Android will eventually complete or fail
+                watchdogDeadlineMs[appId] = System.currentTimeMillis() + MAX_INSTALL_WATCHDOG_MS
+                scheduleWatchdog(appId, INSTALL_WATCHDOG_MS * 2)
+                return@postDelayed
+            }
+            
             // Deadline exceeded or no evidence of progress: fail fast and cleanup.
-            Log.w(TAG, "Watchdog timeout for $appId (hasSession=$hasSession, pendingUi=$hasPendingUi, verifyingAlive=$verifyingAlive)")
+            Log.w(TAG, "Watchdog timeout for $appId (hasSession=$hasSession, pendingUi=$hasPendingUi, verifyingAlive=$verifyingAlive, isCommitted=$isCommitted)")
             abandonExistingSession(appId)
             emitInstallStatus(
                 appId,
@@ -476,11 +522,12 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
 
     private fun updateWatchdog(appId: String, status: String) {
         when (status) {
-            InstallStatus.VERIFYING -> {
+            InstallStatus.VERIFYING, InstallStatus.VERIFYING_PROGRESS -> {
                 // Start watchdog for verify stage
                 scheduleWatchdog(appId, VERIFY_WATCHDOG_MS)
             }
-            InstallStatus.STARTED, InstallStatus.PENDING_USER_ACTION, InstallStatus.INSTALLING -> {
+            InstallStatus.STARTED, InstallStatus.PENDING_USER_ACTION, 
+            InstallStatus.INSTALLING, InstallStatus.SYSTEM_PROCESSING -> {
                 // Start/refresh watchdog for install stage
                 scheduleWatchdog(appId, INSTALL_WATCHDOG_MS)
             }
@@ -540,6 +587,15 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
                     return
                 }
                 launchApp(packageName, result)
+            }
+            
+            "abortInstall" -> {
+                val packageName = call.argument<String>("packageName")
+                if (packageName == null) {
+                    result.error("MISSING_ARGUMENT", "packageName required", null)
+                    return
+                }
+                abortInstall(packageName, result)
             }
             
             else -> result.notImplemented()
@@ -699,7 +755,16 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
                             val progressPercent = ((bytesCopied * 100) / fileSize).toInt()
                             if (progressPercent != lastProgressPercent && progressPercent % 5 == 0) {
                                 lastProgressPercent = progressPercent
-                                Log.d(TAG, "Copy progress for $packageName: $progressPercent%")
+                                Log.d(TAG, "Verify progress for $packageName: $progressPercent%")
+                                // Emit progress to Dart
+                                val progressFraction = bytesCopied.toDouble() / fileSize.toDouble()
+                                mainHandler.post {
+                                    emitInstallStatus(
+                                        packageName,
+                                        InstallStatus.VERIFYING_PROGRESS,
+                                        progress = progressFraction
+                                    )
+                                }
                             }
                         }
                     }
@@ -754,6 +819,8 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
             )
             
             session.commit(pendingIntent.intentSender)
+            committedSessions.add(sessionId)  // Mark as committed - abandonSession won't work now
+            Log.d(TAG, "Session $sessionId committed for $packageName")
             session.close()
             session = null  // Prevent double-close in finally
             
@@ -810,11 +877,21 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
     
     private fun abandonExistingSession(packageName: String) {
         val session = findExistingSession(packageName) ?: return
+        val isCommitted = session.sessionId in committedSessions
+        
+        if (isCommitted) {
+            Log.d(TAG, "abandonExistingSession: Session ${session.sessionId} for $packageName is committed, abandon may not work")
+        }
+        
         try {
             context.packageManager.packageInstaller.abandonSession(session.sessionId)
+            Log.d(TAG, "abandonExistingSession: Abandoned session ${session.sessionId} for $packageName")
             sessionToPackage.remove(session.sessionId)
             pendingUserActionIntents.remove(packageName)
-        } catch (_: Exception) {}
+            committedSessions.remove(session.sessionId)
+        } catch (e: Exception) {
+            Log.w(TAG, "abandonExistingSession: Failed to abandon session ${session.sessionId} for $packageName: ${e.message}")
+        }
     }
     
     private fun cleanupStaleSessions() {
@@ -825,6 +902,8 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
             }
             sessionToPackage.clear()
             pendingUserActionIntents.clear()
+            committedSessions.clear()
+            sessionsCompletedSuccessfully.clear()
         } catch (_: Exception) {}
     }
     
@@ -1007,6 +1086,62 @@ class AndroidPackageManagerPlugin : FlutterPlugin, MethodCallHandler,
         } catch (e: Exception) {
             result.success(mapOf("isSuccess" to false, "errorMessage" to e.message))
         }
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // ABORT INSTALL (User-initiated cancellation)
+    // ═══════════════════════════════════════════════════════════════════════════════
+    
+    /**
+     * Explicitly abort an install operation and clear all tracking.
+     * This is best-effort - if the session is already committed, Android may still complete it.
+     */
+    private fun abortInstall(packageName: String, result: Result) {
+        Log.d(TAG, "abortInstall called for $packageName")
+        
+        // Find and clean up the session
+        val sessionId = sessionToPackage.entries.find { it.value == packageName }?.key
+        val isCommitted = sessionId != null && sessionId in committedSessions
+        
+        // Clear all tracking for this package
+        clearAllTrackingForPackage(packageName)
+        
+        // Clear watchdog
+        clearWatchdog(packageName)
+        
+        // Try to abandon the session (will fail silently if already committed)
+        abandonExistingSession(packageName)
+        
+        // Emit cancelled status so Dart knows to clean up
+        emitInstallStatus(packageName, InstallStatus.CANCELLED, "Installation aborted by user")
+        
+        result.success(mapOf(
+            "success" to true,
+            "wasCommitted" to isCommitted,
+            "message" to if (isCommitted) {
+                "Session was already committed. Android may still complete the install."
+            } else {
+                "Install aborted successfully."
+            }
+        ))
+    }
+    
+    /**
+     * Clear all tracking maps for a given package.
+     */
+    private fun clearAllTrackingForPackage(packageName: String) {
+        pendingUserActionIntents.remove(packageName)
+        
+        val sessionId = sessionToPackage.entries.find { it.value == packageName }?.key
+        if (sessionId != null) {
+            sessionToPackage.remove(sessionId)
+            sessionsPendingUserAction.remove(sessionId)
+            sessionsInstalling.remove(sessionId)
+            committedSessions.remove(sessionId)
+            sessionsCompletedSuccessfully.remove(sessionId)
+        }
+        
+        verificationThreads.remove(packageName)
     }
     
     // ═══════════════════════════════════════════════════════════════════════════════

@@ -14,8 +14,10 @@ import 'package:zapstore/services/package_manager/package_manager.dart';
 enum InstallStatus {
   started,
   verifying,
+  verifyingProgress, // Verification progress update
   pendingUserAction,
   installing, // User accepted, system is now installing
+  systemProcessing, // Committed, cannot cancel
   alreadyInProgress,
   success,
   failed,
@@ -27,8 +29,10 @@ extension InstallStatusX on InstallStatus {
     return switch (raw) {
       'started' => InstallStatus.started,
       'verifying' => InstallStatus.verifying,
+      'verifyingProgress' => InstallStatus.verifyingProgress,
       'pendingUserAction' => InstallStatus.pendingUserAction,
       'installing' => InstallStatus.installing,
+      'systemProcessing' => InstallStatus.systemProcessing,
       'alreadyInProgress' => InstallStatus.alreadyInProgress,
       'success' => InstallStatus.success,
       'failed' => InstallStatus.failed,
@@ -103,6 +107,7 @@ final class AndroidPackageManager extends PackageManager {
     final message = event['message'] as String?;
     final errorCode = event['errorCode'] as String?;
     final description = event['description'] as String?;
+    final progress = event['progress'] as double?;
     final status = InstallStatusX.tryParse(statusRaw);
 
     debugPrint(
@@ -148,6 +153,14 @@ final class AndroidPackageManager extends PackageManager {
         }
         break;
 
+      case InstallStatus.verifyingProgress:
+        // Update verification progress
+        final existingVerify = existingOp;
+        if (existingVerify is Verifying && progress != null) {
+          setOperation(appId, existingVerify.copyWith(progress: progress));
+        }
+        break;
+
       case InstallStatus.started:
         // Install session started - transition to Installing
         if (filePath != null) {
@@ -180,6 +193,17 @@ final class AndroidPackageManager extends PackageManager {
           setOperation(
             appId,
             Installing(target: target, filePath: filePath, isSilent: true),
+          );
+        }
+        break;
+
+      case InstallStatus.systemProcessing:
+        // Install session is committed and taking longer than expected.
+        // Cannot be cancelled - system will eventually complete or fail.
+        if (filePath != null) {
+          setOperation(
+            appId,
+            SystemProcessing(target: target, filePath: filePath),
           );
         }
         break;
@@ -223,7 +247,7 @@ final class AndroidPackageManager extends PackageManager {
         if (filePath != null) {
           setOperation(
             appId,
-            AwaitingUserAction(target: target, filePath: filePath),
+            InstallCancelled(target: target, filePath: filePath),
           );
         } else {
           clearOperation(appId);
@@ -249,7 +273,11 @@ final class AndroidPackageManager extends PackageManager {
   void _tryAdvanceNextInstall() {
     // Check if any app is currently in an active install state
     final hasActiveInstall = state.operations.values.any(
-      (op) => op is Verifying || op is Installing || op is Uninstalling,
+      (op) =>
+          op is Verifying ||
+          op is Installing ||
+          op is SystemProcessing ||
+          op is Uninstalling,
     );
 
     if (hasActiveInstall) {
@@ -284,7 +312,7 @@ final class AndroidPackageManager extends PackageManager {
         NativeErrorCode.certMismatch => FailureType.certMismatch,
         NativeErrorCode.permissionDenied => FailureType.permissionDenied,
         NativeErrorCode.insufficientStorage => FailureType.insufficientStorage,
-        NativeErrorCode.incompatible => FailureType.installFailed,
+        NativeErrorCode.incompatible => FailureType.incompatible,
         NativeErrorCode.blocked => FailureType.permissionDenied,
         NativeErrorCode.installTimeout => FailureType.installFailed,
         _ => FailureType.installFailed,
@@ -310,6 +338,12 @@ final class AndroidPackageManager extends PackageManager {
     }
     if (lower.contains('permission') || lower.contains('denied')) {
       return FailureType.permissionDenied;
+    }
+    if (lower.contains('incompatible') ||
+        lower.contains('architecture') ||
+        lower.contains('api level') ||
+        lower.contains('sdk version')) {
+      return FailureType.incompatible;
     }
     return FailureType.installFailed;
   }
@@ -444,6 +478,35 @@ final class AndroidPackageManager extends PackageManager {
 
     // Background sync for consistency
     syncInstalledPackages();
+  }
+
+  /// Explicitly abort an install operation.
+  /// This is best-effort - if the session is already committed, Android may still complete it.
+  Future<void> abortInstall(String appId) async {
+    try {
+      final result = await _methodChannel
+          .invokeMethod<Map<Object?, Object?>>('abortInstall', {
+            'packageName': appId,
+          })
+          .timeout(
+            const Duration(seconds: 5),
+            onTimeout: () => <Object?, Object?>{'success': false},
+          );
+
+      final resultMap = Map<String, dynamic>.from(result ?? {});
+      final wasCommitted = resultMap['wasCommitted'] as bool? ?? false;
+
+      if (wasCommitted) {
+        debugPrint(
+          '[PackageManager] abortInstall: Session was committed, Android may still complete install for $appId',
+        );
+      }
+    } catch (e) {
+      debugPrint('[PackageManager] abortInstall failed for $appId: $e');
+    }
+
+    // Clear operation on Dart side regardless of native result
+    clearOperation(appId);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -611,7 +674,7 @@ final class AndroidPackageManager extends PackageManager {
         if (op == null) continue;
         if (op is! Installing &&
             op is! Verifying &&
-            op is! AwaitingUserAction) {
+            op is! InstallCancelled) {
           continue;
         }
 

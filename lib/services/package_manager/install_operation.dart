@@ -69,8 +69,21 @@ class DownloadPaused extends InstallOperation {
 /// Verifying downloaded file hash (happens in Kotlin, visible to UI)
 class Verifying extends InstallOperation {
   final String filePath;
+  final double progress;
 
-  const Verifying({required super.target, required this.filePath});
+  const Verifying({
+    required super.target,
+    required this.filePath,
+    this.progress = 0.0,
+  });
+
+  Verifying copyWith({double? progress}) {
+    return Verifying(
+      target: target,
+      filePath: filePath,
+      progress: progress ?? this.progress,
+    );
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -109,12 +122,12 @@ class Installing extends InstallOperation {
   }) : startedAt = startedAt ?? DateTime.now();
 }
 
-/// System dialog was dismissed/backgrounded - user can retry
-/// Different from Failed: this is recoverable with a tap
-class AwaitingUserAction extends InstallOperation {
+/// User cancelled the install dialog - file is still ready, no re-download needed.
+/// User can tap "Install (retry)" to show the dialog again.
+class InstallCancelled extends InstallOperation {
   final String filePath;
 
-  const AwaitingUserAction({required super.target, required this.filePath});
+  const InstallCancelled({required super.target, required this.filePath});
 }
 
 /// Uninstalling app (for force update: uninstall → install)
@@ -122,6 +135,15 @@ class Uninstalling extends InstallOperation {
   final String filePath;
 
   const Uninstalling({required super.target, required this.filePath});
+}
+
+/// System is processing the install - cannot be cancelled.
+/// This state is entered when the install session has been committed to Android
+/// and is taking longer than expected. The system will eventually complete or fail.
+class SystemProcessing extends InstallOperation {
+  final String filePath;
+
+  const SystemProcessing({required super.target, required this.filePath});
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -169,6 +191,9 @@ enum FailureType {
 
   /// Not enough storage space
   insufficientStorage,
+
+  /// Device is incompatible with the app (wrong architecture, API level, etc.)
+  incompatible,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -185,6 +210,7 @@ extension InstallOperationX on InstallOperation {
       this is Downloading ||
       this is Verifying ||
       this is Installing ||
+      this is SystemProcessing ||
       this is Uninstalling;
 
   /// Whether this operation is in the verification phase
@@ -196,7 +222,8 @@ extension InstallOperationX on InstallOperation {
     AwaitingPermission(:final filePath) => filePath,
     ReadyToInstall(:final filePath) => filePath,
     Installing(:final filePath) => filePath,
-    AwaitingUserAction(:final filePath) => filePath,
+    SystemProcessing(:final filePath) => filePath,
+    InstallCancelled(:final filePath) => filePath,
     Uninstalling(:final filePath) => filePath,
     OperationFailed(:final filePath) => filePath,
     _ => null,

@@ -130,13 +130,22 @@ class InstallButton extends ConsumerWidget {
           onTap: () => _resumeDownload(ref),
         ),
 
-        Verifying() => _buildSimpleButton(
-          context,
-          'Verifying...',
-          null,
-          fontSize: fontSize,
-          showSpinner: true,
-        ),
+        Verifying(:final progress) => progress > 0
+            ? _buildProgressButton(
+                context,
+                ref,
+                progress: progress,
+                text: 'Verifying ${(progress * 100).round()}%',
+                fontSize: fontSize,
+                onTap: null, // Cannot pause/cancel verification
+              )
+            : _buildSimpleButton(
+                context,
+                'Verifying...',
+                null,
+                fontSize: fontSize,
+                showSpinner: true,
+              ),
 
         AwaitingPermission() => _buildSimpleButton(
           context,
@@ -164,13 +173,19 @@ class InstallButton extends ConsumerWidget {
           showSpinner: true,
         ),
 
-        AwaitingUserAction() => _buildSimpleButton(
+        InstallCancelled() => _buildSimpleButton(
           context,
-          'Tap to retry',
+          'Install (retry)',
           () => _retryInstall(ref),
           fontSize: fontSize,
-          isWarning: true,
-          icon: Icons.refresh,
+        ),
+
+        SystemProcessing() => _buildSimpleButton(
+          context,
+          'System processing...',
+          null,
+          fontSize: fontSize,
+          showSpinner: true,
         ),
 
         Uninstalling() => _buildSimpleButton(
@@ -613,6 +628,12 @@ class InstallButton extends ConsumerWidget {
       context.showError(
         'Certificate mismatch',
         description: 'The app signature does not match. Force update required.',
+      );
+    } else if (operation.type == FailureType.incompatible) {
+      context.showError(
+        'Device incompatible',
+        description:
+            'This app is not compatible with your device. It may require a different architecture or Android version.',
       );
     } else if (operation.description != null) {
       // Errors with descriptions (from Kotlin) are shown as toasts
