@@ -15,9 +15,7 @@ class SecureStorageService {
 
   // Use explicit options for reliability across platforms
   static final _storage = FlutterSecureStorage(
-    aOptions: const AndroidOptions(
-      encryptedSharedPreferences: true,
-    ),
+    aOptions: const AndroidOptions(encryptedSharedPreferences: true),
     iOptions: const IOSOptions(
       accessibility: KeychainAccessibility.first_unlock,
     ),
@@ -49,24 +47,50 @@ class SecureStorageService {
   }
 
   // =========================================================================
-  // Update Notification Throttling
+  // App Open Tracking (for background notification throttling)
   // =========================================================================
 
-  static const _lastUpdateNotificationKey = 'last_update_notification';
+  static const _lastAppOpenedKey = 'last_app_opened';
 
-  /// Get the last time an update notification was shown.
-  Future<DateTime?> getLastUpdateNotificationTime() async {
-    final value = await _storage.read(key: _lastUpdateNotificationKey);
+  /// Get the last time the user opened the app.
+  Future<DateTime?> getLastAppOpenedTime() async {
+    final value = await _storage.read(key: _lastAppOpenedKey);
     if (int.tryParse(value ?? '') case final ms?) {
       return DateTime.fromMillisecondsSinceEpoch(ms);
     }
     return null;
   }
 
-  /// Store the last update notification time.
-  Future<void> setLastUpdateNotificationTime(DateTime time) async {
+  /// Store the last app opened time.
+  Future<void> setLastAppOpenedTime(DateTime time) async {
     await _storage.write(
-      key: _lastUpdateNotificationKey,
+      key: _lastAppOpenedKey,
+      value: '${time.millisecondsSinceEpoch}',
+    );
+  }
+
+  // =========================================================================
+  // Seen Until Timestamp (for background notification deduplication)
+  // =========================================================================
+
+  static const _seenUntilKey = 'seen_until';
+
+  /// Get the "seen until" timestamp.
+  /// Updates with release.createdAt <= this timestamp have already been notified.
+  Future<DateTime?> getSeenUntil() async {
+    final value = await _storage.read(key: _seenUntilKey);
+    if (int.tryParse(value ?? '') case final ms?) {
+      return DateTime.fromMillisecondsSinceEpoch(ms);
+    }
+    return null;
+  }
+
+  /// Store the "seen until" timestamp.
+  /// Called when a notification is shown, set to now() so future checks
+  /// only notify about releases created after this time.
+  Future<void> setSeenUntil(DateTime time) async {
+    await _storage.write(
+      key: _seenUntilKey,
       value: '${time.millisecondsSinceEpoch}',
     );
   }

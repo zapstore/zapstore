@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:background_downloader/background_downloader.dart' hide Request;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/widgets.dart';
+import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:path/path.dart' as path;
@@ -11,6 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:workmanager/workmanager.dart';
+import 'package:zapstore/router.dart';
 import 'package:zapstore/services/package_manager/background_package_manager.dart';
 import 'package:zapstore/services/package_manager/dummy_package_manager.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
@@ -38,8 +40,11 @@ const kUpdateNotificationChannelDescription =
 /// Stale download threshold for cleanup
 const _staleDownloadThreshold = Duration(days: 7);
 
-/// Threshold for re-notifying about the same updates (72 hours)
-const _notificationReminderThreshold = Duration(hours: 72);
+/// How long user must be inactive before showing background notification
+const _inactivityThreshold = Duration(hours: 24);
+
+/// Notification payload for deep linking to updates screen
+const _kNotificationPayload = 'updates';
 
 /// Input data key for AppCatalog relay URLs
 const kAppCatalogRelaysKey = 'appCatalogRelays';
@@ -134,7 +139,7 @@ Future<bool> _performWeeklyCleanup() async {
 }
 
 /// Background update check logic - runs in a separate isolate.
-/// Note: Cannot directly reuse [CategorizedAppsNotifier] since this runs
+/// Note: Cannot directly reuse [CategorizedUpdatesNotifier] since this runs
 /// in an isolated WorkManager context without the main app's Riverpod setup.
 ///
 /// [appCatalogRelays] - Relay URLs resolved from main isolate. Falls back to
@@ -261,16 +266,47 @@ Future<bool> _checkForUpdatesInBackground(Set<String>? appCatalogRelays) async {
   }
 }
 
-/// Show a local notification for available updates, throttled to once per 72h.
+/// Show a local notification for available updates.
+/// Only notifies if:
+/// 1. User hasn't opened app in 24+ hours
+/// 2. There are updates with release.createdAt > seenUntil AND > lastOpened
+///    (new since both last notification AND last time user saw the app)
 Future<void> _showUpdateNotificationIfNeeded(List<App> updates) async {
   final secureStorage = SecureStorageService();
 
-  // Skip if notified recently
-  final lastNotified = await secureStorage.getLastUpdateNotificationTime();
-  if (lastNotified != null &&
-      DateTime.now().difference(lastNotified) <
-          _notificationReminderThreshold) {
+  // Skip if user recently opened the app
+  final lastOpened = await secureStorage.getLastAppOpenedTime();
+  if (lastOpened != null &&
+      DateTime.now().difference(lastOpened) < _inactivityThreshold) {
     return;
+  }
+
+  // Get the "seen until" timestamp - updates with release.createdAt > this are new
+  final seenUntil = await secureStorage.getSeenUntil();
+
+  // Filter to only updates that are genuinely new:
+  // - release.createdAt > seenUntil (not already notified via background)
+  // - release.createdAt > lastOpened (not already seen when user opened app)
+  // This prevents nagging about updates user saw in the app but chose to ignore
+  final newUpdates = updates.where((app) {
+    final releaseTime = app.latestRelease.value?.event.createdAt;
+    if (releaseTime == null) return false;
+
+    // Must be newer than last notification (if any)
+    if (seenUntil != null && !releaseTime.isAfter(seenUntil)) {
+      return false;
+    }
+
+    // Must be newer than last app open (if any) - user may have seen it in UI
+    if (lastOpened != null && !releaseTime.isAfter(lastOpened)) {
+      return false;
+    }
+
+    return true;
+  }).toList();
+
+  if (newUpdates.isEmpty) {
+    return; // No new updates to notify about
   }
 
   // Show the notification
@@ -281,10 +317,10 @@ Future<void> _showUpdateNotificationIfNeeded(List<App> updates) async {
   await plugin.initialize(initSettings);
   await _ensureUpdateNotificationChannel(plugin);
 
-  final appNames = updates.map((a) => a.name ?? a.identifier).toList();
-  final title = updates.length == 1
+  final appNames = newUpdates.map((a) => a.name ?? a.identifier).toList();
+  final title = newUpdates.length == 1
       ? '1 app update available'
-      : '${updates.length} app updates available';
+      : '${newUpdates.length} app updates available';
   final body = appNames.length <= 3
       ? appNames.join(', ')
       : '${appNames.take(3).join(', ')} and ${appNames.length - 3} more';
@@ -304,9 +340,11 @@ Future<void> _showUpdateNotificationIfNeeded(List<App> updates) async {
         autoCancel: true,
       ),
     ),
+    payload: _kNotificationPayload,
   );
 
-  await secureStorage.setLastUpdateNotificationTime(DateTime.now());
+  // Update seenUntil to now - future checks will only notify about releases after this
+  await secureStorage.setSeenUntil(DateTime.now());
 }
 
 /// Service for managing background update checks
@@ -334,18 +372,20 @@ class BackgroundUpdateService {
         .resolveRelays('AppCatalog');
 
     // Register periodic task (minimum 15 minutes on Android)
-    // We use 6 hours for battery efficiency
+    // We use 24 hours to match the inactivity threshold for notifications.
+    // More frequent checks would be wasted since we only notify users
+    // who haven't opened the app in 24+ hours.
     await Workmanager().registerPeriodicTask(
       kBackgroundUpdateTaskId,
       kBackgroundUpdateTaskName,
-      frequency: const Duration(hours: 6),
+      frequency: const Duration(hours: 24),
       constraints: Constraints(
         networkType: NetworkType.connected,
         requiresBatteryNotLow: true,
       ),
       existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
       backoffPolicy: BackoffPolicy.exponential,
-      initialDelay: const Duration(minutes: 15),
+      initialDelay: const Duration(hours: 1),
       inputData: {kAppCatalogRelaysKey: appCatalogRelays.toList()},
     );
 
@@ -385,62 +425,39 @@ class BackgroundUpdateService {
 
     await flutterLocalNotificationsPlugin.initialize(
       initializationSettings,
-      onDidReceiveNotificationResponse: (response) {
-        // Notification tapped - app will open to main screen
-        // Navigation is handled by the app's normal launch flow
-      },
+      onDidReceiveNotificationResponse: _handleNotificationTap,
     );
+
+    // Check if app was launched from a notification (terminated state)
+    final launchDetails = await flutterLocalNotificationsPlugin
+        .getNotificationAppLaunchDetails();
+    if (launchDetails?.didNotificationLaunchApp == true &&
+        launchDetails?.notificationResponse?.payload == _kNotificationPayload) {
+      _navigateToUpdates();
+    }
+
     await _ensureUpdateNotificationChannel(flutterLocalNotificationsPlugin);
+  }
+
+  /// Handle notification tap - navigate to updates screen
+  static void _handleNotificationTap(NotificationResponse response) {
+    if (response.payload == _kNotificationPayload) {
+      _navigateToUpdates();
+    }
+  }
+
+  /// Navigate to the updates screen
+  static void _navigateToUpdates() {
+    // Use the root navigator key to navigate
+    final context = rootNavigatorKey.currentContext;
+    if (context != null) {
+      GoRouter.of(context).go('/updates');
+    }
   }
 
   /// Cancel background update checks
   Future<void> cancelBackgroundChecks() async {
     await Workmanager().cancelByUniqueName(kBackgroundUpdateTaskId);
-  }
-
-  /// Trigger an immediate background check (for testing)
-  Future<void> triggerImmediateCheck() async {
-    final appCatalogRelays = await ref
-        .read(storageNotifierProvider.notifier)
-        .resolveRelays('AppCatalog');
-
-    await Workmanager().registerOneOffTask(
-      '${kBackgroundUpdateTaskId}_immediate',
-      kBackgroundUpdateTaskName,
-      constraints: Constraints(networkType: NetworkType.connected),
-      inputData: {kAppCatalogRelaysKey: appCatalogRelays.toList()},
-    );
-  }
-
-  /// Show a test notification directly (for testing)
-  Future<void> showTestNotification() async {
-    debugPrint('showTestNotification: starting');
-    final plugin = FlutterLocalNotificationsPlugin();
-    const initSettings = InitializationSettings(
-      android: AndroidInitializationSettings('@drawable/ic_notification'),
-    );
-    await plugin.initialize(initSettings);
-    debugPrint('showTestNotification: initialized');
-    await _ensureUpdateNotificationChannel(plugin);
-    debugPrint('showTestNotification: channel ensured');
-
-    await plugin.show(
-      0,
-      '2 app updates available',
-      'Test App, Another App',
-      const NotificationDetails(
-        android: AndroidNotificationDetails(
-          kUpdateNotificationChannelId,
-          kUpdateNotificationChannelName,
-          channelDescription: kUpdateNotificationChannelDescription,
-          importance: Importance.high,
-          priority: Priority.high,
-          showWhen: true,
-          autoCancel: true,
-        ),
-      ),
-    );
-    debugPrint('showTestNotification: done');
   }
 }
 

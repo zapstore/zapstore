@@ -245,6 +245,9 @@ final appInitializationProvider = FutureProvider<void>((ref) async {
   // Initialize device capabilities (used for dynamic download concurrency)
   await DeviceCapabilitiesCache.initialize();
 
+  // Record app open time for background notification throttling
+  await secureStorage.setLastAppOpenedTime(DateTime.now());
+
   // These run in background - don't block UI
   final packageManager = ref.read(packageManagerProvider.notifier);
   unawaited(packageManager.syncInstalledPackages());
@@ -321,6 +324,9 @@ class _AppLifecycleObserver with WidgetsBindingObserver {
     final packageManager = _ref.read(packageManagerProvider.notifier);
 
     if (state == AppLifecycleState.resumed) {
+      // Record app open time for background notification throttling
+      unawaited(_recordAppOpened());
+
       // Sync installed packages to detect installs that completed while backgrounded
       unawaited(packageManager.syncInstalledPackages());
 
@@ -332,5 +338,12 @@ class _AppLifecycleObserver with WidgetsBindingObserver {
     } else if (state == AppLifecycleState.paused) {
       notifier.disconnect();
     }
+  }
+
+  /// Record that the user opened the app.
+  /// This is used to check inactivity for background notifications.
+  Future<void> _recordAppOpened() async {
+    final secureStorage = SecureStorageService();
+    await secureStorage.setLastAppOpenedTime(DateTime.now());
   }
 }
