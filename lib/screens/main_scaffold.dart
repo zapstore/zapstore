@@ -5,7 +5,6 @@ import 'package:models/models.dart';
 import 'package:zapstore/router.dart';
 import 'package:zapstore/services/updates_service.dart';
 import 'package:zapstore/widgets/common/badges.dart';
-import 'package:zapstore/widgets/zapstore_update_prompt_listener.dart';
 import '../widgets/common/profile_avatar.dart';
 import '../theme.dart';
 
@@ -57,26 +56,21 @@ class MainScaffold extends StatelessWidget {
           // At home tab root, do nothing (don't close the app)
         }
       },
-      child: Stack(
-        children: [
-          LayoutBuilder(
-            builder: (context, constraints) {
-              // Use mobile layout for screens < 550px width
-              if (constraints.maxWidth < 550) {
-                return MobileScaffold(
-                  navigationShell: navigationShell,
-                  onNavTap: _onBottomNavTap,
-                );
-              } else {
-                return DesktopScaffold(
-                  navigationShell: navigationShell,
-                  onNavTap: _onBottomNavTap,
-                );
-              }
-            },
-          ),
-          const ZapstoreUpdatePromptListener(),
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // Use mobile layout for screens < 550px width
+          if (constraints.maxWidth < 550) {
+            return MobileScaffold(
+              navigationShell: navigationShell,
+              onNavTap: _onBottomNavTap,
+            );
+          } else {
+            return DesktopScaffold(
+              navigationShell: navigationShell,
+              onNavTap: _onBottomNavTap,
+            );
+          }
+        },
       ),
     );
   }
@@ -104,18 +98,18 @@ class MobileScaffold extends ConsumerWidget {
         ),
       ),
     );
-    final categorized = ref.watch(categorizedAppsProvider);
+    // Watch categorized to keep poller alive (poller is watched by categorized)
+    final categorized = ref.watch(categorizedUpdatesProvider);
+    final poller = ref.watch(updatePollerProvider);
     final updateCount = ref.watch(updateCountProvider);
-    final isLoadingUpdates = categorized.isLoading;
+    final isLoadingUpdates = categorized.showSkeleton || poller.isChecking;
 
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
           gradient: AppGradients.darkBackgroundGradient,
         ),
-        child: SafeArea(
-          child: navigationShell,
-        ),
+        child: SafeArea(child: navigationShell),
       ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
@@ -142,130 +136,130 @@ class MobileScaffold extends ConsumerWidget {
           child: Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: BottomNavigationBar(
-            currentIndex: navigationShell.currentIndex,
-            type: BottomNavigationBarType.fixed,
-            onTap: (index) => onNavTap(context, navigationShell, index),
-            showSelectedLabels: false,
-            showUnselectedLabels: false,
-            elevation: 0,
-            backgroundColor: Colors.transparent,
-            selectedItemColor: Theme.of(context).colorScheme.primary,
-            unselectedItemColor: Theme.of(
-              context,
-            ).colorScheme.onSurface.withValues(alpha: 0.5),
-            selectedIconTheme: IconThemeData(
-              size: 26,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-            unselectedIconTheme: IconThemeData(
-              size: 22,
-              color: Theme.of(
+              currentIndex: navigationShell.currentIndex,
+              type: BottomNavigationBarType.fixed,
+              onTap: (index) => onNavTap(context, navigationShell, index),
+              showSelectedLabels: false,
+              showUnselectedLabels: false,
+              elevation: 0,
+              backgroundColor: Colors.transparent,
+              selectedItemColor: Theme.of(context).colorScheme.primary,
+              unselectedItemColor: Theme.of(
                 context,
               ).colorScheme.onSurface.withValues(alpha: 0.5),
-            ),
-            items: [
-              BottomNavigationBarItem(
-                icon: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  decoration: navigationShell.currentIndex == 0
-                      ? BoxDecoration(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.primary.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(16),
-                        )
-                      : null,
-                  child: const Icon(Icons.search_rounded),
-                ),
-                label: 'Search',
+              selectedIconTheme: IconThemeData(
+                size: 26,
+                color: Theme.of(context).colorScheme.primary,
               ),
-              BottomNavigationBarItem(
-                icon: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
+              unselectedIconTheme: IconThemeData(
+                size: 22,
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.5),
+              ),
+              items: [
+                BottomNavigationBarItem(
+                  icon: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    decoration: navigationShell.currentIndex == 0
+                        ? BoxDecoration(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.primary.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(16),
+                          )
+                        : null,
+                    child: const Icon(Icons.search_rounded),
                   ),
-                  decoration: navigationShell.currentIndex == 1
-                      ? BoxDecoration(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.primary.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(16),
-                        )
-                      : null,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      const Icon(Icons.update),
-                      if (isLoadingUpdates)
-                        Positioned(
-                          right: -8,
-                          top: -8,
-                          child: BadgePill(
-                            child: const SizedBox(
-                              width: 8,
-                              height: 8,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
+                  label: 'Search',
+                ),
+                BottomNavigationBarItem(
+                  icon: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    decoration: navigationShell.currentIndex == 1
+                        ? BoxDecoration(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.primary.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(16),
+                          )
+                        : null,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        const Icon(Icons.update),
+                        if (isLoadingUpdates)
+                          Positioned(
+                            right: -8,
+                            top: -8,
+                            child: BadgePill(
+                              child: const SizedBox(
+                                width: 8,
+                                height: 8,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
                               ),
                             ),
+                          )
+                        else if (updateCount > 0)
+                          Positioned(
+                            right: -8,
+                            top: -8,
+                            child: CountBadge(count: updateCount),
                           ),
-                        )
-                      else if (updateCount > 0)
-                        Positioned(
-                          right: -8,
-                          top: -8,
-                          child: CountBadge(count: updateCount),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
+                  label: 'Updates',
                 ),
-                label: 'Updates',
-              ),
-              BottomNavigationBarItem(
-                icon: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
+                BottomNavigationBarItem(
+                  icon: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    decoration: navigationShell.currentIndex == 2
+                        ? BoxDecoration(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.primary.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(16),
+                          )
+                        : null,
+                    child: pubkey != null
+                        ? Container(
+                            decoration: navigationShell.currentIndex == 2
+                                ? BoxDecoration(
+                                    border: Border.all(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.primary,
+                                      width: 2,
+                                    ),
+                                    borderRadius: BorderRadius.circular(16),
+                                  )
+                                : null,
+                            child: ProfileAvatar(
+                              profile: profile,
+                              pubkey: pubkey,
+                              radius: 14,
+                            ),
+                          )
+                        : const Icon(Icons.person_rounded),
                   ),
-                  decoration: navigationShell.currentIndex == 2
-                      ? BoxDecoration(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.primary.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(16),
-                        )
-                      : null,
-                  child: pubkey != null
-                      ? Container(
-                          decoration: navigationShell.currentIndex == 2
-                              ? BoxDecoration(
-                                  border: Border.all(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.primary,
-                                    width: 2,
-                                  ),
-                                  borderRadius: BorderRadius.circular(16),
-                                )
-                              : null,
-                          child: ProfileAvatar(
-                            profile: profile,
-                            pubkey: pubkey,
-                            radius: 14,
-                          ),
-                        )
-                      : const Icon(Icons.person_rounded),
+                  label: 'Profile',
                 ),
-                label: 'Profile',
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
         ),
       ),
     );
@@ -294,9 +288,11 @@ class DesktopScaffold extends ConsumerWidget {
         ),
       ),
     );
-    final categorized = ref.watch(categorizedAppsProvider);
+    // Watch categorized to keep poller alive (poller is watched by categorized)
+    final categorized = ref.watch(categorizedUpdatesProvider);
+    final poller = ref.watch(updatePollerProvider);
     final updateCount = ref.watch(updateCountProvider);
-    final isLoadingUpdates = categorized.isLoading;
+    final isLoadingUpdates = categorized.showSkeleton || poller.isChecking;
 
     return Scaffold(
       body: Container(

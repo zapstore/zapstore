@@ -1,8 +1,10 @@
-import 'package:async_button_builder/async_button_builder.dart';
+import 'dart:async';
+
+import 'package:auto_size_text/auto_size_text.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
-import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/services/updates_service.dart';
 import 'package:zapstore/theme.dart';
@@ -12,15 +14,21 @@ import 'package:zapstore/widgets/common/badges.dart';
 import 'package:zapstore/widgets/app_card.dart';
 
 /// Screen for managing app updates
-class UpdatesScreen extends HookConsumerWidget {
+class UpdatesScreen extends ConsumerWidget {
   const UpdatesScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final categorized = ref.watch(categorizedAppsProvider);
+    final categorized = ref.watch(categorizedUpdatesProvider);
 
-    if (categorized.isLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    // Show skeleton only on cold start (no installed apps matched yet)
+    if (categorized.showSkeleton) {
+      return Scaffold(
+        body: Padding(
+          padding: const EdgeInsets.only(top: 16),
+          child: _LoadingSkeleton(),
+        ),
+      );
     }
 
     return Scaffold(
@@ -32,62 +40,89 @@ class UpdatesScreen extends HookConsumerWidget {
   }
 }
 
-/// Shows connection status with a small indicator at the top
-class _ConnectionStatusIndicator extends ConsumerWidget {
-  const _ConnectionStatusIndicator();
+/// Loading skeleton shown while fetching updates on cold start
+class _LoadingSkeleton extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      children: [
+        // "Checking for updates..." indicator at top
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Checking for updates...',
+                style: context.textTheme.bodySmall?.copyWith(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
+              ),
+            ],
+          ),
+        ),
+        // Skeleton app cards using existing AppCard skeleton
+        const AppCard(isLoading: true),
+        const AppCard(isLoading: true),
+        const AppCard(isLoading: true),
+      ],
+    );
+  }
+}
+
+/// Shows when updates were last checked
+class _LastCheckedIndicator extends HookConsumerWidget {
+  const _LastCheckedIndicator();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final poolState = ref.watch(poolStateProvider);
-    final subscriptions = poolState?.subscriptions ?? {};
+    final pollerState = ref.watch(updatePollerProvider);
+    final lastCheckTime = pollerState.lastCheckTime;
+    final isChecking = pollerState.isChecking;
 
-    // Filter to only "app-updates" subscription
-    final updatesSubs = subscriptions.entries
-        .where((e) => e.key.startsWith('app-updates'))
-        .map((e) => e.value);
+    // Force rebuild every minute to keep relative time fresh
+    final ticker = useState(0);
+    useEffect(() {
+      final timer = Timer.periodic(const Duration(minutes: 1), (_) {
+        ticker.value++;
+      });
+      return timer.cancel;
+    }, const []);
 
-    // Check relay status for updates subscription only
-    bool hasActiveConnection = false;
+    // Show spinner if actively checking OR if first check hasn't completed yet
+    final showSpinner = isChecking || lastCheckTime == null;
 
-    for (final sub in updatesSubs) {
-      for (final relay in sub.relays.values) {
-        if (relay.phase == RelaySubPhase.streaming ||
-            relay.phase == RelaySubPhase.loading) {
-          hasActiveConnection = true;
-          break;
-        }
-      }
-      if (hasActiveConnection) break;
-    }
-
-    final statusColor = hasActiveConnection ? Colors.green : Colors.grey;
-    final statusText = hasActiveConnection
-        ? 'Connected · Streaming updates'
-        : 'Offline';
+    final statusText = showSpinner
+        ? 'Checking for updates...'
+        : 'Last checked: ${_formatRelativeTime(lastCheckTime)}';
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // Status dot
-          Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: statusColor,
-              boxShadow: hasActiveConnection
-                  ? [
-                      BoxShadow(
-                        color: statusColor.withValues(alpha: 0.4),
-                        blurRadius: 4,
-                        spreadRadius: 1,
-                      ),
-                    ]
-                  : null,
+          if (showSpinner)
+            const SizedBox(
+              width: 12,
+              height: 12,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          else
+            Icon(
+              Icons.schedule,
+              size: 14,
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.5),
             ),
-          ),
           const SizedBox(width: 8),
           Text(
             statusText,
@@ -101,18 +136,25 @@ class _ConnectionStatusIndicator extends ConsumerWidget {
       ),
     );
   }
+
+  String _formatRelativeTime(DateTime time) {
+    final diff = DateTime.now().difference(time);
+    if (diff.inMinutes < 1) return 'just now';
+    if (diff.inMinutes == 1) return '1 minute ago';
+    if (diff.inMinutes < 60) return '${diff.inMinutes} minutes ago';
+    if (diff.inHours == 1) return '1 hour ago';
+    return '${diff.inHours} hours ago';
+  }
 }
 
 /// Item types for the updates list
 enum _UpdatesItemType {
-  connectionStatus,
-  batchProgress,
+  lastChecked,
   installingHeader,
   installingApp,
   automaticHeader,
   automaticApp,
   manualHeader,
-  manualInfoBox,
   manualApp,
   upToDateHeader,
   upToDateApp,
@@ -131,7 +173,7 @@ class _UpdatesItem {
 class _UpdatesContent extends HookConsumerWidget {
   const _UpdatesContent({required this.categorized});
 
-  final CategorizedApps categorized;
+  final CategorizedUpdates categorized;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -214,7 +256,7 @@ class _UpdatesListBodyWithInstallingAppIds extends ConsumerWidget {
   }
 }
 
-class _UpdatesListBody extends StatelessWidget {
+class _UpdatesListBody extends HookConsumerWidget {
   const _UpdatesListBody({
     required this.automaticUpdates,
     required this.manualUpdates,
@@ -230,7 +272,7 @@ class _UpdatesListBody extends StatelessWidget {
   final List<PackageInfo> uncatalogedApps;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     if (automaticUpdates.isEmpty &&
         manualUpdates.isEmpty &&
         installingApps.isEmpty &&
@@ -291,11 +333,8 @@ class _UpdatesListBody extends StatelessWidget {
     // Build flat list of items for ListView.builder
     final items = <_UpdatesItem>[];
 
-    // Always add connection status at the top
-    items.add(const _UpdatesItem(_UpdatesItemType.connectionStatus));
-
-    // Add batch progress banner (shows only when operations are active)
-    items.add(const _UpdatesItem(_UpdatesItemType.batchProgress));
+    // Add last checked indicator first
+    items.add(const _UpdatesItem(_UpdatesItemType.lastChecked));
 
     if (installingApps.isNotEmpty) {
       items.add(const _UpdatesItem(_UpdatesItemType.installingHeader));
@@ -313,7 +352,6 @@ class _UpdatesListBody extends StatelessWidget {
 
     if (manualUpdates.isNotEmpty) {
       items.add(const _UpdatesItem(_UpdatesItemType.manualHeader));
-      items.add(const _UpdatesItem(_UpdatesItemType.manualInfoBox));
       for (final app in manualUpdates) {
         items.add(_UpdatesItem(_UpdatesItemType.manualApp, app: app));
       }
@@ -335,262 +373,324 @@ class _UpdatesListBody extends StatelessWidget {
       }
     }
 
-    return ListView.builder(
-      itemCount: items.length,
-      itemBuilder: (context, index) {
-        final item = items[index];
-        switch (item.type) {
-          case _UpdatesItemType.connectionStatus:
-            return const _ConnectionStatusIndicator();
-          case _UpdatesItemType.batchProgress:
-            return const BatchProgressBanner();
-          case _UpdatesItemType.installingHeader:
-            return _InstallingHeader(count: installingApps.length);
-          case _UpdatesItemType.installingApp:
-            return AppCard(
-              key: ValueKey('installing_${item.app?.identifier}'),
-              app: item.app,
-              showUpdateArrow: false,
-              showUpdateButton: true,
-              showZapEncouragement: true,
-              showDescription: false,
-            );
-          case _UpdatesItemType.automaticHeader:
-            return _UpdatesSectionHeader(
-              icon: Icons.system_update,
-              title: 'Updates',
-              count: automaticUpdates.length,
-              apps: automaticUpdates,
-            );
-          case _UpdatesItemType.automaticApp:
-            return AppCard(
-              key: ValueKey('automatic_${item.app?.identifier}'),
-              app: item.app,
-              showUpdateArrow: true,
-              showUpdateButton: true,
-              showZapEncouragement: true,
-              showDescription: false,
-            );
-          case _UpdatesItemType.manualHeader:
-            return _UpdatesSectionHeader(
-              icon: Icons.touch_app,
-              title: 'Manual Updates',
-              count: manualUpdates.length,
-              apps: manualUpdates,
-            );
-          case _UpdatesItemType.manualInfoBox:
-            return _ManualUpdatesInfoBox();
-          case _UpdatesItemType.manualApp:
-            return AppCard(
-              key: ValueKey('manual_${item.app?.identifier}'),
-              app: item.app,
-              showUpdateArrow: true,
-              showUpdateButton: true,
-              showZapEncouragement: true,
-              showDescription: false,
-            );
-          case _UpdatesItemType.upToDateHeader:
-            return _UpToDateHeader(count: upToDateApps.length);
-          case _UpdatesItemType.upToDateApp:
-            return AppCard(
-              key: ValueKey('uptodate_${item.app?.identifier}'),
-              app: item.app,
-              showUpdateArrow: false,
-              showDescription: false,
-            );
-          case _UpdatesItemType.uncatalogedHeader:
-            return _UncatalogedHeader(count: uncatalogedApps.length);
-          case _UpdatesItemType.uncatalogedApp:
-            return _UncatalogedAppCard(
-              key: ValueKey('uncataloged_${item.packageInfo?.appId}'),
-              packageInfo: item.packageInfo!,
-            );
-        }
-      },
-    );
-  }
-}
+    // Combine all updates for the Update All button
+    final allUpdates = [...automaticUpdates, ...manualUpdates];
 
-class _InstallingHeader extends StatelessWidget {
-  const _InstallingHeader({required this.count});
+    // Watch batch progress and track "All done" state
+    final progress = ref.watch(batchProgressProvider);
+    final showAllDone = useState(false);
+    final wasInProgress = useRef(false);
 
-  final int count;
+    // Detect transition from in-progress to all-complete
+    useEffect(() {
+      if (progress != null && progress.hasInProgress) {
+        wasInProgress.value = true;
+      } else if (wasInProgress.value &&
+          progress != null &&
+          progress.isAllComplete) {
+        // Just finished - show "All done" until dismissed
+        showAllDone.value = true;
+        wasInProgress.value = false;
+      } else if (progress == null) {
+        // Operations cleared externally
+        wasInProgress.value = false;
+        showAllDone.value = false;
+      }
+      return null;
+    }, [progress?.hasInProgress, progress?.isAllComplete]);
 
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Row(
-        children: [
-          Icon(Icons.downloading, size: 20, color: AppColors.darkActionPrimary),
-          const SizedBox(width: 8),
-          Text('Installing', style: context.textTheme.titleMedium),
-          const SizedBox(width: 8),
-          CountBadge(count: count, color: AppColors.darkPillBackground),
+    // Determine what to show (mutually exclusive states):
+    // - "All done" banner after completion
+    // - Progress indicator during operations
+    // - Update All button when idle with updates available
+    final showStickyAllDone = showAllDone.value;
+    final activeProgress = progress != null && progress.hasInProgress
+        ? progress
+        : null;
+
+    return RefreshIndicator(
+      // Hide the spinner - _LastCheckedIndicator already shows "Checking for updates..."
+      color: Colors.transparent,
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      strokeWidth: 0,
+      onRefresh: () => ref.read(updatePollerProvider.notifier).checkNow(),
+      child: CustomScrollView(
+        slivers: [
+          // Sticky status banner (all done or progress) - only for batch operations (>1)
+          if (showStickyAllDone && (progress?.total ?? 0) > 1)
+            SliverPersistentHeader(
+              pinned: true,
+              delegate: _StickyBannerDelegate(
+                child: _StatusBannerContent(
+                  icon: Icons.check_circle_rounded,
+                  iconColor: Colors.green.shade400,
+                  text: 'All done (${progress?.completed ?? 0} updated)',
+                  failedCount: progress?.failed ?? 0,
+                  showDismiss: true,
+                  onTap: () {
+                    showAllDone.value = false;
+                    ref
+                        .read(packageManagerProvider.notifier)
+                        .clearCompletedOperations();
+                  },
+                ),
+              ),
+            )
+          else if (activeProgress != null && activeProgress.total > 1)
+            SliverPersistentHeader(
+              pinned: true,
+              delegate: _StickyBannerDelegate(
+                child: _StatusBannerContent(
+                  isLoading: true,
+                  text: activeProgress.statusText,
+                  failedCount: activeProgress.failed,
+                ),
+              ),
+            )
+          // Update All button (when idle with 2+ updates available)
+          else if (allUpdates.length > 1)
+            SliverToBoxAdapter(child: UpdateAllRow(allUpdates: allUpdates)),
+          // Main content
+          SliverList(
+            delegate: SliverChildBuilderDelegate((context, index) {
+              final item = items[index];
+              switch (item.type) {
+                case _UpdatesItemType.lastChecked:
+                  return const _LastCheckedIndicator();
+                case _UpdatesItemType.installingHeader:
+                  return _SectionHeader(
+                    icon: Icons.downloading,
+                    title: 'Installing',
+                    count: installingApps.length,
+                  );
+                case _UpdatesItemType.installingApp:
+                  return AppCard(
+                    key: ValueKey('installing_${item.app?.identifier}'),
+                    app: item.app,
+                    showUpdateArrow: false,
+                    showUpdateButton: true,
+                    showZapEncouragement: true,
+                    showDescription: false,
+                  );
+                case _UpdatesItemType.automaticHeader:
+                  return _SectionHeader(
+                    icon: Icons.system_update,
+                    title: 'Updates',
+                    count: automaticUpdates.length,
+                  );
+                case _UpdatesItemType.automaticApp:
+                  return AppCard(
+                    key: ValueKey('automatic_${item.app?.identifier}'),
+                    app: item.app,
+                    showUpdateArrow: true,
+                    showUpdateButton: true,
+                    showZapEncouragement: true,
+                    showDescription: false,
+                  );
+                case _UpdatesItemType.manualHeader:
+                  return _SectionHeader(
+                    icon: Icons.touch_app,
+                    title: 'Manual Updates',
+                    count: manualUpdates.length,
+                    trailing: _ManualUpdatesHelpIcon(),
+                  );
+                case _UpdatesItemType.manualApp:
+                  return AppCard(
+                    key: ValueKey('manual_${item.app?.identifier}'),
+                    app: item.app,
+                    showUpdateArrow: true,
+                    showUpdateButton: true,
+                    showZapEncouragement: true,
+                    showDescription: false,
+                  );
+                case _UpdatesItemType.upToDateHeader:
+                  return _SectionHeader(
+                    icon: Icons.check_circle,
+                    title: 'Up to date',
+                    count: upToDateApps.length,
+                  );
+                case _UpdatesItemType.upToDateApp:
+                  return AppCard(
+                    key: ValueKey('uptodate_${item.app?.identifier}'),
+                    app: item.app,
+                    showUpdateArrow: false,
+                    showDescription: false,
+                  );
+                case _UpdatesItemType.uncatalogedHeader:
+                  return _SectionHeader(
+                    icon: Icons.help_outline,
+                    title: 'Other installed',
+                    count: uncatalogedApps.length,
+                    iconColor: AppColors.darkOnSurfaceSecondary,
+                  );
+                case _UpdatesItemType.uncatalogedApp:
+                  return _UncatalogedAppCard(
+                    key: ValueKey('uncataloged_${item.packageInfo?.appId}'),
+                    packageInfo: item.packageInfo!,
+                  );
+              }
+            }, childCount: items.length),
+          ),
         ],
       ),
     );
   }
 }
 
-class _UpdatesSectionHeader extends ConsumerWidget {
-  const _UpdatesSectionHeader({
+/// Delegate for sticky status banner.
+/// Uses SizedBox.expand to guarantee we fill the declared extent.
+class _StickyBannerDelegate extends SliverPersistentHeaderDelegate {
+  const _StickyBannerDelegate({required this.child});
+
+  final Widget child;
+
+  // Matches UpdateAllRow: 44px content + 8px bottom margin = 52px
+  static const double _height = 52.0;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    // SizedBox.expand guarantees we fill exactly maxExtent
+    return SizedBox.expand(
+      child: ColoredBox(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        // Match UpdateAllRow margin: 16 left/right, 0 top, 8 bottom
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  @override
+  double get maxExtent => _height;
+
+  @override
+  double get minExtent => _height;
+
+  @override
+  bool shouldRebuild(covariant _StickyBannerDelegate oldDelegate) =>
+      child != oldDelegate.child;
+}
+
+/// Status banner content (used inside sticky header or standalone).
+/// When used standalone, wrap in appropriate padding.
+class _StatusBannerContent extends StatelessWidget {
+  const _StatusBannerContent({
+    required this.text,
+    this.icon,
+    this.iconColor,
+    this.isLoading = false,
+    this.failedCount = 0,
+    this.showDismiss = false,
+    this.onTap,
+  });
+
+  final String text;
+  final IconData? icon;
+  final Color? iconColor;
+  final bool isLoading;
+  final int failedCount;
+  final bool showDismiss;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppColors.darkPillBackground,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            // Leading indicator (spinner or icon)
+            if (isLoading)
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              )
+            else if (icon != null)
+              Icon(icon, size: 18, color: iconColor ?? Colors.white),
+            const SizedBox(width: 12),
+
+            // Main text - bold
+            Expanded(
+              child: AutoSizeText(
+                text,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  fontFamily: kFontFamily,
+                ),
+                maxLines: 1,
+                minFontSize: 10,
+              ),
+            ),
+
+            // Failed badge (if any)
+            if (failedCount > 0) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade700,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '$failedCount failed',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+
+            // Dismiss icon
+            if (showDismiss) ...[
+              const SizedBox(width: 8),
+              Icon(
+                Icons.close,
+                size: 16,
+                color: Colors.white.withValues(alpha: 0.6),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Section header with icon, title, count badge, and optional trailing widget.
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({
     required this.icon,
     required this.title,
     required this.count,
-    required this.apps,
+    this.iconColor,
+    this.trailing,
   });
 
   final IconData icon;
   final String title;
   final int count;
-  final List<App> apps;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // Check if any operations are active (disable button during batch operations)
-    final hasActiveOps = ref.watch(activeOperationsCountProvider) > 0;
-
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        alignment: WrapAlignment.spaceBetween,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 20, color: AppColors.darkActionPrimary),
-              const SizedBox(width: 8),
-              Flexible(
-                child: Text(title, style: context.textTheme.titleMedium),
-              ),
-              const SizedBox(width: 8),
-              CountBadge(count: count, color: AppColors.darkPillBackground),
-            ],
-          ),
-          AsyncButtonBuilder(
-            onPressed: hasActiveOps
-                ? null // Disable when operations in progress
-                : () async {
-                    final pm = ref.read(packageManagerProvider.notifier);
-                    final items = apps
-                        .where((app) => app.latestFileMetadata != null)
-                        .map(
-                          (app) => (
-                            appId: app.identifier,
-                            target: app.latestFileMetadata!,
-                            displayName: app.name,
-                          ),
-                        )
-                        .toList();
-                    await pm.queueDownloads(items);
-                  },
-            builder: (context, child, callback, buttonState) {
-              const pillText = Colors.white;
-              final isLoading = buttonState.maybeWhen(
-                loading: () => true,
-                orElse: () => false,
-              );
-              final isDisabled = hasActiveOps || isLoading;
-              final pillBg = isDisabled
-                  ? AppColors.darkPillBackground.withValues(alpha: 0.5)
-                  : AppColors.darkPillBackground;
-
-              return TextButton.icon(
-                onPressed: buttonState.maybeWhen(
-                  loading: () => null,
-                  orElse: () => callback,
-                ),
-                icon: buttonState.maybeWhen(
-                  loading: () => const SizedBox(
-                    width: 12,
-                    height: 12,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: pillText,
-                    ),
-                  ),
-                  orElse: () => Icon(
-                    Icons.download,
-                    size: 14,
-                    color: isDisabled ? pillText.withValues(alpha: 0.5) : pillText,
-                  ),
-                ),
-                label: Text(
-                  'Update All',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: isDisabled ? pillText.withValues(alpha: 0.5) : pillText,
-                  ),
-                ),
-                style: TextButton.styleFrom(
-                  backgroundColor: pillBg,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
-                  ),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-              );
-            },
-            child: const SizedBox.shrink(),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ManualUpdatesInfoBox extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 2),
-            child: Icon(
-              Icons.info_outline,
-              size: 18,
-              color: Theme.of(
-                context,
-              ).colorScheme.onSurface.withValues(alpha: 0.6),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              'Apps not installed or updated by the latest Zapstore will show here '
-              'and require manual confirmation of the Android system prompt once per app.',
-              style: context.textTheme.bodyMedium?.copyWith(
-                color: Theme.of(
-                  context,
-                ).colorScheme.onSurface.withValues(alpha: 0.6),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _UpToDateHeader extends StatelessWidget {
-  const _UpToDateHeader({required this.count});
-
-  final int count;
+  final Color? iconColor;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -598,42 +698,46 @@ class _UpToDateHeader extends StatelessWidget {
       padding: const EdgeInsets.all(16.0),
       child: Row(
         children: [
-          Icon(
-            Icons.check_circle,
-            size: 20,
-            color: AppColors.darkActionPrimary,
-          ),
+          Icon(icon, size: 20, color: iconColor ?? AppColors.darkActionPrimary),
           const SizedBox(width: 8),
-          Text('Up to date', style: context.textTheme.titleMedium),
+          Text(title, style: context.textTheme.titleMedium),
           const SizedBox(width: 8),
           CountBadge(count: count, color: AppColors.darkPillBackground),
+          if (trailing != null) ...[
+            const SizedBox(width: 4),
+            trailing!,
+          ],
         ],
       ),
     );
   }
 }
 
-class _UncatalogedHeader extends StatelessWidget {
-  const _UncatalogedHeader({required this.count});
-
-  final int count;
-
+/// Help icon that shows explanation for Manual Updates section.
+class _ManualUpdatesHelpIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Row(
-        children: [
-          Icon(
-            Icons.help_outline,
-            size: 20,
-            color: AppColors.darkOnSurfaceSecondary,
+    return GestureDetector(
+      onTap: () => showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Manual Updates'),
+          content: const Text(
+            'Apps not installed or updated by the latest Zapstore will show here '
+            'and require manual confirmation of the Android system prompt once per app.',
           ),
-          const SizedBox(width: 8),
-          Text('Other installed', style: context.textTheme.titleMedium),
-          const SizedBox(width: 8),
-          CountBadge(count: count, color: AppColors.darkPillBackground),
-        ],
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Got it'),
+            ),
+          ],
+        ),
+      ),
+      child: Icon(
+        Icons.help_outline,
+        size: 18,
+        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
       ),
     );
   }

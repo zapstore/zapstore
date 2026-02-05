@@ -44,7 +44,7 @@ class LatestReleasesContainer extends HookConsumerWidget {
     final storage = state.storage;
 
     // Get pinned apps with zapstore updates to inject at top
-    final categorized = ref.watch(categorizedAppsProvider);
+    final categorized = ref.watch(categorizedUpdatesProvider);
     final pinnedAppsWithUpdates = [
       ...categorized.automaticUpdates,
       ...categorized.manualUpdates,

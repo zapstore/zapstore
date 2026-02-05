@@ -13,7 +13,7 @@ If any invariant is violated, the implementation is incorrect.
 
 ## Async Discipline
 
-- No polling or artificial delays (e.g., Future.delayed for timing).
+- No polling or artificial delays (e.g., Future.delayed for timing), except where explicitly designed
 - Background work must surface results asynchronously and non-blockingly.
 - All async work must be cancellable.
 

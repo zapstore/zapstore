@@ -685,8 +685,8 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: "3c76e2e"
-      resolved-ref: "3c76e2e1cd5145cb57303d3ac4ff25ddb71d73bb"
+      ref: "4ef180e4d1832d2895030046d7bf4a251578f2df"
+      resolved-ref: "4ef180e4d1832d2895030046d7bf4a251578f2df"
       url: "https://github.com/purplebase/models"
     source: git
     version: "0.3.3"
@@ -870,8 +870,8 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: "7cc9b52"
-      resolved-ref: "7cc9b52fd07c01fe8a9f5929fd0728070fb74e67"
+      ref: "4d1db7dd5096c6bfef398a8d14747b1e3eba930d"
+      resolved-ref: "4d1db7dd5096c6bfef398a8d14747b1e3eba930d"
       url: "https://github.com/purplebase/purplebase"
     source: git
     version: "0.3.3"

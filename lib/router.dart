@@ -126,7 +126,11 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: '/profile',
                 builder: (context, state) => const ProfileScreen(),
-                routes: [_appDetailRoute(), _stackDetailRoute(), _userRoute()],
+                routes: [
+                  _appDetailRoute(),
+                  _stackDetailRoute(),
+                  _userRoute(),
+                ],
               ),
             ],
           ),
@@ -149,9 +153,15 @@ final routerProvider = Provider<GoRouter>((ref) {
         ) {
           // Trigger a recalculation of apps after sync
           // (introduced after seeing cases of stale versions)
-          ref.invalidate(categorizedAppsProvider);
+          ref.invalidate(categorizedUpdatesProvider);
         }),
       );
+    }
+
+    // Clear completed operations when navigating AWAY from updates
+    // This cleans up the "All done" state without affecting the count while visible
+    if (wasUpdatesRoute && !isUpdatesRoute) {
+      ref.read(packageManagerProvider.notifier).clearCompletedOperations();
     }
 
     previousPath = currentPath;

@@ -130,22 +130,23 @@ class InstallButton extends ConsumerWidget {
           onTap: () => _resumeDownload(ref),
         ),
 
-        Verifying(:final progress) => progress > 0
-            ? _buildProgressButton(
-                context,
-                ref,
-                progress: progress,
-                text: 'Verifying ${(progress * 100).round()}%',
-                fontSize: fontSize,
-                onTap: null, // Cannot pause/cancel verification
-              )
-            : _buildSimpleButton(
-                context,
-                'Verifying...',
-                null,
-                fontSize: fontSize,
-                showSpinner: true,
-              ),
+        Verifying(:final progress) =>
+          progress > 0
+              ? _buildProgressButton(
+                  context,
+                  ref,
+                  progress: progress,
+                  text: 'Verifying ${(progress * 100).round()}%',
+                  fontSize: fontSize,
+                  onTap: null, // Cannot pause/cancel verification
+                )
+              : _buildSimpleButton(
+                  context,
+                  'Verifying...',
+                  null,
+                  fontSize: fontSize,
+                  showSpinner: true,
+                ),
 
         AwaitingPermission() => _buildSimpleButton(
           context,
@@ -178,6 +179,7 @@ class InstallButton extends ConsumerWidget {
           'Install (retry)',
           () => _retryInstall(ref),
           fontSize: fontSize,
+          isWarning: true,
         ),
 
         SystemProcessing() => _buildSimpleButton(
@@ -604,9 +606,6 @@ class InstallButton extends ConsumerWidget {
     try {
       final pm = ref.read(packageManagerProvider.notifier);
       await pm.uninstall(app.identifier);
-      if (context.mounted) {
-        context.showInfo('${app.name ?? app.identifier} has been uninstalled');
-      }
     } catch (e) {
       if (context.mounted) {
         final message = e.toString();
