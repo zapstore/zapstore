@@ -330,7 +330,18 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
     String? displayName,
   }) async {
     await _ensureDownloaderReady();
-    if (hasOperation(appId)) return false;
+    final existing = getOperation(appId);
+    if (existing != null) {
+      // We keep terminal states (Completed/Failed) in the operations map briefly so
+      // batch progress UI can derive totals. However, starting a new download for the
+      // same app should not be blocked by a stale terminal op (e.g. install -> uninstall
+      // -> install again). Only in-flight operations should block.
+      if (existing is Completed || existing is OperationFailed) {
+        clearOperation(appId);
+      } else {
+        return false;
+      }
+    }
 
     final downloadUrl = target.urls.firstOrNull;
     if (downloadUrl == null || downloadUrl.isEmpty) {
