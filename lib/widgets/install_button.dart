@@ -608,9 +608,12 @@ class InstallButton extends ConsumerWidget {
       await pm.uninstall(app.identifier);
     } catch (e) {
       if (context.mounted) {
-        final message = e.toString();
-        if (!message.contains('cancelled')) {
-          context.showError('Uninstall failed', description: '$e');
+        final errorMessage = e.toString();
+        if (!errorMessage.contains('cancelled')) {
+          context.showError(
+            'Uninstall failed. Please try again.',
+            description: errorMessage,
+          );
         }
       }
     }
@@ -634,8 +637,9 @@ class InstallButton extends ConsumerWidget {
   void _showErrorToast(BuildContext context, OperationFailed operation) {
     if (operation.type == FailureType.certMismatch) {
       context.showError(
-        'Certificate mismatch',
-        description: 'The app signature does not match. Force update required.',
+        'Update signed by different developer',
+        description:
+            'To install this update, you\'ll need to uninstall the current version first. This will remove app data.',
       );
     } else if (operation.type == FailureType.incompatible) {
       context.showError(
@@ -740,9 +744,12 @@ class InstallButton extends ConsumerWidget {
         final pm = ref.read(packageManagerProvider.notifier);
         await pm.forceUpdate(app.identifier);
       } catch (e) {
-        final message = e.toString();
-        if (context.mounted && !message.contains('cancelled')) {
-          context.showError('Force update failed', description: '$e');
+        final errorMessage = e.toString();
+        if (context.mounted && !errorMessage.contains('cancelled')) {
+          context.showError(
+            'Update failed. Please try again.',
+            description: errorMessage,
+          );
         }
       }
     }
