@@ -298,7 +298,8 @@ class _ToastContentState extends State<_ToastContent> {
 
   @override
   Widget build(BuildContext context) {
-    final hasDescription = widget.description != null;
+    final hasDescription =
+        widget.description != null && widget.description!.isNotEmpty;
     final hasActions = widget.actions.isNotEmpty;
     final hasExtraContent = hasDescription || hasActions;
 

@@ -78,10 +78,24 @@ class ErrorReportingService {
   /// User-initiated error report (e.g., from "Report issue" button).
   ///
   /// Returns true if the report was sent successfully.
+  /// Rate-limited to prevent accidental spam from repeated taps.
   Future<bool> reportUserError({
     required String title,
     String? technicalDetails,
   }) async {
+    // Check session limit
+    if (_sessionReportCount >= _maxReportsPerSession) {
+      return false;
+    }
+
+    // Rate limit by error content
+    final errorHash = '$title\n${technicalDetails ?? ''}'.hashCode;
+    final lastReport = _reportedErrors[errorHash];
+    if (lastReport != null &&
+        DateTime.now().difference(lastReport) < _rateLimitDuration) {
+      return false;
+    }
+
     try {
       // Create ephemeral signer for error reporting
       final signer = Bip340PrivateKeySigner(Utils.generateRandomHex64(), ref);
@@ -101,6 +115,10 @@ class ErrorReportingService {
       await ref.read(storageNotifierProvider.notifier).publish({
         signedDm,
       }, source: const RemoteSource(relays: 'social'));
+
+      // Update rate limiting
+      _reportedErrors[errorHash] = DateTime.now();
+      _sessionReportCount++;
 
       return true;
     } catch (e) {

@@ -272,7 +272,7 @@ final class AndroidPackageManager extends PackageManager {
 
       case InstallStatus.failed:
         final failureType = _errorCodeToFailureType(errorCode, message);
-        final userMessage = _getUserFriendlyMessage(failureType, message);
+        final userMessage = _getUserFriendlyMessage(failureType);
         // Preserve technical details: combine original message and description
         final technicalDetails = [
           if (message != null) message,
@@ -373,7 +373,7 @@ final class AndroidPackageManager extends PackageManager {
 
   /// Convert failure type to user-friendly message.
   /// Technical details are preserved in the description field.
-  String _getUserFriendlyMessage(FailureType type, String? originalMessage) {
+  String _getUserFriendlyMessage(FailureType type) {
     return switch (type) {
       FailureType.downloadFailed => 'Download failed. Please try again.',
       FailureType.hashMismatch =>
