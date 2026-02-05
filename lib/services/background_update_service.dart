@@ -194,7 +194,7 @@ Future<bool> _checkForUpdatesInBackground(Set<String>? appCatalogRelays) async {
             '#d': installedIds,
             '#f': {packageManager.platform},
           },
-        ).toRequest(),
+        ).toRequest(subscriptionPrefix: 'app-bg-updates'),
         source: const RemoteSource(relays: 'AppCatalog', stream: false),
       );
 
@@ -206,7 +206,7 @@ Future<bool> _checkForUpdatesInBackground(Set<String>? appCatalogRelays) async {
             .toList();
         if (releaseFilters.isNotEmpty) {
           final List<Release> releases = await storage.query(
-            Request<Release>(releaseFilters),
+            Request<Release>(releaseFilters, subscriptionPrefix: 'app-bg-releases'),
             source: const RemoteSource(relays: 'AppCatalog', stream: false),
           );
 
@@ -216,7 +216,7 @@ Future<bool> _checkForUpdatesInBackground(Set<String>? appCatalogRelays) async {
               .toList();
           if (metadataFilters.isNotEmpty) {
             await storage.query(
-              Request<FileMetadata>(metadataFilters),
+              Request<FileMetadata>(metadataFilters, subscriptionPrefix: 'app-bg-metadata'),
               source: const RemoteSource(relays: 'AppCatalog', stream: false),
             );
           }
@@ -227,7 +227,7 @@ Future<bool> _checkForUpdatesInBackground(Set<String>? appCatalogRelays) async {
               .toList();
           if (assetFilters.isNotEmpty) {
             await storage.query(
-              Request<SoftwareAsset>(assetFilters),
+              Request<SoftwareAsset>(assetFilters, subscriptionPrefix: 'app-bg-assets'),
               source: const RemoteSource(relays: 'AppCatalog', stream: false),
             );
           }

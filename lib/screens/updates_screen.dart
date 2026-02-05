@@ -234,7 +234,7 @@ class _UpdatesListBodyWithInstallingAppIds extends ConsumerWidget {
           tags: {'#d': installingAppIds},
           and: (app) => {app.latestRelease.query()},
           source: const LocalAndRemoteSource(relays: 'AppCatalog'),
-          subscriptionPrefix: 'installing-apps',
+          subscriptionPrefix: 'app-installing-apps',
         ),
       );
       installingApps = installingAppsState.models

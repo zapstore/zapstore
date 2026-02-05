@@ -71,6 +71,7 @@ class UserScreen extends HookConsumerWidget {
               relays: 'AppCatalog',
               stream: false,
             ),
+            subscriptionPrefix: 'app-user-screen-stack-apps',
           ),
         },
         source: LocalAndRemoteSource(stream: false, relays: 'social'),

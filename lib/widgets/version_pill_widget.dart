@@ -44,6 +44,7 @@ class VersionPillWidget extends HookConsumerWidget {
             },
           ),
         },
+        subscriptionPrefix: 'app-version-pill',
       ),
     );
 
