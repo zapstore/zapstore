@@ -214,6 +214,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
   /// Check for operations stuck too long (Dart-side fallback if native events stop).
   void _checkForStaleOperations() {
     final now = DateTime.now();
+    var needsQueueProcessing = false;
 
     for (final entry in state.operations.entries) {
       final appId = entry.key;
@@ -228,18 +229,42 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
         '[PackageManager] Watchdog: $appId stuck in ${op.runtimeType}, '
         'transitioning to error',
       );
-      setOperation(
-        appId,
-        OperationFailed(
-          target: op.target,
-          type: FailureType.installFailed,
-          message: 'Operation timed out (no response from system)',
-          filePath: op.filePath,
-        ),
-      );
-      if (op is Installing || op is SystemProcessing) {
-        clearInstallSlot(appId);
+
+      // Use appropriate failure type and cleanup based on operation type
+      if (op is Downloading) {
+        activeDownloads.remove(appId);
+        // Try to cancel the stuck task
+        unawaited(
+          _downloader.cancelTaskWithId(op.taskId).catchError((_) => false),
+        );
+        setOperation(
+          appId,
+          OperationFailed(
+            target: op.target,
+            type: FailureType.downloadFailed,
+            message: 'Download timed out (no response from server)',
+          ),
+        );
+        needsQueueProcessing = true;
+      } else {
+        setOperation(
+          appId,
+          OperationFailed(
+            target: op.target,
+            type: FailureType.installFailed,
+            message: 'Operation timed out (no response from system)',
+            filePath: op.filePath,
+          ),
+        );
+        if (op is Installing || op is SystemProcessing) {
+          clearInstallSlot(appId);
+          needsQueueProcessing = true;
+        }
       }
+    }
+
+    if (needsQueueProcessing) {
+      scheduleProcessQueue();
     }
   }
 
@@ -384,11 +409,55 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
     try {
       final task = await _downloader.taskForId(op.taskId);
       if (task is DownloadTask) {
-        await _downloader.pause(task);
+        final paused = await _downloader.pause(task);
+        if (!paused) {
+          // Pause failed - task may be stuck, transition to failed state
+          debugPrint(
+            '[PackageManager] Pause returned false for $appId, marking as failed',
+          );
+          activeDownloads.remove(appId);
+          setOperation(
+            appId,
+            OperationFailed(
+              target: op.target,
+              type: FailureType.downloadFailed,
+              message: 'Download stalled. Please try again.',
+            ),
+          );
+          // Cancel the stuck task to clean up
+          try {
+            await _downloader.cancelTaskWithId(op.taskId);
+          } catch (_) {}
+          scheduleProcessQueue();
+        }
+      } else {
+        // Task not found - download is in zombie state
+        debugPrint(
+          '[PackageManager] Task not found for $appId, marking as failed',
+        );
+        activeDownloads.remove(appId);
+        setOperation(
+          appId,
+          OperationFailed(
+            target: op.target,
+            type: FailureType.downloadFailed,
+            message: 'Download lost. Please try again.',
+          ),
+        );
+        scheduleProcessQueue();
       }
     } catch (e) {
       debugPrint('[PackageManager] Failed to pause download for $appId: $e');
-      // Download library will handle the state via callbacks
+      activeDownloads.remove(appId);
+      setOperation(
+        appId,
+        OperationFailed(
+          target: op.target,
+          type: FailureType.downloadFailed,
+          message: 'Download error: $e',
+        ),
+      );
+      scheduleProcessQueue();
     }
   }
 
@@ -635,7 +704,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
       filename: fileName,
       updates: Updates.statusAndProgress,
       requiresWiFi: false,
-      retries: 3,
+      retries: 10,
       allowPause: true,
       metaData: metaData,
       displayName: displayName ?? appId,

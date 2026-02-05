@@ -7,7 +7,7 @@ const staleOperationThreshold = Duration(days: 7);
 const batchQueueDelayMs = 50;
 
 /// Dart-side watchdog timeout (fallback if native events stop arriving)
-const watchdogTimeout = Duration(minutes: 5);
+const watchdogTimeout = Duration(minutes: 1);
 
 /// How often the watchdog timer checks for stale operations
 const watchdogCheckInterval = Duration(seconds: 30);
@@ -40,18 +40,21 @@ class DownloadQueued extends InstallOperation {
 class Downloading extends InstallOperation {
   final double progress;
   final String taskId;
+  final DateTime startedAt;
 
-  const Downloading({
+  Downloading({
     required super.target,
     required this.progress,
     required this.taskId,
-  });
+    DateTime? startedAt,
+  }) : startedAt = startedAt ?? DateTime.now();
 
   Downloading copyWith({double? progress}) {
     return Downloading(
       target: target,
       progress: progress ?? this.progress,
       taskId: taskId,
+      startedAt: startedAt,
     );
   }
 }
@@ -242,7 +245,10 @@ extension InstallOperationX on InstallOperation {
 
   /// Whether this operation needs watchdog monitoring (waiting for native events)
   bool get needsWatchdog =>
-      this is Verifying || this is Installing || this is SystemProcessing;
+      this is Downloading ||
+      this is Verifying ||
+      this is Installing ||
+      this is SystemProcessing;
 
   /// Whether this operation is in the verification phase
   bool get isVerifying => this is Verifying;
@@ -255,6 +261,7 @@ extension InstallOperationX on InstallOperation {
 
   /// Get start time for watchdog-monitored operations
   DateTime? get startedAt => switch (this) {
+    Downloading(:final startedAt) => startedAt,
     Verifying(:final startedAt) => startedAt,
     Installing(:final startedAt) => startedAt,
     SystemProcessing(:final startedAt) => startedAt,
