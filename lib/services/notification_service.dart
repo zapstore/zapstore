@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:zapstore/router.dart';
 import 'package:zapstore/theme.dart';
 
@@ -28,31 +27,13 @@ extension ContextX on BuildContext {
     IconData? icon,
     List<(String, Future<void> Function())> actions = const [],
   }) {
-    // Always add Copy action for errors - formats nicely for bug reports
-    final allActions = <(String, Future<void> Function())>[
-      ...actions,
-      (
-        'Copy for bug report',
-        () async {
-          final buffer = StringBuffer();
-          buffer.writeln('Error: $title');
-          if (description != null) {
-            buffer.writeln();
-            buffer.writeln('Technical details:');
-            buffer.writeln(description);
-          }
-          await Clipboard.setData(ClipboardData(text: buffer.toString()));
-        },
-      ),
-    ];
-
     _showCustomToast(
       context: this,
       title: title,
       description: description,
       icon: icon ?? Icons.error_outline_rounded,
       type: _ToastType.error,
-      actions: allActions,
+      actions: actions,
     );
   }
 }
