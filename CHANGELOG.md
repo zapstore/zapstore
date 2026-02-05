@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-rc4] - 2026-02-05
+
+### Added
+
+- New updates screen with polling and batch tracking
+- Batch progress display in UI with completed state indication
+
+### Changed
+
+- Improved watchdog for stalled downloads
+- More reasonable update notification logic with better throttling
+- Explicit download queue tracking with dynamic maxConcurrentDownloads
+- App stacks queries now platform-specific only
+
+### Fixed
+
+- Package manager edge case handling and state transitions
+- Notification icon display issues
+
 ## [1.0.0-rc3] - 2026-01-30
 
 ### Added
