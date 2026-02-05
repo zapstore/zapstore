@@ -658,31 +658,10 @@ final class AndroidPackageManager extends PackageManager {
       // Derive general silent install capability from per-app data
       _supportsSilentInstall = anyCanInstallSilently;
 
-      // Preserve any packages we've directly updated (they have installTime set)
-      // This prevents race conditions where sync returns stale data
-      final preserved = <String, PackageInfo>{};
-      for (final entry in state.installed.entries) {
-        if (entry.value.installTime != null &&
-            !packages.containsKey(entry.key)) {
-          // We directly updated this but sync doesn't have it yet - keep ours
-          preserved[entry.key] = entry.value;
-        } else if (entry.value.installTime != null &&
-            packages.containsKey(entry.key)) {
-          // Both have it - use sync data but preserve installTime marker
-          final syncPkg = packages[entry.key]!;
-          preserved[entry.key] = PackageInfo(
-            appId: syncPkg.appId,
-            name: syncPkg.name,
-            version: syncPkg.version,
-            versionCode: syncPkg.versionCode,
-            signatureHash: syncPkg.signatureHash,
-            installTime: entry.value.installTime,
-            canInstallSilently: syncPkg.canInstallSilently,
-          );
-        }
-      }
-
-      state = state.copyWith(installed: {...packages, ...preserved});
+      // Trust the native source as the single source of truth.
+      // Android's SUCCESS broadcast only fires after the package is committed,
+      // so there's no race condition with queryable state.
+      state = state.copyWith(installed: packages);
       await InstalledPackagesSnapshot.save(state.installed);
 
       // Clear operations for apps where the installed version matches the target version

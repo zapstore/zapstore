@@ -1438,6 +1438,7 @@ class BatchProgress {
     required this.installing,
     required this.queued,
     required this.failed,
+    required this.cancelled,
     required this.phase,
   });
 
@@ -1462,10 +1463,14 @@ class BatchProgress {
   /// Operations that failed
   final int failed;
 
+  /// Operations cancelled by user (InstallCancelled - can retry individually)
+  final int cancelled;
+
   /// Current dominant phase
   final BatchPhase phase;
 
   /// Whether any operations are in progress (not terminal)
+  /// Terminal states: Completed, OperationFailed, InstallCancelled
   bool get hasInProgress =>
       downloading > 0 || verifying > 0 || installing > 0 || queued > 0;
 
@@ -1494,7 +1499,8 @@ final batchProgressProvider = Provider<BatchProgress?>((ref) {
       verifying = 0,
       installing = 0,
       queued = 0,
-      failed = 0;
+      failed = 0,
+      cancelled = 0;
 
   for (final op in ops.values) {
     switch (op) {
@@ -1511,7 +1517,7 @@ final batchProgressProvider = Provider<BatchProgress?>((ref) {
       case OperationFailed():
         failed++;
       case InstallCancelled():
-        queued++; // User can retry
+        cancelled++; // Terminal for batch - user can retry individually
       case AwaitingPermission():
         queued++; // Waiting for permission
       case Uninstalling():
@@ -1540,6 +1546,7 @@ final batchProgressProvider = Provider<BatchProgress?>((ref) {
     installing: installing,
     queued: queued,
     failed: failed,
+    cancelled: cancelled,
     phase: phase,
   );
 });

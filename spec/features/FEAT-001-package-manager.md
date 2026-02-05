@@ -199,8 +199,10 @@ There is no third option. Timeouts, crashes, backgrounding, network loss—all p
   - Successful operations transition to `Completed` state (stay in map)
   - Total = operations.length (includes completed)
   - Completed = count of `Completed` operations
-  - In-progress = Total - Completed - Failed
+  - In-progress = Total - Completed - Failed - Cancelled
   - Phase = derived from operation types currently active
+- Terminal states for batch progress: `Completed`, `OperationFailed`, `InstallCancelled`
+  - `InstallCancelled` counts as cancelled (user can retry individually, but batch doesn't wait)
 - When all operations reach terminal state, banner shows "X of X updated ✓"
 - After 3 seconds with no in-progress operations, completed operations auto-clear
 
