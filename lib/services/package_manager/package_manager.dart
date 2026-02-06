@@ -242,7 +242,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
           OperationFailed(
             target: op.target,
             type: FailureType.downloadFailed,
-            message: 'Download timed out (no response from server)',
+            message: 'Download timed out. Please check your internet connection and try again.',
           ),
         );
         needsQueueProcessing = true;
@@ -252,7 +252,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
           OperationFailed(
             target: op.target,
             type: FailureType.installFailed,
-            message: 'Operation timed out (no response from system)',
+            message: 'Installation timed out. Please try again.',
             filePath: op.filePath,
           ),
         );
@@ -339,7 +339,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
         OperationFailed(
           target: target,
           type: FailureType.downloadFailed,
-          message: 'No download URL available',
+          message: 'Download link unavailable. Please try again later.',
         ),
       );
       return false;
@@ -379,7 +379,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
           OperationFailed(
             target: item.target,
             type: FailureType.downloadFailed,
-            message: 'No download URL available',
+            message: 'Download link unavailable. Please try again later.',
           ),
         );
       } else {
@@ -421,7 +421,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
             OperationFailed(
               target: op.target,
               type: FailureType.downloadFailed,
-              message: 'Download stalled. Please try again.',
+              message: 'Download stopped. Please try again.',
             ),
           );
           // Cancel the stuck task to clean up
@@ -441,7 +441,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
           OperationFailed(
             target: op.target,
             type: FailureType.downloadFailed,
-            message: 'Download lost. Please try again.',
+            message: 'Download was interrupted. Please try again.',
           ),
         );
         scheduleProcessQueue();
@@ -454,7 +454,8 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
         OperationFailed(
           target: op.target,
           type: FailureType.downloadFailed,
-          message: 'Download error: $e',
+          message: 'Download failed. Please try again.',
+          description: '$e',
         ),
       );
       scheduleProcessQueue();
@@ -486,7 +487,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
           OperationFailed(
             target: op.target,
             type: FailureType.downloadFailed,
-            message: 'Download task not found. Please try again.',
+            message: 'Download was interrupted. Please try again.',
           ),
         );
       }
@@ -497,7 +498,8 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
         OperationFailed(
           target: op.target,
           type: FailureType.downloadFailed,
-          message: 'Failed to resume download: $e',
+          message: 'Failed to resume download. Please start again.',
+          description: '$e',
         ),
       );
     }
@@ -606,14 +608,15 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
       await uninstall(appId);
       await _performInstall(appId, op.target, filePath);
     } catch (e) {
-      final message = e.toString();
-      if (!message.contains('cancelled')) {
+      final errorMessage = e.toString();
+      if (!errorMessage.contains('cancelled')) {
         setOperation(
           appId,
           OperationFailed(
             target: op.target,
             type: FailureType.installFailed,
-            message: 'Force update failed: $message',
+            message: 'Update failed. Please try again.',
+            description: errorMessage,
             filePath: filePath,
           ),
         );
@@ -624,7 +627,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
             target: op.target,
             type: FailureType.certMismatch,
             message:
-                'Certificate mismatch. Uninstall current version to update.',
+                'Update signed by different developer. Uninstall current version to update.',
             filePath: filePath,
           ),
         );
@@ -733,7 +736,8 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
         OperationFailed(
           target: target,
           type: FailureType.downloadFailed,
-          message: 'Failed to start download: $e',
+          message: 'Failed to start download. Please try again.',
+          description: '$e',
         ),
       );
     }
@@ -843,18 +847,20 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
           OperationFailed(
             target: target,
             type: FailureType.downloadFailed,
-            message: 'File not found (404)',
+            message: 'File no longer available (404). Please check for a newer version.',
           ),
         );
         scheduleProcessQueue();
         break;
 
       case TaskStatus.failed:
-        String error = 'Download failed';
+        String? errorDetails;
         final exception = update.exception;
         if (exception != null) {
-          error = exception.toString();
-          if (error.length > 200) error = '${error.substring(0, 197)}...';
+          errorDetails = exception.toString();
+          if (errorDetails.length > 500) {
+            errorDetails = '${errorDetails.substring(0, 497)}...';
+          }
         }
         activeDownloads.remove(appId);
         setOperation(
@@ -862,7 +868,8 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
           OperationFailed(
             target: target,
             type: FailureType.downloadFailed,
-            message: error,
+            message: 'Download failed. Please try again.',
+            description: errorDetails,
           ),
         );
         scheduleProcessQueue();
@@ -920,7 +927,8 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
         OperationFailed(
           target: target,
           type: FailureType.downloadFailed,
-          message: 'Failed to access downloaded file: $e',
+          message: 'Failed to access downloaded file. Please try again.',
+          description: '$e',
         ),
       );
     }
@@ -956,7 +964,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
             OperationFailed(
               target: op.target,
               type: FailureType.downloadFailed,
-              message: 'No download URL available',
+              message: 'Download link unavailable. Please try again later.',
             ),
           );
           continue;
@@ -1093,6 +1101,14 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
       final isHashMismatch = message.contains('Hash verification failed');
       final isInvalidFile = message.contains('Invalid APK file');
 
+      final userMessage = isCertMismatch
+          ? 'Update signed by different developer. Uninstall current version to update.'
+          : isHashMismatch
+              ? 'File verification failed. Please try downloading again.'
+              : isInvalidFile
+                  ? 'Invalid app file. Please try downloading again.'
+                  : 'Installation failed. Please try again.';
+
       setOperation(
         appId,
         OperationFailed(
@@ -1104,9 +1120,8 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
               : isCertMismatch
               ? FailureType.certMismatch
               : FailureType.installFailed,
-          message: isCertMismatch
-              ? 'Certificate mismatch. Uninstall current version to update.'
-              : message,
+          message: userMessage,
+          description: message,
           filePath: filePath,
         ),
       );
@@ -1203,7 +1218,8 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
             OperationFailed(
               target: fileMetadata,
               type: FailureType.downloadFailed,
-              message: 'Failed to resume download: $e',
+              message: 'Failed to resume download. Please start again.',
+              description: '$e',
             ),
           );
         }

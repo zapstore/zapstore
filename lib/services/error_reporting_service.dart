@@ -75,6 +75,77 @@ class ErrorReportingService {
     }
   }
 
+  /// User-initiated error report (e.g., from "Report issue" button).
+  ///
+  /// Returns true if the report was sent successfully.
+  /// Rate-limited to prevent accidental spam from repeated taps.
+  Future<bool> reportUserError({
+    required String title,
+    String? technicalDetails,
+  }) async {
+    // Check session limit
+    if (_sessionReportCount >= _maxReportsPerSession) {
+      return false;
+    }
+
+    // Rate limit by error content
+    final errorHash = '$title\n${technicalDetails ?? ''}'.hashCode;
+    final lastReport = _reportedErrors[errorHash];
+    if (lastReport != null &&
+        DateTime.now().difference(lastReport) < _rateLimitDuration) {
+      return false;
+    }
+
+    try {
+      // Create ephemeral signer for error reporting
+      final signer = Bip340PrivateKeySigner(Utils.generateRandomHex64(), ref);
+      await signer.signIn(setAsActive: false, registerSigner: false);
+
+      // Format error report
+      final report = _formatUserErrorReport(title, technicalDetails);
+
+      // Create encrypted DM to Zapstore pubkey (uses NIP-44 by default)
+      final dm = PartialDirectMessage(
+        content: report,
+        receiver: kZapstorePubkey,
+      );
+
+      // Sign and publish
+      final signedDm = await dm.signWith(signer);
+      await ref.read(storageNotifierProvider.notifier).publish({
+        signedDm,
+      }, source: const RemoteSource(relays: 'social'));
+
+      // Update rate limiting
+      _reportedErrors[errorHash] = DateTime.now();
+      _sessionReportCount++;
+
+      return true;
+    } catch (e) {
+      debugPrint('[ErrorReporting] Failed to send user report: $e');
+      return false;
+    }
+  }
+
+  String _formatUserErrorReport(String title, String? technicalDetails) {
+    final buffer = StringBuffer();
+
+    buffer.writeln('=== ZAPSTORE USER ERROR REPORT ===');
+    buffer.writeln('Timestamp: ${DateTime.now().toUtc().toIso8601String()}');
+    buffer.writeln('Platform: ${Platform.operatingSystem}');
+    buffer.writeln('OS Version: ${Platform.operatingSystemVersion}');
+    buffer.writeln('');
+    buffer.writeln('Error: $title');
+
+    if (technicalDetails != null && technicalDetails.isNotEmpty) {
+      buffer.writeln('');
+      buffer.writeln('Technical Details:');
+      buffer.writeln(technicalDetails);
+    }
+
+    return buffer.toString();
+  }
+
   String _formatErrorReport(Object exception, StackTrace? stackTrace) {
     final buffer = StringBuffer();
 

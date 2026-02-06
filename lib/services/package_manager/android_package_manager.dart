@@ -271,13 +271,21 @@ final class AndroidPackageManager extends PackageManager {
         break;
 
       case InstallStatus.failed:
+        final failureType = _errorCodeToFailureType(errorCode, message);
+        final userMessage = _getUserFriendlyMessage(failureType);
+        // Preserve technical details: combine original message and description
+        final technicalDetails = [
+          if (message != null) message,
+          if (description != null) description,
+        ].join('\n\n');
+
         setOperation(
           appId,
           OperationFailed(
             target: target,
-            type: _errorCodeToFailureType(errorCode, message),
-            message: message ?? 'Installation failed',
-            description: description,
+            type: failureType,
+            message: userMessage,
+            description: technicalDetails.isNotEmpty ? technicalDetails : null,
             filePath: filePath,
           ),
         );
@@ -361,6 +369,27 @@ final class AndroidPackageManager extends PackageManager {
       return FailureType.incompatible;
     }
     return FailureType.installFailed;
+  }
+
+  /// Convert failure type to user-friendly message.
+  /// Technical details are preserved in the description field.
+  String _getUserFriendlyMessage(FailureType type) {
+    return switch (type) {
+      FailureType.downloadFailed => 'Download failed. Please try again.',
+      FailureType.hashMismatch =>
+        'File verification failed. Please try downloading again.',
+      FailureType.invalidFile =>
+        'Invalid app file. Please try downloading again.',
+      FailureType.certMismatch =>
+        'Update signed by different developer. Uninstall current version to update.',
+      FailureType.permissionDenied =>
+        'Permission required. Please grant install permission and try again.',
+      FailureType.insufficientStorage =>
+        'Not enough storage space. Please free up space and try again.',
+      FailureType.incompatible =>
+        'This app is not compatible with your device.',
+      FailureType.installFailed => 'Installation failed. Please try again.',
+    };
   }
 
   void _deleteFile(String? path) {

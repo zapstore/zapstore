@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:zapstore/router.dart';
 import 'package:zapstore/theme.dart';
 
@@ -28,27 +27,13 @@ extension ContextX on BuildContext {
     IconData? icon,
     List<(String, Future<void> Function())> actions = const [],
   }) {
-    // Always add Copy action for errors with description
-    final allActions = <(String, Future<void> Function())>[
-      ...actions,
-      if (description != null)
-        (
-          'Copy',
-          () async {
-            await Clipboard.setData(
-              ClipboardData(text: '$title\n\n$description'),
-            );
-          },
-        ),
-    ];
-
     _showCustomToast(
       context: this,
       title: title,
       description: description,
       icon: icon ?? Icons.error_outline_rounded,
       type: _ToastType.error,
-      actions: allActions,
+      actions: actions,
     );
   }
 }
@@ -285,7 +270,7 @@ class _ToastOverlayState extends State<_ToastOverlay>
   }
 }
 
-class _ToastContent extends StatelessWidget {
+class _ToastContent extends StatefulWidget {
   final IconData icon;
   final Color iconBgColor;
   final Color accentColor;
@@ -305,8 +290,18 @@ class _ToastContent extends StatelessWidget {
   });
 
   @override
+  State<_ToastContent> createState() => _ToastContentState();
+}
+
+class _ToastContentState extends State<_ToastContent> {
+  bool _detailsExpanded = false;
+
+  @override
   Widget build(BuildContext context) {
-    final hasExtraContent = description != null || actions.isNotEmpty;
+    final hasDescription =
+        widget.description != null && widget.description!.isNotEmpty;
+    final hasActions = widget.actions.isNotEmpty;
+    final hasExtraContent = hasDescription || hasActions;
 
     // Use Stack to position X at top-right always
     return Stack(
@@ -325,10 +320,10 @@ class _ToastContent extends StatelessWidget {
                 width: 38,
                 height: 38,
                 decoration: BoxDecoration(
-                  color: iconBgColor,
+                  color: widget.iconBgColor,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(icon, color: accentColor, size: 20),
+                child: Icon(widget.icon, color: widget.accentColor, size: 20),
               ),
               const SizedBox(width: 14),
               // Text content
@@ -339,7 +334,7 @@ class _ToastContent extends StatelessWidget {
                   children: [
                     // Title
                     Text(
-                      title,
+                      widget.title,
                       style: const TextStyle(
                         fontFamily: kFontFamily,
                         fontSize: 16,
@@ -348,35 +343,75 @@ class _ToastContent extends StatelessWidget {
                         height: 1.35,
                       ),
                     ),
-                    // Description
-                    if (description != null) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        description!,
-                        style: TextStyle(
-                          fontFamily: kFontFamily,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w400,
-                          color: Colors.white.withValues(alpha: 0.7),
-                          height: 1.45,
+                    // Expandable technical details
+                    if (hasDescription) ...[
+                      const SizedBox(height: 8),
+                      GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _detailsExpanded = !_detailsExpanded;
+                          });
+                        },
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              _detailsExpanded
+                                  ? Icons.expand_less
+                                  : Icons.expand_more,
+                              size: 16,
+                              color: Colors.white.withValues(alpha: 0.7),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Technical details',
+                              style: TextStyle(
+                                fontFamily: kFontFamily,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.white.withValues(alpha: 0.7),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
+                      // Expanded description
+                      if (_detailsExpanded) ...[
+                        const SizedBox(height: 6),
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: SelectableText(
+                            widget.description!,
+                            style: TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 11,
+                              fontWeight: FontWeight.w400,
+                              color: Colors.white.withValues(alpha: 0.8),
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                     // Actions
-                    if (actions.isNotEmpty) ...[
+                    if (hasActions) ...[
                       const SizedBox(height: 12),
                       Wrap(
                         spacing: 8,
                         runSpacing: 8,
-                        children: actions
+                        children: widget.actions
                             .map(
                               (action) => _ToastActionButton(
                                 label: action.$1,
                                 onPressed: () {
-                                  onDismiss();
+                                  widget.onDismiss();
                                   action.$2();
                                 },
-                                accentColor: accentColor,
+                                accentColor: widget.accentColor,
                               ),
                             )
                             .toList(),
@@ -393,7 +428,7 @@ class _ToastContent extends StatelessWidget {
           top: 0,
           right: 0,
           child: GestureDetector(
-            onTap: onDismiss,
+            onTap: widget.onDismiss,
             child: Container(
               width: 28,
               height: 28,

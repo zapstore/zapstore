@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
+import 'package:zapstore/services/error_reporting_service.dart';
 import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/services/trusted_signers_service.dart';
@@ -39,7 +40,7 @@ class InstallButton extends ConsumerWidget {
     // Listen for errors to show toasts
     ref.listen(installOperationProvider(app.identifier), (prev, next) {
       if (next is OperationFailed && prev is! OperationFailed) {
-        _showErrorToast(context, next);
+        _showErrorToast(context, ref, next);
       }
     });
 
@@ -608,9 +609,12 @@ class InstallButton extends ConsumerWidget {
       await pm.uninstall(app.identifier);
     } catch (e) {
       if (context.mounted) {
-        final message = e.toString();
-        if (!message.contains('cancelled')) {
-          context.showError('Uninstall failed', description: '$e');
+        final errorMessage = e.toString();
+        if (!errorMessage.contains('cancelled')) {
+          context.showError(
+            'Uninstall failed. Please try again.',
+            description: errorMessage,
+          );
         }
       }
     }
@@ -623,7 +627,23 @@ class InstallButton extends ConsumerWidget {
     context.showError(
       operation.message,
       description: operation.description,
-      actions: const [],
+      actions: [
+        (
+          'Report issue',
+          () async {
+            final reporter = ref.read(errorReportingServiceProvider);
+            final success = await reporter.reportUserError(
+              title: operation.message,
+              technicalDetails: operation.description,
+            );
+            if (context.mounted) {
+              context.showInfo(
+                success ? 'Report sent' : 'Failed to send report',
+              );
+            }
+          },
+        ),
+      ],
     );
 
     // Always clear error after showing it (reckless mode removed).
@@ -631,21 +651,46 @@ class InstallButton extends ConsumerWidget {
     pm.dismissError(app.identifier);
   }
 
-  void _showErrorToast(BuildContext context, OperationFailed operation) {
+  void _showErrorToast(
+    BuildContext context,
+    WidgetRef ref,
+    OperationFailed operation,
+  ) {
+    final reportAction = (
+      'Report issue',
+      () async {
+        final reporter = ref.read(errorReportingServiceProvider);
+        final success = await reporter.reportUserError(
+          title: operation.message,
+          technicalDetails: operation.description,
+        );
+        if (context.mounted) {
+          context.showInfo(success ? 'Report sent' : 'Failed to send report');
+        }
+      },
+    );
+
     if (operation.type == FailureType.certMismatch) {
       context.showError(
-        'Certificate mismatch',
-        description: 'The app signature does not match. Force update required.',
+        'Update signed by different developer',
+        description:
+            'To install this update, you\'ll need to uninstall the current version first. This will remove app data.',
+        actions: [reportAction],
       );
     } else if (operation.type == FailureType.incompatible) {
       context.showError(
         'Device incompatible',
         description:
             'This app is not compatible with your device. It may require a different architecture or Android version.',
+        actions: [reportAction],
       );
     } else if (operation.description != null) {
       // Errors with descriptions (from Kotlin) are shown as toasts
-      context.showError(operation.message, description: operation.description);
+      context.showError(
+        operation.message,
+        description: operation.description,
+        actions: [reportAction],
+      );
     }
     // Other errors are shown when user taps the error button
   }
@@ -740,9 +785,12 @@ class InstallButton extends ConsumerWidget {
         final pm = ref.read(packageManagerProvider.notifier);
         await pm.forceUpdate(app.identifier);
       } catch (e) {
-        final message = e.toString();
-        if (context.mounted && !message.contains('cancelled')) {
-          context.showError('Force update failed', description: '$e');
+        final errorMessage = e.toString();
+        if (context.mounted && !errorMessage.contains('cancelled')) {
+          context.showError(
+            'Update failed. Please try again.',
+            description: errorMessage,
+          );
         }
       }
     }
