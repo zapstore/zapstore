@@ -59,44 +59,30 @@ class DownloadTextContainer extends StatelessWidget {
       );
     }
 
-    // With onTap: make only the URL portion (icon + path) tappable
-    return Text.rich(
-      TextSpan(
-        children: [
-          TextSpan(text: beforeText, style: baseStyle),
-          const TextSpan(text: ' '),
-          WidgetSpan(
-            alignment: PlaceholderAlignment.middle,
-            child: InkWell(
-              onTap: onTap,
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (iconWidget != null) ...[
-                      iconWidget,
-                      const SizedBox(width: 4),
-                    ],
-                    Flexible(
-                      child: Text(
-                        pathText,
-                        style: boldStyle,
-                        overflow: oneLine ? TextOverflow.ellipsis : TextOverflow.visible,
-                        maxLines: oneLine ? 1 : null,
-                      ),
-                    ),
-                  ],
+    // With onTap: use same TextSpan layout (avoids WidgetSpan intrinsic sizing
+    // issues with Flexible/Row) and wrap in GestureDetector for tap handling.
+    return GestureDetector(
+      onTap: onTap,
+      child: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(text: beforeText, style: baseStyle),
+            const TextSpan(text: ' '),
+            if (iconWidget != null)
+              WidgetSpan(
+                alignment: PlaceholderAlignment.middle,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: iconWidget,
                 ),
               ),
-            ),
-          ),
-        ],
+            TextSpan(text: pathText, style: boldStyle),
+          ],
+        ),
+        softWrap: !oneLine,
+        overflow: oneLine ? TextOverflow.ellipsis : TextOverflow.visible,
+        maxLines: oneLine ? 1 : null,
       ),
-      softWrap: !oneLine,
-      overflow: oneLine ? TextOverflow.ellipsis : TextOverflow.visible,
-      maxLines: oneLine ? 1 : null,
     );
   }
 
