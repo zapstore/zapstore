@@ -217,9 +217,9 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
     for (final entry in state.operations.entries) {
       final appId = entry.key;
       final op = entry.value;
-      final startedAt = op.startedAt;
+      final timestamp = op.watchdogTimestamp;
 
-      if (startedAt == null || now.difference(startedAt) <= watchdogTimeout) {
+      if (timestamp == null || now.difference(timestamp) <= watchdogTimeout) {
         continue;
       }
 

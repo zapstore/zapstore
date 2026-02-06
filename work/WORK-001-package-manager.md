@@ -135,8 +135,10 @@ Code audit found several potential hanging state bugs not covered by existing ti
 
 - [x] 5. Add Dart-side watchdog timer as fallback
   - Added `startedAt` field to `Verifying` and `SystemProcessing` states
-  - Added `needsWatchdog` and `startedAt` getters to extension for uniform access
-  - Single 5-minute timeout for all watchdog-monitored states
+  - Added `needsWatchdog` and `watchdogTimestamp` getters to extension for uniform access
+  - Activity-based watchdog for downloads: tracks `lastProgressAt` (reset on each progress update) so slow-but-active downloads are not killed
+  - Phase-start-based watchdog for Verifying/Installing/SystemProcessing (uses `startedAt`)
+  - Single 2-minute timeout for all watchdog-monitored states
   - Timer runs every 30s, only when there are operations needing watchdog
   - Transitions stale operations to `OperationFailed` state
 
@@ -271,9 +273,15 @@ Every state MUST resolve to a terminal state. No exceptions.
 
 ### Dart-side Watchdog (Fallback)
 
-Single 5-minute timeout for all watchdog-monitored states (Verifying, Installing, SystemProcessing).
-Timer runs every 30s, only when monitored operations exist.
+2-minute timeout for all watchdog-monitored states. Timer runs every 30s, only when monitored operations exist.
 Defense-in-depth for cases where EventChannel breaks or native crashes before sending events.
+
+| Phase | Measures from | Rationale |
+|-------|---------------|-----------|
+| Downloading | Last progress update (`lastProgressAt`) | Slow-but-active downloads must not be killed |
+| Verifying | Phase start (`startedAt`) | Short operation, elapsed time is appropriate |
+| Installing | Phase start (`startedAt`) | Short operation, elapsed time is appropriate |
+| SystemProcessing | Phase start (`startedAt`) | Committed session, elapsed time is appropriate |
 
 ### Session Tracking Maps
 

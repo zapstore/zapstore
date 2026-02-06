@@ -6,8 +6,10 @@ const staleOperationThreshold = Duration(days: 7);
 /// Delay between queueing operations to prevent UI flood
 const batchQueueDelayMs = 50;
 
-/// Dart-side watchdog timeout (fallback if native events stop arriving)
-const watchdogTimeout = Duration(minutes: 1);
+/// Dart-side watchdog timeout (fallback if native events stop arriving).
+/// For downloads, this is measured from the last progress update (activity-based).
+/// For other phases, this is measured from when the phase started.
+const watchdogTimeout = Duration(minutes: 2);
 
 /// How often the watchdog timer checks for stale operations
 const watchdogCheckInterval = Duration(seconds: 30);
@@ -42,12 +44,18 @@ class Downloading extends InstallOperation {
   final String taskId;
   final DateTime startedAt;
 
+  /// Last time progress was received. The watchdog uses this (not [startedAt])
+  /// so that slow-but-active downloads are not killed prematurely.
+  final DateTime lastProgressAt;
+
   Downloading({
     required super.target,
     required this.progress,
     required this.taskId,
     DateTime? startedAt,
-  }) : startedAt = startedAt ?? DateTime.now();
+    DateTime? lastProgressAt,
+  }) : startedAt = startedAt ?? DateTime.now(),
+       lastProgressAt = lastProgressAt ?? startedAt ?? DateTime.now();
 
   Downloading copyWith({double? progress}) {
     return Downloading(
@@ -55,6 +63,8 @@ class Downloading extends InstallOperation {
       progress: progress ?? this.progress,
       taskId: taskId,
       startedAt: startedAt,
+      // Reset activity timestamp when progress changes
+      lastProgressAt: progress != null ? DateTime.now() : lastProgressAt,
     );
   }
 }
@@ -259,9 +269,11 @@ extension InstallOperationX on InstallOperation {
   /// Whether this operation is still in progress (not terminal)
   bool get isInProgress => !isTerminal;
 
-  /// Get start time for watchdog-monitored operations
-  DateTime? get startedAt => switch (this) {
-    Downloading(:final startedAt) => startedAt,
+  /// Get the relevant timestamp for watchdog monitoring.
+  /// For downloads: last progress update (activity-based, so slow downloads survive).
+  /// For other phases: when the phase started.
+  DateTime? get watchdogTimestamp => switch (this) {
+    Downloading(:final lastProgressAt) => lastProgressAt,
     Verifying(:final startedAt) => startedAt,
     Installing(:final startedAt) => startedAt,
     SystemProcessing(:final startedAt) => startedAt,
