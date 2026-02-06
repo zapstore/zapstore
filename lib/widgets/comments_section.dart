@@ -683,7 +683,7 @@ class _CommentComposer extends HookConsumerWidget {
       }
     } catch (e) {
       if (context.mounted) {
-        context.showError('Failed to post comment', description: '$e');
+        context.showError('Failed to post comment', technicalDetails: '$e');
       }
     }
   }
@@ -895,7 +895,7 @@ class _ReplyComposer extends HookConsumerWidget {
       }
     } catch (e) {
       if (context.mounted) {
-        context.showError('Failed to post reply', description: '$e');
+        context.showError('Failed to post reply', technicalDetails: '$e');
       }
     }
   }
@@ -1025,7 +1025,7 @@ class _StackCommentComposer extends HookConsumerWidget {
       }
     } catch (e) {
       if (context.mounted) {
-        context.showError('Failed to post comment', description: '$e');
+        context.showError('Failed to post comment', technicalDetails: '$e');
       }
     }
   }

@@ -132,7 +132,8 @@ class SaveAppDialog extends HookConsumerWidget {
             context.showError(
               'Could not read existing saved apps',
               description:
-                  'Your previous saved apps could not be decrypted. Starting fresh.\n\n$e',
+                  'Your previous saved apps could not be decrypted. Starting fresh.',
+              technicalDetails: '$e',
             );
           }
         }
@@ -176,7 +177,7 @@ class SaveAppDialog extends HookConsumerWidget {
       }
     } catch (e) {
       if (context.mounted) {
-        context.showError('Failed to update bookmark', description: '$e');
+        context.showError('Failed to update bookmark', technicalDetails: '$e');
       }
     }
   }
@@ -695,7 +696,7 @@ class _AddToStackDialogSignedIn extends HookConsumerWidget {
       }
     } catch (e) {
       if (context.mounted) {
-        context.showError('Failed to save', description: '$e');
+        context.showError('Failed to save', technicalDetails: '$e');
       }
     }
   }

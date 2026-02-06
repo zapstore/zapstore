@@ -43,7 +43,7 @@ class SignInButton extends ConsumerWidget {
             await onSignInSuccess(ref.read(refProvider));
           } catch (e) {
             if (context.mounted) {
-              context.showError('Sign-in failed: $e');
+              context.showError('Sign-in failed', technicalDetails: '$e');
             }
           }
         }

@@ -11,6 +11,7 @@ extension ContextX on BuildContext {
   void showInfo(
     String title, {
     String? description,
+    String? technicalDetails,
     IconData? icon,
     List<(String, Future<void> Function())> actions = const [],
   }) {
@@ -18,6 +19,7 @@ extension ContextX on BuildContext {
       context: this,
       title: title,
       description: description,
+      technicalDetails: technicalDetails,
       icon: icon ?? Icons.info_outline_rounded,
       type: _ToastType.info,
       actions: actions,
@@ -27,6 +29,7 @@ extension ContextX on BuildContext {
   void showError(
     String title, {
     String? description,
+    String? technicalDetails,
     IconData? icon,
     List<(String, Future<void> Function())> actions = const [],
   }) {
@@ -34,6 +37,7 @@ extension ContextX on BuildContext {
       context: this,
       title: title,
       description: description,
+      technicalDetails: technicalDetails,
       icon: icon ?? Icons.error_outline_rounded,
       type: _ToastType.error,
       actions: actions,
@@ -49,6 +53,7 @@ void _showCustomToast({
   required BuildContext context,
   required String title,
   String? description,
+  String? technicalDetails,
   required IconData icon,
   required _ToastType type,
   List<(String, Future<void> Function())> actions = const [],
@@ -66,6 +71,7 @@ void _showCustomToast({
     builder: (context) => _ToastOverlay(
       title: title,
       description: description,
+      technicalDetails: technicalDetails,
       icon: icon,
       type: type,
       actions: actions,
@@ -83,6 +89,7 @@ void _showCustomToast({
 class _ToastOverlay extends HookWidget {
   final String title;
   final String? description;
+  final String? technicalDetails;
   final IconData icon;
   final _ToastType type;
   final List<(String, Future<void> Function())> actions;
@@ -91,6 +98,7 @@ class _ToastOverlay extends HookWidget {
   const _ToastOverlay({
     required this.title,
     this.description,
+    this.technicalDetails,
     required this.icon,
     required this.type,
     required this.actions,
@@ -233,6 +241,7 @@ class _ToastOverlay extends HookWidget {
                               accentColor: accentColor,
                               title: title,
                               description: description,
+                              technicalDetails: technicalDetails,
                               actions: actions,
                               onDismiss: dismiss,
                             ),
@@ -257,6 +266,7 @@ class _ToastContent extends HookWidget {
   final Color accentColor;
   final String title;
   final String? description;
+  final String? technicalDetails;
   final List<(String, Future<void> Function())> actions;
   final VoidCallback onDismiss;
 
@@ -266,6 +276,7 @@ class _ToastContent extends HookWidget {
     required this.accentColor,
     required this.title,
     this.description,
+    this.technicalDetails,
     required this.actions,
     required this.onDismiss,
   });
@@ -275,8 +286,10 @@ class _ToastContent extends HookWidget {
     final detailsExpanded = useState(false);
 
     final hasDescription = description != null && description!.isNotEmpty;
+    final hasTechnicalDetails =
+        technicalDetails != null && technicalDetails!.isNotEmpty;
     final hasActions = actions.isNotEmpty;
-    final hasExtraContent = hasDescription || hasActions;
+    final hasExtraContent = hasDescription || hasTechnicalDetails || hasActions;
 
     // Use Stack to position X at top-right always
     return Stack(
@@ -318,8 +331,22 @@ class _ToastContent extends HookWidget {
                         height: 1.35,
                       ),
                     ),
-                    // Expandable technical details
+                    // Inline description (always visible)
                     if (hasDescription) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        description!,
+                        style: TextStyle(
+                          fontFamily: kFontFamily,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w400,
+                          color: Colors.white.withValues(alpha: 0.85),
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                    // Expandable technical details
+                    if (hasTechnicalDetails) ...[
                       const SizedBox(height: 8),
                       GestureDetector(
                         onTap: () {
@@ -348,7 +375,7 @@ class _ToastContent extends HookWidget {
                           ],
                         ),
                       ),
-                      // Expanded description
+                      // Expanded technical details
                       if (detailsExpanded.value) ...[
                         const SizedBox(height: 6),
                         Container(
@@ -358,7 +385,7 @@ class _ToastContent extends HookWidget {
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: SelectableText(
-                            description!,
+                            technicalDetails!,
                             style: TextStyle(
                               fontFamily: 'monospace',
                               fontSize: 11,

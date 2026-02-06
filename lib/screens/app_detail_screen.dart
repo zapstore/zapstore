@@ -645,7 +645,7 @@ class _AppDetailContent extends HookConsumerWidget {
       SharePlus.instance.share(ShareParams(text: shareUrl));
     } catch (e) {
       if (context.mounted) {
-        context.showError('Failed to share app', description: '$e');
+        context.showError('Failed to share app', technicalDetails: '$e');
       }
     }
   }
@@ -654,10 +654,9 @@ class _AppDetailContent extends HookConsumerWidget {
     try {
       final shareUrl = _getAppUrl(app);
       Clipboard.setData(ClipboardData(text: shareUrl));
-      context.showInfo('Link copied to clipboard');
     } catch (e) {
       if (context.mounted) {
-        context.showError('Failed to copy link', description: '$e');
+        context.showError('Failed to copy link', technicalDetails: '$e');
       }
     }
   }
@@ -709,7 +708,8 @@ class _AppDetailContent extends HookConsumerWidget {
             context.showError(
               'Could not read existing saved apps',
               description:
-                  'Your previous saved apps could not be decrypted. Starting fresh.\n\n$e',
+                  'Your previous saved apps could not be decrypted. Starting fresh.',
+              technicalDetails: '$e',
             );
           }
         }
@@ -752,7 +752,7 @@ class _AppDetailContent extends HookConsumerWidget {
       }
     } catch (e) {
       if (context.mounted) {
-        context.showError('Failed to update bookmark', description: '$e');
+        context.showError('Failed to update bookmark', technicalDetails: '$e');
       }
     }
   }
@@ -776,7 +776,7 @@ class _AppDetailContent extends HookConsumerWidget {
       }
     } catch (e) {
       if (context.mounted) {
-        context.showError('Failed to open browser', description: '$e');
+        context.showError('Failed to open browser', technicalDetails: '$e');
       }
     }
   }
@@ -790,7 +790,8 @@ class _AppDetailContent extends HookConsumerWidget {
       context.showError(
         'Failed to launch ${app.name ?? app.identifier}',
         description:
-            'The app may have been uninstalled or moved. Try reinstalling.\n\n$e',
+            'The app may have been uninstalled or moved. Try reinstalling.',
+        technicalDetails: '$e',
       );
     }
   }
@@ -808,7 +809,7 @@ class _AppDetailContent extends HookConsumerWidget {
         // Don't show error for user cancellation
         final message = e.toString();
         if (!message.contains('cancelled')) {
-          context.showError('Uninstall failed', description: '$e');
+          context.showError('Uninstall failed', technicalDetails: '$e');
         }
       }
     }

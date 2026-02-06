@@ -206,7 +206,7 @@ class NWCConnectionCard extends HookConsumerWidget {
         }
       } catch (e) {
         if (context.mounted) {
-          context.showError('Failed to disconnect wallet', description: '$e');
+          context.showError('Failed to disconnect wallet', technicalDetails: '$e');
         }
       }
     }
@@ -337,7 +337,8 @@ class NWCConnectionDialog extends HookWidget {
         context.showError(
           'Wallet connection failed',
           description:
-              'Could not connect to the wallet. Verify the connection string and try again.\n\n$e',
+              'Could not connect to the wallet. Verify the connection string and try again.',
+          technicalDetails: '$e',
         );
       }
     } finally {

@@ -500,14 +500,14 @@ class ZapAmountDialog extends HookConsumerWidget {
                         if (toastContext != null && toastContext.mounted) {
                           toastContext.showError(
                             'Zap failed',
-                            description: '$e',
+                            technicalDetails: '$e',
                           );
                         }
                       }
                     }());
                   } catch (e) {
                     if (context.mounted) {
-                      context.showError('Zap failed', description: '$e');
+                      context.showError('Zap failed', technicalDetails: '$e');
                       Navigator.of(context).pop(false);
                     }
                   }
@@ -696,7 +696,7 @@ class NWCZapDialog extends HookConsumerWidget {
                 }
               } catch (e) {
                 if (toastContext != null && toastContext.mounted) {
-                  toastContext.showError('Zap failed', description: '$e');
+                  toastContext.showError('Zap failed', technicalDetails: '$e');
                 }
               }
             }());

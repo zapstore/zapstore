@@ -609,7 +609,8 @@ class InstallButton extends ConsumerWidget {
       if (!context.mounted) return;
       context.showError(
         'Failed to launch ${app.name ?? app.identifier}',
-        description: 'The app may have been uninstalled or moved.\n\n$e',
+        description: 'The app may have been uninstalled or moved.',
+        technicalDetails: '$e',
       );
     }
   }
@@ -622,7 +623,7 @@ class InstallButton extends ConsumerWidget {
       if (context.mounted) {
         final errorMessage = e.toString();
         if (!errorMessage.contains('cancelled')) {
-          context.showError('Uninstall failed', description: errorMessage);
+          context.showError('Uninstall failed', technicalDetails: errorMessage);
         }
       }
     }
@@ -657,19 +658,12 @@ class InstallButton extends ConsumerWidget {
 
     context.showError(
       operation.message,
-      description: operation.description,
+      technicalDetails: operation.description,
       actions: [
         (
           'Copy',
           () async {
             await Clipboard.setData(ClipboardData(text: errorText));
-            if (context.mounted) {
-              context.showInfo(
-                'Copied to clipboard',
-                description:
-                    'Share on nostr or the zapstore Signal support group.',
-              );
-            }
           },
         ),
       ],
@@ -768,7 +762,7 @@ class InstallButton extends ConsumerWidget {
       } catch (e) {
         final errorMessage = e.toString();
         if (context.mounted && !errorMessage.contains('cancelled')) {
-          context.showError('Update failed', description: errorMessage);
+          context.showError('Update failed', technicalDetails: errorMessage);
         }
       }
     }
@@ -816,7 +810,6 @@ class InstallButton extends ConsumerWidget {
           tooltip: 'Copy certificate hash',
           onPressed: () {
             Clipboard.setData(ClipboardData(text: hash));
-            context.showInfo('Copied $tooltipText');
           },
         ),
       ],

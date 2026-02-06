@@ -257,7 +257,7 @@ class SocialActionsRow extends HookConsumerWidget {
       }
     } catch (e) {
       if (context.mounted) {
-        context.showError('Failed to save app', description: '$e');
+        context.showError('Failed to save app', technicalDetails: '$e');
       }
     }
   }

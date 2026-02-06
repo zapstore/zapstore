@@ -177,7 +177,7 @@ class RelayManagementCard extends HookConsumerWidget {
         if (context.mounted) {
           context.showError(
             'Failed to apply relay changes',
-            description: '$e',
+            technicalDetails: '$e',
             actions: [('Retry', () => applyChanges())],
           );
         }

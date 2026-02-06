@@ -46,7 +46,8 @@ class SignInPrompt extends HookConsumerWidget {
             context.showError(
               'Sign-in failed',
               description:
-                  'Amber could not complete the sign-in. Make sure Amber is installed and try again.\n\n$e',
+                  'Amber could not complete the sign-in. Make sure Amber is installed and try again.',
+              technicalDetails: '$e',
             );
           }
         } finally {

@@ -549,7 +549,7 @@ class _RepublishStacksButton extends HookConsumerWidget {
                   if (context.mounted) {
                     context.showError(
                       'Failed to republish stacks',
-                      description: '$e',
+                      technicalDetails: '$e',
                     );
                   }
                 } finally {

@@ -7,7 +7,6 @@ import 'package:models/models.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/download_text_container.dart';
-import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/theme.dart';
 
 class AppInfoTable extends HookConsumerWidget {
@@ -313,7 +312,6 @@ class _InfoRow extends StatelessWidget {
                     ),
                     onPressed: () {
                       Clipboard.setData(ClipboardData(text: copyValue!));
-                      context.showInfo('Copied to clipboard');
                     },
                   ),
                 ],
