@@ -32,6 +32,12 @@ class InstallButton extends ConsumerWidget {
 
     // Derive what to display
     final isInstalled = installedPkg != null;
+    // Note: PackageManager keeps terminal operations (e.g. Completed) in the
+    // operations map for a while so batch UX (e.g. "All done") can derive counts.
+    // For the detail screen action row, Completed should be treated as "not busy"
+    // so the user can immediately Open/Delete after install.
+    final canShowActionButtons =
+        isInstalled && (operation == null || operation is Completed);
     final hasUpdate = app.hasUpdate;
     final hasDowngrade = app.hasDowngrade;
     final hasRelease = release != null;
@@ -77,7 +83,7 @@ class InstallButton extends ConsumerWidget {
           children: [
             Expanded(child: SizedBox(height: 48, child: button)),
             // Show action buttons only for installed apps with no active operation
-            if (isInstalled && operation == null) ...[
+            if (canShowActionButtons) ...[
               if (hasUpdate) ...[
                 const SizedBox(width: 8),
                 _buildOpenIconButton(context, ref),
@@ -102,9 +108,15 @@ class InstallButton extends ConsumerWidget {
     required FileMetadata? fileMetadata,
     required double fontSize,
   }) {
+    // Completed is a terminal "result" state and may linger for batch progress UX.
+    // If the app is no longer installed (e.g. user uninstalled right after install),
+    // ignore a stale Completed op so we fall back to the normal "Install" UI.
+    final effectiveOperation =
+        (!isInstalled && operation is Completed) ? null : operation;
+
     // Handle operation states first
-    if (operation != null) {
-      return switch (operation) {
+    if (effectiveOperation != null) {
+      return switch (effectiveOperation) {
         DownloadQueued() => _buildSimpleButton(
           context,
           'Queued for download',
