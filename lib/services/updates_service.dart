@@ -120,6 +120,11 @@ class UpdatePollerNotifier extends Notifier<UpdatePollerState> {
     state = state.copyWith(isChecking: true);
 
     try {
+      // Sync installed packages first so relay data is compared against
+      // fresh installed state (catches sideloads, external updates, etc.)
+      await ref
+          .read(packageManagerProvider.notifier)
+          .syncInstalledPackages();
       await _fetchUpdatesFromRemote();
       _hasCompletedFirstFetch = true;
       state = state.copyWith(isChecking: false, lastCheckTime: DateTime.now());

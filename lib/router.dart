@@ -126,11 +126,7 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: '/profile',
                 builder: (context, state) => const ProfileScreen(),
-                routes: [
-                  _appDetailRoute(),
-                  _stackDetailRoute(),
-                  _userRoute(),
-                ],
+                routes: [_appDetailRoute(), _stackDetailRoute(), _userRoute()],
               ),
             ],
           ),
@@ -145,18 +141,19 @@ final routerProvider = Provider<GoRouter>((ref) {
     final isUpdatesRoute = currentPath.startsWith('/updates');
     final wasUpdatesRoute = previousPath?.startsWith('/updates') ?? false;
 
-    // Sync installed packages and refresh app data when navigating TO the updates branch
-    if (isUpdatesRoute && !wasUpdatesRoute) {
-      unawaited(
-        ref.read(packageManagerProvider.notifier).syncInstalledPackages().then((
-          _,
-        ) {
-          // Trigger a recalculation of apps after sync
-          // (introduced after seeing cases of stale versions)
+    // Sync installed packages on every navigation to catch sideloads,
+    // external installs/uninstalls, and self-updating apps.
+    // This is a local-only platform channel call (~100-500ms, no network).
+    unawaited(
+      ref.read(packageManagerProvider.notifier).syncInstalledPackages().then((
+        _,
+      ) {
+        // If on updates branch, trigger a recalculation of updates after sync
+        if (isUpdatesRoute) {
           ref.invalidate(categorizedUpdatesProvider);
-        }),
-      );
-    }
+        }
+      }),
+    );
 
     // Clear completed operations when navigating AWAY from updates
     // This cleans up the "All done" state without affecting the count while visible
