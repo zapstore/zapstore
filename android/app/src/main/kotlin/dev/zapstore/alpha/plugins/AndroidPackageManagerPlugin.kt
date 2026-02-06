@@ -40,8 +40,8 @@ private const val VERIFY_WATCHDOG_MS = 10_000L
 private const val INSTALL_WATCHDOG_MS = 10_000L
 private const val MAX_INSTALL_WATCHDOG_MS = 120_000L
 
-/** Buffer size for file operations - 64KB for optimal throughput on large APKs */
-private const val COPY_BUFFER_SIZE = 65536
+/** Buffer size for file operations - 256KB to reduce syscall overhead on large APKs */
+private const val COPY_BUFFER_SIZE = 262144
 
 /**
  * Install status values emitted via EventChannel.

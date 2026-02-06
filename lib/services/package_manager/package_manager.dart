@@ -1005,10 +1005,10 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
     }
   }
 
-  /// Schedule queue processing after a delay (for advancing after completion).
+  /// Schedule queue processing on the next microtask.
   @protected
   void scheduleProcessQueue() {
-    Future.delayed(const Duration(milliseconds: 500), processQueue);
+    Future.microtask(processQueue);
   }
 
   /// Clear the active install slot and advance the queue.

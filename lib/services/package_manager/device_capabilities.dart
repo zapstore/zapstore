@@ -1,4 +1,5 @@
-import 'package:device_info_plus/device_info_plus.dart';
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 
 /// Device capability information for adaptive behavior.
@@ -42,23 +43,7 @@ class DeviceCapabilitiesCache {
     if (_cached != null) return _cached!;
 
     try {
-      final deviceInfo = DeviceInfoPlugin();
-      final info = await deviceInfo.deviceInfo;
-
-      int totalRamMB = 0;
-
-      // Extract RAM from platform-specific info
-      if (info is AndroidDeviceInfo) {
-        // Android: systemFeatures doesn't have RAM directly, but we can
-        // check for low RAM device flag via isPhysicalDevice and other heuristics.
-        // The device_info_plus package on Android doesn't expose total RAM directly.
-        // We'll use a heuristic based on SDK version and physical device status.
-        totalRamMB = _estimateAndroidRam(info);
-      } else {
-        // Non-Android platforms: use conservative default
-        totalRamMB = 4000;
-      }
-
+      final totalRamMB = _readTotalRamMB();
       final maxDownloads = _calculateMaxConcurrentDownloads(totalRamMB);
 
       _cached = DeviceCapabilities(
@@ -75,38 +60,22 @@ class DeviceCapabilitiesCache {
     }
   }
 
-  /// Estimate Android RAM based on device characteristics.
-  /// Since device_info_plus doesn't expose RAM directly on Android,
-  /// we use heuristics based on device age and type.
-  static int _estimateAndroidRam(AndroidDeviceInfo info) {
-    // SDK version gives us a rough idea of device era
-    final sdkInt = info.version.sdkInt;
-
-    // Emulators and non-physical devices: assume decent RAM
-    if (!info.isPhysicalDevice) {
-      return 4000;
-    }
-
-    // Low-end device indicators
-    final isLowEnd = info.supportedAbis.length == 1 || // Single ABI = older device
-        sdkInt < 28; // Android 9 or older
-
-    if (isLowEnd) {
-      return 2000; // Assume 2GB for low-end
-    }
-
-    // Modern devices (Android 10+)
-    if (sdkInt >= 29) {
-      // Most devices from 2019+ have at least 4GB
-      // High-end (2021+, Android 12+) typically have 6-8GB
-      if (sdkInt >= 31) {
-        return 6000; // Android 12+ devices
+  /// Read actual total RAM from /proc/meminfo.
+  /// Works on Android (and Linux) without any permissions.
+  /// Returns 0 on failure (triggers fallback concurrent downloads).
+  static int _readTotalRamMB() {
+    try {
+      final contents = File('/proc/meminfo').readAsStringSync();
+      // First line is: MemTotal:       XXXXXXX kB
+      final match = RegExp(r'MemTotal:\s+(\d+)\s+kB').firstMatch(contents);
+      if (match != null) {
+        final ramKB = int.parse(match.group(1)!);
+        return ramKB ~/ 1024;
       }
-      return 4000; // Android 10-11 devices
+    } catch (_) {
+      // /proc/meminfo not available (non-Linux platform, sandbox, etc.)
     }
-
-    // Default for Android 9 devices
-    return 3000;
+    return 0;
   }
 
   /// Calculate max concurrent downloads based on RAM tier.
