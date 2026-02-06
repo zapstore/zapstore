@@ -140,28 +140,33 @@ final routerProvider = Provider<GoRouter>((ref) {
     final currentPath = router.routerDelegate.currentConfiguration.uri.path;
     final isUpdatesRoute = currentPath.startsWith('/updates');
     final wasUpdatesRoute = previousPath?.startsWith('/updates') ?? false;
-
-    // Sync installed packages on every navigation to catch sideloads,
-    // external installs/uninstalls, and self-updating apps.
-    // This is a local-only platform channel call (~100-500ms, no network).
-    unawaited(
-      ref.read(packageManagerProvider.notifier).syncInstalledPackages().then((
-        _,
-      ) {
-        // If on updates branch, trigger a recalculation of updates after sync
-        if (isUpdatesRoute) {
-          ref.invalidate(categorizedUpdatesProvider);
-        }
-      }),
-    );
-
-    // Clear completed operations when navigating AWAY from updates
-    // This cleans up the "All done" state without affecting the count while visible
-    if (wasUpdatesRoute && !isUpdatesRoute) {
-      ref.read(packageManagerProvider.notifier).clearCompletedOperations();
-    }
-
     previousPath = currentPath;
+
+    // Defer provider modifications to the next microtask. GoRouter's delegate
+    // can notify listeners synchronously during the widget tree build phase
+    // (e.g. on initial route resolution), and modifying StateNotifier state
+    // during build triggers a StateNotifierListenerError.
+    Future.microtask(() {
+      // Sync installed packages on every navigation to catch sideloads,
+      // external installs/uninstalls, and self-updating apps.
+      // This is a local-only platform channel call (~100-500ms, no network).
+      unawaited(
+        ref.read(packageManagerProvider.notifier).syncInstalledPackages().then((
+          _,
+        ) {
+          // If on updates branch, trigger a recalculation of updates after sync
+          if (isUpdatesRoute) {
+            ref.invalidate(categorizedUpdatesProvider);
+          }
+        }),
+      );
+
+      // Clear completed operations when navigating AWAY from updates
+      // This cleans up the "All done" state without affecting the count while visible
+      if (wasUpdatesRoute && !isUpdatesRoute) {
+        ref.read(packageManagerProvider.notifier).clearCompletedOperations();
+      }
+    });
   }
 
   router.routerDelegate.addListener(onRouteChange);
