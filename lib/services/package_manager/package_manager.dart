@@ -9,8 +9,6 @@ import 'package:models/models.dart';
 import 'package:zapstore/services/package_manager/device_capabilities.dart';
 import 'package:zapstore/services/package_manager/dummy_package_manager.dart';
 import 'package:zapstore/services/package_manager/install_operation.dart';
-import 'package:zapstore/utils/version_utils.dart';
-
 export 'device_capabilities.dart';
 export 'install_operation.dart';
 
@@ -1361,23 +1359,30 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
 
   Future<void> syncInstalledPackages();
 
-  bool canInstall(FileMetadata m, String version, {int? versionCode}) {
-    final installed = state.installed[m.appIdentifier];
-    if (installed == null) return true;
-
-    return canUpgrade(
-      installed.versionCode?.toString() ?? installed.version,
-      versionCode?.toString() ?? version,
-    );
+  /// Whether [latest] is an update over the installed version of the same app.
+  ///
+  /// Comparison uses Android versionCode only. Returns false when either
+  /// versionCode is unavailable or the app is not installed.
+  bool hasUpdate(String appId, FileMetadata latest) {
+    final installed = state.installed[appId];
+    if (installed == null) return false;
+    final installedCode = installed.versionCode;
+    final latestCode = latest.versionCode;
+    if (installedCode == null || latestCode == null) return false;
+    return latestCode > installedCode;
   }
 
-  bool canUpdate(FileMetadata m) {
-    final installed = state.installed[m.appIdentifier];
+  /// Whether [latest] would be a downgrade from the installed version.
+  ///
+  /// Comparison uses Android versionCode only. Returns false when either
+  /// versionCode is unavailable or the app is not installed.
+  bool hasDowngrade(String appId, FileMetadata latest) {
+    final installed = state.installed[appId];
     if (installed == null) return false;
-    return canUpgrade(
-      installed.versionCode?.toString() ?? installed.version,
-      m.versionCode?.toString() ?? m.version,
-    );
+    final installedCode = installed.versionCode;
+    final latestCode = latest.versionCode;
+    if (installedCode == null || latestCode == null) return false;
+    return latestCode < installedCode;
   }
 }
 

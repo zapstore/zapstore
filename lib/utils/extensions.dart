@@ -3,7 +3,6 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/constants/app_constants.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
-import 'package:zapstore/utils/version_utils.dart';
 
 export 'package:zapstore/constants/app_constants.dart';
 
@@ -41,34 +40,20 @@ extension AppExt on App {
       latestRelease.value?.latestAsset.value ??
       latestRelease.value?.latestMetadata.value;
 
-  /// Whether there is an update available for the installed app
-  /// Compares versionCode first when available, otherwise falls back to
-  /// semantic version comparison.
+  /// Whether there is an update available for the installed app.
+  /// Delegates to PackageManager (versionCode-only comparison).
   bool get hasUpdate {
-    final installed = installedPackage;
     final latest = latestFileMetadata;
-    if (installed == null || latest == null) return false;
-
-    if (latest.versionCode != null && installed.versionCode != null) {
-      return latest.versionCode! > installed.versionCode!;
-    }
-
-    return canUpgrade(installed.version, latest.version);
+    if (latest == null) return false;
+    return ref.read(packageManagerProvider.notifier).hasUpdate(identifier, latest);
   }
 
-  /// Whether the relay version would be a downgrade from the installed version
-  /// Compares versionCode first when available, otherwise falls back to
-  /// semantic version comparison.
+  /// Whether the relay version would be a downgrade from the installed version.
+  /// Delegates to PackageManager (versionCode-only comparison).
   bool get hasDowngrade {
-    final installed = installedPackage;
     final latest = latestFileMetadata;
-    if (installed == null || latest == null) return false;
-
-    if (latest.versionCode != null && installed.versionCode != null) {
-      return latest.versionCode! < installed.versionCode!;
-    }
-
-    return canUpgrade(latest.version, installed.version);
+    if (latest == null) return false;
+    return ref.read(packageManagerProvider.notifier).hasDowngrade(identifier, latest);
   }
 
   /// Whether the installed app is up to date (installed and no update)

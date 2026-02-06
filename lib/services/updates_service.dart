@@ -5,7 +5,6 @@ import 'package:models/models.dart';
 import 'package:zapstore/main.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/utils/extensions.dart';
-import 'package:zapstore/utils/version_utils.dart';
 
 /// How often to poll for updates from remote relays
 const _pollInterval = Duration(minutes: 5);
@@ -380,8 +379,9 @@ class CategorizedUpdatesNotifier extends Notifier<CategorizedUpdates> {
       final pkg = installedMap[app.identifier]!;
       final latest = app.latestFileMetadata;
 
-      // Determine if update available using local data
-      final hasUpdate = latest != null && _hasUpdate(pkg, latest);
+      // Determine if update available using versionCode (via PackageManager)
+      final pm = ref.read(packageManagerProvider.notifier);
+      final hasUpdate = latest != null && pm.hasUpdate(app.identifier, latest);
 
       if (hasUpdate) {
         if (pkg.canInstallSilently) {
@@ -424,13 +424,6 @@ class CategorizedUpdatesNotifier extends Notifier<CategorizedUpdates> {
     );
   }
 
-  /// Check if an update is available by comparing versions
-  bool _hasUpdate(PackageInfo installed, FileMetadata latest) {
-    if (latest.versionCode != null && installed.versionCode != null) {
-      return latest.versionCode! > installed.versionCode!;
-    }
-    return canUpgrade(installed.version, latest.version);
-  }
 }
 
 final categorizedUpdatesProvider =

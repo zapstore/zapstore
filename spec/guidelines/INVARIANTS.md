@@ -45,6 +45,11 @@ If any invariant is violated, the implementation is incorrect.
 - All user-visible processes must have explicit states (loading, empty, success, error).
 - Silent failures are unacceptable.
 
+## Update & Downgrade Detection
+
+- Update availability MUST be determined solely by comparing Android `versionCode` integers — never by comparing version name strings.
+- If either the installed or the available `versionCode` is missing, the app MUST NOT be considered as having an update or downgrade.
+
 ## Widget State Management
 
 - Use Flutter Hooks (`HookWidget`, `HookConsumerWidget`) instead of `StatefulWidget` for local widget state.
