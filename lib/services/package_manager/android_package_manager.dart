@@ -375,20 +375,20 @@ final class AndroidPackageManager extends PackageManager {
   /// Technical details are preserved in the description field.
   String _getUserFriendlyMessage(FailureType type) {
     return switch (type) {
-      FailureType.downloadFailed => 'Download failed. Please try again.',
+      FailureType.downloadFailed => 'Download failed.',
       FailureType.hashMismatch =>
-        'File verification failed. Please try downloading again.',
+        'File integrity check failed. Possibly a malicious file, aborting installation.',
       FailureType.invalidFile =>
-        'Invalid app file. Please try downloading again.',
+        'Invalid app file. The download may be corrupt.',
       FailureType.certMismatch =>
         'Update signed by different developer. Uninstall current version to update.',
       FailureType.permissionDenied =>
         'Permission required. Please grant install permission and try again.',
       FailureType.insufficientStorage =>
-        'Not enough storage space. Please free up space and try again.',
+        'Not enough storage space. Free up space to continue and try again.',
       FailureType.incompatible =>
         'This app is not compatible with your device.',
-      FailureType.installFailed => 'Installation failed. Please try again.',
+      FailureType.installFailed => 'Installation failed.',
     };
   }
 

@@ -350,7 +350,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
         OperationFailed(
           target: target,
           type: FailureType.downloadFailed,
-          message: 'Download link unavailable. Please try again later.',
+          message: 'Download link unavailable.',
         ),
       );
       return false;
@@ -626,7 +626,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
           OperationFailed(
             target: op.target,
             type: FailureType.installFailed,
-            message: 'Update failed. Please try again.',
+            message: 'Update failed.',
             description: errorMessage,
             filePath: filePath,
           ),
@@ -938,7 +938,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
         OperationFailed(
           target: target,
           type: FailureType.downloadFailed,
-          message: 'Failed to access downloaded file. Please try again.',
+          message: 'Failed to access downloaded file.',
           description: '$e',
         ),
       );
@@ -975,7 +975,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
             OperationFailed(
               target: op.target,
               type: FailureType.downloadFailed,
-              message: 'Download link unavailable. Please try again later.',
+              message: 'Download link unavailable.',
             ),
           );
           continue;
@@ -1115,10 +1115,10 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
       final userMessage = isCertMismatch
           ? 'Update signed by different developer. Uninstall current version to update.'
           : isHashMismatch
-              ? 'File verification failed. Please try downloading again.'
+              ? 'Hash mismatch. Possibly a malicious file, aborting installation.'
               : isInvalidFile
-                  ? 'Invalid app file. Please try downloading again.'
-                  : 'Installation failed. Please try again.';
+                  ? 'Invalid app file. The download may be corrupt.'
+                  : 'Installation failed.';
 
       setOperation(
         appId,

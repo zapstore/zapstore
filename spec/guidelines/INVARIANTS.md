@@ -45,6 +45,11 @@ If any invariant is violated, the implementation is incorrect.
 - All user-visible processes must have explicit states (loading, empty, success, error).
 - Silent failures are unacceptable.
 
+## Widget State Management
+
+- Use Flutter Hooks (`HookWidget`, `HookConsumerWidget`) instead of `StatefulWidget` for local widget state.
+- Use `useState`, `useAnimationController`, `useEffect`, etc. over manual `State` classes.
+
 
 ## Reproducible Android builds
 
