@@ -385,6 +385,7 @@ class _UpdatesListBody extends HookConsumerWidget {
     useEffect(() {
       if (progress != null && progress.hasInProgress) {
         wasInProgress.value = true;
+        showAllDone.value = false; // Reset if new operations start
       } else if (wasInProgress.value &&
           progress != null &&
           progress.isAllComplete) {
