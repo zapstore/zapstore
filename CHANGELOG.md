@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-02-10
+
+### Added
+
+- New and improved updates experience: background update checking, dedicated updates UI, and batch progress tracking
+- App Stacks improvements, including curated discovery and relay management controls
+
+### Changed
+
+- Final stable release of all `1.0.0-rc*` improvements; no additional features beyond the release candidates
+- Major UX refresh across core screens, including redesigned profile and app detail experiences
+- Complete package manager/install flow rewrite with more reliable state transitions and clearer install feedback
+- Improved download and verification pipeline with better concurrency, watchdog handling, CDN fallback, and reduced memory pressure
+- Stronger trust and safety flows, including better certificate mismatch handling and more secure NWC secret storage
+
+### Fixed
+
+- Broad stability fixes across updates, app detail, dialogs, zaps, navigation, and background sync behavior
+
 ## [1.0.0-rc5] - 2026-02-07
 
 ### Added
