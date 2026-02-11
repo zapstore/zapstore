@@ -19,7 +19,7 @@
 -keep class org.sqlite.** { *; }
 
 # Keep package manager plugin classes
--keep class dev.zapstore.alpha.plugins.** { *; }
+-keep class dev.zapstore.app.plugins.** { *; }
 
 # Ignore missing Google Play Core classes (optional dependency for dynamic features)
 -dontwarn com.google.android.play.core.splitcompat.SplitCompatApplication

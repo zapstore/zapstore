@@ -1,7 +1,7 @@
-package dev.zapstore.alpha
+package dev.zapstore.app
 
-import dev.zapstore.alpha.plugins.AndroidPackageManagerPlugin
-import dev.zapstore.alpha.plugins.AppRestartPlugin
+import dev.zapstore.app.plugins.AndroidPackageManagerPlugin
+import dev.zapstore.app.plugins.AppRestartPlugin
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 

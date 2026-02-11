@@ -1,4 +1,4 @@
-package dev.zapstore.alpha.plugins
+package dev.zapstore.app.plugins
 
 import android.content.Context
 import android.content.Intent
@@ -40,4 +40,3 @@ class AppRestartPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         exitProcess(0)
     }
 }
-

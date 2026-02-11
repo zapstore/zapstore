@@ -1,5 +1,5 @@
 /// Application identifier for Zapstore itself
-const kZapstoreAppIdentifier = 'dev.zapstore.alpha';
+const kZapstoreAppIdentifier = 'dev.zapstore.app';
 
 /// Zapstore's public key for relay-signed apps
 const kZapstorePubkey =

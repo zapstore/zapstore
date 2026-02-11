@@ -13,8 +13,8 @@ final class DummyPackageManager extends PackageManager {
           versionCode: 1,
           signatureHash: 'dummy_signature_1',
         ),
-        'dev.zapstore.alpha': const PackageInfo(
-          appId: 'dev.zapstore.alpha',
+        'dev.zapstore.app': const PackageInfo(
+          appId: 'dev.zapstore.app',
           name: 'Zapstore',
           version: '1.0.0',
           versionCode: 1,
