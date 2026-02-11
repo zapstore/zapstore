@@ -240,7 +240,8 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
           OperationFailed(
             target: op.target,
             type: FailureType.downloadFailed,
-            message: 'Download timed out. Please check your internet connection and try again.',
+            message:
+                'Download timed out. Please check your internet connection and try again.',
           ),
         );
         needsQueueProcessing = true;
@@ -856,7 +857,8 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
           OperationFailed(
             target: target,
             type: FailureType.downloadFailed,
-            message: 'File no longer available (404). Please check for a newer version.',
+            message:
+                'File no longer available (404). Please check for a newer version.',
           ),
         );
         scheduleProcessQueue();
@@ -1113,10 +1115,10 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
       final userMessage = isCertMismatch
           ? 'Update signed by different developer. Uninstall current version to update.'
           : isHashMismatch
-              ? 'Hash mismatch. Possibly a malicious file, aborting installation.'
-              : isInvalidFile
-                  ? 'Invalid app file. The download may be corrupt.'
-                  : 'Installation failed.';
+          ? 'Hash mismatch. Possibly a malicious file, aborting installation.'
+          : isInvalidFile
+          ? 'Invalid app file. The download may be corrupt.'
+          : 'Installation failed.';
 
       setOperation(
         appId,
@@ -1306,7 +1308,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
 
     if (metadataId != null) {
       try {
-        final results = storage.querySync(
+        final results = await storage.query(
           RequestFilter<FileMetadata>(ids: {metadataId}).toRequest(),
         );
         if (results.isNotEmpty) return results.first;
@@ -1317,7 +1319,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
     final hash = dotIndex > 0 ? filename.substring(0, dotIndex) : filename;
     if (hash.isNotEmpty) {
       try {
-        final results = storage.querySync(
+        final results = await storage.query(
           RequestFilter<FileMetadata>(search: hash).toRequest(),
         );
         if (results.isNotEmpty) return results.first;
