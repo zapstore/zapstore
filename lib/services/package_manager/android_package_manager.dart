@@ -164,6 +164,9 @@ final class AndroidPackageManager extends PackageManager {
         debugPrint(
           '[PackageManager] No tracked operation for appId=$appId, aborting orphaned native session',
         );
+        // Release the install slot in case this app was the active install
+        // (e.g., sync cleared the operation before the native event arrived).
+        clearInstallSlot(appId);
         unawaited(abortInstall(appId));
       }
       return;
@@ -180,6 +183,15 @@ final class AndroidPackageManager extends PackageManager {
       debugPrint(
         '[PackageManager] Ignoring terminal event $status for already terminal operation ${existingOp.runtimeType}',
       );
+      return;
+    }
+
+    // INVARIANT: Once the user cancels (or the system dismisses the dialog),
+    // the operation is InstallCancelled. The native side may retry the install
+    // session (sending verifying/started/pendingUserAction), but we must NOT
+    // let those events overwrite InstallCancelled. The only way out of
+    // InstallCancelled is the user tapping "Install (retry)" (FEAT-001 spec).
+    if (existingOp is InstallCancelled) {
       return;
     }
 
@@ -217,7 +229,12 @@ final class AndroidPackageManager extends PackageManager {
       case InstallStatus.pendingUserAction:
         // User action required. Ensure we don't get stuck in Verifying if the
         // STARTED event was missed; show Installing state.
-        if (filePath != null && existingOp is! Installing) {
+        // Skip if already in Installing or SystemProcessing to preserve the
+        // original startedAt timestamp — otherwise the watchdog timeout resets
+        // on every pendingUserAction/systemProcessing bounce and never fires.
+        if (filePath != null &&
+            existingOp is! Installing &&
+            existingOp is! SystemProcessing) {
           final pkg = state.installed[appId];
           final isSilent = pkg?.canInstallSilently ?? false;
           setOperation(
@@ -241,10 +258,20 @@ final class AndroidPackageManager extends PackageManager {
       case InstallStatus.systemProcessing:
         // Install session is committed and taking longer than expected.
         // Cannot be cancelled - system will eventually complete or fail.
-        if (filePath != null) {
+        // Only create a new SystemProcessing if not already in that state,
+        // to preserve the original startedAt timestamp for the watchdog.
+        // CRITICAL: When transitioning from Installing, preserve the original
+        // startedAt so the Dart watchdog doesn't reset its countdown.
+        if (filePath != null && existingOp is! SystemProcessing) {
+          final preservedStart =
+              existingOp is Installing ? existingOp.startedAt : null;
           setOperation(
             appId,
-            SystemProcessing(target: target, filePath: filePath),
+            SystemProcessing(
+              target: target,
+              filePath: filePath,
+              startedAt: preservedStart,
+            ),
           );
         }
         break;
@@ -256,13 +283,16 @@ final class AndroidPackageManager extends PackageManager {
 
       case InstallStatus.success:
         _deleteFile(filePath);
+        // Check BEFORE updating installed package info — after update the app
+        // will always appear as installed, losing the update/new-install distinction.
+        final wasInstalled = isInstalled(appId);
         // CRITICAL: Update installed package info DIRECTLY from target metadata.
         // We cannot rely on syncInstalledPackages() here because Android's package
         // database may not have committed yet, causing a race condition where
         // we get stale data and show "Update" instead of "Open".
         _updateInstalledPackage(appId, target);
         // Transition to Completed state (stays in map for batch progress tracking)
-        setOperation(appId, Completed(target: target));
+        setOperation(appId, Completed(target: target, isUpdate: wasInstalled));
         // Sync in background to get accurate info (signature hash, etc.)
         // but our state machine doesn't depend on it.
         unawaited(syncInstalledPackages());
@@ -716,12 +746,21 @@ final class AndroidPackageManager extends PackageManager {
             (installedV != null && installedV == targetV);
 
         // Only clear if we can establish completion reliably.
+        // Transition to Completed (not clearOperation) so batchProgressProvider
+        // counts this app. The Completed op stays until the user dismisses the
+        // banner or clearCompletedOperations runs.
         if (completed) {
           debugPrint(
-            '[PackageManager] Sync: clearing completed operation for $appId '
+            '[PackageManager] Sync: completing operation for $appId '
             '(installedVc=$installedVc, targetVc=$targetVc, installedV=$installedV, targetV=$targetV)',
           );
-          clearOperation(appId);
+          // Sync fallback: state.installed was already overwritten with native
+          // data above (line 723), so we must NOT call _updateInstalledPackage
+          // here — that would replace accurate native info with target metadata.
+          // isUpdate defaults to true: sync mostly catches silent updates where
+          // the app was already installed. The impact of a wrong label is cosmetic.
+          setOperation(appId, Completed(target: op.target, isUpdate: true));
+          clearInstallSlot(appId);
         } else {
           debugPrint(
             '[PackageManager] Sync: keeping operation for $appId '

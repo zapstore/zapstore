@@ -255,7 +255,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
             filePath: op.filePath,
           ),
         );
-        if (op is Installing || op is SystemProcessing) {
+        if (op is Installing || op is SystemProcessing || op is ReadyToInstall) {
           clearInstallSlot(appId);
           needsQueueProcessing = true;
         }
@@ -308,11 +308,15 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
     _updateWatchdogTimer();
   }
 
-  /// Clear all completed and failed operations from the map.
+  /// Clear all terminal operations from the map.
   /// Called after the batch completion display timeout.
+  /// Terminal states: Completed, OperationFailed, InstallCancelled.
   void clearCompletedOperations() {
     final remaining = Map.of(state.operations)
-      ..removeWhere((_, op) => op is Completed || op is OperationFailed);
+      ..removeWhere(
+        (_, op) =>
+            op is Completed || op is OperationFailed || op is InstallCancelled,
+      );
     state = state.copyWith(operations: remaining);
     _updateWatchdogTimer();
   }
@@ -997,7 +1001,16 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
 
         if (op is ReadyToInstall) {
           activeInstall = appId;
-          debugPrint('[PackageManager] Starting install for $appId');
+          // Mark triggeredAt so the watchdog can detect native sessions that
+          // never respond (e.g. Android PackageInstaller silently fails).
+          setOperation(
+            appId,
+            ReadyToInstall(
+              target: op.target,
+              filePath: op.filePath,
+              triggeredAt: DateTime.now(),
+            ),
+          );
           unawaited(triggerInstall(appId));
         }
         // If operation changed, it will be picked up on next process cycle
@@ -1460,27 +1473,30 @@ enum BatchPhase { downloading, verifying, installing, completed, idle }
 
 /// Batch progress summary - ALL state derived from operations map.
 ///
-/// Key insight: total = operations.length (includes Completed state).
 /// When an operation succeeds, it transitions to Completed instead of being removed.
-/// This allows us to derive completed count without separate tracking.
+/// InstallCancelled operations are excluded from totals (already resolved).
 class BatchProgress {
   const BatchProgress({
     required this.total,
     required this.completed,
+    required this.completedLabel,
     required this.downloading,
     required this.verifying,
     required this.installing,
     required this.queued,
     required this.failed,
-    required this.cancelled,
     required this.phase,
   });
 
-  /// Total operations (everything in the map, including completed)
+  /// Total operations (excludes InstallCancelled — those are already resolved
+  /// from the batch's perspective and should not inflate the count).
   final int total;
 
   /// Operations that completed successfully
   final int completed;
+
+  /// Label for completed operations: "updated", "installed", or "completed" (mixed)
+  final String completedLabel;
 
   /// Operations currently downloading
   final int downloading;
@@ -1497,14 +1513,11 @@ class BatchProgress {
   /// Operations that failed
   final int failed;
 
-  /// Operations cancelled by user (InstallCancelled - can retry individually)
-  final int cancelled;
-
   /// Current dominant phase
   final BatchPhase phase;
 
   /// Whether any operations are in progress (not terminal)
-  /// Terminal states: Completed, OperationFailed, InstallCancelled
+  /// Terminal states: Completed, OperationFailed
   bool get hasInProgress =>
       downloading > 0 || verifying > 0 || installing > 0 || queued > 0;
 
@@ -1529,17 +1542,18 @@ final batchProgressProvider = Provider<BatchProgress?>((ref) {
 
   // Count operations by type
   int completed = 0,
+      completedUpdates = 0,
       downloading = 0,
       verifying = 0,
       installing = 0,
       queued = 0,
-      failed = 0,
-      cancelled = 0;
+      failed = 0;
 
   for (final op in ops.values) {
     switch (op) {
       case Completed():
         completed++;
+        if (op.isUpdate) completedUpdates++;
       case DownloadQueued() || ReadyToInstall():
         queued++;
       case Downloading() || DownloadPaused():
@@ -1551,7 +1565,9 @@ final batchProgressProvider = Provider<BatchProgress?>((ref) {
       case OperationFailed():
         failed++;
       case InstallCancelled():
-        cancelled++; // Terminal for batch - user can retry individually
+        // Not counted in batch — already resolved (user can retry individually).
+        // Stays in the operations map for the "Install (retry)" UI button.
+        break;
       case AwaitingPermission():
         queued++; // Waiting for permission
       case Uninstalling():
@@ -1559,7 +1575,12 @@ final batchProgressProvider = Provider<BatchProgress?>((ref) {
     }
   }
 
-  final total = ops.length;
+  // Total excludes InstallCancelled — those are already resolved from the
+  // batch's perspective and should not inflate the count.
+  final total = completed + downloading + verifying + installing + queued + failed;
+
+  // If only InstallCancelled operations remain, no batch to show
+  if (total == 0) return null;
 
   // Determine current phase (priority: installing > verifying > downloading > completed)
   final phase = installing > 0
@@ -1572,15 +1593,23 @@ final batchProgressProvider = Provider<BatchProgress?>((ref) {
       ? BatchPhase.completed
       : BatchPhase.idle;
 
+  // Derive label: "updated" if all updates, "installed" if all new, "completed" if mixed
+  final completedInstalls = completed - completedUpdates;
+  final completedLabel = completedUpdates > 0 && completedInstalls == 0
+      ? 'updated'
+      : completedInstalls > 0 && completedUpdates == 0
+          ? 'installed'
+          : 'completed';
+
   return BatchProgress(
     total: total,
     completed: completed,
+    completedLabel: completedLabel,
     downloading: downloading,
     verifying: verifying,
     installing: installing,
     queued: queued,
     failed: failed,
-    cancelled: cancelled,
     phase: phase,
   );
 });
