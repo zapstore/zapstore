@@ -1,0 +1,34 @@
+appId: dev.zapstore.alpha
+---
+# =============================================================
+# Sub-flow: Tap Install without waiting for completion
+#
+# Expects to be on the app detail page with the app NOT installed.
+# Taps Install and handles the immediate dialogs, but does NOT
+# wait for download/install to complete.
+#
+# Handles:
+#   - Amber signing request (if prompted)
+#   - Zapstore "Trust this app?" dialog (if prompted)
+#   - Samsung "Trust and install app" security dialog (if prompted)
+#
+# Use this to rapidly start multiple downloads in sequence.
+#
+# After completion, the download has started (or is queued).
+# =============================================================
+
+- tapOn: "Install"
+
+# Amber may ask to sign a request during install
+- runFlow:
+    when:
+      visible: "Accept"
+    commands:
+      - tapOn: "Accept"
+
+# Zapstore trust dialog for first-time installs from unknown publishers
+- runFlow:
+    when:
+      visible: "Trust and install app"
+    commands:
+      - tapOn: "Trust and install app"
