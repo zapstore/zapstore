@@ -1,0 +1,43 @@
+appId: dev.zapstore.alpha
+name: "Install App Test"
+tags:
+  - install
+  - android
+onFlowStart:
+  # Setup: navigate to the app and ensure it's uninstalled
+  - runFlow:
+      file: flows/search_app.yaml
+      env:
+        APP_SEARCH_TERM: "Flotilla"
+        APP_MATCH_TEXT: ".*Self-hosted community.*"
+  - runFlow:
+      file: flows/uninstall_if_installed.yaml
+---
+# =============================================================
+# Test: Install Flotilla and verify success.
+#
+# The onFlowStart hook navigates to the Flotilla detail page
+# and uninstalls it if needed, so we always start clean.
+#
+# Prerequisites:
+#   - Device has internet connectivity
+#   - Fresh app start recommended:
+#     adb shell am start -S --activity-clear-task -n dev.zapstore.alpha/.MainActivity
+# =============================================================
+
+# At this point we're on the detail page with Flotilla uninstalled
+
+- assertVisible: "Install"
+
+- takeScreenshot: "01_ready_to_install.png"
+
+# ====== Install the app ======
+
+- runFlow:
+    file: flows/install_app.yaml
+
+- takeScreenshot: "02_installed.png"
+
+# ====== Verify installation ======
+
+- assertVisible: "Open"

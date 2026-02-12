@@ -1,0 +1,33 @@
+appId: dev.zapstore.alpha
+---
+# =============================================================
+# Sub-flow: Sign in with Amber
+#
+# Navigates to Profile tab and signs in via Amber if needed.
+# After completion, the user is signed in and on the Profile tab.
+#
+# Prerequisites:
+#   - Amber signer app installed on the device
+# =============================================================
+
+- tapOn:
+    text: ".*Tab 3 of 3"
+    label: "Tap Profile tab"
+
+- waitForAnimationToEnd
+
+# If not signed in, sign in via Amber
+- runFlow:
+    when:
+      visible: "Sign in with Amber"
+    commands:
+      - tapOn: "Sign in with Amber"
+      - extendedWaitUntil:
+          visible: "Connect"
+          timeout: 10000
+      - tapOn: "Connect"
+      - extendedWaitUntil:
+          visible: "Sign Out"
+          timeout: 15000
+
+- assertVisible: "Sign Out"

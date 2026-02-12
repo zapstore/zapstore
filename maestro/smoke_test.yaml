@@ -1,0 +1,82 @@
+appId: dev.zapstore.alpha
+name: "Zapstore Smoke Test"
+tags:
+  - smoke
+  - android
+---
+# NOTE: Run with a fresh app start to avoid stale state:
+#   adb shell am start -S --activity-clear-task -n dev.zapstore.alpha/.MainActivity
+
+# ====== Search Tab (Initial Screen) ======
+
+- extendedWaitUntil:
+    visible: "Search apps"
+    timeout: 15000
+
+- extendedWaitUntil:
+    visible: "LATEST RELEASES"
+    timeout: 10000
+
+- takeScreenshot: "01_search_home.png"
+
+# ====== Tab Navigation (before search to avoid keyboard issues) ======
+
+- tapOn:
+    text: ".*Tab 2 of 3"
+    label: "Tap Updates tab"
+
+- waitForAnimationToEnd
+
+- takeScreenshot: "02_updates_tab.png"
+
+- tapOn:
+    text: ".*Tab 3 of 3"
+    label: "Tap Profile tab"
+
+- waitForAnimationToEnd
+
+- takeScreenshot: "03_profile_tab.png"
+
+- tapOn:
+    text: ".*Tab 1 of 3"
+    label: "Tap Search tab"
+
+- waitForAnimationToEnd
+
+- takeScreenshot: "04_back_to_search.png"
+
+# ====== Search Functionality ======
+
+- tapOn: "Search apps"
+- inputText: "nostr"
+- pressKey: Enter
+
+- extendedWaitUntil:
+    notVisible: "LATEST RELEASES"
+    timeout: 10000
+
+- takeScreenshot: "05_search_results.png"
+
+# ====== Open App Detail (via reusable search flow) ======
+
+- runFlow:
+    file: flows/search_app.yaml
+    env:
+      APP_SEARCH_TERM: "Zapstore"
+      APP_MATCH_TEXT: ".*open app store.*"
+
+- extendedWaitUntil:
+    visible: "Zapstore Alpha"
+    timeout: 5000
+
+- takeScreenshot: "06_app_detail.png"
+
+# Go back to search results
+- back
+
+- extendedWaitUntil:
+    visible:
+      text: ".*open app store.*"
+    timeout: 5000
+
+- takeScreenshot: "07_back_to_search.png"

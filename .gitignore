@@ -54,3 +54,9 @@ app.*.map.json
 .env
 
 reference/*
+
+# Test runs and reports (agent-generated, not tracked)
+test/runs/*
+!test/runs/.gitkeep
+test/reports/*
+!test/reports/.gitkeep

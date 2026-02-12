@@ -1,0 +1,46 @@
+appId: dev.zapstore.alpha
+---
+# =============================================================
+# Sub-flow: Search for an app and open its detail page
+#
+# Env vars:
+#   APP_SEARCH_TERM  - Text to type in the search field
+#   APP_MATCH_TEXT   - Regex to match the search result card
+#                      (use ".*partial text.*" for multi-line)
+#
+# After completion, the app detail page is visible.
+# =============================================================
+
+# Ensure we're on the Search tab root
+- tapOn:
+    text: ".*Tab 1 of 3"
+    label: "Tap Search tab"
+- tapOn:
+    text: ".*Tab 1 of 3"
+    label: "Tap Search tab again to reset"
+
+# Clear any previous search state
+- runFlow:
+    when:
+      visible: "Clear search"
+    commands:
+      - tapOn: "Clear search"
+
+- extendedWaitUntil:
+    visible: "Search apps"
+    timeout: 5000
+
+- tapOn: "Search apps"
+- inputText: "${APP_SEARCH_TERM}"
+- pressKey: Enter
+
+- extendedWaitUntil:
+    visible:
+      text: "${APP_MATCH_TEXT}"
+    timeout: 10000
+
+- tapOn:
+    text: "${APP_MATCH_TEXT}"
+    label: "Tap search result"
+
+- waitForAnimationToEnd

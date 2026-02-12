@@ -1,0 +1,66 @@
+appId: dev.zapstore.alpha
+---
+# =============================================================
+# Sub-flow: Install an older version of an app
+#
+# Expects to be on the app detail page with the app uninstalled.
+# Scrolls to "Debug: All Versions", expands it, and installs
+# the second version in the list (the first older version).
+#
+# Handles:
+#   - Amber signing request (if prompted)
+#   - Samsung "Trust and install app" security dialog (if prompted)
+#   - Android system "Instalar" dialog
+#
+# After completion, the older version is installed ("Open" visible).
+# =============================================================
+
+- scrollUntilVisible:
+    element:
+      text: ".*All Versions.*"
+    direction: DOWN
+    timeout: 10000
+
+- tapOn:
+    text: ".*All Versions.*"
+    label: "Expand versions list"
+
+- waitForAnimationToEnd
+
+# Scroll to make more versions visible
+- scroll
+
+# Use "below" selector relative to the "All Versions" header:
+#   index 0 = latest version's Install
+#   index 1 = second (older) version's Install
+- tapOn:
+    text: "Install"
+    below:
+      text: ".*All Versions.*"
+    index: 1
+    label: "Install older version"
+
+# Amber may ask to sign a request during install
+- runFlow:
+    when:
+      visible: "Accept"
+    commands:
+      - tapOn: "Accept"
+
+# Samsung security dialog (may not appear if source already trusted)
+- runFlow:
+    when:
+      visible: "Trust and install app"
+    commands:
+      - tapOn: "Trust and install app"
+
+# Android system install dialog
+- extendedWaitUntil:
+    visible: "Instalar"
+    timeout: 15000
+- tapOn: "Instalar"
+
+# Wait for installation to complete
+- extendedWaitUntil:
+    visible: "Open"
+    timeout: 30000

@@ -1,0 +1,79 @@
+appId: dev.zapstore.alpha
+name: "Flotilla Update Flow Test"
+tags:
+  - update
+  - android
+---
+# =============================================================
+# Test: Install an older version of Flotilla, then verify it
+# appears in the Updates tab with a newer version available.
+#
+# Prerequisites:
+#   - Amber signer app installed on the device
+#   - Device has internet connectivity
+#   - Fresh app start recommended:
+#     adb shell am start -S --activity-clear-task -n dev.zapstore.alpha/.MainActivity
+# =============================================================
+
+# ====== Step 1: Ensure user is signed in ======
+
+- runFlow:
+    file: flows/sign_in_amber.yaml
+
+- takeScreenshot: "01_signed_in.png"
+
+# ====== Step 2: Baseline — verify Flotilla is NOT in Updates ======
+
+- tapOn:
+    text: ".*Tab 2 of 3"
+    label: "Tap Updates tab"
+
+- waitForAnimationToEnd
+
+- assertNotVisible:
+    text: ".*Flotilla.*"
+    label: "Flotilla should NOT be in Updates before install"
+
+- takeScreenshot: "02_updates_baseline.png"
+
+# ====== Step 3: Search for Flotilla ======
+
+- runFlow:
+    file: flows/search_app.yaml
+    env:
+      APP_SEARCH_TERM: "Flotilla"
+      APP_MATCH_TEXT: ".*Flotilla.*hodlbod.*"
+
+- takeScreenshot: "03_flotilla_detail.png"
+
+# ====== Step 4: Uninstall if already installed ======
+
+- runFlow:
+    file: flows/uninstall_if_installed.yaml
+
+- takeScreenshot: "04_after_uninstall_check.png"
+
+# ====== Step 5: Install older version ======
+
+- runFlow:
+    file: flows/install_older_version.yaml
+
+- takeScreenshot: "05_after_install.png"
+
+# ====== Step 6: Verify Flotilla appears in Updates ======
+
+- tapOn:
+    text: ".*Tab 2 of 3"
+    label: "Tap Updates tab"
+
+- waitForAnimationToEnd
+
+- assertVisible:
+    text: ".*Flotilla.*"
+    label: "Flotilla should now appear in Updates after installing older version"
+
+- assertVisible:
+    text: ".*Update All.*"
+    label: "Updates available with Update All button"
+
+- takeScreenshot: "06_updates_with_flotilla.png"

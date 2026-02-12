@@ -12,6 +12,7 @@ import 'package:zapstore/screens/search_screen.dart';
 import 'package:zapstore/screens/updates_screen.dart';
 import 'package:zapstore/screens/profile_screen.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
+
 /// Root paths for each navigation branch (used for back navigation handling)
 const kBranchRoots = ['/search', '/updates', '/profile'];
 
@@ -140,18 +141,20 @@ final routerProvider = Provider<GoRouter>((ref) {
     final wasUpdatesRoute = previousPath?.startsWith('/updates') ?? false;
     previousPath = currentPath;
 
-    // Sync installed packages on every navigation to catch sideloads,
-    // external installs/uninstalls, and self-updating apps.
-    // This is a local-only platform channel call (~100-500ms, no network).
-    unawaited(
-      ref.read(packageManagerProvider.notifier).syncInstalledPackages(),
-    );
+    Future.microtask(() {
+      // Sync installed packages on every navigation to catch sideloads,
+      // external installs/uninstalls, and self-updating apps.
+      // This is a local-only platform channel call (~100-500ms, no network).
+      unawaited(
+        ref.read(packageManagerProvider.notifier).syncInstalledPackages(),
+      );
 
-    // Clear completed operations when navigating AWAY from updates
-    // This cleans up the "All done" state without affecting the count while visible
-    if (wasUpdatesRoute && !isUpdatesRoute) {
-      ref.read(packageManagerProvider.notifier).clearCompletedOperations();
-    }
+      // Clear completed operations when navigating AWAY from updates
+      // This cleans up the "All done" state without affecting the count while visible
+      if (wasUpdatesRoute && !isUpdatesRoute) {
+        ref.read(packageManagerProvider.notifier).clearCompletedOperations();
+      }
+    });
   }
 
   router.routerDelegate.addListener(onRouteChange);

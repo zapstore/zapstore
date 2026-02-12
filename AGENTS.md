@@ -15,14 +15,17 @@ Users can support developers directly via Lightning zaps.
 
 ## Quick Reference
 
-| What | Where |
-|------|-------|
+| What                    | Where                             |
+| ----------------------- | --------------------------------- |
 | Architecture & patterns | `spec/guidelines/ARCHITECTURE.md` |
-| Non-negotiable rules | `spec/guidelines/INVARIANTS.md` |
-| Quality standards | `spec/guidelines/QUALITY_BAR.md` |
-| Product vision | `spec/guidelines/VISION.md` |
-| Feature specs | `spec/features/` |
-| Active work | `work/` |
+| Non-negotiable rules    | `spec/guidelines/INVARIANTS.md`   |
+| Quality standards       | `spec/guidelines/QUALITY_BAR.md`  |
+| Product vision          | `spec/guidelines/VISION.md`       |
+| Feature specs           | `spec/features/`                  |
+| Active work             | `work/`                           |
+| E2E testing workflow    | `test/TESTING.md`                 |
+| Test specs              | `test/specs/`                     |
+| Maestro flows           | `maestro/`                        |
 
 ## Project Spec Structure
 
@@ -55,14 +58,19 @@ See `spec/guidelines/QUALITY_BAR.md` for what qualifies as "non-trivial."
 **Never modify** files in `spec/guidelines/`.
 If a guideline seems wrong or incomplete, report it as a Spec Issue.
 
-| Path | Owner | AI May Modify |
-|------|-------|---------------|
-| `spec/guidelines/*` | Human | No |
-| `spec/features/*` | Human | No (unless explicitly asked) |
-| `work/*.md` | AI | Yes |
-| `lib/**` | Shared | Yes |
-| `test/**` | Shared | Yes |
-| `AGENTS.md` | Human | No |
+| Path                | Owner  | AI May Modify                |
+| ------------------- | ------ | ---------------------------- |
+| `spec/guidelines/*` | Human  | No                           |
+| `spec/features/*`   | Human  | No (unless explicitly asked) |
+| `work/*.md`         | AI     | Yes                          |
+| `lib/**`            | Shared | Yes                          |
+| `test/**`           | Shared | Yes                          |
+| `AGENTS.md`         | Human  | No                           |
+| `test/TESTING.md`   | Human  | No                           |
+| `test/specs/*`      | Human  | No (propose changes)         |
+| `test/runs/*`       | Agent  | Yes                          |
+| `test/reports/*`    | Agent  | Yes                          |
+| `maestro/**`        | Shared | Yes                          |
 
 ## Working Rules
 
@@ -70,3 +78,13 @@ If a guideline seems wrong or incomplete, report it as a Spec Issue.
 - After dependency changes, run: `fvm flutter pub get`
 - Fix any analyze/lint errors introduced by your changes.
 - Assume Android as default target unless instructed otherwise.
+
+## E2E Testing
+
+Tests are agent-orchestrated: the agent handles setup, stateful checks, and
+reporting while Maestro handles UI automation. Read `test/TESTING.md` first.
+
+Key concept: **Agent-Verified Criteria** — Maestro is stateless, so cross-flow
+checks (e.g., "badge count incremented by 1") are captured before/after by the
+agent and reported alongside Maestro's own assertions. See the test spec template
+at `test/specs/_TEMPLATE.md` for the format.

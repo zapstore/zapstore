@@ -1,0 +1,22 @@
+appId: dev.zapstore.alpha
+---
+# =============================================================
+# Sub-flow: Uninstall app if currently installed
+#
+# Expects to be on the app detail page.
+# If "Uninstall" is visible, taps it and confirms.
+# After completion, the app is uninstalled (or was already).
+# =============================================================
+
+- runFlow:
+    when:
+      visible: "Uninstall"
+    commands:
+      - tapOn: "Uninstall"
+      - extendedWaitUntil:
+          visible: "OK"
+          timeout: 5000
+      - tapOn: "OK"
+      - extendedWaitUntil:
+          visible: "Install"
+          timeout: 10000
