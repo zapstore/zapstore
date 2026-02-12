@@ -123,11 +123,18 @@ class AwaitingPermission extends InstallOperation {
 // INSTALL PHASE (No cancel - Android controls)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/// File verified, waiting for install to be triggered
+/// File verified, waiting for install to be triggered.
+/// [triggeredAt] is set when [triggerInstall] is actually called, so the
+/// watchdog can detect native sessions that never respond.
 class ReadyToInstall extends InstallOperation {
   final String filePath;
+  final DateTime? triggeredAt;
 
-  const ReadyToInstall({required super.target, required this.filePath});
+  const ReadyToInstall({
+    required super.target,
+    required this.filePath,
+    this.triggeredAt,
+  });
 }
 
 /// Native installation in progress
@@ -182,7 +189,10 @@ class SystemProcessing extends InstallOperation {
 class Completed extends InstallOperation {
   final DateTime completedAt;
 
-  Completed({required super.target, DateTime? completedAt})
+  /// Whether this was an update (app was already installed) or a new install.
+  final bool isUpdate;
+
+  Completed({required super.target, DateTime? completedAt, this.isUpdate = false})
     : completedAt = completedAt ?? DateTime.now();
 }
 
@@ -258,7 +268,8 @@ extension InstallOperationX on InstallOperation {
       this is Downloading ||
       this is Verifying ||
       this is Installing ||
-      this is SystemProcessing;
+      this is SystemProcessing ||
+      (this is ReadyToInstall && (this as ReadyToInstall).triggeredAt != null);
 
   /// Whether this operation is in the verification phase
   bool get isVerifying => this is Verifying;
@@ -277,6 +288,7 @@ extension InstallOperationX on InstallOperation {
     Verifying(:final startedAt) => startedAt,
     Installing(:final startedAt) => startedAt,
     SystemProcessing(:final startedAt) => startedAt,
+    ReadyToInstall(:final triggeredAt) => triggeredAt,
     _ => null,
   };
 

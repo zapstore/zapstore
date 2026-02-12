@@ -17,6 +17,8 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import io.flutter.embedding.engine.plugins.FlutterPlugin
+import io.flutter.embedding.engine.plugins.activity.ActivityAware
+import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -90,7 +92,7 @@ object ErrorCode {
  * no polling, no probing, no hanging awaits.
  */
 class AndroidPackageManagerPlugin :
-        FlutterPlugin, MethodCallHandler, EventChannel.StreamHandler, DefaultLifecycleObserver {
+        FlutterPlugin, MethodCallHandler, EventChannel.StreamHandler, DefaultLifecycleObserver, ActivityAware {
 
     private lateinit var methodChannel: MethodChannel
     private lateinit var eventChannel: EventChannel
@@ -137,6 +139,15 @@ class AndroidPackageManagerPlugin :
         private var isAppInForeground = true
 
         private var appContext: Context? = null
+
+        /**
+         * Weak reference to the current Activity. Used by launchConfirmDialog to start
+         * the PackageInstaller confirmation dialog in the same task as the app, which
+         * ensures the dialog appears on top of the current UI. Using Application context
+         * with FLAG_ACTIVITY_NEW_TASK creates a separate task that Android may place
+         * behind the current app, making the dialog invisible to the user.
+         */
+        private var activityContext: java.lang.ref.WeakReference<android.app.Activity>? = null
 
         /**
          * Called by InstallResultReceiver when a broadcast arrives. Emits the status event to Dart
@@ -218,7 +229,6 @@ class AndroidPackageManagerPlugin :
         }
 
         private fun launchConfirmDialog(packageName: String, intent: Intent) {
-            val ctx = appContext ?: return
             val inst = instance
 
             // Post with delay to ensure the system is ready to show the dialog.
@@ -226,11 +236,31 @@ class AndroidPackageManagerPlugin :
             // immediately after session.commit() while the app is still processing.
             val launcher: () -> Unit = {
                 try {
-                    intent.addFlags(
-                            Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                    )
-                    ctx.startActivity(intent)
-                    Log.d(TAG, "Launched confirmation dialog for $packageName")
+                    // CRITICAL: Prefer Activity context over Application context.
+                    // Using Application context with FLAG_ACTIVITY_NEW_TASK creates
+                    // the install dialog in a SEPARATE task. When the user is actively
+                    // interacting with the app, Android may place this new task behind
+                    // the current one, making the dialog invisible.
+                    // Using Activity context starts the dialog in the SAME task,
+                    // guaranteeing it appears on top of the current UI.
+                    val activity = activityContext?.get()
+                    if (activity != null && !activity.isFinishing && !activity.isDestroyed) {
+                        // Remove NEW_TASK flag when launching from Activity context —
+                        // we want the dialog in the same task stack.
+                        intent.flags = intent.flags and Intent.FLAG_ACTIVITY_NEW_TASK.inv()
+                        activity.startActivity(intent)
+                        Log.d(TAG, "Launched confirmation dialog for $packageName (Activity context)")
+                    } else {
+                        // Fallback to Application context (e.g., during config change)
+                        val ctx = appContext
+                        if (ctx != null) {
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            ctx.startActivity(intent)
+                            Log.d(TAG, "Launched confirmation dialog for $packageName (Application context fallback)")
+                        } else {
+                            Log.w(TAG, "Cannot launch dialog for $packageName: no context available")
+                        }
+                    }
                 } catch (e: Exception) {
                     Log.w(TAG, "Failed to launch confirmation dialog for $packageName", e)
                 }
@@ -289,6 +319,26 @@ class AndroidPackageManagerPlugin :
         eventChannel.setStreamHandler(null)
         eventSink = null
         instance = null
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // ACTIVITY AWARE (Provides Activity context for dialog launching)
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    override fun onAttachedToActivity(binding: ActivityPluginBinding) {
+        activityContext = java.lang.ref.WeakReference(binding.activity)
+    }
+
+    override fun onDetachedFromActivityForConfigChanges() {
+        activityContext = null
+    }
+
+    override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
+        activityContext = java.lang.ref.WeakReference(binding.activity)
+    }
+
+    override fun onDetachedFromActivity() {
+        activityContext = null
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════
@@ -504,6 +554,15 @@ class AndroidPackageManagerPlugin :
                     if (now2 < deadline && (hasSession || hasPendingUi || verifyingAlive)) {
                         // Nudge Dart to show the most accurate state (esp. after reconnect).
                         if (hasPendingUi) {
+                            // Re-launch the dialog in case it was suppressed by user interaction
+                            // or Android's activity stack. The initial launchConfirmDialog may
+                            // have failed silently if the user was actively using the app.
+                            if (isAppInForeground) {
+                                pendingUserActionIntents[appId]?.let { intent ->
+                                    Log.d(TAG, "Watchdog: Re-launching install dialog for $appId")
+                                    launchConfirmDialog(appId, intent)
+                                }
+                            }
                             emitInstallStatus(
                                     appId,
                                     InstallStatus.PENDING_USER_ACTION,
