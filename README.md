@@ -1,3 +1,5 @@
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/zapstore/zapstore)
+
 # Zapstore
 
 The open app store powered by your social network
