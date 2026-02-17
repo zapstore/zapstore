@@ -84,37 +84,40 @@ class InstallAlertDialog extends HookConsumerWidget {
                       ),
                     ],
                   ),
-            const Gap(14),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Switch(
-                  value: trustedSignerNotifier.value,
-                  onChanged: (value) {
-                    trustedSignerNotifier.value = value;
-                  },
-                ),
-                Gap(4),
-                Expanded(
-                  child: Row(
-                    children: [
-                      Text(
-                        'Always trust',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurface,
-                        ),
-                      ),
-                      Gap(4),
-                      AuthorContainer(
-                        beforeText: '',
-                        profile: publisher,
-                        size: baseTextSize,
-                      ),
-                    ],
+            // Only show "Always trust" when signed in (requires signer to persist)
+            if (profile != null) ...[
+              const Gap(14),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Switch(
+                    value: trustedSignerNotifier.value,
+                    onChanged: (value) {
+                      trustedSignerNotifier.value = value;
+                    },
                   ),
-                ),
-              ],
-            ),
+                  Gap(4),
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Text(
+                          'Always trust',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurface,
+                          ),
+                        ),
+                        Gap(4),
+                        AuthorContainer(
+                          beforeText: '',
+                          profile: publisher,
+                          size: baseTextSize,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
         ],
       ),
