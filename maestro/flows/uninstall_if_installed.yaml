@@ -1,4 +1,4 @@
-appId: dev.zapstore.alpha
+appId: dev.zapstore.app
 ---
 # =============================================================
 # Sub-flow: Uninstall app if currently installed

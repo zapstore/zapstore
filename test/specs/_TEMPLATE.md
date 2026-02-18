@@ -28,7 +28,7 @@ cannot do (ADB commands, app lifecycle, device state).
 
 ```bash
 # Ensure clean app state
-adb shell am start -S --activity-clear-task -n dev.zapstore.alpha/.MainActivity
+adb shell am start -S --activity-clear-task -n dev.zapstore.app/.MainActivity
 # Wait for app to initialize
 sleep 3
 ```
@@ -69,6 +69,7 @@ against these before declaring a test failure.
 | `"Element not found: .*Tab N of 3"` | Samsung keyboard covers bottom tabs | Re-run setup, retry |
 | `"Assertion is false: X is visible"` | Content still loading / slow network | Retry (same state) |
 | `"Element not found: Search apps"` | Previous search state persisted | Restart app with `--activity-clear-task`, retry |
+| Samsung "package analysis error" dialog | Samsung shows error after APK install; install still succeeds | Flow handles with conditional `tapOn: "OK"` — retry if still fails |
 
 ## Retry Strategy
 
@@ -106,7 +107,7 @@ button confirming successful installation.
 |-----------|---------|-------------|-------------|
 | `APP_PACKAGE` | `social.flotilla` | `com.duckduckgo.mobile.android` | Package to install |
 | `APP_SEARCH_TERM` | `"Flotilla"` | `"DuckDuckGo"` | Search text |
-| `APP_MATCH_TEXT` | `".*Self-hosted community.*"` | `".*DuckDuckGo.*"` | Result card regex |
+| `APP_MATCH_TEXT` | `".*Flotilla.*hodlbod.*"` | `".*DuckDuckGo.*"` | Result card regex |
 
 ## Maestro Flow
 
@@ -118,7 +119,7 @@ button confirming successful installation.
 
 ```bash
 adb shell pm uninstall social.flotilla    # ignore exit code
-adb shell am start -S --activity-clear-task -n dev.zapstore.alpha/.MainActivity
+adb shell am start -S --activity-clear-task -n dev.zapstore.app/.MainActivity
 sleep 3
 ```
 

@@ -12,6 +12,7 @@ bool isDebugMode(String? pubkey) {
     '726a1e261cc6474674e8285e3951b3bb139be9a773d1acf49dc868db861a1c11',
     '227ce06aa5fb84bf70f25d887519374d1bfd3e1ffb75697bb0aa8f6396f32e43',
     '24480686b56234a240fd9827209b584847f3d4f9657f0d9a97aec5320a264acb',
+    'fdc6b3ce357c8f149f9bfefdfc2a3f1a6d2f25aa512761dea299f78aafeb00e7', // test automation account
   };
 
   // Try direct comparison first (hex format)

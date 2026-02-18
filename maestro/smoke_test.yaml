@@ -1,11 +1,11 @@
-appId: dev.zapstore.alpha
+appId: dev.zapstore.app
 name: "Zapstore Smoke Test"
 tags:
   - smoke
   - android
 ---
 # NOTE: Run with a fresh app start to avoid stale state:
-#   adb shell am start -S --activity-clear-task -n dev.zapstore.alpha/.MainActivity
+#   adb shell am start -S --activity-clear-task -n dev.zapstore.app/.MainActivity
 
 # ====== Search Tab (Initial Screen) ======
 

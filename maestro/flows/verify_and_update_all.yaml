@@ -1,0 +1,60 @@
+appId: dev.zapstore.app
+---
+# =============================================================
+# Sub-flow: Verify updates visible and execute Update All
+#
+# Navigates to the Updates tab, dismisses any "All done" banner,
+# asserts "Update All" is visible, taps it, and waits for all
+# updates to complete.
+#
+# After completion, "All done (N updated)" banner is visible.
+# =============================================================
+
+# Dismiss Android notification permission dialog if shown
+- runFlow:
+    when:
+      visible: "Allow"
+    commands:
+      - tapOn: "Allow"
+
+# Wait for the app to be ready (tab bar visible)
+- extendedWaitUntil:
+    visible:
+      text: ".*Tab 2 of 3"
+    timeout: 20000
+
+- tapOn:
+    text: ".*Tab 2 of 3"
+    label: "Tap Updates tab"
+- tapOn:
+    text: ".*Tab 2 of 3"
+    label: "Tap Updates tab again to reset to root"
+
+- waitForAnimationToEnd
+
+# "All done (N installed)" banner and "Update All" are mutually exclusive.
+# If the banner is showing (from the install phase), dismiss it first.
+- runFlow:
+    when:
+      visible: ".*All done.*"
+    commands:
+      - tapOn:
+          text: ".*All done.*"
+      - waitForAnimationToEnd
+
+# Wait for updates to load (may take time after restart)
+- extendedWaitUntil:
+    visible:
+      text: ".*Update All.*"
+    timeout: 30000
+
+- tapOn:
+    text: ".*Update All.*"
+    label: "Tap Update All"
+
+# Wait for either the "All done (N updated)" banner or the "Up to date" section
+# (the banner auto-dismisses after a few seconds)
+- extendedWaitUntil:
+    visible:
+      text: "(?:All done.*updated|Up to date)"
+    timeout: 180000

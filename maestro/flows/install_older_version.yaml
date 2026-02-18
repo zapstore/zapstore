@@ -1,4 +1,4 @@
-appId: dev.zapstore.alpha
+appId: dev.zapstore.app
 ---
 # =============================================================
 # Sub-flow: Install an older version of an app
@@ -7,19 +7,28 @@ appId: dev.zapstore.alpha
 # Scrolls to "Debug: All Versions", expands it, and installs
 # the second version in the list (the first older version).
 #
-# Handles:
-#   - Amber signing request (if prompted)
-#   - Samsung "Trust and install app" security dialog (if prompted)
-#   - Android system "Instalar" dialog
+# Handles (in order):
+#   - Android system "Update" confirmation dialog
+#   - Amber signing request ("Accept")
+#   - Samsung "Trust and install app" security dialog
+#   - Android system "Install" dialog
+#   - Samsung "package analysis error" dialog
 #
 # After completion, the older version is installed ("Open" visible).
 # =============================================================
+
+# Dismiss Android notification permission dialog if shown
+- runFlow:
+    when:
+      visible: "Allow"
+    commands:
+      - tapOn: "Allow"
 
 - scrollUntilVisible:
     element:
       text: ".*All Versions.*"
     direction: DOWN
-    timeout: 10000
+    timeout: 30000
 
 - tapOn:
     text: ".*All Versions.*"
@@ -40,6 +49,29 @@ appId: dev.zapstore.alpha
     index: 1
     label: "Install older version"
 
+# Wait for the first dialog to appear. Could be:
+# - Android system "Update" (if app package was previously known)
+# - Amber "Accept" (signing request)
+# - Samsung "Trust and install app"
+# - Android system "Install"
+- extendedWaitUntil:
+    visible:
+      text: "(?:Update|Accept|Trust and install app|Install)"
+    timeout: 20000
+
+# Handle Android system update/downgrade confirmation
+- runFlow:
+    when:
+      visible: "Update"
+    commands:
+      - tapOn: "Update"
+
+# After Update (or if it was skipped), wait for the next dialog
+- extendedWaitUntil:
+    visible:
+      text: "(?:Accept|Trust and install app|Install)"
+    timeout: 20000
+
 # Amber may ask to sign a request during install
 - runFlow:
     when:
@@ -56,11 +88,25 @@ appId: dev.zapstore.alpha
 
 # Android system install dialog
 - extendedWaitUntil:
-    visible: "Instalar"
-    timeout: 15000
-- tapOn: "Instalar"
+    visible: "Install"
+    timeout: 20000
+- tapOn: "Install"
 
-# Wait for installation to complete
+# Wait for either "Open" (success) or Samsung "package analysis error" dialog.
+# The dialog covers "Open" so we must detect and dismiss it first.
+- extendedWaitUntil:
+    visible:
+      text: "(?:Open|OK)"
+    timeout: 60000
+
+# Dismiss Samsung dialog if it appeared
+- runFlow:
+    when:
+      visible: "OK"
+    commands:
+      - tapOn: "OK"
+
+# Confirm install completed
 - extendedWaitUntil:
     visible: "Open"
-    timeout: 30000
+    timeout: 15000

@@ -14,7 +14,7 @@ selection, install with system dialogs, and update discovery.
 | ----------------- | ----------------------------- | ------------------------------- | --------------------------------- |
 | `APP_PACKAGE`     | `social.flotilla`             | `com.duckduckgo.mobile.android` | Package under test                |
 | `APP_SEARCH_TERM` | `"Flotilla"`                  | `"DuckDuckGo"`                  | Search text                       |
-| `APP_MATCH_TEXT`  | `".*Self-hosted community.*"` | `".*DuckDuckGo.*"`              | Regex to match search result card |
+| `APP_MATCH_TEXT`  | `".*Flotilla.*hodlbod.*"`     | `".*DuckDuckGo.*"`              | Regex to match search result card |
 
 If Flotilla is unavailable (removed from store, no older versions listed),
 the agent should retry with the alternative parameters.
@@ -36,7 +36,7 @@ the agent should retry with the alternative parameters.
 adb shell pm uninstall social.flotilla    # ignore exit code if not installed
 
 # Restart Zapstore with a clean activity stack
-adb shell am start -S --activity-clear-task -n dev.zapstore.alpha/.MainActivity
+adb shell am start -S --activity-clear-task -n dev.zapstore.app/.MainActivity
 
 # Wait for the app to fully initialize
 sleep 3
@@ -76,11 +76,12 @@ capture it again and verify it incremented by exactly 1.
 | Error Pattern                                                    | Likely Cause                                          | Recovery Action                                                     |
 | ---------------------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------- |
 | `"Element not found: .*Tab N of 3"`                              | Samsung keyboard covering bottom tabs                 | Re-run setup (clean restart dismisses keyboard), retry              |
-| `"Assertion is false: \".*Self-hosted community.*\" is visible"` | Search results slow to load on poor network           | Retry with same state                                               |
+| `"Assertion is false: \".*Flotilla.*hodlbod.*\" is visible"`    | Search results slow to load on poor network           | Retry with same state                                               |
 | `"Element not found: Search apps"`                               | Previous search state persisted from earlier run      | Restart with `--activity-clear-task`, retry                         |
 | `"Assertion is false: \"Instalar\" is visible"`                  | Samsung "Trust and install app" dialog blocking       | This is handled conditionally in the flow; if it still fails, retry |
 | `"Assertion is false: \".*Update All.*\" is visible"`            | Updates tab not refreshed yet after install           | Wait 5 seconds, navigate away from Updates tab and back, re-check   |
 | `"Element not found: .*All Versions.*"`                          | Page didn't scroll far enough to reveal debug section | Retry (scroll behavior varies by content height)                    |
+| Samsung "package analysis error" dialog                          | Samsung shows "Ocorreu um problema ao analisar o pacote" after APK install | Flow handles with conditional `tapOn: "OK"` — retry if still fails  |
 
 ## Retry Strategy
 

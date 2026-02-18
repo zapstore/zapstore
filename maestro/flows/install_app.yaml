@@ -1,4 +1,4 @@
-appId: dev.zapstore.alpha
+appId: dev.zapstore.app
 ---
 # =============================================================
 # Sub-flow: Install app from its detail page
@@ -9,12 +9,20 @@ appId: dev.zapstore.alpha
 # Handles:
 #   - Amber signing request (if prompted)
 #   - Samsung "Trust and install app" security dialog (if prompted)
-#   - Android system "Instalar" dialog
+#   - Android system "Install" dialog
+#   - Samsung "package analysis error" dialog (dismiss OK, install still succeeds)
 #
 # After completion, the app is installed ("Open" visible).
 # =============================================================
 
 - tapOn: "Install"
+
+# Android system may show its own "Update" dialog for reinstalls
+- runFlow:
+    when:
+      visible: "Update"
+    commands:
+      - tapOn: "Update"
 
 # Amber may ask to sign a request during install
 - runFlow:
@@ -32,11 +40,25 @@ appId: dev.zapstore.alpha
 
 # Android system install dialog
 - extendedWaitUntil:
-    visible: "Instalar"
+    visible: "Install"
     timeout: 15000
-- tapOn: "Instalar"
+- tapOn: "Install"
 
-# Wait for installation to complete
+# Wait for either "Open" (success) or Samsung "package analysis error" dialog.
+# The dialog covers "Open" so we must detect and dismiss it first.
+- extendedWaitUntil:
+    visible:
+      text: "(?:Open|OK)"
+    timeout: 45000
+
+# Dismiss Samsung dialog if it appeared
+- runFlow:
+    when:
+      visible: "OK"
+    commands:
+      - tapOn: "OK"
+
+# Confirm install completed
 - extendedWaitUntil:
     visible: "Open"
-    timeout: 30000
+    timeout: 15000

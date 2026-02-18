@@ -1,4 +1,4 @@
-appId: dev.zapstore.alpha
+appId: dev.zapstore.app
 ---
 # =============================================================
 # Sub-flow: Search for an app and open its detail page
@@ -11,6 +11,19 @@ appId: dev.zapstore.alpha
 # After completion, the app detail page is visible.
 # =============================================================
 
+# Dismiss Android notification permission dialog if shown
+- runFlow:
+    when:
+      visible: "Allow"
+    commands:
+      - tapOn: "Allow"
+
+# Wait for the app to be ready (tab bar visible)
+- extendedWaitUntil:
+    visible:
+      text: ".*Tab 1 of 3"
+    timeout: 20000
+
 # Ensure we're on the Search tab root
 - tapOn:
     text: ".*Tab 1 of 3"
@@ -18,6 +31,8 @@ appId: dev.zapstore.alpha
 - tapOn:
     text: ".*Tab 1 of 3"
     label: "Tap Search tab again to reset"
+
+- waitForAnimationToEnd
 
 # Clear any previous search state
 - runFlow:
@@ -28,7 +43,7 @@ appId: dev.zapstore.alpha
 
 - extendedWaitUntil:
     visible: "Search apps"
-    timeout: 5000
+    timeout: 20000
 
 - tapOn: "Search apps"
 - inputText: "${APP_SEARCH_TERM}"
@@ -37,7 +52,7 @@ appId: dev.zapstore.alpha
 - extendedWaitUntil:
     visible:
       text: "${APP_MATCH_TEXT}"
-    timeout: 10000
+    timeout: 20000
 
 - tapOn:
     text: "${APP_MATCH_TEXT}"

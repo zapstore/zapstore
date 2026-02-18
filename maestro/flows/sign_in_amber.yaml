@@ -1,20 +1,61 @@
-appId: dev.zapstore.alpha
+appId: dev.zapstore.app
 ---
 # =============================================================
-# Sub-flow: Sign in with Amber
+# Sub-flow: Sign in with the test automation account via Amber
 #
-# Navigates to Profile tab and signs in via Amber if needed.
-# After completion, the user is signed in and on the Profile tab.
+# Navigates to Profile tab and ensures the test account is active.
+# If signed in with a different account, signs out first.
+# If not signed in, signs in via Amber.
+#
+# Test account npub: npub1lhrt8n340j83f8umlm7lc23lrfkj7fd22ynkrh4zn8mc4tltqrns4fkp3n
+# (see test/fixtures/test-account.env for full keypair)
 #
 # Prerequisites:
-#   - Amber signer app installed on the device
+#   - Amber signer app installed with test account imported
 # =============================================================
+
+# Dismiss Android notification permission dialog if shown
+- runFlow:
+    when:
+      visible: "Allow"
+    commands:
+      - tapOn: "Allow"
+
+# Wait for the app to fully load (tab bar must be visible)
+- extendedWaitUntil:
+    visible:
+      text: ".*Tab 3 of 3"
+    timeout: 20000
 
 - tapOn:
     text: ".*Tab 3 of 3"
     label: "Tap Profile tab"
+- tapOn:
+    text: ".*Tab 3 of 3"
+    label: "Tap Profile tab again to reset to root"
 
 - waitForAnimationToEnd
+
+# Scroll to find sign-in/sign-out (profile page may not start at top)
+- scrollUntilVisible:
+    element:
+      text: "(?:Sign in with Amber|Sign Out)"
+    direction: UP
+    timeout: 30000
+
+# If signed in with wrong account, sign out first
+- runFlow:
+    when:
+      visible: "Sign Out"
+    commands:
+      - runFlow:
+          when:
+            notVisible: "npub1lhrt"
+          commands:
+            - tapOn: "Sign Out"
+            - extendedWaitUntil:
+                visible: "Sign in with Amber"
+                timeout: 15000
 
 # If not signed in, sign in via Amber
 - runFlow:
@@ -24,10 +65,23 @@ appId: dev.zapstore.alpha
       - tapOn: "Sign in with Amber"
       - extendedWaitUntil:
           visible: "Connect"
-          timeout: 10000
+          timeout: 20000
       - tapOn: "Connect"
-      - extendedWaitUntil:
-          visible: "Sign Out"
-          timeout: 15000
+      - scrollUntilVisible:
+          element: "Sign Out"
+          direction: UP
+          timeout: 30000
 
-- assertVisible: "Sign Out"
+# After Amber sign-in, app may return to a different tab — go back to Profile
+- tapOn:
+    text: ".*Tab 3 of 3"
+    label: "Navigate back to Profile tab"
+
+- waitForAnimationToEnd
+
+# Verify we're signed in
+- scrollUntilVisible:
+    element:
+      text: "(?:Sign Out|npub1lhrt)"
+    direction: UP
+    timeout: 15000

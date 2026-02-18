@@ -1,4 +1,4 @@
-appId: dev.zapstore.alpha
+appId: dev.zapstore.app
 name: "Flotilla Update Flow Test"
 tags:
   - update
@@ -12,7 +12,7 @@ tags:
 #   - Amber signer app installed on the device
 #   - Device has internet connectivity
 #   - Fresh app start recommended:
-#     adb shell am start -S --activity-clear-task -n dev.zapstore.alpha/.MainActivity
+#     adb shell am start -S --activity-clear-task -n dev.zapstore.app/.MainActivity
 # =============================================================
 
 # ====== Step 1: Ensure user is signed in ======

@@ -1,0 +1,112 @@
+appId: com.greenart7c3.nostrsigner
+---
+# =============================================================
+# Sub-flow: Ensure test account is active in Amber
+#
+# Handles two scenarios:
+#   A) Amber has accounts → pick or import via account selector
+#   B) Fresh Amber (onboarding) → import from nsec directly
+#
+# Test account npub (truncated): npub1lhr
+#
+# Environment variable required:
+#   NOSTR_TEST_NSEC — the nsec to import
+#
+# Prerequisites:
+#   - Amber signer app installed on the device
+#   - Device language set to English
+# =============================================================
+
+# Wait for Amber to load
+- extendedWaitUntil:
+    visible:
+      text: "(?:Accounts|Use your private key)"
+    timeout: 15000
+
+# ─── Scenario A: main screen with accounts ───
+- runFlow:
+    when:
+      visible: "Accounts"
+    commands:
+      - tapOn:
+          text: "Accounts"
+          label: "Open accounts selector"
+      - extendedWaitUntil:
+          visible: "Select Account"
+          timeout: 5000
+      # Import test account if not present
+      - runFlow:
+          when:
+            notVisible: "npub1lhr"
+          commands:
+            - tapOn: "Add New Account"
+            - extendedWaitUntil:
+                visible: "Use your private key"
+                timeout: 10000
+            - tapOn: "Use your private key"
+            - extendedWaitUntil:
+                visible: "Nsec / private key"
+                timeout: 10000
+            - tapOn:
+                text: "Nsec / private key"
+                label: "Tap nsec input field"
+            - inputText: "${NOSTR_TEST_NSEC}"
+            - tapOn: "Next"
+            - extendedWaitUntil:
+                visible: "Finish"
+                timeout: 10000
+            - tapOn: "Finish"
+            # Wait for notification dialog or main screen
+            - extendedWaitUntil:
+                visible:
+                  text: "(?:Allow Amber|Applications)"
+                timeout: 20000
+            - runFlow:
+                when:
+                  visible: "Allow"
+                commands:
+                  - tapOn: "Allow"
+            - extendedWaitUntil:
+                visible: "Applications"
+                timeout: 15000
+      # If account sheet is still open (account existed), select it
+      - runFlow:
+          when:
+            visible: "Select Account"
+          commands:
+            - tapOn:
+                text: "npub1lhr"
+                label: "Select test account"
+            - pressKey: back
+
+# ─── Scenario B: fresh Amber onboarding ───
+- runFlow:
+    when:
+      visible: "Use your private key"
+    commands:
+      - tapOn: "Use your private key"
+      - extendedWaitUntil:
+          visible: "Nsec / private key"
+          timeout: 10000
+      - tapOn:
+          text: "Nsec / private key"
+          label: "Tap nsec input field"
+      - inputText: "${NOSTR_TEST_NSEC}"
+      - tapOn: "Next"
+      - extendedWaitUntil:
+          visible: "Finish"
+          timeout: 10000
+      - tapOn: "Finish"
+      # Wait for notification dialog or main screen
+      - extendedWaitUntil:
+          visible:
+            text: "(?:Allow Amber|Applications)"
+          timeout: 20000
+      - runFlow:
+          when:
+            visible: "Allow"
+          commands:
+            - tapOn: "Allow"
+      - extendedWaitUntil:
+          visible: "Applications"
+          timeout: 15000
