@@ -36,10 +36,27 @@ class MainScaffold extends StatelessWidget {
   Widget build(BuildContext context) {
     final router = GoRouter.of(context);
 
+    // Capture root navigator here so the PopScope callback can reach it.
+    // We need this to close dialogs (e.g. the fullscreen image viewer) that
+    // are pushed onto the root navigator via showDialog(useRootNavigator: true)
+    // before falling through to go_router branch navigation.
+    final rootNavigator = Navigator.of(context, rootNavigator: true);
+
     return PopScope(
       canPop: false, // Never let system close the app via back gesture
       onPopInvokedWithResult: (didPop, result) {
         if (!didPop) {
+          // If there is a dialog/modal sitting on the root navigator (e.g. the
+          // fullscreen screenshot viewer), pop it first. The easy_image_viewer
+          // package uses the deprecated WillPopScope internally, which is
+          // bypassed by the predictive back gesture on Android 14+; without
+          // this check the gesture would instead pop the go_router route
+          // (the app detail screen) while leaving the dialog visible on top.
+          if (rootNavigator.canPop()) {
+            rootNavigator.pop();
+            return;
+          }
+
           // Check if we can pop within the current shell branch
           // canPop() may return true for shell-level navigation, so we need
           // to verify we're not at a branch root before popping

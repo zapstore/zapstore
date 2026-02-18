@@ -1,4 +1,4 @@
-package dev.zapstore.alpha.plugins
+package dev.zapstore.app.plugins
 
 import android.content.BroadcastReceiver
 import android.content.Context

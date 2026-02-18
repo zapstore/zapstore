@@ -16,7 +16,7 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
-        android:label="Zapstore Alpha"
+        android:label="Zapstore"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:enableOnBackInvokedCallback="true"
@@ -72,7 +72,7 @@
             android:value="2" />
 
         <receiver
-            android:name="dev.zapstore.alpha.plugins.InstallResultReceiver"
+            android:name="dev.zapstore.app.plugins.InstallResultReceiver"
             android:exported="false" />
     </application>
     <!-- Required to query activities that can process text, see:

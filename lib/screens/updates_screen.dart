@@ -381,23 +381,36 @@ class _UpdatesListBody extends HookConsumerWidget {
     final showAllDone = useState(false);
     final wasInProgress = useRef(false);
 
-    // Detect transition from in-progress to all-complete
+    // Detect transition from in-progress to all-complete.
+    // FEAT-001 spec: "After 3 seconds with no in-progress operations,
+    // completed operations auto-clear."
+    final autoClearTimer = useRef<Timer?>(null);
     useEffect(() {
       if (progress != null && progress.hasInProgress) {
+        autoClearTimer.value?.cancel();
         wasInProgress.value = true;
         showAllDone.value = false; // Reset if new operations start
       } else if (wasInProgress.value &&
           progress != null &&
           progress.isAllComplete) {
-        // Just finished - show "All done" until dismissed
+        // Just finished - show "All done" banner briefly, then auto-clear
         showAllDone.value = true;
         wasInProgress.value = false;
+        autoClearTimer.value = Timer(const Duration(seconds: 3), () {
+          if (showAllDone.value) {
+            showAllDone.value = false;
+            ref
+                .read(packageManagerProvider.notifier)
+                .clearCompletedOperations();
+          }
+        });
       } else if (progress == null) {
         // Operations cleared externally
+        autoClearTimer.value?.cancel();
         wasInProgress.value = false;
         showAllDone.value = false;
       }
-      return null;
+      return () => autoClearTimer.value?.cancel();
     }, [progress?.hasInProgress, progress?.isAllComplete]);
 
     // Determine what to show (mutually exclusive states):
@@ -426,7 +439,7 @@ class _UpdatesListBody extends HookConsumerWidget {
                 child: _StatusBannerContent(
                   icon: Icons.check_circle_rounded,
                   iconColor: Colors.green.shade400,
-                  text: 'All done (${progress?.completed ?? 0} updated)',
+                  text: 'All done (${progress?.completed ?? 0} ${progress?.completedLabel ?? 'completed'})',
                   failedCount: progress?.failed ?? 0,
                   showDismiss: true,
                   onTap: () {
