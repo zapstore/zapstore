@@ -49,28 +49,13 @@ appId: dev.zapstore.app
     index: 1
     label: "Install older version"
 
-# Wait for the first dialog to appear. Could be:
-# - Android system "Update" (if app package was previously known)
-# - Amber "Accept" (signing request)
-# - Samsung "Trust and install app"
-# - Android system "Install"
+# Wait for the first dialog to appear.
+# Use specific dialog phrases to avoid matching background "Install" buttons
+# in the All Versions list.
 - extendedWaitUntil:
     visible:
-      text: "(?:Update|Accept|Trust and install app|Install)"
-    timeout: 20000
-
-# Handle Android system update/downgrade confirmation
-- runFlow:
-    when:
-      visible: "Update"
-    commands:
-      - tapOn: "Update"
-
-# After Update (or if it was skipped), wait for the next dialog
-- extendedWaitUntil:
-    visible:
-      text: "(?:Accept|Trust and install app|Install)"
-    timeout: 20000
+      text: "(?:Do you want to update|Do you want to install|Accept|Trust and install app)"
+    timeout: 60000
 
 # Amber may ask to sign a request during install
 - runFlow:
@@ -78,6 +63,10 @@ appId: dev.zapstore.app
       visible: "Accept"
     commands:
       - tapOn: "Accept"
+      - extendedWaitUntil:
+          visible:
+            text: "(?:Do you want to update|Do you want to install|Trust and install app)"
+          timeout: 30000
 
 # Samsung security dialog (may not appear if source already trusted)
 - runFlow:
@@ -85,15 +74,26 @@ appId: dev.zapstore.app
       visible: "Trust and install app"
     commands:
       - tapOn: "Trust and install app"
+      - extendedWaitUntil:
+          visible:
+            text: "(?:Do you want to update|Do you want to install)"
+          timeout: 30000
 
-# Android system install dialog
-- extendedWaitUntil:
-    visible: "Install"
-    timeout: 20000
-- tapOn: "Install"
+# Handle Android system install dialog
+- runFlow:
+    when:
+      visible: "Do you want to install"
+    commands:
+      - tapOn: "Install"
 
-# Wait for either "Open" (success) or Samsung "package analysis error" dialog.
-# The dialog covers "Open" so we must detect and dismiss it first.
+# Handle Android system update/downgrade dialog
+- runFlow:
+    when:
+      visible: "Do you want to update"
+    commands:
+      - tapOn: "Update"
+
+# Wait for either "App installed" / "Open" or Samsung "package analysis error".
 - extendedWaitUntil:
     visible:
       text: "(?:Open|OK)"
@@ -109,4 +109,4 @@ appId: dev.zapstore.app
 # Confirm install completed
 - extendedWaitUntil:
     visible: "Open"
-    timeout: 15000
+    timeout: 30000

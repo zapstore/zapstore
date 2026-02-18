@@ -52,9 +52,9 @@ appId: dev.zapstore.app
     text: ".*Update All.*"
     label: "Tap Update All"
 
-# Wait for either the "All done (N updated)" banner or the "Up to date" section
-# (the banner auto-dismisses after a few seconds)
+# Wait for the "All done (N updated)" banner.
+# Regex must consume the full accessibilityText including the trailing ")".
 - extendedWaitUntil:
     visible:
-      text: "(?:All done.*updated|Up to date)"
+      text: ".*All done.*updated.*"
     timeout: 180000
