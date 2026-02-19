@@ -553,16 +553,11 @@ class AndroidPackageManagerPlugin :
                     val now2 = System.currentTimeMillis()
                     if (now2 < deadline && (hasSession || hasPendingUi || verifyingAlive)) {
                         // Nudge Dart to show the most accurate state (esp. after reconnect).
+                        // NOTE: We do NOT re-launch the dialog here. The initial launch via
+                        // ActivityContext (same task) is reliable, and onStart already handles
+                        // the case where the user backgrounded and returned. Re-launching on
+                        // every watchdog tick caused the dialog to reappear while visible.
                         if (hasPendingUi) {
-                            // Re-launch the dialog in case it was suppressed by user interaction
-                            // or Android's activity stack. The initial launchConfirmDialog may
-                            // have failed silently if the user was actively using the app.
-                            if (isAppInForeground) {
-                                pendingUserActionIntents[appId]?.let { intent ->
-                                    Log.d(TAG, "Watchdog: Re-launching install dialog for $appId")
-                                    launchConfirmDialog(appId, intent)
-                                }
-                            }
                             emitInstallStatus(
                                     appId,
                                     InstallStatus.PENDING_USER_ACTION,
