@@ -20,6 +20,19 @@ final rootNavigatorKey = GlobalKey<NavigatorState>();
 
 typedef _ResolvedRoute = ({String identifier, String? author});
 
+CustomTransitionPage<void> _noTransitionPage({
+  required GoRouterState state,
+  required Widget child,
+}) {
+  return CustomTransitionPage<void>(
+    key: state.pageKey,
+    child: child,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) => child,
+    transitionDuration: Duration.zero,
+    reverseTransitionDuration: Duration.zero,
+  );
+}
+
 _ResolvedRoute _resolveNaddrRouteId(String rawId) {
   if (rawId.startsWith('naddr1')) {
     try {
@@ -38,12 +51,15 @@ _ResolvedRoute _resolveNaddrRouteId(String rawId) {
 GoRoute _appDetailRoute() {
   return GoRoute(
     path: 'app/:id',
-    builder: (context, state) {
+    pageBuilder: (context, state) {
       final rawId = state.pathParameters['id']!;
       final resolved = _resolveNaddrRouteId(rawId);
-      return AppDetailScreen(
-        appId: resolved.identifier,
-        authorPubkey: resolved.author,
+      return _noTransitionPage(
+        state: state,
+        child: AppDetailScreen(
+          appId: resolved.identifier,
+          authorPubkey: resolved.author,
+        ),
       );
     },
   );
@@ -53,12 +69,15 @@ GoRoute _appDetailRoute() {
 GoRoute _stackDetailRoute() {
   return GoRoute(
     path: 'stack/:id',
-    builder: (context, state) {
+    pageBuilder: (context, state) {
       final rawId = state.pathParameters['id']!;
       final resolved = _resolveNaddrRouteId(rawId);
-      return AppStackScreen(
-        stackId: resolved.identifier,
-        authorPubkey: resolved.author,
+      return _noTransitionPage(
+        state: state,
+        child: AppStackScreen(
+          stackId: resolved.identifier,
+          authorPubkey: resolved.author,
+        ),
       );
     },
   );
@@ -68,9 +87,12 @@ GoRoute _stackDetailRoute() {
 GoRoute _userRoute() {
   return GoRoute(
     path: 'user/:pubkey',
-    builder: (context, state) {
+    pageBuilder: (context, state) {
       final pubkey = state.pathParameters['pubkey']!;
-      return UserScreen(pubkey: pubkey);
+      return _noTransitionPage(
+        state: state,
+        child: UserScreen(pubkey: pubkey),
+      );
     },
   );
 }
@@ -104,7 +126,10 @@ final routerProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: '/search',
-                builder: (context, state) => const SearchScreen(),
+                pageBuilder: (context, state) => _noTransitionPage(
+                  state: state,
+                  child: const SearchScreen(),
+                ),
                 routes: [_appDetailRoute(), _stackDetailRoute(), _userRoute()],
               ),
             ],
@@ -114,7 +139,10 @@ final routerProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: '/updates',
-                builder: (context, state) => const UpdatesScreen(),
+                pageBuilder: (context, state) => _noTransitionPage(
+                  state: state,
+                  child: const UpdatesScreen(),
+                ),
                 routes: [_appDetailRoute(), _stackDetailRoute(), _userRoute()],
               ),
             ],
@@ -124,7 +152,10 @@ final routerProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: '/profile',
-                builder: (context, state) => const ProfileScreen(),
+                pageBuilder: (context, state) => _noTransitionPage(
+                  state: state,
+                  child: const ProfileScreen(),
+                ),
                 routes: [_appDetailRoute(), _stackDetailRoute(), _userRoute()],
               ),
             ],
