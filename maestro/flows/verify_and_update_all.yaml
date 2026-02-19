@@ -18,10 +18,8 @@ appId: dev.zapstore.app
       - tapOn: "Allow"
 
 # Wait for the app to be ready (tab bar visible)
-- extendedWaitUntil:
-    visible:
-      text: ".*Tab 2 of 3"
-    timeout: 20000
+- assertVisible:
+    text: ".*Tab 2 of 3"
 
 - tapOn:
     text: ".*Tab 2 of 3"
@@ -43,10 +41,8 @@ appId: dev.zapstore.app
       - waitForAnimationToEnd
 
 # Wait for updates to load (may take time after restart)
-- extendedWaitUntil:
-    visible:
-      text: ".*Update All.*"
-    timeout: 30000
+- assertVisible:
+    text: ".*Update All.*"
 
 - tapOn:
     text: ".*Update All.*"

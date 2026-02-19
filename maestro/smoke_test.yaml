@@ -9,13 +9,9 @@ tags:
 
 # ====== Search Tab (Initial Screen) ======
 
-- extendedWaitUntil:
-    visible: "Search apps"
-    timeout: 15000
+- assertVisible: "Search apps"
 
-- extendedWaitUntil:
-    visible: "LATEST RELEASES"
-    timeout: 10000
+- assertVisible: "LATEST RELEASES"
 
 - takeScreenshot: "01_search_home.png"
 
@@ -51,9 +47,7 @@ tags:
 - inputText: "nostr"
 - pressKey: Enter
 
-- extendedWaitUntil:
-    notVisible: "LATEST RELEASES"
-    timeout: 10000
+- assertNotVisible: "LATEST RELEASES"
 
 - takeScreenshot: "05_search_results.png"
 
@@ -65,18 +59,14 @@ tags:
       APP_SEARCH_TERM: "Zapstore"
       APP_MATCH_TEXT: ".*open app store.*"
 
-- extendedWaitUntil:
-    visible: "Zapstore Alpha"
-    timeout: 5000
+- assertVisible: "Zapstore Alpha"
 
 - takeScreenshot: "06_app_detail.png"
 
 # Go back to search results
 - back
 
-- extendedWaitUntil:
-    visible:
-      text: ".*open app store.*"
-    timeout: 5000
+- assertVisible:
+    text: ".*open app store.*"
 
 - takeScreenshot: "07_back_to_search.png"

@@ -19,10 +19,8 @@ appId: dev.zapstore.app
       - tapOn: "Allow"
 
 # Wait for the app to be ready (tab bar visible)
-- extendedWaitUntil:
-    visible:
-      text: ".*Tab 1 of 3"
-    timeout: 20000
+- assertVisible:
+    text: ".*Tab 1 of 3"
 
 # Ensure we're on the Search tab root
 - tapOn:
@@ -41,18 +39,14 @@ appId: dev.zapstore.app
     commands:
       - tapOn: "Clear search"
 
-- extendedWaitUntil:
-    visible: "Search apps"
-    timeout: 20000
+- assertVisible: "Search apps"
 
 - tapOn: "Search apps"
 - inputText: "${APP_SEARCH_TERM}"
 - pressKey: Enter
 
-- extendedWaitUntil:
-    visible:
-      text: "${APP_MATCH_TEXT}"
-    timeout: 20000
+- assertVisible:
+    text: "${APP_MATCH_TEXT}"
 
 - tapOn:
     text: "${APP_MATCH_TEXT}"

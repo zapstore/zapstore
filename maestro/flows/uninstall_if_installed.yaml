@@ -13,10 +13,6 @@ appId: dev.zapstore.app
       visible: "Uninstall"
     commands:
       - tapOn: "Uninstall"
-      - extendedWaitUntil:
-          visible: "OK"
-          timeout: 5000
+      - assertVisible: "OK"
       - tapOn: "OK"
-      - extendedWaitUntil:
-          visible: "Install"
-          timeout: 10000
+      - assertVisible: "Install"

@@ -1,0 +1,36 @@
+appId: dev.zapstore.app
+---
+# =============================================================
+# Sub-flow: Check if Zapstore is already signed in with test account
+#
+# Returns success if both "Sign Out" and "npub1lhr" are visible on Profile.
+# Use this BEFORE setup_amber to skip Amber/sign-in when already logged in.
+#
+# Test account npub prefix: npub1lhr
+# =============================================================
+
+- runFlow:
+    when:
+      visible: "Allow"
+    commands:
+      - tapOn: "Allow"
+
+- assertVisible:
+    text: ".*Tab 3 of 3"
+
+- tapOn:
+    text: ".*Tab 3 of 3"
+    label: "Tap Profile tab"
+- tapOn:
+    text: ".*Tab 3 of 3"
+    label: "Tap Profile tab again to reset to root"
+
+- waitForAnimationToEnd
+
+- scrollUntilVisible:
+    element:
+      text: "Sign Out"
+    direction: UP
+
+- assertVisible:
+    text: ".*npub1lhr.*"

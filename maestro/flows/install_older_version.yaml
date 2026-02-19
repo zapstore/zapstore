@@ -28,7 +28,6 @@ appId: dev.zapstore.app
     element:
       text: ".*All Versions.*"
     direction: DOWN
-    timeout: 30000
 
 - tapOn:
     text: ".*All Versions.*"
@@ -50,11 +49,11 @@ appId: dev.zapstore.app
     label: "Install older version"
 
 # Wait for the first dialog to appear.
-# Use specific dialog phrases to avoid matching background "Install" buttons
-# in the All Versions list.
+# Regex must match the FULL accessibilityText / text of each element
+# (Java matches()), so use .* wildcards around partial phrases.
 - extendedWaitUntil:
     visible:
-      text: "(?:Do you want to update|Do you want to install|Accept|Trust and install app)"
+      text: "(?:.*Do you want to (?:update|install).*|Accept|Trust and install app)"
     timeout: 60000
 
 # Amber may ask to sign a request during install
@@ -63,10 +62,8 @@ appId: dev.zapstore.app
       visible: "Accept"
     commands:
       - tapOn: "Accept"
-      - extendedWaitUntil:
-          visible:
-            text: "(?:Do you want to update|Do you want to install|Trust and install app)"
-          timeout: 30000
+      - assertVisible:
+          text: "(?:.*Do you want to (?:update|install).*|Trust and install app)"
 
 # Samsung security dialog (may not appear if source already trusted)
 - runFlow:
@@ -74,22 +71,22 @@ appId: dev.zapstore.app
       visible: "Trust and install app"
     commands:
       - tapOn: "Trust and install app"
-      - extendedWaitUntil:
-          visible:
-            text: "(?:Do you want to update|Do you want to install)"
-          timeout: 30000
+      - assertVisible:
+          text: ".*Do you want to (?:update|install).*"
 
 # Handle Android system install dialog
 - runFlow:
     when:
-      visible: "Do you want to install"
+      visible:
+        text: ".*Do you want to install.*"
     commands:
       - tapOn: "Install"
 
 # Handle Android system update/downgrade dialog
 - runFlow:
     when:
-      visible: "Do you want to update"
+      visible:
+        text: ".*Do you want to update.*"
     commands:
       - tapOn: "Update"
 
@@ -107,6 +104,4 @@ appId: dev.zapstore.app
       - tapOn: "OK"
 
 # Confirm install completed
-- extendedWaitUntil:
-    visible: "Open"
-    timeout: 30000
+- assertVisible: "Open"

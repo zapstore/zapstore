@@ -22,10 +22,8 @@ appId: dev.zapstore.app
       - tapOn: "Allow"
 
 # Wait for the app to fully load (tab bar must be visible)
-- extendedWaitUntil:
-    visible:
-      text: ".*Tab 3 of 3"
-    timeout: 20000
+- assertVisible:
+    text: ".*Tab 3 of 3"
 
 - tapOn:
     text: ".*Tab 3 of 3"
@@ -41,7 +39,6 @@ appId: dev.zapstore.app
     element:
       text: "(?:Sign in with Amber|Sign Out)"
     direction: UP
-    timeout: 30000
 
 # If signed in with wrong account, sign out first
 - runFlow:
@@ -53,9 +50,7 @@ appId: dev.zapstore.app
             notVisible: "npub1lhrt"
           commands:
             - tapOn: "Sign Out"
-            - extendedWaitUntil:
-                visible: "Sign in with Amber"
-                timeout: 15000
+            - assertVisible: "Sign in with Amber"
 
 # If not signed in, sign in via Amber
 - runFlow:
@@ -63,14 +58,11 @@ appId: dev.zapstore.app
       visible: "Sign in with Amber"
     commands:
       - tapOn: "Sign in with Amber"
-      - extendedWaitUntil:
-          visible: "Connect"
-          timeout: 20000
+      - assertVisible: "Connect"
       - tapOn: "Connect"
       - scrollUntilVisible:
           element: "Sign Out"
           direction: UP
-          timeout: 30000
 
 # After Amber sign-in, app may return to a different tab — go back to Profile
 - tapOn:
@@ -84,4 +76,3 @@ appId: dev.zapstore.app
     element:
       text: "(?:Sign Out|npub1lhrt)"
     direction: UP
-    timeout: 15000

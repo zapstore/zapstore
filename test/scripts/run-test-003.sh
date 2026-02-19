@@ -180,7 +180,7 @@ setup_amber() {
   adb -s "$DEVICE_ID" shell am force-stop com.greenart7c3.nostrsigner 2>/dev/null || true
   adb -s "$DEVICE_ID" shell am force-stop "$ZAPSTORE_PKG" 2>/dev/null || true
   sleep 2
-  adb -s "$DEVICE_ID" shell monkey -p com.greenart7c3.nostrsigner -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+  adb -s "$DEVICE_ID" shell am start -n com.greenart7c3.nostrsigner/.MainActivity >/dev/null 2>&1
   sleep 5
   if run_maestro "$FLOWS_DIR/setup_amber_test_account.yaml" "NOSTR_TEST_NSEC=$NOSTR_TEST_NSEC"; then
     log "  Amber test account ready"
@@ -396,6 +396,28 @@ EOF
 
 # ── Main ─────────────────────────────────────────────────────────────
 
+# Check if already signed in with test account; if not, setup Amber and sign in.
+# Skips Amber setup entirely when already logged in with correct user.
+# setup_amber only imports the account into Amber if it's not already there.
+# Sets ALREADY_SIGNED_IN=1 when skipped, so main won't restart Zapstore.
+ensure_signed_in() {
+  log "── Check: Already signed in with test account? ──"
+  restart_zapstore
+  if run_maestro "$FLOWS_DIR/check_signed_in_test_account.yaml" 2>/dev/null; then
+    log "  Already signed in with test account, skipping Amber setup"
+    ALREADY_SIGNED_IN=1
+    return 0
+  fi
+  ALREADY_SIGNED_IN=0
+  log "  Not signed in (or wrong account), setting up Amber and signing in..."
+  adb -s "$DEVICE_ID" shell pm clear "$ZAPSTORE_PKG" >/dev/null 2>&1 || true
+  adb -s "$DEVICE_ID" shell pm grant "$ZAPSTORE_PKG" android.permission.POST_NOTIFICATIONS 2>/dev/null || true
+  adb -s "$DEVICE_ID" shell am force-stop com.greenart7c3.nostrsigner 2>/dev/null || true
+  setup_amber
+  restart_zapstore
+  sign_in
+}
+
 main() {
   log "═══ TEST-003: Bulk Update Flow ═══"
 
@@ -404,16 +426,12 @@ main() {
 
   discover_device
   setup_screen
-  setup_amber
-  # Clear Zapstore data to avoid NIP04 conflicts between
-  # the previous session (e.g. hvmelo) and the test account in Amber
-  adb -s "$DEVICE_ID" shell pm clear "$ZAPSTORE_PKG" >/dev/null 2>&1 || true
-  # Re-grant notification permission so the dialog won't appear on fresh launch
-  adb -s "$DEVICE_ID" shell pm grant "$ZAPSTORE_PKG" android.permission.POST_NOTIFICATIONS 2>/dev/null || true
-  adb -s "$DEVICE_ID" shell am force-stop com.greenart7c3.nostrsigner 2>/dev/null || true
+  ensure_signed_in
   uninstall_apps
-  restart_zapstore
-  sign_in
+  # Only restart when we did full setup (pm clear); when already signed in, Zapstore stays open
+  if [ "${ALREADY_SIGNED_IN:-0}" -eq 0 ]; then
+    restart_zapstore
+  fi
   install_all_older
   verify_and_update
   verify_post_update

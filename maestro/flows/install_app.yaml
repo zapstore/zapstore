@@ -39,9 +39,7 @@ appId: dev.zapstore.app
       - tapOn: "Trust and install app"
 
 # Android system install dialog
-- extendedWaitUntil:
-    visible: "Install"
-    timeout: 15000
+- assertVisible: "Install"
 - tapOn: "Install"
 
 # Wait for either "Open" (success) or Samsung "package analysis error" dialog.
@@ -59,6 +57,4 @@ appId: dev.zapstore.app
       - tapOn: "OK"
 
 # Confirm install completed
-- extendedWaitUntil:
-    visible: "Open"
-    timeout: 15000
+- assertVisible: "Open"

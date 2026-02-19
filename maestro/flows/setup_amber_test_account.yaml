@@ -3,9 +3,10 @@ appId: com.greenart7c3.nostrsigner
 # =============================================================
 # Sub-flow: Ensure test account is active in Amber
 #
-# Handles two scenarios:
-#   A) Amber has accounts → pick or import via account selector
+# Handles three scenarios:
+#   A) Amber main screen ("Applications") → open Accounts tab
 #   B) Fresh Amber (onboarding) → import from nsec directly
+#   C) Already on account selector → pick or import
 #
 # Test account npub (truncated): npub1lhr
 #
@@ -17,58 +18,43 @@ appId: com.greenart7c3.nostrsigner
 #   - Device language set to English
 # =============================================================
 
-# Wait for Amber to load
-- extendedWaitUntil:
-    visible:
-      text: "(?:Accounts|Use your private key)"
-    timeout: 15000
+# Wait for Amber to load (main screen or onboarding)
+- assertVisible:
+    text: "(?:Applications|Use your private key|Select Account)"
 
-# ─── Scenario A: main screen with accounts ───
+# ─── Scenario A: main screen with accounts (title = "Applications") ───
 - runFlow:
     when:
-      visible: "Accounts"
+      visible: "Applications"
     commands:
       - tapOn:
           text: "Accounts"
-          label: "Open accounts selector"
-      - extendedWaitUntil:
-          visible: "Select Account"
-          timeout: 5000
+          label: "Tap Accounts bottom tab"
+      - assertVisible: "Select Account"
       # Import test account if not present
       - runFlow:
           when:
             notVisible: "npub1lhr"
           commands:
             - tapOn: "Add New Account"
-            - extendedWaitUntil:
-                visible: "Use your private key"
-                timeout: 10000
+            - assertVisible: "Use your private key"
             - tapOn: "Use your private key"
-            - extendedWaitUntil:
-                visible: "Nsec / private key"
-                timeout: 10000
+            - assertVisible: "Nsec / private key"
             - tapOn:
                 text: "Nsec / private key"
                 label: "Tap nsec input field"
             - inputText: "${NOSTR_TEST_NSEC}"
             - tapOn: "Next"
-            - extendedWaitUntil:
-                visible: "Finish"
-                timeout: 10000
+            - assertVisible: "Finish"
             - tapOn: "Finish"
-            # Wait for notification dialog or main screen
-            - extendedWaitUntil:
-                visible:
-                  text: "(?:Allow Amber|Applications)"
-                timeout: 20000
+            - assertVisible:
+                text: "(?:Allow Amber|Applications)"
             - runFlow:
                 when:
                   visible: "Allow"
                 commands:
                   - tapOn: "Allow"
-            - extendedWaitUntil:
-                visible: "Applications"
-                timeout: 15000
+            - assertVisible: "Applications"
       # If account sheet is still open (account existed), select it
       - runFlow:
           when:
@@ -85,28 +71,19 @@ appId: com.greenart7c3.nostrsigner
       visible: "Use your private key"
     commands:
       - tapOn: "Use your private key"
-      - extendedWaitUntil:
-          visible: "Nsec / private key"
-          timeout: 10000
+      - assertVisible: "Nsec / private key"
       - tapOn:
           text: "Nsec / private key"
           label: "Tap nsec input field"
       - inputText: "${NOSTR_TEST_NSEC}"
       - tapOn: "Next"
-      - extendedWaitUntil:
-          visible: "Finish"
-          timeout: 10000
+      - assertVisible: "Finish"
       - tapOn: "Finish"
-      # Wait for notification dialog or main screen
-      - extendedWaitUntil:
-          visible:
-            text: "(?:Allow Amber|Applications)"
-          timeout: 20000
+      - assertVisible:
+          text: "(?:Allow Amber|Applications)"
       - runFlow:
           when:
             visible: "Allow"
           commands:
             - tapOn: "Allow"
-      - extendedWaitUntil:
-          visible: "Applications"
-          timeout: 15000
+      - assertVisible: "Applications"
