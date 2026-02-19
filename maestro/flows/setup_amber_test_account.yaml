@@ -1,4 +1,8 @@
 appId: com.greenart7c3.nostrsigner
+name: "Setup Amber Test Account"
+tags:
+  - setup
+  - android
 ---
 # =============================================================
 # Sub-flow: Ensure test account is active in Amber

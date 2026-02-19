@@ -221,7 +221,16 @@ wait_for_foreground() {
   local timeout_secs="${2:-8}"
   local i=0
   while [ "$i" -lt "$timeout_secs" ]; do
-    if adb -s "$DEVICE_ID" shell dumpsys window 2>/dev/null | grep -q "$package"; then
+    # topResumedActivity is the most reliable foreground signal across devices.
+    local resumed_line focus_line
+    resumed_line="$(adb -s "$DEVICE_ID" shell dumpsys activity activities 2>/dev/null | awk -F= '/topResumedActivity=/{print $2; exit}')"
+    if printf "%s\n" "$resumed_line" | grep -q "$package"; then
+      return 0
+    fi
+
+    # Fallback for OS variants where topResumedActivity may be absent.
+    focus_line="$(adb -s "$DEVICE_ID" shell dumpsys window windows 2>/dev/null | awk '/mCurrentFocus/{print; exit}')"
+    if printf "%s\n" "$focus_line" | grep -q "$package"; then
       return 0
     fi
     sleep 1
@@ -351,6 +360,11 @@ setup_amber() {
   sleep 0.2
   adb -s "$DEVICE_ID" shell am start -n "$AMBER_PKG/.MainActivity" >/dev/null 2>&1
   wait_for_foreground "$AMBER_PKG" 6 || true
+  local amber_top
+  amber_top="$(adb -s "$DEVICE_ID" shell dumpsys activity activities 2>/dev/null | awk -F= '/topResumedActivity=/{print $2; exit}')"
+  log "  Foreground before Amber setup flow: ${amber_top:-unknown}"
+  # Keep Zapstore out of the way so Maestro does not drift back to it.
+  adb -s "$DEVICE_ID" shell am force-stop "$ZAPSTORE_PKG" 2>/dev/null || true
   if run_maestro "$FLOWS_DIR/setup_amber_test_account.yaml" "NOSTR_TEST_NSEC=$NOSTR_TEST_NSEC"; then
     log "  Amber test account ready"
   else
