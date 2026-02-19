@@ -378,8 +378,24 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
   ) async {
     await _ensureDownloaderReady();
 
-    // Filter out items that already have operations
-    final toQueue = items.where((item) => !hasOperation(item.appId)).toList();
+    // Filter out items with in-flight operations only.
+    // Terminal operations are cleared so "Update All" can re-queue apps.
+    final toQueue = <({String appId, FileMetadata target, String? displayName})>[];
+    for (final item in items) {
+      final existing = getOperation(item.appId);
+      if (existing == null) {
+        toQueue.add(item);
+        continue;
+      }
+
+      if (existing is Completed ||
+          existing is OperationFailed ||
+          existing is InstallCancelled) {
+        clearOperation(item.appId);
+        toQueue.add(item);
+      }
+    }
+
     if (toQueue.isEmpty) return;
 
     // Queue items with staggered delays to prevent UI flood

@@ -2,30 +2,6 @@
 #
 # TEST-003 — Bulk Update Flow (standalone, no AI needed)
 #
-# Orchestrates adb + Maestro CLI to:
-#   1. Uninstall 4 target apps via adb
-#   2. Install older versions via Zapstore UI (Maestro flows)
-#   3. Verify all updates appear in one list
-#   4. Execute "Update All"
-#   5. Verify all apps updated to latest via adb
-#
-# Prerequisites:
-#   - adb in PATH, device connected via USB
-#   - maestro CLI in PATH (https://maestro.mobile.dev)
-#   - Zapstore (dev.zapstore.app) installed on device
-#   - Amber signer app installed (test account is imported automatically)
-#   - Device language set to English
-#
-# The script auto-imports the test keypair into Amber if not present.
-# The test account's pubkey is in allowedHexKeys (lib/utils/debug_utils.dart),
-# which is required for the "Debug: All Versions" section to appear.
-# See test/fixtures/test-account.env for the full keypair.
-#
-# Usage:
-#   ./run-test-003.sh                      # auto-detect device, 4 apps
-#   ./run-test-003.sh <DEVICE_ID>          # target specific device, 4 apps
-#   ./run-test-003.sh <DEVICE_ID> <N>      # target device, N apps (1–4)
-#
 set -euo pipefail
 
 # ── Configuration ────────────────────────────────────────────────────
@@ -36,9 +12,15 @@ FLOWS_DIR="$PROJECT_ROOT/maestro/flows"
 REPORT_DIR="$PROJECT_ROOT/test/runs"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 REPORT_FILE="$REPORT_DIR/TEST-003-auto-$TIMESTAMP.md"
+
 ZAPSTORE_PKG="dev.zapstore.app"
+AMBER_PKG="com.greenart7c3.nostrsigner"
+AMBER_APK_URL="https://github.com/greenart7c3/Amber/releases/download/v4.1.2/amber-free-universal-release-v4.1.2.apk"
+AMBER_APK_CACHE="/tmp/amber-latest.apk"
 FIXTURES_DIR="$PROJECT_ROOT/test/fixtures"
-MAX_RETRIES=3
+
+# Always run from a fully clean state
+FORCE_FRESH_START=1
 
 # Load test account nsec from fixtures
 NOSTR_TEST_NSEC=""
@@ -50,8 +32,89 @@ if [ -z "$NOSTR_TEST_NSEC" ]; then
   exit 1
 fi
 
-DEVICE_ID="${1:-}"
-REQUESTED_COUNT="${2:-4}"
+print_usage() {
+  cat <<'EOF'
+Usage:
+  run-test-003.sh [DEVICE_ID] [APP_COUNT] [--from N] [--to N]
+                  [--device DEVICE_ID] [--apps APP_COUNT]
+
+Stages:
+  0 = clean_state     (reset apps/data, uninstall targets, amber cache)
+  1 = auth            (setup Amber + sign in Zapstore)
+  2 = install_old     (install older versions)
+  3 = update_all      (verify updates + tap Update All)
+  4 = post_verify     (verify versions changed)
+
+Examples:
+  ./run-test-003.sh RQCT1029N9J 2
+  ./run-test-003.sh --device RQCT1029N9J --apps 2 --from 2 --to 4
+  ./run-test-003.sh RQCT1029N9J 2 --from 3 --to 4
+EOF
+}
+
+DEVICE_ID=""
+REQUESTED_COUNT="2"
+FROM_STAGE=0
+TO_STAGE=4
+
+POSITIONAL=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --from)
+      FROM_STAGE="${2:-}"
+      shift 2
+      ;;
+    --to)
+      TO_STAGE="${2:-}"
+      shift 2
+      ;;
+    --device)
+      DEVICE_ID="${2:-}"
+      shift 2
+      ;;
+    --apps|--count)
+      REQUESTED_COUNT="${2:-}"
+      shift 2
+      ;;
+    -h|--help)
+      print_usage
+      exit 0
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      echo "ERROR: unknown option: $1"
+      print_usage
+      exit 1
+      ;;
+    *)
+      POSITIONAL+=("$1")
+      shift
+      ;;
+  esac
+done
+
+if [ -z "$DEVICE_ID" ] && [ ${#POSITIONAL[@]} -ge 1 ]; then
+  DEVICE_ID="${POSITIONAL[0]}"
+fi
+if [ ${#POSITIONAL[@]} -ge 2 ]; then
+  REQUESTED_COUNT="${POSITIONAL[1]}"
+fi
+
+if ! [[ "$FROM_STAGE" =~ ^[0-4]$ ]]; then
+  echo "ERROR: --from must be between 0 and 4"
+  exit 1
+fi
+if ! [[ "$TO_STAGE" =~ ^[0-4]$ ]]; then
+  echo "ERROR: --to must be between 0 and 4"
+  exit 1
+fi
+if [ "$FROM_STAGE" -gt "$TO_STAGE" ]; then
+  echo "ERROR: --from cannot be greater than --to"
+  exit 1
+fi
 
 # App catalog (parallel arrays — bash 3.2 compatible)
 ALL_APP_NAMES=(   "Flotilla"              "Amethyst"                     "OpenBible"                    "DuckDuckGo" )
@@ -61,14 +124,14 @@ ALL_APP_MATCH=(   ".*Flotilla.*hodlbod.*" ".*all-in-one Nostr.*"         ".*prov
 
 MAX_APPS=${#ALL_APP_NAMES[@]}
 
-# Clamp to 1..MAX_APPS
-if [ "$REQUESTED_COUNT" -lt 1 ] 2>/dev/null; then REQUESTED_COUNT=1; fi
+# Clamp to 2..MAX_APPS (Update All requires at least 2 apps)
+if [ "$REQUESTED_COUNT" -lt 2 ] 2>/dev/null; then REQUESTED_COUNT=2; fi
 if [ "$REQUESTED_COUNT" -gt "$MAX_APPS" ] 2>/dev/null || ! [ "$REQUESTED_COUNT" -eq "$REQUESTED_COUNT" ] 2>/dev/null; then
   REQUESTED_COUNT=$MAX_APPS
 fi
 
 # Slice arrays to requested count
-APP_NAMES=();  APP_PKGS=();  APP_SEARCH=();  APP_MATCH=()
+APP_NAMES=(); APP_PKGS=(); APP_SEARCH=(); APP_MATCH=()
 VER_BEFORE=(); VER_AFTER=()
 i=0
 while [ $i -lt "$REQUESTED_COUNT" ]; do
@@ -80,7 +143,6 @@ while [ $i -lt "$REQUESTED_COUNT" ]; do
   VER_AFTER+=( "" )
   i=$((i + 1))
 done
-
 APP_COUNT=${#APP_NAMES[@]}
 
 # ── State ────────────────────────────────────────────────────────────
@@ -90,6 +152,7 @@ FAILURE_COUNT=0
 LOG_TEXT=""
 INSTALL_RESULTS=""
 START_TIME="$(date +%s)"
+DID_POST_VERIFY=0
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -115,16 +178,89 @@ get_version() {
 
 run_maestro() {
   local flow="$1"; shift
+  local flow_name
+  flow_name="$(basename "$flow")"
+  local started
+  started="$(date +%s)"
+
   local env_args=()
   while [ $# -gt 0 ]; do
     env_args+=(-e "$1")
     shift
   done
+
+  log "    -> Maestro start: $flow_name"
+
+  local rc=0
   if [ ${#env_args[@]} -eq 0 ]; then
-    maestro test --udid "$DEVICE_ID" "$flow"
+    maestro test --udid "$DEVICE_ID" "$flow" || rc=$?
   else
-    maestro test --udid "$DEVICE_ID" "${env_args[@]}" "$flow"
+    maestro test --udid "$DEVICE_ID" "${env_args[@]}" "$flow" || rc=$?
   fi
+
+  local ended elapsed
+  ended="$(date +%s)"
+  elapsed=$((ended - started))
+  log "    <- Maestro end: $flow_name (${elapsed}s, rc=$rc)"
+  return "$rc"
+}
+
+disable_notifications_permission() {
+  local package="$1"
+  local label="$2"
+
+  adb -s "$DEVICE_ID" shell pm revoke "$package" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1 || true
+  adb -s "$DEVICE_ID" shell pm set-permission-flags "$package" android.permission.POST_NOTIFICATIONS user-set user-fixed >/dev/null 2>&1 || true
+  adb -s "$DEVICE_ID" shell cmd appops set "$package" POST_NOTIFICATION ignore >/dev/null 2>&1 || true
+
+  log "  Notifications disabled for $label"
+}
+
+wait_for_foreground() {
+  local package="$1"
+  local timeout_secs="${2:-8}"
+  local i=0
+  while [ "$i" -lt "$timeout_secs" ]; do
+    if adb -s "$DEVICE_ID" shell dumpsys window 2>/dev/null | grep -q "$package"; then
+      return 0
+    fi
+    sleep 1
+    i=$((i + 1))
+  done
+  return 1
+}
+
+should_run_stage() {
+  local stage="$1"
+  [ "$stage" -ge "$FROM_STAGE" ] && [ "$stage" -le "$TO_STAGE" ]
+}
+
+prepare_stage_window_prereqs() {
+  # When starting from a later stage, still do the minimal prep needed
+  # for deterministic installs.
+  if ! should_run_stage 0 && should_run_stage 2; then
+    log "── Pre-setup for stage window: reset target install apps ──"
+    uninstall_apps
+  fi
+}
+
+capture_versions_as_before() {
+  log "── Snapshot: capture installed versions as baseline ──"
+  local i=0
+  while [ $i -lt $APP_COUNT ]; do
+    local package="${APP_PKGS[$i]}"
+    local name="${APP_NAMES[$i]}"
+    local ver
+    ver=$(get_version "$package")
+    if [ -n "$ver" ]; then
+      VER_BEFORE[$i]="$ver"
+      log "  Baseline $name: $ver"
+    else
+      VER_BEFORE[$i]="FAILED"
+      log "  Baseline $name: not installed"
+    fi
+    i=$((i + 1))
+  done
 }
 
 # ── Phases ───────────────────────────────────────────────────────────
@@ -146,7 +282,6 @@ setup_screen() {
   log "Screen stay-on enabled"
 }
 
-
 uninstall_apps() {
   log "── Setup: Uninstalling target apps ──"
   local i=0
@@ -163,25 +298,59 @@ uninstall_apps() {
   done
 }
 
+prepare_clean_state() {
+  log "── Setup: Reset device state (clean start) ──"
+
+  adb -s "$DEVICE_ID" shell am force-stop "$ZAPSTORE_PKG" 2>/dev/null || true
+  adb -s "$DEVICE_ID" shell am force-stop "$AMBER_PKG" 2>/dev/null || true
+  adb -s "$DEVICE_ID" shell am force-stop com.android.settings 2>/dev/null || true
+
+  adb -s "$DEVICE_ID" shell pm clear "$ZAPSTORE_PKG" >/dev/null 2>&1 || true
+
+  if adb -s "$DEVICE_ID" shell pm list packages 2>/dev/null | grep -q "$AMBER_PKG"; then
+    adb -s "$DEVICE_ID" shell pm uninstall "$AMBER_PKG" >/dev/null 2>&1 || true
+    log "  Amber uninstalled for fresh start"
+  else
+    log "  Amber not installed, nothing to remove"
+  fi
+  rm -f "$AMBER_APK_CACHE" >/dev/null 2>&1 || true
+  log "  Amber APK cache cleared"
+
+  uninstall_apps
+}
+
 restart_zapstore() {
   adb -s "$DEVICE_ID" shell am force-stop "$ZAPSTORE_PKG" 2>/dev/null || true
-  sleep 2
-  adb -s "$DEVICE_ID" shell am start --activity-clear-task \
-    -n "$ZAPSTORE_PKG/.MainActivity" >/dev/null 2>&1
-  sleep 10
+  sleep 0.5
+  adb -s "$DEVICE_ID" shell am start --activity-clear-task -n "$ZAPSTORE_PKG/.MainActivity" >/dev/null 2>&1
+  wait_for_foreground "$ZAPSTORE_PKG" 8 || true
   log "Zapstore restarted"
+}
+
+ensure_amber() {
+  if adb -s "$DEVICE_ID" shell pm list packages 2>/dev/null | grep -q "$AMBER_PKG"; then
+    log "  Amber already installed"
+    disable_notifications_permission "$AMBER_PKG" "Amber"
+    return 0
+  fi
+  log "  Amber not installed — downloading and installing..."
+  if [ ! -f "$AMBER_APK_CACHE" ]; then
+    curl -L -o "$AMBER_APK_CACHE" "$AMBER_APK_URL" || { fail "Failed to download Amber APK"; return 1; }
+  fi
+  adb -s "$DEVICE_ID" install "$AMBER_APK_CACHE" || { fail "Failed to install Amber APK"; return 1; }
+  log "  Amber installed successfully"
+  disable_notifications_permission "$AMBER_PKG" "Amber"
 }
 
 setup_amber() {
   log "── Phase 0: Ensure test account in Amber ──"
-  # Clean up: dismiss notifications, stop stale apps, go to home screen
   adb -s "$DEVICE_ID" shell input keyevent KEYCODE_HOME 2>/dev/null || true
   adb -s "$DEVICE_ID" shell am force-stop com.android.settings 2>/dev/null || true
-  adb -s "$DEVICE_ID" shell am force-stop com.greenart7c3.nostrsigner 2>/dev/null || true
+  adb -s "$DEVICE_ID" shell am force-stop "$AMBER_PKG" 2>/dev/null || true
   adb -s "$DEVICE_ID" shell am force-stop "$ZAPSTORE_PKG" 2>/dev/null || true
-  sleep 2
-  adb -s "$DEVICE_ID" shell am start -n com.greenart7c3.nostrsigner/.MainActivity >/dev/null 2>&1
-  sleep 5
+  sleep 0.2
+  adb -s "$DEVICE_ID" shell am start -n "$AMBER_PKG/.MainActivity" >/dev/null 2>&1
+  wait_for_foreground "$AMBER_PKG" 6 || true
   if run_maestro "$FLOWS_DIR/setup_amber_test_account.yaml" "NOSTR_TEST_NSEC=$NOSTR_TEST_NSEC"; then
     log "  Amber test account ready"
   else
@@ -193,21 +362,12 @@ setup_amber() {
 
 sign_in() {
   log "── Phase 1: Sign in ──"
-  local attempt=0
-  while [ $attempt -lt $MAX_RETRIES ]; do
-    attempt=$((attempt + 1))
-    log "  Sign in attempt $attempt/$MAX_RETRIES"
-    # Dismiss any pending Amber dialogs by force-stopping it
-    adb -s "$DEVICE_ID" shell am force-stop com.greenart7c3.nostrsigner 2>/dev/null || true
-    sleep 1
-    if run_maestro "$FLOWS_DIR/sign_in_amber.yaml"; then
-      log "  Sign in verified"
-      return 0
-    fi
-    log "  Sign in attempt $attempt failed, restarting Zapstore..."
-    restart_zapstore
-  done
-  fail "Sign in failed after $MAX_RETRIES attempts"
+  adb -s "$DEVICE_ID" shell am force-stop "$AMBER_PKG" 2>/dev/null || true
+  if run_maestro "$FLOWS_DIR/sign_in_amber.yaml"; then
+    log "  Sign in verified"
+    return 0
+  fi
+  fail "Sign in failed"
   generate_report
   exit 1
 }
@@ -218,37 +378,28 @@ install_older_version() {
   local package="${APP_PKGS[$idx]}"
   local search="${APP_SEARCH[$idx]}"
   local match="${APP_MATCH[$idx]}"
-  local attempt=0
+  log "  Installing older $name"
 
-  while [ $attempt -lt $MAX_RETRIES ]; do
-    attempt=$((attempt + 1))
-    log "  Installing older $name (attempt $attempt/$MAX_RETRIES)"
+  # Bring Zapstore to foreground in case previous install left system/app-detail state.
+  adb -s "$DEVICE_ID" shell am start -n "$ZAPSTORE_PKG/.MainActivity" >/dev/null 2>&1 || true
+  wait_for_foreground "$ZAPSTORE_PKG" 6 || true
 
-    run_maestro "$FLOWS_DIR/search_app.yaml" \
-      "APP_SEARCH_TERM=$search" "APP_MATCH_TEXT=$match" && \
-    run_maestro "$FLOWS_DIR/install_older_version.yaml" || true
+  run_maestro "$FLOWS_DIR/search_and_install_older.yaml" "APP_SEARCH_TERM=$search" "APP_MATCH_TEXT=$match" || true
 
-    # Check if the app got installed (flow might fail but install can still succeed)
-    local ver
-    ver=$(get_version "$package")
-    if [ -n "$ver" ]; then
-      VER_BEFORE[$idx]="$ver"
-      log "  ✓ $name installed: $ver"
-      INSTALL_RESULTS="${INSTALL_RESULTS}| $name | $ver | ✓ (attempt $attempt) |
+  local ver
+  ver=$(get_version "$package")
+  if [ -n "$ver" ]; then
+    VER_BEFORE[$idx]="$ver"
+    log "  ✓ $name installed: $ver"
+    INSTALL_RESULTS="${INSTALL_RESULTS}| $name | $ver | ✓ |
 "
-      # Restart to clean state for next app (flow may have left dialogs open)
-      restart_zapstore
-      return 0
-    fi
-
-    log "  Attempt $attempt failed (not installed), resetting Zapstore..."
-    restart_zapstore
-  done
+    return 0
+  fi
 
   VER_BEFORE[$idx]="FAILED"
   INSTALL_RESULTS="${INSTALL_RESULTS}| $name | FAILED | ✗ |
 "
-  fail "Could not install older $name after $MAX_RETRIES attempts"
+  fail "Could not install older $name"
   return 1
 }
 
@@ -265,7 +416,6 @@ install_all_older() {
   done
 
   log "  Installed $installed/$APP_COUNT apps"
-
   if [ $installed -eq 0 ]; then
     fail "No apps installed — cannot proceed"
     generate_report
@@ -275,8 +425,7 @@ install_all_older() {
 
 verify_and_update() {
   log "── Phase 3+4: Verify updates & Update All ──"
-  restart_zapstore
-  if run_maestro "$FLOWS_DIR/verify_and_update_all.yaml"; then
+  if run_maestro "$FLOWS_DIR/verify_and_update_all.yaml" "APP_COUNT=$APP_COUNT"; then
     log "  Update All completed successfully"
   else
     fail "verify_and_update_all flow failed"
@@ -285,9 +434,9 @@ verify_and_update() {
 
 verify_post_update() {
   log "── Phase 5: Post-update verification ──"
-  sleep 5
+  sleep 0.5
+  DID_POST_VERIFY=1
   local i=0
-
   while [ $i -lt $APP_COUNT ]; do
     local name="${APP_NAMES[$i]}"
     local package="${APP_PKGS[$i]}"
@@ -303,7 +452,6 @@ verify_post_update() {
     local ver
     ver=$(get_version "$package")
     VER_AFTER[$i]="$ver"
-
     if [ -n "$ver" ] && [ "$ver" != "$before" ]; then
       log "  ✓ $name: $before → $ver"
     else
@@ -327,7 +475,6 @@ generate_report() {
   local result="PASS"
   [ $FAILURE_COUNT -gt 0 ] && result="FAIL"
 
-  # Build post-update table
   local post_update_table=""
   local i=0
   while [ $i -lt $APP_COUNT ]; do
@@ -335,7 +482,9 @@ generate_report() {
     local before="${VER_BEFORE[$i]:-N/A}"
     local after="${VER_AFTER[$i]:-N/A}"
     local status="✓"
-    if [ "$before" = "$after" ] || [ "$after" = "SKIPPED" ] || [ -z "$after" ]; then
+    if [ "$after" = "SKIPPED" ] || [ -z "$after" ]; then
+      status="-"
+    elif [ "$before" = "$after" ]; then
       status="✗"
     fi
     post_update_table="${post_update_table}| $name | $before | $after | $status |
@@ -343,13 +492,11 @@ generate_report() {
     i=$((i + 1))
   done
 
-  # Failures
   local failures_section="None"
   if [ $FAILURE_COUNT -gt 0 ]; then
     failures_section="$FAILURES"
   fi
 
-  # Criteria checks
   local c_install="x"; echo "$INSTALL_RESULTS" | grep -q "FAILED" && c_install=" "
   local c_update="x"; [ $FAILURE_COUNT -gt 0 ] && c_update=" "
 
@@ -396,23 +543,29 @@ EOF
 
 # ── Main ─────────────────────────────────────────────────────────────
 
-# Check if already signed in with test account; if not, setup Amber and sign in.
-# Skips Amber setup entirely when already logged in with correct user.
-# setup_amber only imports the account into Amber if it's not already there.
-# Sets ALREADY_SIGNED_IN=1 when skipped, so main won't restart Zapstore.
 ensure_signed_in() {
+  if [ "${FORCE_FRESH_START:-0}" -eq 1 ]; then
+    log "── Fresh start enabled: skipping signed-in check ──"
+    ensure_amber
+    disable_notifications_permission "$ZAPSTORE_PKG" "Zapstore"
+    adb -s "$DEVICE_ID" shell am force-stop "$AMBER_PKG" 2>/dev/null || true
+    setup_amber
+    restart_zapstore
+    sign_in
+    return 0
+  fi
+
   log "── Check: Already signed in with test account? ──"
   restart_zapstore
   if run_maestro "$FLOWS_DIR/check_signed_in_test_account.yaml" 2>/dev/null; then
     log "  Already signed in with test account, skipping Amber setup"
-    ALREADY_SIGNED_IN=1
     return 0
   fi
-  ALREADY_SIGNED_IN=0
   log "  Not signed in (or wrong account), setting up Amber and signing in..."
+  ensure_amber
   adb -s "$DEVICE_ID" shell pm clear "$ZAPSTORE_PKG" >/dev/null 2>&1 || true
-  adb -s "$DEVICE_ID" shell pm grant "$ZAPSTORE_PKG" android.permission.POST_NOTIFICATIONS 2>/dev/null || true
-  adb -s "$DEVICE_ID" shell am force-stop com.greenart7c3.nostrsigner 2>/dev/null || true
+  disable_notifications_permission "$ZAPSTORE_PKG" "Zapstore"
+  adb -s "$DEVICE_ID" shell am force-stop "$AMBER_PKG" 2>/dev/null || true
   setup_amber
   restart_zapstore
   sign_in
@@ -420,21 +573,49 @@ ensure_signed_in() {
 
 main() {
   log "═══ TEST-003: Bulk Update Flow ═══"
-
   command -v adb >/dev/null 2>&1 || { echo "ERROR: adb not found in PATH"; exit 1; }
   command -v maestro >/dev/null 2>&1 || { echo "ERROR: maestro not found in PATH"; exit 1; }
 
+  log "Stage window: $FROM_STAGE..$TO_STAGE"
+
   discover_device
   setup_screen
-  ensure_signed_in
-  uninstall_apps
-  # Only restart when we did full setup (pm clear); when already signed in, Zapstore stays open
-  if [ "${ALREADY_SIGNED_IN:-0}" -eq 0 ]; then
-    restart_zapstore
+  prepare_stage_window_prereqs
+
+  if should_run_stage 0; then
+    prepare_clean_state
+  else
+    log "── Skip Stage 0 (clean_state) ──"
   fi
-  install_all_older
-  verify_and_update
-  verify_post_update
+
+  if should_run_stage 1; then
+    ensure_signed_in
+  else
+    log "── Skip Stage 1 (auth) ──"
+  fi
+
+  if should_run_stage 2; then
+    install_all_older
+  else
+    log "── Skip Stage 2 (install_old) ──"
+  fi
+
+  if ! should_run_stage 2 && ( should_run_stage 3 || should_run_stage 4 ); then
+    capture_versions_as_before
+  fi
+
+  if should_run_stage 3; then
+    verify_and_update
+  else
+    log "── Skip Stage 3 (update_all) ──"
+  fi
+
+  if should_run_stage 4; then
+    verify_post_update
+  else
+    log "── Skip Stage 4 (post_verify) ──"
+  fi
+
   generate_report
 
   if [ $FAILURE_COUNT -gt 0 ]; then

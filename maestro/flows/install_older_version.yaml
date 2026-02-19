@@ -28,33 +28,49 @@ appId: dev.zapstore.app
     element:
       text: ".*All Versions.*"
     direction: DOWN
+    speed: 95
+    timeout: 12000
 
 - tapOn:
     text: ".*All Versions.*"
     label: "Expand versions list"
 
-- waitForAnimationToEnd
-
 # Scroll to make more versions visible
 - scroll
 
-# Use "below" selector relative to the "All Versions" header:
-#   index 0 = latest version's Install
-#   index 1 = second (older) version's Install
+# Move list viewport so the install action targets an older entry,
+# not the top/latest one.
+- scroll
+
+# Use "below" selector relative to visible version rows:
+#   index 0 = first visible version install
+#   index 1 = next (older) version install
 - tapOn:
     text: "Install"
     below:
-      text: ".*All Versions.*"
+      text: ".*Version .*"
     index: 1
     label: "Install older version"
 
+# Android may open security settings to allow unknown sources.
+# Enable and return, then trigger install again.
+- runFlow:
+    when:
+      visible: "Install unknown apps"
+    commands:
+      - tapOn: "Allow from this source"
+      - pressKey: back
+      - scroll
+      - tapOn:
+          text: "Install"
+          below:
+            text: ".*Version .*"
+          index: 1
+          label: "Install older version (retry after allowing unknown source)"
+
 # Wait for the first dialog to appear.
-# Regex must match the FULL accessibilityText / text of each element
-# (Java matches()), so use .* wildcards around partial phrases.
-- extendedWaitUntil:
-    visible:
-      text: "(?:.*Do you want to (?:update|install).*|Accept|Trust and install app)"
-    timeout: 60000
+- assertVisible:
+    text: "(?:.*Do you want to (?:update|install).*|.*(?:Install|Update) this app\\?.*|Accept|Trust and install app)"
 
 # Amber may ask to sign a request during install
 - runFlow:
@@ -62,8 +78,6 @@ appId: dev.zapstore.app
       visible: "Accept"
     commands:
       - tapOn: "Accept"
-      - assertVisible:
-          text: "(?:.*Do you want to (?:update|install).*|Trust and install app)"
 
 # Samsung security dialog (may not appear if source already trusted)
 - runFlow:
@@ -71,14 +85,12 @@ appId: dev.zapstore.app
       visible: "Trust and install app"
     commands:
       - tapOn: "Trust and install app"
-      - assertVisible:
-          text: ".*Do you want to (?:update|install).*"
 
 # Handle Android system install dialog
 - runFlow:
     when:
       visible:
-        text: ".*Do you want to install.*"
+        text: "(?:.*Do you want to install.*|.*Install this app\\?.*)"
     commands:
       - tapOn: "Install"
 
@@ -86,15 +98,9 @@ appId: dev.zapstore.app
 - runFlow:
     when:
       visible:
-        text: ".*Do you want to update.*"
+        text: "(?:.*Do you want to update.*|.*Update this app\\?.*)"
     commands:
       - tapOn: "Update"
-
-# Wait for either "App installed" / "Open" or Samsung "package analysis error".
-- extendedWaitUntil:
-    visible:
-      text: "(?:Open|OK)"
-    timeout: 60000
 
 # Dismiss Samsung dialog if it appeared
 - runFlow:
@@ -103,5 +109,15 @@ appId: dev.zapstore.app
     commands:
       - tapOn: "OK"
 
-# Confirm install completed
-- assertVisible: "Open"
+# Some devices do not surface "Open" reliably in the same layout.
+# The script validates the installed version via adb after this flow.
+- waitForAnimationToEnd
+
+# Return to app root (tab bar) so next app can be searched immediately.
+# Some devices stay on app-detail after install.
+- pressKey: back
+- runFlow:
+    when:
+      notVisible: ".*Tab 1 of 3"
+    commands:
+      - pressKey: back

@@ -6,12 +6,6 @@ appId: dev.zapstore.app
 # Navigates to Profile tab and ensures the test account is active.
 # If signed in with a different account, signs out first.
 # If not signed in, signs in via Amber.
-#
-# Test account npub: npub1lhrt8n340j83f8umlm7lc23lrfkj7fd22ynkrh4zn8mc4tltqrns4fkp3n
-# (see test/fixtures/test-account.env for full keypair)
-#
-# Prerequisites:
-#   - Amber signer app installed with test account imported
 # =============================================================
 
 # Dismiss Android notification permission dialog if shown
@@ -21,24 +15,17 @@ appId: dev.zapstore.app
     commands:
       - tapOn: "Allow"
 
-# Wait for the app to fully load (tab bar must be visible)
-- assertVisible:
-    text: ".*Tab 3 of 3"
+# Handle Android background execution prompt from Amber
+- runFlow:
+    when:
+      visible:
+        text: "Let app always run in background\\?"
+    commands:
+      - tapOn: "Allow"
 
 - tapOn:
     text: ".*Tab 3 of 3"
     label: "Tap Profile tab"
-- tapOn:
-    text: ".*Tab 3 of 3"
-    label: "Tap Profile tab again to reset to root"
-
-- waitForAnimationToEnd
-
-# Scroll to find sign-in/sign-out (profile page may not start at top)
-- scrollUntilVisible:
-    element:
-      text: "(?:Sign in with Amber|Sign Out)"
-    direction: UP
 
 # If signed in with wrong account, sign out first
 - runFlow:
@@ -58,21 +45,26 @@ appId: dev.zapstore.app
       visible: "Sign in with Amber"
     commands:
       - tapOn: "Sign in with Amber"
-      - assertVisible: "Connect"
+      - assertVisible:
+          text: "(?:Connect|Permission Needed)"
+      - runFlow:
+          when:
+            visible: "Permission Needed"
+          commands:
+            - tapOn: "Allow"
+      - runFlow:
+          when:
+            visible:
+              text: "Let app always run in background\\?"
+          commands:
+            - tapOn: "Allow"
       - tapOn: "Connect"
-      - scrollUntilVisible:
-          element: "Sign Out"
-          direction: UP
 
 # After Amber sign-in, app may return to a different tab — go back to Profile
 - tapOn:
     text: ".*Tab 3 of 3"
     label: "Navigate back to Profile tab"
 
-- waitForAnimationToEnd
-
 # Verify we're signed in
-- scrollUntilVisible:
-    element:
-      text: "(?:Sign Out|npub1lhrt)"
-    direction: UP
+- assertVisible:
+    text: "(?:Sign Out|npub1lhrt)"

@@ -15,22 +15,11 @@ appId: dev.zapstore.app
     commands:
       - tapOn: "Allow"
 
-- assertVisible:
-    text: ".*Tab 3 of 3"
-
 - tapOn:
     text: ".*Tab 3 of 3"
     label: "Tap Profile tab"
-- tapOn:
-    text: ".*Tab 3 of 3"
-    label: "Tap Profile tab again to reset to root"
 
-- waitForAnimationToEnd
-
-- scrollUntilVisible:
-    element:
-      text: "Sign Out"
-    direction: UP
-
+- assertVisible:
+    text: "Sign Out"
 - assertVisible:
     text: ".*npub1lhr.*"

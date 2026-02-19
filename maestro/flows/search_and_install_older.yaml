@@ -1,0 +1,10 @@
+appId: dev.zapstore.app
+---
+# Combined flow to reduce Maestro startup overhead:
+# 1) search app detail
+# 2) install older version
+- runFlow:
+    file: search_app.yaml
+
+- runFlow:
+    file: install_older_version.yaml

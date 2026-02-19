@@ -11,26 +11,23 @@ appId: dev.zapstore.app
 # After completion, the app detail page is visible.
 # =============================================================
 
-# Dismiss Android notification permission dialog if shown
+# Dismiss Samsung keyboard stylus onboarding popup if shown
 - runFlow:
     when:
-      visible: "Allow"
+      visible: "Try out your stylus"
     commands:
-      - tapOn: "Allow"
+      - tapOn: "Cancel"
 
-# Wait for the app to be ready (tab bar visible)
-- assertVisible:
-    text: ".*Tab 1 of 3"
-
-# Ensure we're on the Search tab root
-- tapOn:
-    text: ".*Tab 1 of 3"
-    label: "Tap Search tab"
-- tapOn:
-    text: ".*Tab 1 of 3"
-    label: "Tap Search tab again to reset"
-
-- waitForAnimationToEnd
+# If tab bar is available, navigate to Search tab.
+# When Samsung keyboard overlay is active, this label may be unavailable.
+- runFlow:
+    when:
+      visible:
+        text: ".*Tab 1 of 3"
+    commands:
+      - tapOn:
+          text: ".*Tab 1 of 3"
+          label: "Tap Search tab"
 
 # Clear any previous search state
 - runFlow:
@@ -39,9 +36,13 @@ appId: dev.zapstore.app
     commands:
       - tapOn: "Clear search"
 
-- assertVisible: "Search apps"
-
-- tapOn: "Search apps"
+- tapOn:
+    text: "(?:Search apps|${APP_SEARCH_TERM})"
+- runFlow:
+    when:
+      visible: "Try out your stylus"
+    commands:
+      - tapOn: "Cancel"
 - inputText: "${APP_SEARCH_TERM}"
 - pressKey: Enter
 
@@ -50,6 +51,6 @@ appId: dev.zapstore.app
 
 - tapOn:
     text: "${APP_MATCH_TEXT}"
+    below:
+      text: "(?:Search apps|${APP_SEARCH_TERM})"
     label: "Tap search result"
-
-- waitForAnimationToEnd

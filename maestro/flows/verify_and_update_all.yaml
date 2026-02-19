@@ -17,18 +17,9 @@ appId: dev.zapstore.app
     commands:
       - tapOn: "Allow"
 
-# Wait for the app to be ready (tab bar visible)
-- assertVisible:
-    text: ".*Tab 2 of 3"
-
 - tapOn:
     text: ".*Tab 2 of 3"
     label: "Tap Updates tab"
-- tapOn:
-    text: ".*Tab 2 of 3"
-    label: "Tap Updates tab again to reset to root"
-
-- waitForAnimationToEnd
 
 # "All done (N installed)" banner and "Update All" are mutually exclusive.
 # If the banner is showing (from the install phase), dismiss it first.
@@ -38,19 +29,34 @@ appId: dev.zapstore.app
     commands:
       - tapOn:
           text: ".*All done.*"
-      - waitForAnimationToEnd
 
-# Wait for updates to load (may take time after restart)
+# Wait for updates to load
 - assertVisible:
     text: ".*Update All.*"
+
+# Badge/section count must match the number of apps prepared in the script
+- assertVisible:
+    text: ".*Updates\\s*${APP_COUNT}.*"
 
 - tapOn:
     text: ".*Update All.*"
     label: "Tap Update All"
+    retryTapIfNoChange: true
+
+# On some Samsung builds the first tap can be swallowed by transient UI state.
+# Retry once if the Update All button is still present.
+- runFlow:
+    when:
+      visible:
+        text: ".*Update All.*"
+    commands:
+      - waitForAnimationToEnd
+      - tapOn:
+          text: ".*Update All.*"
+          label: "Retry Tap Update All"
+          retryTapIfNoChange: true
 
 # Wait for the "All done (N updated)" banner.
-# Regex must consume the full accessibilityText including the trailing ")".
-- extendedWaitUntil:
-    visible:
-      text: ".*All done.*updated.*"
-    timeout: 180000
+# Require the completion banner to avoid false positives from generic "Up to date" sections.
+- assertVisible:
+    text: ".*All done.*updated.*"

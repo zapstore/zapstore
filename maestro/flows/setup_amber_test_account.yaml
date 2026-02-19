@@ -2,27 +2,55 @@ appId: com.greenart7c3.nostrsigner
 ---
 # =============================================================
 # Sub-flow: Ensure test account is active in Amber
-#
-# Handles three scenarios:
-#   A) Amber main screen ("Applications") → open Accounts tab
-#   B) Fresh Amber (onboarding) → import from nsec directly
-#   C) Already on account selector → pick or import
-#
-# Test account npub (truncated): npub1lhr
-#
-# Environment variable required:
-#   NOSTR_TEST_NSEC — the nsec to import
-#
-# Prerequisites:
-#   - Amber signer app installed on the device
-#   - Device language set to English
 # =============================================================
+
+# Handle Amber permission modals that may appear immediately on launch
+- runFlow:
+    when:
+      visible: "Permission Needed"
+    commands:
+      - tapOn: "Allow"
+
+- runFlow:
+    when:
+      visible:
+        text: "Allow Amber to send you notifications\\?"
+    commands:
+      - tapOn: "Allow"
+
+- runFlow:
+    when:
+      visible:
+        text: "Let app always run in background\\?"
+    commands:
+      - tapOn: "Allow"
 
 # Wait for Amber to load (main screen or onboarding)
 - assertVisible:
-    text: "(?:Applications|Use your private key|Select Account)"
+    text: "(?:Applications|Use your private key|Select Account|Permission Needed|Allow Amber to send you notifications\\?|Let app always run in background\\?)"
 
-# ─── Scenario A: main screen with accounts (title = "Applications") ───
+# Re-handle transient permission modals in case they reappear
+- runFlow:
+    when:
+      visible: "Permission Needed"
+    commands:
+      - tapOn: "Allow"
+
+- runFlow:
+    when:
+      visible:
+        text: "Allow Amber to send you notifications\\?"
+    commands:
+      - tapOn: "Allow"
+
+- runFlow:
+    when:
+      visible:
+        text: "Let app always run in background\\?"
+    commands:
+      - tapOn: "Allow"
+
+# Scenario A: Amber main screen ("Applications")
 - runFlow:
     when:
       visible: "Applications"
@@ -31,7 +59,6 @@ appId: com.greenart7c3.nostrsigner
           text: "Accounts"
           label: "Tap Accounts bottom tab"
       - assertVisible: "Select Account"
-      # Import test account if not present
       - runFlow:
           when:
             notVisible: "npub1lhr"
@@ -43,19 +70,31 @@ appId: com.greenart7c3.nostrsigner
             - tapOn:
                 text: "Nsec / private key"
                 label: "Tap nsec input field"
+            - runFlow:
+                when:
+                  visible: "Try out your stylus"
+                commands:
+                  - tapOn: "Cancel"
             - inputText: "${NOSTR_TEST_NSEC}"
             - tapOn: "Next"
             - assertVisible: "Finish"
             - tapOn: "Finish"
             - assertVisible:
-                text: "(?:Allow Amber|Applications)"
+                text: "(?:Applications|Don.?t allow|Allow Amber to send you notifications\\?|Let app always run in background\\?)"
             - runFlow:
                 when:
-                  visible: "Allow"
+                  visible:
+                    text: "Don.?t allow"
+                commands:
+                  - tapOn:
+                      text: "Don.?t allow"
+            - runFlow:
+                when:
+                  visible:
+                    text: "Let app always run in background\\?"
                 commands:
                   - tapOn: "Allow"
             - assertVisible: "Applications"
-      # If account sheet is still open (account existed), select it
       - runFlow:
           when:
             visible: "Select Account"
@@ -63,9 +102,14 @@ appId: com.greenart7c3.nostrsigner
             - tapOn:
                 text: "npub1lhr"
                 label: "Select test account"
+            - runFlow:
+                when:
+                  visible: "Permission Needed"
+                commands:
+                  - tapOn: "Allow"
             - pressKey: back
 
-# ─── Scenario B: fresh Amber onboarding ───
+# Scenario B: Fresh onboarding
 - runFlow:
     when:
       visible: "Use your private key"
@@ -75,15 +119,28 @@ appId: com.greenart7c3.nostrsigner
       - tapOn:
           text: "Nsec / private key"
           label: "Tap nsec input field"
+      - runFlow:
+          when:
+            visible: "Try out your stylus"
+          commands:
+            - tapOn: "Cancel"
       - inputText: "${NOSTR_TEST_NSEC}"
       - tapOn: "Next"
       - assertVisible: "Finish"
       - tapOn: "Finish"
       - assertVisible:
-          text: "(?:Allow Amber|Applications)"
+          text: "(?:Applications|Don.?t allow|Allow Amber to send you notifications\\?|Let app always run in background\\?)"
       - runFlow:
           when:
-            visible: "Allow"
+            visible:
+              text: "Don.?t allow"
+          commands:
+            - tapOn:
+                text: "Don.?t allow"
+      - runFlow:
+          when:
+            visible:
+              text: "Let app always run in background\\?"
           commands:
             - tapOn: "Allow"
       - assertVisible: "Applications"
