@@ -192,9 +192,9 @@ class RelevantWhoFollowContainer extends HookConsumerWidget {
             );
           },
         ),
-        AsyncError(:final error) => Center(
+        AsyncError() => Center(
           child: Text(
-            error.toString().replaceFirst('Exception: ', ''),
+            'Service temporarily unavailable.',
             style: baseStyle,
           ),
         ),
@@ -353,16 +353,18 @@ class RelevantWhoFollowContainer extends HookConsumerWidget {
 final relevantWhoFollowProvider = FutureProvider.autoDispose
     .family<List<Profile>, ({String to})>((ref, arg) async {
       // Require active signer and profile to submit the request
-      final signer = ref.read(Signer.activeSignerProvider);
+      final signer = ref.watch(Signer.activeSignerProvider);
       final pubkey = ref.watch(Signer.activePubkeyProvider);
       if (signer == null || pubkey == null) {
         throw 'Not signed in';
       }
 
+      final targetPubkey = arg.to.decodeShareable();
+
       // Build and sign a reputation verification request
       final partial = PartialVerifyReputationRequest(
-        source: pubkey.encodeShareable(type: 'npub'),
-        target: arg.to,
+        source: pubkey,
+        target: targetPubkey,
         limit: 7,
       );
       final request = await partial.signWith(signer);
