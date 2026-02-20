@@ -35,7 +35,7 @@ class InstallAlertDialog extends HookConsumerWidget {
       return const SizedBox.shrink();
     }
     final trustedSignerNotifier = useState(false);
-    final profile = ref.watch(Signer.activeProfileProvider(LocalSource()));
+    final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
     final theme = Theme.of(context);
     final baseTextSize = theme.textTheme.bodyMedium?.fontSize ?? 14.0;
 
@@ -62,7 +62,7 @@ class InstallAlertDialog extends HookConsumerWidget {
               size: baseTextSize,
             ),
           ] else ...[
-            profile != null
+            signedInPubkey != null
                 ? RelevantWhoFollowContainer(app: app, size: baseTextSize)
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -85,7 +85,7 @@ class InstallAlertDialog extends HookConsumerWidget {
                     ],
                   ),
             // Only show "Always trust" when signed in (requires signer to persist)
-            if (profile != null) ...[
+            if (signedInPubkey != null) ...[
               const Gap(14),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
