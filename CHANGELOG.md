@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-02-20
+
+### Changed
+
+- Disabled page transitions to reduce navigation glitches on lower-performance devices (#310)
+
+### Fixed
+
+- Install queue getting stuck with multiple concurrent downloads (#319)
+- "Always trust" toggle now hidden when user is not signed in
+- Install retry not showing immediate feedback until native callbacks arrived
+- Install confirmation staying stuck in pending state
+- Auto sign-out not triggering when Amber is uninstalled while user is still signed in
+- Not all apps showing in an app stack
+- Back gesture handling on screenshot viewer
+
 ## [1.0.0] - 2026-02-10
 
 ### Added
