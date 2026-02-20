@@ -29,14 +29,6 @@ class AppStackScreen extends HookConsumerWidget {
           '#d': {stackId},
         },
         limit: 1,
-        and: (stack) => {
-          stack.apps.query(
-            source: const LocalAndRemoteSource(
-              relays: 'AppCatalog',
-              stream: false,
-            ),
-          ),
-        },
         source: LocalAndRemoteSource(stream: true, relays: 'social'),
         subscriptionPrefix: 'app-stack-$stackId',
       ),
@@ -71,9 +63,14 @@ class _AppStackContentWithApps extends HookConsumerWidget {
       return const _ErrorScaffold(message: 'Stack not found');
     }
 
-    // Get app identifiers from stack's apps relationship
-    final stackApps = stack!.apps.toList();
-    final appIdentifiers = stackApps.map((app) => app.identifier).toSet();
+    // Derive identifiers directly from the raw event tags — stable and complete
+    // regardless of what's been cached locally. The 'a' tag format is
+    // '32267:pubkey:d-tag'; we extract just the d-tag (identifier) part.
+    final appIdentifiers = stack!.event
+        .getTagSetValues('a')
+        .where((id) => id.startsWith('32267:'))
+        .map((id) => id.split(':').skip(2).join(':'))
+        .toSet();
 
     if (appIdentifiers.isEmpty) {
       return _AppStackContent(stack: stack!, apps: const []);
@@ -99,12 +96,11 @@ class _AppStackContentWithApps extends HookConsumerWidget {
       ),
     );
 
-    // Map loaded apps by identifier for ordering
+    // Preserve the original stack order where possible
     final appsMap = {for (final app in appsState.models) app.identifier: app};
-
-    // Preserve stack order, using loaded apps with their relationships
-    final orderedApps = stackApps
-        .map((app) => appsMap[app.identifier] ?? app)
+    final orderedApps = appIdentifiers
+        .map((id) => appsMap[id])
+        .whereType<App>()
         .toList();
 
     return _AppStackContent(stack: stack!, apps: orderedApps);
