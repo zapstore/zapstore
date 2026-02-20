@@ -255,7 +255,9 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
             filePath: op.filePath,
           ),
         );
-        if (op is Installing || op is SystemProcessing || op is ReadyToInstall) {
+        if (op is Installing ||
+            op is SystemProcessing ||
+            op is ReadyToInstall) {
           clearInstallSlot(appId);
           needsQueueProcessing = true;
         }
@@ -594,6 +596,10 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
       );
       return;
     }
+
+    // Exit InstallCancelled immediately so UI shows progress and native
+    // install events are no longer ignored by AndroidPackageManager.
+    setOperation(appId, Installing(target: op.target, filePath: op.filePath));
 
     await _performInstall(appId, op.target, op.filePath);
   }
@@ -1577,7 +1583,8 @@ final batchProgressProvider = Provider<BatchProgress?>((ref) {
 
   // Total excludes InstallCancelled — those are already resolved from the
   // batch's perspective and should not inflate the count.
-  final total = completed + downloading + verifying + installing + queued + failed;
+  final total =
+      completed + downloading + verifying + installing + queued + failed;
 
   // If only InstallCancelled operations remain, no batch to show
   if (total == 0) return null;
@@ -1598,8 +1605,8 @@ final batchProgressProvider = Provider<BatchProgress?>((ref) {
   final completedLabel = completedUpdates > 0 && completedInstalls == 0
       ? 'updated'
       : completedInstalls > 0 && completedUpdates == 0
-          ? 'installed'
-          : 'completed';
+      ? 'installed'
+      : 'completed';
 
   return BatchProgress(
     total: total,
