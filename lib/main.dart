@@ -112,21 +112,18 @@ class ZapstoreApp extends HookConsumerWidget {
         if (previous != true || isAmberInstalled) return;
         if (ref.read(Signer.activePubkeyProvider) == null) return;
 
-        final toastContext = rootNavigatorKey.currentState?.overlay?.context;
-        if (toastContext != null && toastContext.mounted) {
-          toastContext.showInfo('Amber was removed, you were signed out');
-        }
+        unawaited(() async {
+          try {
+            await ref.read(amberSignerProvider).signOut();
 
-        unawaited(
-          ref
-              .read(amberSignerProvider)
-              .signOut()
-              .catchError(
-                (Object error, StackTrace stackTrace) => debugPrint(
-                  'Auto sign-out after Amber uninstall failed: $error',
-                ),
-              ),
-        );
+            final toastContext = rootNavigatorKey.currentState?.overlay?.context;
+            if (toastContext != null && toastContext.mounted) {
+              toastContext.showInfo('Amber was removed, you were signed out');
+            }
+          } catch (error) {
+            debugPrint('Auto sign-out after Amber uninstall failed: $error');
+          }
+        }());
       },
     );
 
