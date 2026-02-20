@@ -12,6 +12,7 @@ import 'package:purplebase/purplebase.dart';
 import 'package:amber_signer/amber_signer.dart';
 import 'package:zapstore/services/app_restart_service.dart';
 import 'package:zapstore/services/background_update_service.dart';
+import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/services/secure_storage_service.dart';
 import 'package:zapstore/router.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
@@ -101,6 +102,33 @@ class ZapstoreApp extends HookConsumerWidget {
 
       return () => subscription?.cancel();
     }, []);
+
+    // Automatically sign out when Amber is uninstalled while signed in.
+    ref.listen<bool>(
+      packageManagerProvider.select(
+        (state) => state.installed.containsKey(kAmberPackageId),
+      ),
+      (previous, isAmberInstalled) {
+        if (previous != true || isAmberInstalled) return;
+        if (ref.read(Signer.activePubkeyProvider) == null) return;
+
+        final toastContext = rootNavigatorKey.currentState?.overlay?.context;
+        if (toastContext != null && toastContext.mounted) {
+          toastContext.showInfo('Amber was removed, you were signed out');
+        }
+
+        unawaited(
+          ref
+              .read(amberSignerProvider)
+              .signOut()
+              .catchError(
+                (Object error, StackTrace stackTrace) => debugPrint(
+                  'Auto sign-out after Amber uninstall failed: $error',
+                ),
+              ),
+        );
+      },
+    );
 
     // Always show the main app UI, even during initialization
     return MaterialApp.router(
