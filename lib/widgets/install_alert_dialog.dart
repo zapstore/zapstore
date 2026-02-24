@@ -7,6 +7,7 @@ import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/author_container.dart';
 import 'package:zapstore/widgets/common/base_dialog.dart';
 import 'package:zapstore/widgets/download_text_container.dart';
+import 'package:zapstore/services/secure_storage_service.dart';
 import 'package:zapstore/widgets/relevant_who_follow_container.dart';
 import 'package:zapstore/widgets/sign_in_button.dart';
 
@@ -32,9 +33,35 @@ class InstallAlertDialog extends HookConsumerWidget {
       _ => null,
     };
     if (publisher == null) {
-      return const SizedBox.shrink();
+      return BaseDialog(
+        title: const BaseDialogTitle('Trust this app?'),
+        content: const BaseDialogContent(
+          children: [
+            Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: CircularProgressIndicator(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: null, // Disabled while loading
+            child: const Text('Trust and install app'),
+          ),
+        ],
+      );
     }
     final trustedSignerNotifier = useState(false);
+    final alwaysUseCdnAsync = ref.watch(alwaysUseCdnProvider);
+    final alwaysUseCdnLocal = useState<bool?>(null);
+    final alwaysUseCdn =
+        alwaysUseCdnLocal.value ?? alwaysUseCdnAsync.valueOrNull ?? false;
     final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
     final activeSigner = ref.watch(Signer.activeSignerProvider);
     final canPersistTrust = signedInPubkey != null && activeSigner != null;
@@ -55,14 +82,21 @@ class InstallAlertDialog extends HookConsumerWidget {
               size: baseTextSize,
             ),
             Gap(10),
-            DownloadTextContainer(
-              beforeText:
-                  '${app.name ?? app.identifier} will be installed from its original release location:',
-              oneLine: false,
-              showFullUrl: true,
-              url: app.latestFileMetadata!.urls.first,
-              size: baseTextSize,
-            ),
+            alwaysUseCdn
+                ? Text(
+                    '${app.name ?? app.identifier} will be installed from cdn.zapstore.dev.',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurface,
+                    ),
+                  )
+                : DownloadTextContainer(
+                    beforeText:
+                        '${app.name ?? app.identifier} will be installed from its original release location:',
+                    oneLine: false,
+                    showFullUrl: true,
+                    url: app.latestFileMetadata!.urls.first,
+                    size: baseTextSize,
+                  ),
           ] else ...[
             canPersistTrust
                 ? RelevantWhoFollowContainer(app: app, size: baseTextSize)
@@ -121,6 +155,27 @@ class InstallAlertDialog extends HookConsumerWidget {
               ),
             ],
           ],
+          const Gap(14),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Switch(
+                value: alwaysUseCdn,
+                onChanged: (value) {
+                  alwaysUseCdnLocal.value = value;
+                },
+              ),
+              Gap(4),
+              Expanded(
+                child: Text(
+                  'Download from CDN (hides IP)',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
       actions: [
@@ -133,9 +188,10 @@ class InstallAlertDialog extends HookConsumerWidget {
         ),
         FilledButton(
           onPressed: () {
-            Navigator.of(
-              context,
-            ).pop((trustPermanently: trustedSignerNotifier.value));
+            Navigator.of(context).pop((
+              trustPermanently: trustedSignerNotifier.value,
+              alwaysUseCdn: alwaysUseCdn,
+            ));
           },
           style: FilledButton.styleFrom(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),

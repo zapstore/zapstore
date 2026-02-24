@@ -21,6 +21,7 @@ import 'package:zapstore/widgets/common/profile_identity_row.dart';
 import 'package:zapstore/widgets/app_card.dart';
 import 'package:zapstore/theme.dart';
 import 'package:zapstore/services/notification_service.dart';
+import 'package:zapstore/services/secure_storage_service.dart';
 import 'package:zapstore/widgets/common/note_parser.dart';
 import 'package:zapstore/widgets/nwc_widgets.dart';
 import 'package:zapstore/widgets/relay_management_card.dart';
@@ -64,6 +65,11 @@ class ProfileScreen extends ConsumerWidget {
 
           // App Catalog Relay Management Section
           const RelayManagementCard(),
+
+          const SizedBox(height: 16),
+
+          // CDN Download Setting
+          const _CdnDownloadCard(),
 
           const SizedBox(height: 16),
 
@@ -185,17 +191,11 @@ class _AuthenticationSection extends ConsumerWidget {
         FilledButton.icon(
           onPressed: () => _signOut(context, ref),
           icon: const Icon(Icons.logout, size: 14),
-          label: const Text(
-            'Sign Out',
-            style: TextStyle(fontSize: 12),
-          ),
+          label: const Text('Sign Out', style: TextStyle(fontSize: 12)),
           style: FilledButton.styleFrom(
             backgroundColor: Colors.red.shade900,
             foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 6,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             minimumSize: const Size(0, 0),
             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
@@ -1329,6 +1329,29 @@ class _EmptyState extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _CdnDownloadCard extends ConsumerWidget {
+  const _CdnDownloadCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final alwaysUseCdnAsync = ref.watch(alwaysUseCdnProvider);
+    final alwaysUseCdn = alwaysUseCdnAsync.valueOrNull ?? false;
+    final secureStorage = ref.read(secureStorageServiceProvider);
+
+    return Card(
+      child: SwitchListTile(
+        title: const Text('Always download from CDN'),
+        subtitle: const Text('Hides your IP from GitHub/Microsoft'),
+        value: alwaysUseCdn,
+        onChanged: (value) async {
+          await secureStorage.setAlwaysUseCdn(value);
+          ref.invalidate(alwaysUseCdnProvider);
+        },
       ),
     );
   }

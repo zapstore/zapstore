@@ -5,6 +5,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
+import 'package:zapstore/services/secure_storage_service.dart';
 import 'package:zapstore/services/trusted_signers_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/author_container.dart';
@@ -544,7 +545,8 @@ class InstallButton extends ConsumerWidget {
 
     if (shouldShowDialog) {
       if (!context.mounted) return false;
-      final result = await showBaseDialog<({bool trustPermanently})>(
+      final result = await showBaseDialog<
+          ({bool trustPermanently, bool alwaysUseCdn})>(
         context: context,
         dialog: InstallAlertDialog(app: app),
       );
@@ -554,6 +556,12 @@ class InstallButton extends ConsumerWidget {
           await ref.read(trustServiceProvider).addTrustedSigner(signerPubkey);
         } catch (_) {}
       }
+      try {
+        await ref
+            .read(secureStorageServiceProvider)
+            .setAlwaysUseCdn(result.alwaysUseCdn);
+        ref.invalidate(alwaysUseCdnProvider);
+      } catch (_) {}
     }
     return true;
   }
