@@ -131,6 +131,12 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
   @protected
   String? activeInstall;
 
+  /// Tracks whether the last download for an appId came from CDN.
+  /// Set in [_handleDownloadComplete] from task metadata, read by subclasses
+  /// to decide whether to retry from CDN on hash mismatch.
+  @protected
+  final Map<String, bool> cdnRetryTracker = {};
+
   /// Lock to prevent concurrent queue processing
   bool _processingQueue = false;
 
@@ -304,6 +310,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
   }
 
   void clearOperation(String appId) {
+    cdnRetryTracker.remove(appId);
     state = state.copyWith(
       operations: Map.from(state.operations)..remove(appId),
     );
@@ -702,6 +709,14 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
     }
   }
 
+  /// Re-download from CDN after a hash mismatch on the original source.
+  @protected
+  Future<void> retryDownloadFromCdn(String appId, FileMetadata target) {
+    activeDownloads.add(appId);
+    final cdnUrl = 'https://cdn.zapstore.dev/${target.hash}';
+    return _startDownloadTask(appId, target, cdnUrl, isCdnRetry: true);
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   // DOWNLOAD INTERNALS
   // ═══════════════════════════════════════════════════════════════════════════
@@ -854,10 +869,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
       case TaskStatus.notFound:
         // 404 error - retry with CDN fallback if not already tried
         if (!isCdnRetry) {
-          final cdnUrl = 'https://cdn.zapstore.dev/${target.hash}';
-          unawaited(
-            _startDownloadTask(appId, target, cdnUrl, isCdnRetry: true),
-          );
+          unawaited(retryDownloadFromCdn(appId, target));
           return;
         }
         // CDN also returned 404 - fail the operation
@@ -938,6 +950,10 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
     // Remove from active downloads
     activeDownloads.remove(appId);
 
+    // Track CDN origin so subclasses can retry from CDN on hash mismatch
+    final (_, _, isCdnRetry) = _parseTaskMetadata(task.metaData);
+    cdnRetryTracker[appId] = isCdnRetry;
+
     try {
       final filePath = await task.filePath();
       // Proceed to install (this will add to install queue when ready)
@@ -979,7 +995,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
         }
 
         final downloadUrl = op.target.urls.firstOrNull;
-        if (downloadUrl == null) {
+        if (downloadUrl == null || downloadUrl.isEmpty) {
           setOperation(
             appId,
             OperationFailed(
@@ -997,6 +1013,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
           op.target,
           downloadUrl,
           displayName: op.displayName,
+          isCdnRetry: false,
         );
       }
 
