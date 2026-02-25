@@ -12,15 +12,20 @@ const kFranzapPubkey =
 /// Identifier for storing user saved apps
 const kAppBookmarksIdentifier = 'zapstore-bookmarks';
 
+/// Identifier for encrypted backup of installed apps
+const kInstalledAppsBackupIdentifier = 'zapstore-installed';
+
 /// Event filter for app stacks - excludes saved apps and stacks with zero App references
 bool appStackEventFilter(Map<String, dynamic> event) {
   final tags = event['tags'] as List<dynamic>?;
   if (tags == null) return false;
 
-  // Check for saved apps identifier in 'd' tag
+  // Check for saved apps / backup identifiers in 'd' tag (exclude from public stacks)
   for (final tag in tags) {
     if (tag is List && tag.isNotEmpty && tag[0] == 'd') {
-      if (tag.length > 1 && tag[1] == kAppBookmarksIdentifier) {
+      if (tag.length > 1 &&
+          (tag[1] == kAppBookmarksIdentifier ||
+              tag[1] == kInstalledAppsBackupIdentifier)) {
         return false;
       }
     }

@@ -299,7 +299,11 @@ class _AddToStackDialogSignedIn extends HookConsumerWidget {
             (t) => t is List && t.isNotEmpty && t[0] == 'd',
             orElse: () => null,
           );
-          if (dTag != null && dTag[1] == kAppBookmarksIdentifier) return false;
+          if (dTag != null &&
+              (dTag[1] == kAppBookmarksIdentifier ||
+                  dTag[1] == kInstalledAppsBackupIdentifier)) {
+            return false;
+          }
           // Check has at least one 'a' tag (app reference)
           final hasAppRef = tags.any(
             (t) => t is List && t.isNotEmpty && t[0] == 'a',
