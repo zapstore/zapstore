@@ -19,7 +19,7 @@ import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/theme.dart';
 import 'package:zapstore/services/package_manager/android_package_manager.dart';
 import 'package:zapstore/services/package_manager/dummy_package_manager.dart';
-import 'package:zapstore/services/market_intent_service.dart';
+import 'package:zapstore/services/deep_link_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/breathing_logo.dart';
 
@@ -280,7 +280,7 @@ final appInitializationProvider = FutureProvider<void>((ref) async {
   final backgroundService = ref.read(backgroundUpdateServiceProvider);
   unawaited(backgroundService.initialize());
 
-  unawaited(ref.read(marketIntentServiceProvider).initialize());
+  unawaited(ref.read(deepLinkServiceProvider).initialize());
 
   await _attemptAutoSignIn(ref);
 });
