@@ -11,7 +11,6 @@ import 'package:zapstore/screens/user_screen.dart';
 import 'package:zapstore/screens/search_screen.dart';
 import 'package:zapstore/screens/updates_screen.dart';
 import 'package:zapstore/screens/profile_screen.dart';
-import 'package:zapstore/screens/restore_installed_apps_screen.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 
 /// Root paths for each navigation branch (used for back navigation handling)
@@ -79,25 +78,6 @@ GoRoute _stackDetailRoute() {
           stackId: resolved.identifier,
           authorPubkey: resolved.author,
         ),
-      );
-    },
-  );
-}
-
-/// Helper to build restore installed apps route
-GoRoute _restoreRoute() {
-  return GoRoute(
-    path: 'restore',
-    redirect: (context, state) {
-      final extra = state.extra;
-      if (extra is! List<String> || extra.isEmpty) return '/profile';
-      return null;
-    },
-    pageBuilder: (context, state) {
-      final ids = state.extra as List<String>;
-      return _noTransitionPage(
-        state: state,
-        child: RestoreInstalledAppsScreen(addressableIds: ids),
       );
     },
   );
@@ -180,7 +160,6 @@ final routerProvider = Provider<GoRouter>((ref) {
                   _appDetailRoute(),
                   _stackDetailRoute(),
                   _userRoute(),
-                  _restoreRoute(),
                 ],
               ),
             ],

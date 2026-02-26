@@ -358,11 +358,15 @@ final class AndroidPackageManager extends PackageManager {
   }
 
   @override
-  void setOperation(String appId, InstallOperation op) {
+  void setOperation(
+    String appId,
+    InstallOperation op, {
+    InstallSource? source,
+  }) {
     // Clear from aborted orphans when a new operation is set,
     // so we can abort again if it becomes orphaned in a future session.
     _abortedOrphans.remove(appId);
-    super.setOperation(appId, op);
+    super.setOperation(appId, op, source: source);
   }
 
   @override

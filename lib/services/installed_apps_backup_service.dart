@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -5,7 +6,134 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/constants/app_constants.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
+import 'package:zapstore/services/secure_storage_service.dart';
 import 'package:zapstore/utils/extensions.dart';
+
+const _logPrefix = '[InstalledAppsBackup]';
+
+/// Persisted setting for auto-backup (off by default). Survives sign-out.
+class BackupSettingsNotifier extends AsyncNotifier<bool> {
+  @override
+  Future<bool> build() async {
+    final storage = ref.read(secureStorageServiceProvider);
+    return storage.getBackupEnabled();
+  }
+
+  Future<void> setEnabled(bool enabled) async {
+    await ref.read(secureStorageServiceProvider).setBackupEnabled(enabled);
+    ref.invalidateSelf();
+  }
+}
+
+final backupSettingsProvider =
+    AsyncNotifierProvider<BackupSettingsNotifier, bool>(
+  BackupSettingsNotifier.new,
+);
+
+const _backupDebounceDuration = Duration(seconds: 3);
+
+/// Listens to batch completion and uninstalls; triggers backup when enabled and signed in.
+/// Debounces rapid triggers (e.g. multiple uninstalls) to avoid repeated sign prompts.
+/// Watched by MainScaffold to keep alive.
+final installedAppsBackupListenerProvider = Provider<void>((ref) {
+  Timer? debounceTimer;
+  var activeBatchAppIds = <String>{};
+  Set<String>? baselineInstalledKeys;
+
+  void scheduleBackup() {
+    debounceTimer?.cancel();
+    debounceTimer = Timer(_backupDebounceDuration, () {
+      debounceTimer = null;
+      _maybeBackup(ref);
+    });
+  }
+
+  ref.listen<BatchProgress?>(batchProgressProvider, (prev, next) {
+    if (next?.hasInProgress == true) {
+      activeBatchAppIds = ref
+          .read(packageManagerProvider)
+          .operations
+          .entries
+          .where((entry) => entry.value.isInProgress)
+          .map((entry) => entry.key)
+          .toSet();
+    }
+
+    final hasBatchCompleted =
+        prev?.hasInProgress == true && next?.isAllComplete == true;
+    if (hasBatchCompleted) {
+      if (baselineInstalledKeys == null) return;
+      if (_isRestoreOnlyBatch(ref, activeBatchAppIds)) {
+        activeBatchAppIds = <String>{};
+        baselineInstalledKeys =
+            ref.read(packageManagerProvider).installed.keys.toSet();
+        return;
+      }
+      baselineInstalledKeys =
+          ref.read(packageManagerProvider).installed.keys.toSet();
+      scheduleBackup();
+      activeBatchAppIds = <String>{};
+    }
+  });
+
+  ref.listen<bool>(
+    packageManagerProvider.select((s) => s.isScanning),
+    (prev, next) {
+      if (prev == true && next == false) {
+        final keys = ref.read(packageManagerProvider).installed.keys.toSet();
+        baselineInstalledKeys ??= keys;
+      }
+    },
+  );
+
+  ref.listen<int>(
+    packageManagerProvider.select((s) => s.installed.length),
+    (prev, next) {
+      if (baselineInstalledKeys == null || prev == null || prev == next) return;
+      final currentKeys =
+          ref.read(packageManagerProvider).installed.keys.toSet();
+      final added = currentKeys.difference(baselineInstalledKeys!);
+      final removed = baselineInstalledKeys!.difference(currentKeys);
+      if (added.isEmpty && removed.isEmpty) return;
+      // Skip isScanning only for additions (avoids false triggers during sync).
+      // Removals are always from user uninstall — must trigger backup.
+      if (removed.isEmpty && ref.read(packageManagerProvider).isScanning) return;
+      final batch = ref.read(batchProgressProvider);
+      if (batch != null && batch.hasInProgress) return;
+      baselineInstalledKeys = currentKeys;
+      scheduleBackup();
+    },
+  );
+
+  ref.onDispose(() {
+    debounceTimer?.cancel();
+  });
+});
+
+void _maybeBackup(Ref ref) {
+  final enabledAsync = ref.read(backupSettingsProvider);
+  final enabled = enabledAsync.valueOrNull ?? false;
+  final pubkey = ref.read(Signer.activePubkeyProvider);
+
+  if (!enabled || pubkey == null) return;
+
+  unawaited(
+    _backupInstalledApps(ref).then((count) {
+      debugPrint('$_logPrefix Backup completed: $count apps');
+    }).catchError((e, st) {
+      debugPrint('$_logPrefix Backup error: $e');
+      debugPrint('$_logPrefix $st');
+    }),
+  );
+}
+
+bool _isRestoreOnlyBatch(Ref ref, Set<String> appIds) {
+  if (appIds.isEmpty) return false;
+  final pm = ref.read(packageManagerProvider.notifier);
+  return appIds.every(
+    (appId) => pm.getOperationSource(appId) == InstallSource.restore,
+  );
+}
 
 /// Provider that exposes the backup function with correct Ref.
 final backupInstalledAppsProvider = Provider<Future<int> Function()>((ref) {
@@ -116,7 +244,7 @@ Future<List<String>> _restoreInstalledApps(Ref ref) async {
     );
     addressableIds = (jsonDecode(decryptedContent) as List).cast<String>();
   } catch (e) {
-    debugPrint('[InstalledAppsBackup] Restore decrypt failed: $e');
+    debugPrint('$_logPrefix Restore decrypt failed: $e');
     return [];
   }
 

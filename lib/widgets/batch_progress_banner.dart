@@ -12,10 +12,12 @@ class UpdateAllRow extends ConsumerWidget {
     super.key,
     required this.allUpdates,
     this.label = 'Update All',
+    this.installSource = InstallSource.normal,
   });
 
   final List<App> allUpdates;
   final String label;
+  final InstallSource installSource;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -36,6 +38,7 @@ class UpdateAllRow extends ConsumerWidget {
                   appId: app.identifier,
                   target: app.latestFileMetadata!,
                   displayName: app.name,
+                  source: installSource,
                 ),
               )
               .toList();

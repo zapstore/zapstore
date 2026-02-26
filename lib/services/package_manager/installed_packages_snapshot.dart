@@ -17,7 +17,7 @@ class InstalledPackagesSnapshot {
   static Future<void> save(Map<String, PackageInfo> installed) async {
     try {
       final file = await _file();
-      final tmp = File('${file.path}.tmp');
+      await Directory(path.dirname(file.path)).create(recursive: true);
       final list = installed.values
           .map(
             (p) => <String, dynamic>{
@@ -35,11 +35,7 @@ class InstalledPackagesSnapshot {
         'savedAt': DateTime.now().millisecondsSinceEpoch,
         'installed': list,
       });
-      await tmp.writeAsString(payload, flush: true);
-      if (await file.exists()) {
-        await file.delete();
-      }
-      await tmp.rename(file.path);
+      await file.writeAsString(payload, flush: true);
     } catch (e) {
       // Best-effort snapshot only.
       if (kDebugMode) {

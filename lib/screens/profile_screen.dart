@@ -15,6 +15,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/main.dart';
 import 'package:zapstore/services/bookmarks_service.dart';
+import 'package:zapstore/screens/restore_installed_apps_screen.dart';
 import 'package:zapstore/services/installed_apps_backup_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/utils/extensions.dart';
@@ -186,17 +187,11 @@ class _AuthenticationSection extends ConsumerWidget {
         FilledButton.icon(
           onPressed: () => _signOut(context, ref),
           icon: const Icon(Icons.logout, size: 14),
-          label: const Text(
-            'Sign Out',
-            style: TextStyle(fontSize: 12),
-          ),
+          label: const Text('Sign Out', style: TextStyle(fontSize: 12)),
           style: FilledButton.styleFrom(
             backgroundColor: Colors.red.shade900,
             foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 6,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             minimumSize: const Size(0, 0),
             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
@@ -1366,10 +1361,7 @@ class _InstalledAppsTile extends ConsumerWidget {
           await onAction(context, ref);
         } catch (e) {
           if (context.mounted) {
-            context.showError(
-              'Operation failed',
-              technicalDetails: '$e',
-            );
+            context.showError('Operation failed', technicalDetails: '$e');
           }
         }
       },
@@ -1381,10 +1373,9 @@ class _InstalledAppsTile extends ConsumerWidget {
         return ListTile(
           leading: CircleAvatar(
             radius: 18,
-            backgroundColor: Theme.of(context)
-                .colorScheme
-                .primary
-                .withValues(alpha: 0.12),
+            backgroundColor: Theme.of(
+              context,
+            ).colorScheme.primary.withValues(alpha: 0.12),
             child: isLoading
                 ? SizedBox(
                     width: 20,
@@ -1394,17 +1385,16 @@ class _InstalledAppsTile extends ConsumerWidget {
                       color: Theme.of(context).colorScheme.primary,
                     ),
                   )
-                : Icon(
-                    icon,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
+                : Icon(icon, color: Theme.of(context).colorScheme.primary),
           ),
           title: AutoSizeText(
             title,
             style: TextStyle(
               color: isSignedIn
                   ? Theme.of(context).colorScheme.onSurface
-                  : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                  : Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.5),
               fontWeight: FontWeight.w600,
             ),
             maxLines: 1,
@@ -1424,6 +1414,10 @@ class _DataManagementSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final pubkey = ref.watch(Signer.activePubkeyProvider);
+    final backupEnabled =
+        ref.watch(backupSettingsProvider).valueOrNull ?? false;
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -1435,6 +1429,23 @@ class _DataManagementSection extends ConsumerWidget {
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 16),
+            if (pubkey != null)
+              SwitchListTile(
+                secondary: Icon(
+                  Icons.cloud_upload_outlined,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                title: const Text('Enable installed apps backup'),
+                subtitle: const Text(
+                  'Automatically syncs your installed apps list to Nostr after each install or uninstall.',
+                ),
+                value: backupEnabled,
+                onChanged: (value) {
+                  ref.read(backupSettingsProvider.notifier).setEnabled(value);
+                },
+                contentPadding: EdgeInsets.zero,
+              ),
+            if (pubkey != null) const SizedBox(height: 8),
             _InstalledAppsTile(
               icon: Icons.backup,
               title: 'Backup installed apps',
@@ -1459,7 +1470,30 @@ class _DataManagementSection extends ConsumerWidget {
                   context.showInfo('No backup found');
                   return;
                 }
-                context.push('/profile/restore', extra: ids);
+                await showDialog<void>(
+                  context: context,
+                  useRootNavigator: true,
+                  barrierDismissible: false,
+                  builder: (dialogContext) => PopScope(
+                    canPop: false,
+                    onPopInvokedWithResult: (didPop, _) {
+                      if (!didPop) {
+                        Navigator.of(dialogContext, rootNavigator: true).pop();
+                      }
+                    },
+                    child: Dialog(
+                      backgroundColor: AppColors.darkBackground,
+                      insetPadding: EdgeInsets.zero,
+                      child: RestoreInstalledAppsScreen(
+                        addressableIds: ids,
+                        onClose: () => Navigator.of(
+                          dialogContext,
+                          rootNavigator: true,
+                        ).pop(),
+                      ),
+                    ),
+                  ),
+                );
               },
             ),
             ListTile(

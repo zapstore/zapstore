@@ -134,6 +134,9 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
   /// Lock to prevent concurrent queue processing
   bool _processingQueue = false;
 
+  /// Tracks the source for each app operation (normal vs restore).
+  final Map<String, InstallSource> _operationSourceByAppId = {};
+
   /// Dynamic max concurrent downloads based on device capability
   int get maxConcurrentDownloads =>
       DeviceCapabilitiesCache.capabilities.maxConcurrentDownloads;
@@ -294,16 +297,30 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
       .map((e) => e.key)
       .toList();
 
+  InstallSource getOperationSource(String appId) {
+    return _operationSourceByAppId[appId] ?? InstallSource.normal;
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   // STATE MANAGEMENT (Public for subclass use)
   // ═══════════════════════════════════════════════════════════════════════════
 
-  void setOperation(String appId, InstallOperation op) {
+  void setOperation(
+    String appId,
+    InstallOperation op, {
+    InstallSource? source,
+  }) {
+    if (source != null) {
+      _operationSourceByAppId[appId] = source;
+    } else {
+      _operationSourceByAppId.putIfAbsent(appId, () => InstallSource.normal);
+    }
     state = state.copyWith(operations: {...state.operations, appId: op});
     _updateWatchdogTimer();
   }
 
   void clearOperation(String appId) {
+    _operationSourceByAppId.remove(appId);
     state = state.copyWith(
       operations: Map.from(state.operations)..remove(appId),
     );
@@ -314,11 +331,20 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
   /// Called after the batch completion display timeout.
   /// Terminal states: Completed, OperationFailed, InstallCancelled.
   void clearCompletedOperations() {
+    final completedIds = state.operations.entries
+        .where(
+          (entry) =>
+              entry.value is Completed ||
+              entry.value is OperationFailed ||
+              entry.value is InstallCancelled,
+        )
+        .map((entry) => entry.key)
+        .toSet();
     final remaining = Map.of(state.operations)
-      ..removeWhere(
-        (_, op) =>
-            op is Completed || op is OperationFailed || op is InstallCancelled,
-      );
+      ..removeWhere((appId, _) => completedIds.contains(appId));
+    for (final appId in completedIds) {
+      _operationSourceByAppId.remove(appId);
+    }
     state = state.copyWith(operations: remaining);
     _updateWatchdogTimer();
   }
@@ -333,6 +359,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
     String appId,
     FileMetadata target, {
     String? displayName,
+    InstallSource source = InstallSource.normal,
   }) async {
     await _ensureDownloaderReady();
     final existing = getOperation(appId);
@@ -366,6 +393,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
     setOperation(
       appId,
       DownloadQueued(target: target, displayName: displayName),
+      source: source,
     );
 
     // Process queue to potentially start this download immediately
@@ -376,7 +404,14 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
   /// Queue multiple downloads at once - staggered to prevent UI flood.
   /// This is the primary method for "Update All" functionality.
   Future<void> queueDownloads(
-    List<({String appId, FileMetadata target, String? displayName})> items,
+    List<
+      ({
+        String appId,
+        FileMetadata target,
+        String? displayName,
+        InstallSource source,
+      })
+    > items,
   ) async {
     await _ensureDownloaderReady();
 
@@ -404,6 +439,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
         setOperation(
           item.appId,
           DownloadQueued(target: item.target, displayName: item.displayName),
+          source: item.source,
         );
       }
 
@@ -718,6 +754,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
       appId,
       target.id,
       isCdnRetry: isCdnRetry,
+      source: getOperationSource(appId),
     );
 
     final task = DownloadTask(
@@ -771,9 +808,10 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
     final metaData = update.task.metaData;
     bool isCdnRetry = false;
     if (metaData.isNotEmpty) {
-      final (decodedAppId, _, cdnRetry) = _parseTaskMetadata(metaData);
+      final (decodedAppId, _, cdnRetry, source) = _parseTaskMetadata(metaData);
       isCdnRetry = cdnRetry;
       if (decodedAppId != null) {
+        _operationSourceByAppId.putIfAbsent(decodedAppId, () => source);
         final op = getOperation(decodedAppId);
         // Ensure the operation actually matches this taskId (metadata could be stale).
         if (op is Downloading && op.taskId == update.task.taskId) {
@@ -1181,7 +1219,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
           continue;
         }
 
-        final (appId, metadataId, _) = _parseTaskMetadata(metaData);
+        final (appId, metadataId, _, source) = _parseTaskMetadata(metaData);
         if (appId == null) {
           await _cleanupTask(task);
           continue;
@@ -1199,7 +1237,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
           continue;
         }
 
-        await _restoreOperation(appId, record, task, fileMetadata);
+        await _restoreOperation(appId, record, task, fileMetadata, source);
       }
     } catch (e) {
       debugPrint('Failed to restore operations: $e');
@@ -1211,6 +1249,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
     TaskRecord record,
     DownloadTask task,
     FileMetadata fileMetadata,
+    InstallSource source,
   ) async {
     switch (record.status) {
       case TaskStatus.complete:
@@ -1237,6 +1276,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
             progress: record.progress,
             taskId: task.taskId,
           ),
+          source: source,
         );
         try {
           await _downloader.resume(task);
@@ -1263,6 +1303,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
             progress: record.progress,
             taskId: task.taskId,
           ),
+          source: source,
         );
         break;
 
@@ -1304,19 +1345,29 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
     String appId,
     String metadataId, {
     bool isCdnRetry = false,
+    InstallSource source = InstallSource.normal,
   }) {
-    return '$appId|$metadataId|${isCdnRetry ? '1' : '0'}';
+    return '$appId|$metadataId|${isCdnRetry ? '1' : '0'}|${source.name}';
   }
 
-  (String? appId, String? metadataId, bool isCdnRetry) _parseTaskMetadata(
+  (String? appId, String? metadataId, bool isCdnRetry, InstallSource source)
+  _parseTaskMetadata(
     String metaData,
   ) {
     final parts = metaData.split('|');
     if (parts.length >= 2) {
       final isCdnRetry = parts.length >= 3 && parts[2] == '1';
-      return (parts[0], parts[1], isCdnRetry);
+      final source = InstallSource.fromMetadata(
+        parts.length >= 4 ? parts[3] : null,
+      );
+      return (parts[0], parts[1], isCdnRetry, source);
     }
-    return (metaData.isNotEmpty ? metaData : null, null, false);
+    return (
+      metaData.isNotEmpty ? metaData : null,
+      null,
+      false,
+      InstallSource.normal,
+    );
   }
 
   Future<FileMetadata?> _loadFileMetadata(

@@ -9,15 +9,30 @@ import 'package:zapstore/widgets/batch_progress_banner.dart';
 import 'package:zapstore/widgets/common/badges.dart';
 import 'package:zapstore/theme.dart';
 
+/// Shared AppBar for restore screen (empty, loading, error, content).
+PreferredSizeWidget _restoreAppBar({VoidCallback? onClose}) {
+  return AppBar(
+    title: const Text('Restore from backup'),
+    leading: onClose != null
+        ? IconButton(icon: const Icon(Icons.close), onPressed: onClose)
+        : null,
+    automaticallyImplyLeading: onClose == null,
+  );
+}
+
 /// Full-screen restore from backup. Mirrors [AppStackScreen] pattern:
 /// query with nested relations, skeleton on loading, sort uninstalled first.
 class RestoreInstalledAppsScreen extends HookConsumerWidget {
   const RestoreInstalledAppsScreen({
     super.key,
     required this.addressableIds,
+    this.onClose,
   });
 
   final List<String> addressableIds;
+
+  /// Called when user closes the modal. Required when shown as overlay.
+  final VoidCallback? onClose;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -28,15 +43,9 @@ class RestoreInstalledAppsScreen extends HookConsumerWidget {
 
     if (appIdentifiers.isEmpty) {
       return Scaffold(
-        appBar: AppBar(
-          title: const Text('Restore from backup'),
-          automaticallyImplyLeading: false,
-        ),
+        appBar: _restoreAppBar(onClose: onClose),
         body: Center(
-          child: Text(
-            'No apps to restore',
-            style: context.textTheme.bodyLarge,
-          ),
+          child: Text('No apps to restore', style: context.textTheme.bodyLarge),
         ),
       );
     }
@@ -64,38 +73,33 @@ class RestoreInstalledAppsScreen extends HookConsumerWidget {
 
     return switch (appsState) {
       StorageLoading() => Scaffold(
-          appBar: AppBar(
-            title: const Text('Restore from backup'),
-            automaticallyImplyLeading: false,
-          ),
-          body: SingleChildScrollView(
-            padding: const EdgeInsets.only(top: 8, bottom: 32),
-            child: _RestoreSkeleton(),
-          ),
+        appBar: _restoreAppBar(onClose: onClose),
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.only(top: 8, bottom: 32),
+          child: _RestoreSkeleton(),
         ),
+      ),
       StorageError(:final exception) => Scaffold(
-          appBar: AppBar(
-            title: const Text('Restore from backup'),
-            automaticallyImplyLeading: false,
-          ),
-          body: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.error_outline, size: 64),
-                const SizedBox(height: 12),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Text(exception.toString(), textAlign: TextAlign.center),
-                ),
-              ],
-            ),
+        appBar: _restoreAppBar(onClose: onClose),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 64),
+              const SizedBox(height: 12),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Text(exception.toString(), textAlign: TextAlign.center),
+              ),
+            ],
           ),
         ),
+      ),
       StorageData(:final models) => _RestoreContent(
-          allApps: models,
-          appIdentifiers: appIdentifiers,
-        ),
+        allApps: models,
+        appIdentifiers: appIdentifiers,
+        onClose: onClose,
+      ),
     };
   }
 }
@@ -104,15 +108,29 @@ class _RestoreContent extends HookConsumerWidget {
   const _RestoreContent({
     required this.allApps,
     required this.appIdentifiers,
+    this.onClose,
   });
 
   final List<App> allApps;
   final Set<String> appIdentifiers;
+  final VoidCallback? onClose;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final installedIds =
-        ref.watch(packageManagerProvider).installed.keys.toSet();
+    final installedIds = ref
+        .watch(packageManagerProvider)
+        .installed
+        .keys
+        .toSet();
+    final completedOperationIds = ref.watch(
+      packageManagerProvider.select(
+        (s) => s.operations.entries
+            .where((entry) => entry.value is Completed)
+            .map((entry) => entry.key)
+            .toSet(),
+      ),
+    );
+    final effectiveInstalledIds = {...installedIds, ...completedOperationIds};
 
     final appsMap = {for (final app in allApps) app.identifier: app};
 
@@ -120,26 +138,27 @@ class _RestoreContent extends HookConsumerWidget {
     final toInstall = appIdentifiers
         .map((id) => appsMap[id])
         .whereType<App>()
-        .where((app) => !installedIds.contains(app.identifier))
+        .where((app) => !effectiveInstalledIds.contains(app.identifier))
         .toList();
 
     final alreadyInstalled = appIdentifiers
         .map((id) => appsMap[id])
         .whereType<App>()
-        .where((app) => installedIds.contains(app.identifier))
+        .where((app) => effectiveInstalledIds.contains(app.identifier))
         .toList();
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Restore from backup'),
-        automaticallyImplyLeading: false,
-      ),
+      appBar: _restoreAppBar(onClose: onClose),
       body: ListView(
         padding: const EdgeInsets.only(top: 8, bottom: 32),
         children: [
           // "Install All" button — same style as UpdateAllRow in updates screen
           if (toInstall.length > 1)
-            UpdateAllRow(allUpdates: toInstall, label: 'Install All'),
+            UpdateAllRow(
+              allUpdates: toInstall,
+              label: 'Install All',
+              installSource: InstallSource.restore,
+            ),
 
           // "To install" section
           if (toInstall.isNotEmpty)
@@ -152,11 +171,14 @@ class _RestoreContent extends HookConsumerWidget {
             (app) => AppCard(
               key: ValueKey('restore_${app.identifier}'),
               app: app,
+              installSource: InstallSource.restore,
               showUpdateButton: true,
+              showInstallWhenNotInstalled: true,
               showUpdateArrow: false,
               showSignedBy: false,
               showZapEncouragement: false,
               showDescription: false,
+              onTap: () {}, // No navigation; Install button stays tappable
             ),
           ),
 
@@ -177,6 +199,7 @@ class _RestoreContent extends HookConsumerWidget {
                 showSignedBy: false,
                 showZapEncouragement: false,
                 showDescription: false,
+                ignorePointer: true, // Informational only; no tap
               ),
             ),
           ],
@@ -189,8 +212,9 @@ class _RestoreContent extends HookConsumerWidget {
                 child: Text(
                   'No apps found in backup',
                   style: context.textTheme.bodyLarge?.copyWith(
-                    color:
-                        Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.6),
                   ),
                 ),
               ),
