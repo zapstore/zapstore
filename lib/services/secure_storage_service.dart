@@ -126,6 +126,21 @@ class SecureStorageService {
       value: jsonEncode(relays.toList()),
     );
   }
+
+  // =========================================================================
+  // Always Use CDN (privacy: hide IP from GitHub)
+  // =========================================================================
+
+  static const _alwaysUseCdnKey = 'always_use_cdn';
+
+  Future<bool> getAlwaysUseCdn() async {
+    final value = await _storage.read(key: _alwaysUseCdnKey);
+    return value == 'true';
+  }
+
+  Future<void> setAlwaysUseCdn(bool value) async {
+    await _storage.write(key: _alwaysUseCdnKey, value: value.toString());
+  }
 }
 
 /// Persists the AmberSigner pubkey in flutter_secure_storage.
@@ -160,4 +175,12 @@ final secureStorageServiceProvider = Provider<SecureStorageService>(
 final hasNwcStringProvider = FutureProvider.autoDispose<bool>((ref) async {
   final secureStorage = ref.watch(secureStorageServiceProvider);
   return secureStorage.hasNWCString();
+});
+
+/// Whether to always download from CDN instead of original URL.
+///
+/// Use `ref.invalidate(alwaysUseCdnProvider)` after updating to refresh UI.
+final alwaysUseCdnProvider = FutureProvider.autoDispose<bool>((ref) async {
+  final secureStorage = ref.watch(secureStorageServiceProvider);
+  return secureStorage.getAlwaysUseCdn();
 });

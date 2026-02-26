@@ -321,8 +321,18 @@ final class AndroidPackageManager extends PackageManager {
 
       case InstallStatus.failed:
         final failureType = _errorCodeToFailureType(errorCode, message);
+
+        // Hash mismatch from original source — retry from CDN before failing
+        if (failureType == FailureType.hashMismatch) {
+          if (cdnRetryTracker[appId] != true) {
+            _deleteFile(filePath);
+            clearInstallSlot(appId);
+            unawaited(retryDownloadFromCdn(appId, target));
+            break;
+          }
+        }
+
         final userMessage = _getUserFriendlyMessage(failureType);
-        // Preserve technical details: combine original message and description
         final technicalDetails = [
           if (message != null) message,
           if (description != null) description,
