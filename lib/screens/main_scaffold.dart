@@ -8,6 +8,10 @@ import 'package:zapstore/widgets/common/badges.dart';
 import '../widgets/common/profile_avatar.dart';
 import '../theme.dart';
 
+/// Fixed size for nav bar item pills so they don't grow when content changes.
+const _kNavItemPillWidth = 60.0;
+const _kNavItemPillHeight = 44.0;
+
 /// Main scaffold with bottom navigation that adapts to screen size
 class MainScaffold extends StatelessWidget {
   const MainScaffold({super.key, required this.navigationShell});
@@ -152,7 +156,13 @@ class MobileScaffold extends ConsumerWidget {
           removeBottom: true,
           child: Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: BottomNavigationBar(
+            child: Theme(
+              data: Theme.of(context).copyWith(
+                splashFactory: NoSplash.splashFactory,
+                highlightColor: Colors.transparent,
+                splashColor: Colors.transparent,
+              ),
+              child: BottomNavigationBar(
               currentIndex: navigationShell.currentIndex,
               type: BottomNavigationBarType.fixed,
               onTap: (index) => onNavTap(context, navigationShell, index),
@@ -165,116 +175,122 @@ class MobileScaffold extends ConsumerWidget {
                 context,
               ).colorScheme.onSurface.withValues(alpha: 0.5),
               selectedIconTheme: IconThemeData(
-                size: 26,
+                size: 28,
                 color: Theme.of(context).colorScheme.primary,
               ),
               unselectedIconTheme: IconThemeData(
-                size: 22,
+                size: 28,
                 color: Theme.of(
                   context,
                 ).colorScheme.onSurface.withValues(alpha: 0.5),
               ),
               items: [
                 BottomNavigationBarItem(
-                  icon: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
+                  icon: SizedBox(
+                    width: _kNavItemPillWidth,
+                    height: _kNavItemPillHeight,
+                    child: Container(
+                      decoration: navigationShell.currentIndex == 0
+                          ? BoxDecoration(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.primary.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(16),
+                            )
+                          : null,
+                      alignment: Alignment.center,
+                      child: const Icon(Icons.search_rounded),
                     ),
-                    decoration: navigationShell.currentIndex == 0
-                        ? BoxDecoration(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.primary.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(16),
-                          )
-                        : null,
-                    child: const Icon(Icons.search_rounded),
                   ),
                   label: 'Search',
                 ),
                 BottomNavigationBarItem(
-                  icon: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    decoration: navigationShell.currentIndex == 1
-                        ? BoxDecoration(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.primary.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(16),
-                          )
-                        : null,
-                    child: Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        const Icon(Icons.update),
-                        if (isLoadingUpdates)
-                          Positioned(
-                            right: -8,
-                            top: -8,
-                            child: BadgePill(
-                              child: const SizedBox(
-                                width: 8,
-                                height: 8,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
+                  icon: SizedBox(
+                    width: _kNavItemPillWidth,
+                    height: _kNavItemPillHeight,
+                    child: Container(
+                      decoration: navigationShell.currentIndex == 1
+                          ? BoxDecoration(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.primary.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(16),
+                            )
+                          : null,
+                      alignment: Alignment.center,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          const Icon(Icons.update),
+                          if (isLoadingUpdates)
+                            Positioned(
+                              right: -8,
+                              top: -8,
+                              child: BadgePill(
+                                child: const SizedBox(
+                                  width: 8,
+                                  height: 8,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
                                 ),
                               ),
+                            )
+                          else if (updateCount > 0)
+                            Positioned(
+                              right: -8,
+                              top: -8,
+                              child: CountBadge(count: updateCount),
                             ),
-                          )
-                        else if (updateCount > 0)
-                          Positioned(
-                            right: -8,
-                            top: -8,
-                            child: CountBadge(count: updateCount),
-                          ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                   label: 'Updates',
                 ),
                 BottomNavigationBarItem(
-                  icon: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
+                  icon: SizedBox(
+                    width: _kNavItemPillWidth,
+                    height: _kNavItemPillHeight,
+                    child: Container(
+                      decoration: navigationShell.currentIndex == 2
+                          ? BoxDecoration(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.primary.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(16),
+                            )
+                          : null,
+                      alignment: Alignment.center,
+                      child: pubkey != null
+                          ? Container(
+                              decoration: navigationShell.currentIndex == 2
+                                  ? BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.primary,
+                                        width: 2,
+                                        strokeAlign:
+                                            BorderSide.strokeAlignInside,
+                                      ),
+                                    )
+                                  : null,
+                              child: ProfileAvatar(
+                                profile: profile,
+                                pubkey: pubkey,
+                                radius: 14,
+                              ),
+                            )
+                          : const Icon(Icons.person_rounded),
                     ),
-                    decoration: navigationShell.currentIndex == 2
-                        ? BoxDecoration(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.primary.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(16),
-                          )
-                        : null,
-                    child: pubkey != null
-                        ? Container(
-                            decoration: navigationShell.currentIndex == 2
-                                ? BoxDecoration(
-                                    border: Border.all(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.primary,
-                                      width: 2,
-                                    ),
-                                    borderRadius: BorderRadius.circular(16),
-                                  )
-                                : null,
-                            child: ProfileAvatar(
-                              profile: profile,
-                              pubkey: pubkey,
-                              radius: 14,
-                            ),
-                          )
-                        : const Icon(Icons.person_rounded),
                   ),
                   label: 'Profile',
                 ),
               ],
+            ),
             ),
           ),
         ),
@@ -331,12 +347,28 @@ class DesktopScaffold extends ConsumerWidget {
                     ),
                   ),
                 ),
-                child: NavigationRail(
-                  backgroundColor: Colors.transparent,
-                  selectedIndex: navigationShell.currentIndex,
-                  onDestinationSelected: (index) =>
-                      onNavTap(context, navigationShell, index),
-                  labelType: NavigationRailLabelType.all,
+                child: Theme(
+                  data: Theme.of(context).copyWith(
+                    splashFactory: NoSplash.splashFactory,
+                    highlightColor: Colors.transparent,
+                    splashColor: Colors.transparent,
+                  ),
+                  child: NavigationRail(
+                    backgroundColor: Colors.transparent,
+                    selectedIndex: navigationShell.currentIndex,
+                    onDestinationSelected: (index) =>
+                        onNavTap(context, navigationShell, index),
+                    selectedIconTheme: IconThemeData(
+                      size: 28,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    unselectedIconTheme: IconThemeData(
+                      size: 28,
+                      color: Theme.of(context)
+                          .colorScheme.onSurface
+                          .withValues(alpha: 0.5),
+                    ),
+                    labelType: NavigationRailLabelType.all,
                   destinations: [
                     const NavigationRailDestination(
                       icon: Icon(Icons.search),
@@ -375,17 +407,20 @@ class DesktopScaffold extends ConsumerWidget {
                     NavigationRailDestination(
                       icon: pubkey != null
                           ? Container(
-                              decoration: navigationShell.currentIndex == 2
-                                  ? BoxDecoration(
-                                      border: Border.all(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.primary,
-                                        width: 2,
-                                      ),
-                                      borderRadius: BorderRadius.circular(16),
-                                    )
-                                  : null,
+                              decoration:
+                                  navigationShell.currentIndex == 2
+                                      ? BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.primary,
+                                            width: 2,
+                                            strokeAlign:
+                                                BorderSide.strokeAlignInside,
+                                          ),
+                                        )
+                                      : null,
                               child: ProfileAvatar(
                                 profile: profile,
                                 pubkey: pubkey,
@@ -396,6 +431,7 @@ class DesktopScaffold extends ConsumerWidget {
                       label: const Text('Profile'),
                     ),
                   ],
+                ),
                 ),
               ),
               Expanded(child: navigationShell),

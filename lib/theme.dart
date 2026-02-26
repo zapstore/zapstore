@@ -308,6 +308,12 @@ final darkTheme = ThemeData(
     ),
   ),
 
+  textButtonTheme: TextButtonThemeData(
+    style: TextButton.styleFrom(
+      splashFactory: NoSplash.splashFactory,
+    ),
+  ),
+
   // Professional dark input design
   inputDecorationTheme: InputDecorationTheme(
     border: OutlineInputBorder(
