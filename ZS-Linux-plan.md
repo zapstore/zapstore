@@ -1,6 +1,29 @@
 # Zapstore Linux Plan
 
-> Ref: [zapstore/zapstore#334](https://github.com/zapstore/zapstore/issues/334)
+> Ref: [zapstore/zapstore#334](https://github.com/zapstore/zapstore/issues/334) | Research: [linux-app-distro-findings.md](https://github.com/zapstore/zapstore/blob/linux-plan/linux-app-distro-findings.md)
+
+## Why Linux, Why Now
+
+Linux app distribution is broken in ways that align with zapstore's architecture. [Community research](https://github.com/zapstore/zapstore/blob/linux-plan/linux-app-distro-findings.md) across Reddit, HN, GitHub issues, and Linux forums surfaces consistent pain:
+
+1. **Trust & verification is broken everywhere** — Snap Store has had [active malware campaigns](https://popey.com/blog/2024/02/exodus-bitcoin-wallet-490k-swindle/) ($490K stolen via fake wallet). Flathub's ["unverified" warning](https://codemonkeymike.medium.com/the-flatpak-verification-problem-93fb1dc9cedb) alienates legitimate maintainers. AppImage has [zero trust infrastructure](https://github.com/AppImage/AppImageKit/issues/238). No store has per-build cryptographic verification.
+2. **Centralization** — Snap Store backend is [proprietary](https://forum.snapcraft.io/t/please-address-store-is-not-open-source-again/18442). Linux Mint [blocked Snap entirely](https://lwn.net/Articles/825005/). Flathub is de facto centralized.
+3. **No decentralized app store exists** — [8+ years of community discussion](https://github.com/AppImage/AppImageKit/issues/175) (82 comments), zero implementations.
+4. **No payments** — Alan Pope: ["There is still no Linux app store"](https://blog.popey.com/2023/09/there-is-still-no-linux-app-store/) where you can pay developers directly.
+
+Zapstore answers these with Nostr's client-relay architecture (decentralized by protocol), NIP-82 cryptographic verification (developer npub signs events, SHA-256 hash in every SoftwareAsset), and zaps (native Lightning payments). This isn't incremental — it's a structurally different model.
+
+Linus Torvalds' [stated ideal](https://www.youtube.com/watch?v=5PmHRSeA2c8) for Linux app distribution — self-contained binaries, no dependency resolution, market-driven standardization — maps directly to AppImage + zapstore.
+
+### Who This Is For
+
+1. **Nostr developers** — already have npubs, already ship Linux builds. Lowest friction, highest alignment. The seed audience.
+2. **Linux power users** — value sovereignty, verification, no corporate gatekeeper. Skeptical but receptive if catalog has real apps.
+3. **App developers** — want to publish once without learning Flatpak manifests or waiting in Snap review queues.
+
+Users don't need Nostr identities. They browse, install, and launch — the protocol is invisible.
+
+(Full persona analysis: [linux-app-distro-findings.md § Personas](https://github.com/zapstore/zapstore/blob/linux-plan/linux-app-distro-findings.md))
 
 ## The Challenge
 
@@ -34,7 +57,33 @@ Rationale:
 - Closest to how zapstore already works on Android (download binary, verify hash, install)
 - Flatpak would require integrating with the Flatpak daemon — a different install model entirely
 
-**Known compatibility caveat**: AppImage Type 2 requires `libfuse2`, which is not installed by default on Ubuntu 22.04+ (ships `libfuse3` only). Other distros vary. The client must detect this at first launch and show a clear error with install instructions (`sudo apt install libfuse2` or equivalent), rather than failing silently. `flutter_secure_storage_linux` also requires `libsecret` (standard on GNOME, may need explicit install on minimal distros). These dependencies should be checked at startup and surfaced as actionable user messages.
+### AppImage Risk Assessment
+
+AppImage is the right model (self-contained, no daemon, no root) but the format has real problems documented across [community research](https://github.com/zapstore/zapstore/blob/linux-plan/linux-app-distro-findings.md):
+
+**FUSE2 crisis (HIGH risk):**
+- Ubuntu 22.04+ dropped `libfuse2` (ships `libfuse3` only). AppImage Type 2 binaries fail with `dlopen(): error loading libfuse.so.2`. Hundreds of GitHub issues across projects ([Zettlr](https://github.com/Zettlr/Zettlr/issues/3517), [PrusaSlicer](https://github.com/prusa3d/PrusaSlicer/issues/8350), [Joplin](https://discourse.joplinapp.org/t/appimage-incompatibility-in-ubuntu-22-04/25173)).
+- Ubuntu 24.04's AppArmor policies also break Electron sandbox in AppImages ([Obsidian](https://forum.obsidian.md/t/obsidian-appimage-not-work-in-kubuntu-24-04/80969), [Arduino IDE](https://github.com/arduino/arduino-ide/issues/2429)).
+- Client must detect at first launch and show actionable error with install instructions.
+- Type-3 runtime is [in development](https://github.com/TheAssassin/type3-runtime) to address this.
+
+**Portability failures (MEDIUM risk):**
+- AppImage promises "run everywhere" but [fails in practice](https://ludditus.com/2024/10/31/appimage/) — glibc version mismatches between build host and target system.
+- Linux Mint Forums report [~85% of AppImages don't work](https://forums.linuxmint.com/viewtopic.php?t=458887) on Mint 21.3 (unverified claim, needs testing).
+
+**No sandboxing (accepted tradeoff):**
+- AppImages run with full user permissions. This is the [#1 criticism](https://github.com/boredsquirrel/dont-use-appimages) vs Flatpak/Snap.
+- Same model as APKs on Android — trust is delegated to publisher identity, not sandbox enforcement.
+
+**Pre-launch validation (required before committing):**
+- [ ] Download top 50 AppImages from catalogs, test on Ubuntu 24.04, Fedora 41, Arch
+- [ ] Measure actual failure rate. If >30%, re-evaluate Flatpak as primary format.
+- [ ] Test Flutter Linux client stability on same 3 distros
+
+**Contingency:** If AppImage proves unviable (high failure rate on modern distros, or type-3 transition breaks compatibility), Flatpak becomes primary — not Phase 4, but a contingency plan that moves up.
+
+**Other dependencies:**
+- `flutter_secure_storage_linux` requires `libsecret` (standard on GNOME, may need explicit install on minimal distros). Check at startup.
 
 ---
 
@@ -153,10 +202,12 @@ Auto-ingested binaries from catalogs carry risk. Mitigation:
 - **No arbitrary GitHub ingestion.** The GitHub scanner (Phase 4) discovers *candidates* only. A human reviews candidates before the indexer publishes events. Nothing from the scanner goes live automatically.
 
 **Trust tiers in the client (two tiers only):**
-- **Verified publisher**: Developer published via zsp with their own key → full trust, shown normally
-- **Curated index**: Indexed from a known catalog source by the zapstore team → shown with "Indexed from [source]" label
+- **Verified publisher** (Tier 1): Developer published via zsp with their own key. Every event cryptographically signed by the developer's npub. This is where zapstore's trust model is genuinely differentiated — per-build verification that no other Linux store offers.
+- **Curated index** (Tier 2): Indexed from a known catalog source by the zapstore team → shown with "Indexed from [source]" label.
 
 There is no "unreviewed" tier. Every app on the relay is either developer-published or team-reviewed. The GitHub scanner feeds a review queue, not the relay.
+
+**Honest assessment of Tier 2 trust:** Tier 2 is structurally similar to how Flathub community maintainers repackage apps — a third party publishes on behalf of the developer. The zapstore team's signature is not the developer's. What makes Tier 2 better than Flathub "unverified": (a) explicit provenance tags show exactly where the binary came from, (b) the curation set provides a clear path for developers to claim their app and upgrade to Tier 1, (c) every event is signed and auditable — you can always trace who published what and when. At launch, Tier 2 will be the majority of the catalog. The goal is to convert Tier 2 → Tier 1 over time via developer outreach.
 
 **Blocklist/moderation:**
 - Maintain a blocklist of known-bad package IDs (can be a NIP-51 list)
@@ -417,6 +468,40 @@ Lume (Mac/Win only), Damus (iOS only), Amethyst (Android), Zeus/Amber (Android),
 **~12 nostr GUI desktop apps with Linux builds exist today. 5 ship AppImage specifically** (Gossip, Iris, Nostrmo, Futr, Pretty Good). The Phase 2 target of 10–20 Tier 1 nostr apps is achievable — the supply exists, it just needs to be published as NIP-82 events.
 
 ---
+
+## Risks
+
+| Risk | Severity | Mitigation |
+|------|----------|------------|
+| **AppImage viability** — FUSE crisis, portability failures, format may be dying | HIGH | Pre-launch validation on 3 distros. Flatpak contingency if failure rate >30%. |
+| **Empty store at launch** — only 5 nostr apps ship AppImage today | HIGH | Supply-before-demand phasing. Tier 2 indexer fills the gap. Developer outreach starts in Phase 2. |
+| **Tier 2 trust is not differentiated** — structurally similar to Flathub "unverified" | MEDIUM | Be honest about it. Tier 2 has provenance tags + developer claim path. Goal is Tier 1 conversion. |
+| **"Yet another solution" fatigue** — community tired of new stores | MEDIUM | Don't compete on format (AppImage already exists). Compete on distribution model. Ship with apps, not promises. Serve nostr community first, expand from there. Don't ask users to understand Nostr — protocol is invisible. |
+| **Flutter Linux maturity** — unknown stability | MEDIUM | Test before committing. Ubuntu App Center uses Flutter on Linux (precedent). |
+| **No update mechanism** — updates are a top-3 user complaint | MEDIUM | Phase 4. Accepted gap for launch. |
+
+## Research Gaps (to fill before committing)
+
+- [ ] **AppImage compatibility testing** — download top 50, test on Ubuntu 24.04 / Fedora 41 / Arch. Get real failure rate.
+- [ ] **Developer interest** — reach out to 5 nostr app devs (Gossip, Iris, Nostrmo, Futr, Pretty Good). Would they use zsp?
+- [ ] **Flutter Linux stability** — build zapstore, test on 3 distros. Is it production-quality?
+- [ ] **Study Gear Lever / AppManager UX** — [Gear Lever](https://github.com/mijorus/gearlever) and [AppManager](https://github.com/nickvdp/appmanager) are the best existing AppImage managers. What do they do well?
+
+## Competitive Landscape
+
+7 existing Linux app stores, all broken in different ways ([full research](https://github.com/zapstore/zapstore/blob/linux-plan/linux-app-distro-findings.md)):
+
+| Store | Best At | Biggest Weakness |
+|-------|---------|-----------------|
+| COSMIC Store | Speed, modern design | Very new, no verified badges |
+| elementary AppCenter | Design, curation, pay-what-you-can | 133 apps, elementary-only |
+| Linux Mint Software Manager | Beginner-friendly | Dated UI |
+| Flathub | Scale (435M downloads/yr) | [Verification gap](https://codemonkeymike.medium.com/the-flatpak-verification-problem-93fb1dc9cedb), [disk bloat](https://github.com/guoyunhe/fuck-flatpak) |
+| Snap Store | IoT/server | [Proprietary backend](https://forum.snapcraft.io/t/please-address-store-is-not-open-source-again/18442), [malware](https://popey.com/blog/2024/02/exodus-bitcoin-wallet-490k-swindle/), [forced updates](http://raymii.org/s/blog/Ubuntu_Snap_auto_updates_broke_my_development_setup.html) |
+| KDE Discover | Fast | Reviews broken, limited coverage |
+| GNOME Software | Broad adoption | [Chronic slowness](https://discussion.fedoraproject.org/t/gnome-software-is-very-slow/144773) |
+
+**What none of them have:** Decentralized architecture. Per-build cryptographic verification. Direct developer payments. Open protocol with no proprietary backend.
 
 ## Open Questions
 
