@@ -1,3 +1,8 @@
+---
+description: Architecture — layers, dependency rules, ownership, common Dart/Flutter patterns
+alwaysApply: true
+---
+
 # Zapstore — Architecture
 
 ## Core Principle

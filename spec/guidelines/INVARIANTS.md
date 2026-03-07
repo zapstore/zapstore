@@ -1,3 +1,8 @@
+---
+description: Non-negotiable invariants — UI safety, async discipline, local-first, security, lifecycle
+alwaysApply: true
+---
+
 # Zapstore — Invariants
 
 The following guarantees are non-negotiable.

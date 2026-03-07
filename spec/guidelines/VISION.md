@@ -1,3 +1,8 @@
+---
+description: Product vision — what Zapstore is, who it serves, what success means
+alwaysApply: true
+---
+
 # Zapstore — Vision
 
 ## What Zapstore Is

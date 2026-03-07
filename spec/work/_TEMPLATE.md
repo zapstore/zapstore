@@ -40,6 +40,10 @@ Report blockers here instead of guessing. Format:
 
 Brief updates as work proceeds.
 
+## On Merge
+
+Delete this work packet. If any decision here is non-obvious and worth remembering, promote it to `spec/knowledge/DEC-XXX-short-title.md` first.
+
 ---
 
 # Example: WORK-002 — NWC Zaps

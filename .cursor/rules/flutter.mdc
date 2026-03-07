@@ -1,0 +1,65 @@
+---
+description: Flutter/Dart conventions for Zapstore projects
+globs: ["**/*.dart", "**/pubspec.yaml"]
+---
+
+# Flutter/Dart Conventions
+
+## State Management
+
+- Use Flutter Hooks (`HookWidget`, `HookConsumerWidget`) for local widget state — not `StatefulWidget`.
+- Use `useState`, `useAnimationController`, `useEffect` over manual `State` classes.
+- Use Riverpod providers for shared/global state. Keep providers focused and composable.
+- Prefer `ref.watch` for reactive UI, `ref.read` in callbacks only.
+
+## Data & Async
+
+- All async work must be cancellable. Pass `CancellationToken` or use `ref.onDispose`.
+- Never `await` inside `build()`. Move async work to providers or `useEffect`.
+- Use `switch` on sealed classes / union types for exhaustive state handling:
+  ```dart
+  return switch (state) {
+    StorageLoading() => const CircularProgressIndicator(),
+    StorageError(:final exception) => Text('Error: $exception'),
+    StorageData(:final models) => MyWidget(models),
+  };
+  ```
+- All async operations must have explicit loading, success, and error states in the UI.
+
+## Widget Structure
+
+- One widget per file. File name matches widget name in snake_case.
+- Keep `build()` methods short — extract sub-widgets or use helper methods.
+- Widgets must not manage relay connections, storage, or background jobs.
+- Use `const` constructors wherever possible.
+
+## Naming
+
+- Files: `snake_case.dart`. Classes: `PascalCase`. Variables/methods: `camelCase`.
+- Providers: `<noun>Provider` or `<noun>NotifierProvider`.
+- Services: `<Noun>Service`. Notifiers: `<Noun>Notifier`.
+
+## Error Handling
+
+- Never swallow exceptions silently. Surface errors to the UI or log them.
+- Use typed exceptions where the caller needs to distinguish error types.
+- `try/catch` at the boundary (provider/service), not deep in domain logic.
+
+## Testing
+
+- Test providers and services, not widget internals.
+- Use `ProviderContainer` for unit-testing Riverpod providers.
+- Mock external dependencies (storage, network) — no real I/O in unit tests.
+- Widget tests for critical UI states: loading, error, empty, success.
+
+## Dependencies
+
+- Run `fvm flutter pub get` after any `pubspec.yaml` change.
+- Pin Flutter SDK version via FVM (`fvm use <version>`).
+- Prefer packages already in use over adding new ones.
+
+## Build
+
+- Assume Android as default target unless instructed otherwise.
+- Release builds must be reproducible (see INVARIANTS.md).
+- Run `flutter analyze` — fix all issues before committing.

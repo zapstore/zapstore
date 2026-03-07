@@ -1,3 +1,8 @@
+---
+description: Quality expectations — when to spec, layer standards, testing, anti-patterns, AI workflow
+alwaysApply: true
+---
+
 # Zapstore — Quality Bar
 
 ## General Expectations
@@ -66,6 +71,20 @@ If multiple phases: `WORK-005-a.md`, `WORK-005-b.md` (same feature number).
 - Failure, cancellation, and degraded-network paths must be covered.
 - Tests that only assert the happy path are insufficient.
 
+### Test layers
+
+- **Widget tests** (`flutter test`): preferred for UI state machines, all states
+  (loading, empty, error, retry). Fully headless, no device needed.
+- **Integration tests** (`flutter test integration_test/`): used for flows that
+  cross platform boundaries — downloads, installs, storage, notifications.
+  Run against a connected Android emulator or device via ADB.
+- **Patrol** is the integration test framework. Use `patrolTest` and `$.native`
+  for interacting with Android system UI (e.g. PackageInstaller dialogs).
+  Do not use `testWidgets` for integration tests.
+- Pre-grant `REQUEST_INSTALL_PACKAGES` via
+  `adb shell appops set <package> REQUEST_INSTALL_PACKAGES allow`
+  before running install tests, to avoid a permissions setup screen.
+
 ## Anti-Patterns
 
 - Silent failures
@@ -91,7 +110,7 @@ This project uses a spec-first workflow to collaborate safely with AI.
 
 ### What AI Owns
 
-- Work packets under `work/`
+- Work packets under `spec/work/`
 - Refinement of task plans during implementation
 
 ### Spec-First Rule
@@ -109,3 +128,7 @@ For non-trivial work, changes are not complete unless:
 - Edge cases and failure modes are addressed
 
 This workflow exists to prevent AI drift, accidental refactors, and UX regressions.
+
+## Knowledge Entries
+
+After a work packet merges, promote non-obvious decisions to `spec/knowledge/DEC-XXX-*.md`. See `spec/knowledge/_TEMPLATE.md` for format and criteria.
