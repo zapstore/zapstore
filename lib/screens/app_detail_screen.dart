@@ -633,7 +633,7 @@ class _AppDetailContent extends HookConsumerWidget {
         identifier: app.identifier,
         author: app.pubkey,
         kind: app.event.kind,
-        relays: [],
+        relays: const [kDefaultRelay],
       ),
     );
     return 'https://zapstore.dev/apps/$naddr';
