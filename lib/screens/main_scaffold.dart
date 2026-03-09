@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/router.dart';
+import 'package:zapstore/services/installed_apps_backup_service.dart';
 import 'package:zapstore/services/updates_service.dart';
 import 'package:zapstore/widgets/common/badges.dart';
 import '../widgets/common/profile_avatar.dart';
@@ -122,6 +123,7 @@ class MobileScaffold extends ConsumerWidget {
     // Watch categorized to keep poller alive (poller is watched by categorized)
     final categorized = ref.watch(categorizedUpdatesProvider);
     final poller = ref.watch(updatePollerProvider);
+    ref.watch(installedAppsBackupListenerProvider);
     final updateCount = ref.watch(updateCountProvider);
     final isLoadingUpdates = categorized.showSkeleton || poller.isChecking;
 
@@ -324,6 +326,7 @@ class DesktopScaffold extends ConsumerWidget {
     // Watch categorized to keep poller alive (poller is watched by categorized)
     final categorized = ref.watch(categorizedUpdatesProvider);
     final poller = ref.watch(updatePollerProvider);
+    ref.watch(installedAppsBackupListenerProvider);
     final updateCount = ref.watch(updateCountProvider);
     final isLoadingUpdates = categorized.showSkeleton || poller.isChecking;
 

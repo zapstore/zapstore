@@ -1,5 +1,18 @@
 import 'package:models/models.dart';
 
+/// Source that initiated an install/download operation.
+enum InstallSource {
+  normal,
+  restore;
+
+  static InstallSource fromMetadata(String? value) {
+    return switch (value) {
+      'restore' => InstallSource.restore,
+      _ => InstallSource.normal,
+    };
+  }
+}
+
 /// Stale download threshold - operations older than this will be cleaned up
 const staleOperationThreshold = Duration(days: 7);
 

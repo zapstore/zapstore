@@ -149,7 +149,11 @@ final routerProvider = Provider<GoRouter>((ref) {
                   state: state,
                   child: const ProfileScreen(),
                 ),
-                routes: [_appDetailRoute(), _stackDetailRoute(), _userRoute()],
+                routes: [
+                  _appDetailRoute(),
+                  _stackDetailRoute(),
+                  _userRoute(),
+                ],
               ),
             ],
           ),

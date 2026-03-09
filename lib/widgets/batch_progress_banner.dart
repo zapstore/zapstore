@@ -5,12 +5,19 @@ import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/theme.dart';
 import 'package:zapstore/utils/extensions.dart';
 
-/// "Update All" button row.
+/// "Update All" / "Install All" button row.
 /// Progress and "All done" states are handled by sticky banners in _UpdatesListBody.
 class UpdateAllRow extends ConsumerWidget {
-  const UpdateAllRow({super.key, required this.allUpdates});
+  const UpdateAllRow({
+    super.key,
+    required this.allUpdates,
+    this.label = 'Update All',
+    this.installSource = InstallSource.normal,
+  });
 
   final List<App> allUpdates;
+  final String label;
+  final InstallSource installSource;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -31,6 +38,7 @@ class UpdateAllRow extends ConsumerWidget {
                   appId: app.identifier,
                   target: app.latestFileMetadata!,
                   displayName: app.name,
+                  source: installSource,
                 ),
               )
               .toList();
@@ -38,7 +46,7 @@ class UpdateAllRow extends ConsumerWidget {
         },
         icon: const Icon(Icons.download, size: 16, color: Colors.white),
         label: Text(
-          'Update All (${allUpdates.length})',
+          '$label (${allUpdates.length})',
           style: const TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w600,

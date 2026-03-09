@@ -18,11 +18,13 @@ class InstallButton extends ConsumerWidget {
     required this.app,
     this.release,
     this.compact = false,
+    this.installSource = InstallSource.normal,
   });
 
   final App app;
   final Release? release;
   final bool compact;
+  final InstallSource installSource;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -564,7 +566,12 @@ class InstallButton extends ConsumerWidget {
     FileMetadata fileMetadata,
   ) async {
     final pm = ref.read(packageManagerProvider.notifier);
-    await pm.startDownload(app.identifier, fileMetadata, displayName: app.name);
+    await pm.startDownload(
+      app.identifier,
+      fileMetadata,
+      displayName: app.name,
+      source: installSource,
+    );
   }
 
   void _pauseDownload(WidgetRef ref) {

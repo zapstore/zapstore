@@ -25,6 +25,17 @@ class AppCard extends HookConsumerWidget {
   final bool showUpdateButton;
   final bool showZapEncouragement;
   final bool showDescription;
+  final InstallSource installSource;
+
+  /// When provided, used instead of default navigation on tap.
+  /// Use when AppCard is shown outside GoRouter tree (e.g. in a dialog).
+  final VoidCallback? onTap;
+
+  /// When true, tap is disabled (e.g. informational display only).
+  final bool ignorePointer;
+
+  /// When true, show install button even when app has no update (e.g. restore "to install").
+  final bool showInstallWhenNotInstalled;
 
   const AppCard({
     super.key,
@@ -35,6 +46,10 @@ class AppCard extends HookConsumerWidget {
     this.showUpdateButton = false,
     this.showZapEncouragement = false,
     this.showDescription = true,
+    this.installSource = InstallSource.normal,
+    this.onTap,
+    this.ignorePointer = false,
+    this.showInstallWhenNotInstalled = false,
   });
 
   @override
@@ -54,121 +69,139 @@ class AppCard extends HookConsumerWidget {
         ? _stripMarkdown(app!.description)
         : 'No description available';
 
-    Widget buildCard(Profile? publisher, bool isPublisherLoading) => GestureDetector(
-      onTap: () {
-        final segments = GoRouterState.of(context).uri.pathSegments;
-        final first = segments.isNotEmpty ? segments.first : 'search';
-        // Prefer naddr so the detail screen can uniquely identify the app
-        // (identifier + author) and not accidentally resolve to a different
-        // publisher's app with the same identifier.
-        final naddr = Utils.encodeShareableIdentifier(
-          AddressInput(
-            identifier: app!.identifier,
-            author: app!.pubkey,
-            kind: app!.event.kind,
-            relays: const [],
-          ),
-        );
-        context.push('/$first/app/$naddr');
-      },
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.6),
-          border: Border.all(
-            color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
-            width: 1,
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header row: Icon + Name/Version (icon matches header height)
-            LayoutBuilder(
-              builder: (context, constraints) {
-                // Icon takes a little over 20% of available width
-                final iconSize = (constraints.maxWidth * 0.21).clamp(
-                  50.0,
-                  68.0,
-                );
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // App Icon (stretches to match name + version height, ~20% width)
-                    _buildAppIcon(context, iconSize),
-
-                    const SizedBox(width: 14),
-
-                    // App Name and Version (always stacked)
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // App name with optional "by publisher" inline
-                          _buildAppNameWithPublisher(context, publisher, isPublisherLoading),
-                          const SizedBox(height: 8),
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: VersionPillWidget(
-                              app: app!,
-                              showUpdateArrow: showUpdateArrow,
-                            ),
-                          ),
-                        ],
+    Widget buildCard(Profile? publisher, bool isPublisherLoading) {
+      final card = GestureDetector(
+        onTap: ignorePointer
+            ? null
+            : (onTap ??
+                  () {
+                    final segments = GoRouterState.of(context).uri.pathSegments;
+                    final first = segments.isNotEmpty
+                        ? segments.first
+                        : 'search';
+                    final naddr = Utils.encodeShareableIdentifier(
+                      AddressInput(
+                        identifier: app!.identifier,
+                        author: app!.pubkey,
+                        kind: app!.event.kind,
+                        relays: const [],
                       ),
-                    ),
-                  ],
-                );
-              },
+                    );
+                    context.push('/$first/app/$naddr');
+                  }),
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.6),
+            border: Border.all(
+              color: Theme.of(
+                context,
+              ).colorScheme.outline.withValues(alpha: 0.2),
+              width: 1,
             ),
-
-            // App Description rendered as plain text (markdown stripped)
-            if (showDescription) ...[
-              const SizedBox(height: 10),
-              Text(
-                descriptionText,
-                style: descriptionStyle,
-                overflow: TextOverflow.ellipsis,
-                maxLines: 2,
-                softWrap: true,
-              ),
-            ],
-
-            // Update button (for apps with updates or currently downloading/installing)
-            if (showUpdateButton)
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header row: Icon + Name/Version (icon matches header height)
               LayoutBuilder(
                 builder: (context, constraints) {
-                  // Match the text column start (icon width + spacing)
+                  // Icon takes a little over 20% of available width
                   final iconSize = (constraints.maxWidth * 0.21).clamp(
                     50.0,
                     68.0,
                   );
-                  final leftInset = iconSize + 14;
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // App Icon (stretches to match name + version height, ~20% width)
+                      _buildAppIcon(context, iconSize),
 
-                  return Padding(
-                    padding: EdgeInsets.only(left: leftInset),
-                    child: SizedBox(
-                      width: (constraints.maxWidth - leftInset).clamp(
-                        0.0,
-                        constraints.maxWidth,
+                      const SizedBox(width: 14),
+
+                      // App Name and Version (always stacked)
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // App name with optional "by publisher" inline
+                            _buildAppNameWithPublisher(
+                              context,
+                              publisher,
+                              isPublisherLoading,
+                            ),
+                            const SizedBox(height: 8),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: VersionPillWidget(
+                                app: app!,
+                                showUpdateArrow: showUpdateArrow,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      child: _AppCardUpdateButtonSection(app: app!),
-                    ),
+                    ],
                   );
                 },
               ),
 
-            // Zap encouragement (only for downloading/installing developer-signed apps)
-            if (showZapEncouragement)
-              _AppCardZapEncouragementSection(app: app!, publisher: publisher),
-          ],
+              // App Description rendered as plain text (markdown stripped)
+              if (showDescription) ...[
+                const SizedBox(height: 10),
+                Text(
+                  descriptionText,
+                  style: descriptionStyle,
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 2,
+                  softWrap: true,
+                ),
+              ],
+
+              // Update button (for apps with updates or currently downloading/installing)
+              if (showUpdateButton || showInstallWhenNotInstalled)
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    // Match the text column start (icon width + spacing)
+                    final iconSize = (constraints.maxWidth * 0.21).clamp(
+                      50.0,
+                      68.0,
+                    );
+                    final leftInset = iconSize + 14;
+
+                    return Padding(
+                      padding: EdgeInsets.only(left: leftInset),
+                      child: SizedBox(
+                        width: (constraints.maxWidth - leftInset).clamp(
+                          0.0,
+                          constraints.maxWidth,
+                        ),
+                        child: _AppCardUpdateButtonSection(
+                          app: app!,
+                          installSource: installSource,
+                          showWhenNotInstalled: showInstallWhenNotInstalled,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+
+              // Zap encouragement (only for downloading/installing developer-signed apps)
+              if (showZapEncouragement)
+                _AppCardZapEncouragementSection(
+                  app: app!,
+                  publisher: publisher,
+                ),
+            ],
+          ),
         ),
-      ),
-    );
+      );
+      return card;
+    }
 
     if (!needsPublisher) return buildCard(null, false);
 
@@ -452,15 +485,24 @@ class AppCard extends HookConsumerWidget {
 }
 
 class _AppCardUpdateButtonSection extends ConsumerWidget {
-  const _AppCardUpdateButtonSection({required this.app});
+  const _AppCardUpdateButtonSection({
+    required this.app,
+    this.installSource = InstallSource.normal,
+    this.showWhenNotInstalled = false,
+  });
 
   final App app;
+  final InstallSource installSource;
+  final bool showWhenNotInstalled;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final operation = ref.watch(installOperationProvider(app.identifier));
+    final installedPkg = ref.watch(installedPackageProvider(app.identifier));
     final hasOperation = operation != null;
-    final shouldShow = app.hasUpdate || hasOperation;
+    final isInstalled = installedPkg != null;
+    final shouldShow =
+        app.hasUpdate || hasOperation || (showWhenNotInstalled && !isInstalled);
 
     if (!shouldShow) return const SizedBox.shrink();
 
@@ -472,6 +514,7 @@ class _AppCardUpdateButtonSection extends ConsumerWidget {
           child: _CompactInstallButton(
             app: app,
             release: app.latestRelease.value,
+            installSource: installSource,
           ),
         ),
       ],
@@ -512,12 +555,22 @@ class _AppCardZapEncouragementSection extends ConsumerWidget {
 class _CompactInstallButton extends ConsumerWidget {
   final App app;
   final Release? release;
+  final InstallSource installSource;
 
-  const _CompactInstallButton({required this.app, this.release});
+  const _CompactInstallButton({
+    required this.app,
+    this.release,
+    this.installSource = InstallSource.normal,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return InstallButton(app: app, release: release, compact: true);
+    return InstallButton(
+      app: app,
+      release: release,
+      compact: true,
+      installSource: installSource,
+    );
   }
 }
 

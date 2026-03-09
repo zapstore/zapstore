@@ -126,6 +126,26 @@ class SecureStorageService {
       value: jsonEncode(relays.toList()),
     );
   }
+
+  // =========================================================================
+  // Installed Apps Backup
+  // =========================================================================
+
+  static const _backupEnabledKey = 'installed_apps_backup_enabled';
+
+  /// Whether installed apps backup is enabled (off by default).
+  Future<bool> getBackupEnabled() async {
+    final value = await _storage.read(key: _backupEnabledKey);
+    return value == 'true';
+  }
+
+  /// Store the installed apps backup toggle state.
+  Future<void> setBackupEnabled(bool enabled) async {
+    await _storage.write(
+      key: _backupEnabledKey,
+      value: enabled.toString(),
+    );
+  }
 }
 
 /// Persists the AmberSigner pubkey in flutter_secure_storage.
