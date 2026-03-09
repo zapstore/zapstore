@@ -39,6 +39,12 @@ bool appStackEventFilter(Map<String, dynamic> event) {
   return false;
 }
 
+/// Authoritative relay for NIP-82 software application events (kind 32267).
+/// Used as the relay hint in naddr encoding so other clients can resolve app events.
+/// Invariant: all Zapstore-published app events are available on this relay.
+/// Stack events (social relays) should NOT use this hint.
+const kDefaultRelay = 'wss://relay.zapstore.dev';
+
 /// Amber signer package ID
 const kAmberPackageId = 'com.greenart7c3.nostrsigner';
 

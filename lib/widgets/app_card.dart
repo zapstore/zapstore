@@ -66,7 +66,7 @@ class AppCard extends HookConsumerWidget {
             identifier: app!.identifier,
             author: app!.pubkey,
             kind: app!.event.kind,
-            relays: const [],
+            relays: const [kDefaultRelay],
           ),
         );
         context.push('/$first/app/$naddr');
