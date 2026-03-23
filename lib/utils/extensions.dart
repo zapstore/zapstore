@@ -19,8 +19,8 @@ extension AppExt on App {
   /// Whether this app is one of Zapstore's own apps
   bool get isZapstoreApp => identifier == kZapstoreAppIdentifier;
 
-  /// Whether this app is signed by Zapstore pubkey
-  bool get isSignedByZapstore => pubkey == kZapstorePubkey;
+  /// Whether this app is signed by a trusted relay pubkey
+  bool get isSignedByZapstore => kTrustedRelayPubkeys.contains(pubkey);
 
   /// Whether this app is "relay signed" - indexed by Zapstore but not a Zapstore app itself
   bool get isRelaySigned => isSignedByZapstore && !isZapstoreApp;

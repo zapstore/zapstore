@@ -230,7 +230,7 @@ class RelevantWhoFollowContainer extends HookConsumerWidget {
             authors: {signedInPubkey},
             limit: 1,
             source: const LocalAndRemoteSource(relays: 'social', stream: false),
-            subscriptionPrefix: 'user-contacts',
+            subscriptionPrefix: 'app-user-contacts',
           ),
         );
 
@@ -378,7 +378,7 @@ final relevantWhoFollowProvider = FutureProvider.autoDispose
         final profiles = await storage.query<Profile>(
           Request([RequestFilter(authors: response.pubkeys)]),
           source: const LocalAndRemoteSource(relays: 'social', stream: false),
-          subscriptionPrefix: 'verify-reputation-profiles',
+          subscriptionPrefix: 'app-reputation-profiles',
         );
         return profiles;
       }

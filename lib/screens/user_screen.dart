@@ -30,6 +30,7 @@ class UserScreen extends HookConsumerWidget {
           relays: {'social', 'vertex'},
           cachedFor: Duration(hours: 2),
         ),
+        subscriptionPrefix: 'app-user-profile',
       ),
     );
     final profile = profileState.models.firstOrNull;
@@ -55,8 +56,8 @@ class UserScreen extends HookConsumerWidget {
       ),
     );
 
-    // For Zapstore pubkey, only show Zapstore's own apps (not relay-signed ones)
-    final apps = pubkey == kZapstorePubkey
+    // For trusted relay pubkeys, only show Zapstore's own apps (not relay-signed ones)
+    final apps = kTrustedRelayPubkeys.contains(pubkey)
         ? userAppsState.models.where((a) => a.isZapstoreApp).toList()
         : userAppsState.models;
 
@@ -75,7 +76,7 @@ class UserScreen extends HookConsumerWidget {
           ),
         },
         source: LocalAndRemoteSource(stream: false, relays: 'social'),
-        subscriptionPrefix: 'user-screen-stacks',
+        subscriptionPrefix: 'app-user-stacks',
         schemaFilter: appStackEventFilter,
       ),
     );
@@ -210,7 +211,7 @@ class _UserZapsList extends HookConsumerWidget {
       query<Zap>(
         tags: allAppTags,
         source: const LocalAndRemoteSource(relays: 'social'),
-        subscriptionPrefix: 'user-screen-app-zaps',
+        subscriptionPrefix: 'app-user-app-zaps',
       ),
     );
 
@@ -220,7 +221,7 @@ class _UserZapsList extends HookConsumerWidget {
             query<Zap>(
               tags: {'#e': metadataIds},
               source: const LocalAndRemoteSource(relays: 'social'),
-              subscriptionPrefix: 'user-screen-metadata-zaps',
+              subscriptionPrefix: 'app-user-metadata-zaps',
             ),
           )
         : null;
@@ -253,6 +254,7 @@ class _UserZapsList extends HookConsumerWidget {
           relays: {'social', 'vertex'},
           cachedFor: Duration(hours: 2),
         ),
+        subscriptionPrefix: 'app-user-profiles',
       ),
     );
     final profilesMap = {for (final p in profilesState.models) p.pubkey: p};

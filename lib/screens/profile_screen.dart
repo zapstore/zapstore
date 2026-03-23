@@ -112,6 +112,7 @@ class _AuthenticationSection extends ConsumerWidget {
                         stream: false,
                         cachedFor: Duration(hours: 2),
                       ),
+                      subscriptionPrefix: 'app-profile-detail',
                     ),
                   );
                   final profile = profileState.models.firstOrNull;

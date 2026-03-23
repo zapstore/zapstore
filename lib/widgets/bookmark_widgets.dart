@@ -289,7 +289,7 @@ class _AddToStackDialogSignedIn extends HookConsumerWidget {
           stack.apps.query(source: const LocalSource()),
         },
         source: const LocalAndRemoteSource(relays: 'social', stream: false),
-        subscriptionPrefix: 'user-stacks-dialog',
+        subscriptionPrefix: 'app-user-stacks-dialog',
         // Filter at query level: exclude saved-apps stack and stacks with no app references
         schemaFilter: (event) {
           final tags = event['tags'] as List?;

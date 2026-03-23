@@ -296,7 +296,7 @@ class _ZappersListSection extends ConsumerWidget {
                 '#e': {metadataId},
               },
               source: const LocalAndRemoteSource(relays: 'social'),
-              subscriptionPrefix: 'metadata-zaps',
+              subscriptionPrefix: 'app-metadata-zaps',
             ),
           )
         : null;
@@ -327,6 +327,7 @@ class _ZappersListSection extends ConsumerWidget {
           relays: {'social', 'vertex'},
           cachedFor: Duration(hours: 2),
         ),
+        subscriptionPrefix: 'app-zapper-profiles',
       ),
     );
     final profilesMap = {

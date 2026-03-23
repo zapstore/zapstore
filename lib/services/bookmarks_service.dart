@@ -25,7 +25,7 @@ final bookmarksProvider = FutureProvider<Set<String>>((ref) async {
         relays: 'social',
         stream: false,
       ),
-      subscriptionPrefix: 'user-saved-apps',
+      subscriptionPrefix: 'app-user-saved-apps',
     ),
   );
 

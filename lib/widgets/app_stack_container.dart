@@ -122,6 +122,7 @@ class AppStackContainer extends HookConsumerWidget {
                 stream: false,
                 cachedFor: Duration(hours: 1),
               ),
+              subscriptionPrefix: 'app-stack-contacts',
             ),
           )
         : null;

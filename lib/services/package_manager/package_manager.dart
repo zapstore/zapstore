@@ -1329,6 +1329,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
       try {
         final results = await storage.query(
           RequestFilter<FileMetadata>(ids: {metadataId}).toRequest(),
+          subscriptionPrefix: 'app-file-metadata',
         );
         if (results.isNotEmpty) return results.first;
       } catch (_) {}
@@ -1340,6 +1341,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
       try {
         final results = await storage.query(
           RequestFilter<FileMetadata>(search: hash).toRequest(),
+          subscriptionPrefix: 'app-file-metadata-search',
         );
         if (results.isNotEmpty) return results.first;
       } catch (_) {}

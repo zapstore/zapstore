@@ -5,6 +5,12 @@ const kZapstoreAppIdentifier = 'dev.zapstore.app';
 const kZapstorePubkey =
     '78ce6faa72264387284e647ba6938995735ec8c7d5c5a65737e55130f026307d';
 
+/// Additional trusted relay pubkeys for relay-signed apps
+const kTrustedRelayPubkeys = {
+  kZapstorePubkey,
+  'fd2d438d5c0b419179b67ce4e8ae72a170aeca3045acccbe7661a5e1b5f0b7b1',
+};
+
 /// Franzap's public key for curation sets
 const kFranzapPubkey =
     '726a1e261cc6474674e8285e3951b3bb139be9a773d1acf49dc868db861a1c11';

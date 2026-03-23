@@ -149,6 +149,7 @@ class _AppStackContent extends HookConsumerWidget {
           relays: {'social', 'vertex'},
           cachedFor: Duration(hours: 2),
         ),
+        subscriptionPrefix: 'app-stack-profile',
       ),
     );
     final author = authorState.models.firstOrNull;
