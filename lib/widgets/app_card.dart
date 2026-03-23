@@ -181,6 +181,7 @@ class AppCard extends HookConsumerWidget {
               relays: {'social', 'vertex'},
               cachedFor: Duration(hours: 2),
             ),
+            subscriptionPrefix: 'app-card-profile',
           ),
         );
 

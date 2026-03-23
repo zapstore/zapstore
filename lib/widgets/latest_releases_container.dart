@@ -372,6 +372,7 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
           },
         ).toRequest(),
         source: const LocalAndRemoteSource(stream: false),
+        subscriptionPrefix: 'app-latest-older',
       );
 
       if (olderPage.isNotEmpty) {
@@ -384,6 +385,7 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
                 .toList(),
           ),
           source: const RemoteSource(stream: false),
+          subscriptionPrefix: 'app-latest-releases',
         );
 
         // Load file metadata for the releases (old format)
@@ -396,6 +398,7 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
                   .toList(),
             ),
             source: const RemoteSource(stream: false),
+            subscriptionPrefix: 'app-latest-metadata',
           );
           // Load software assets for the releases (new format)
           await ref.storage.query(
@@ -406,6 +409,7 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
                   .toList(),
             ),
             source: const RemoteSource(stream: false),
+            subscriptionPrefix: 'app-latest-assets',
           );
         }
 

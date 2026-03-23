@@ -25,6 +25,7 @@ class InstallAlertDialog extends HookConsumerWidget {
           relays: {'social', 'vertex'},
           cachedFor: Duration(hours: 2),
         ),
+        subscriptionPrefix: 'app-install-profile',
       ),
     );
     final publisher = switch (publisherState) {

@@ -215,7 +215,7 @@ class UpdatePollerNotifier extends Notifier<UpdatePollerState> {
             cachedFor: Duration(hours: 2),
             stream: false,
           ),
-          subscriptionPrefix: 'updates-profiles',
+          subscriptionPrefix: 'app-updates-profiles',
         ),
       );
     }

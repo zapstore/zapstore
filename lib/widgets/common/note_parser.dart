@@ -393,6 +393,7 @@ class ProfileEntityWidget extends ConsumerWidget {
           relays: {'social', 'vertex'},
           cachedFor: Duration(hours: 2),
         ),
+        subscriptionPrefix: 'app-note-profile',
       ),
     );
 

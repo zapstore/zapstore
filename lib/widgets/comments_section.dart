@@ -73,7 +73,7 @@ class StackCommentsSection extends HookConsumerWidget {
           '#A': {stack.id},
         },
         source: LocalAndRemoteSource(stream: true, relays: 'social'),
-        subscriptionPrefix: 'stack-comments',
+        subscriptionPrefix: 'app-stack-comments',
         and: (comment) => {comment.replies.query()},
       ),
     );
@@ -274,6 +274,7 @@ class _ThreadedCommentCard extends HookConsumerWidget {
           stream: false,
           cachedFor: Duration(hours: 2),
         ),
+        subscriptionPrefix: 'app-comment-profile',
       ),
     );
     final author = authorState.models.firstOrNull;
@@ -718,6 +719,7 @@ class _ReplyComposer extends HookConsumerWidget {
           stream: false,
           cachedFor: Duration(hours: 2),
         ),
+        subscriptionPrefix: 'app-reply-profile',
       ),
     );
     final parentAuthor = switch (parentAuthorState) {

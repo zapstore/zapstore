@@ -312,6 +312,7 @@ Future<void> onSignInSuccess(Ref ref) async {
   await storage.query(
     RequestFilter<ContactList>(authors: {pubkey}).toRequest(),
     source: const RemoteSource(relays: 'social', stream: false),
+    subscriptionPrefix: 'app-contact-list',
   );
 }
 
