@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
@@ -350,6 +352,50 @@ class RelevantWhoFollowContainer extends HookConsumerWidget {
   }
 }
 
+/// Runs a DVM request and waits for a response.
+/// Replicates the old DVMRequest.run() behavior that was removed from the model layer.
+Future<Model<dynamic>?> _runDVMRequest(
+  Ref ref,
+  Model request,
+  String relays, {
+  Duration timeout = const Duration(seconds: 16),
+}) async {
+  final responseKind = (request as DVMRequest).responseKind;
+  final source = RemoteSource(relays: relays, stream: true);
+
+  final provider = queryKinds(
+    kinds: {responseKind, 7000},
+    tags: {
+      '#e': {request.event.id},
+    },
+    limit: 1,
+    source: source,
+  );
+
+  final completer = Completer<Model<dynamic>>();
+  ProviderSubscription<StorageState>? subscription;
+
+  try {
+    subscription = ref.listen(provider, (_, state) {
+      if (completer.isCompleted) return;
+      if (state case StorageData(:final models) when models.isNotEmpty) {
+        completer.complete(models.first);
+      }
+    });
+
+    await ref.read(storageNotifierProvider.notifier).publish(
+      {request},
+      source: source,
+    );
+
+    return await completer.future.timeout(timeout);
+  } on TimeoutException {
+    return null;
+  } finally {
+    subscription?.close();
+  }
+}
+
 final relevantWhoFollowProvider = FutureProvider.autoDispose
     .family<List<Profile>, ({String to})>((ref, arg) async {
       // Require active signer and profile to submit the request
@@ -370,7 +416,7 @@ final relevantWhoFollowProvider = FutureProvider.autoDispose
       final request = await partial.signWith(signer);
 
       // Execute against the 'vertex' relay group and await response
-      final response = await request.run('vertex');
+      final response = await _runDVMRequest(ref, request, 'vertex');
 
       if (response is VerifyReputationResponse) {
         // Fetch corresponding profiles for the returned pubkeys

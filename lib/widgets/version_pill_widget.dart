@@ -55,8 +55,12 @@ class VersionPillWidget extends HookConsumerWidget {
     };
 
     // Resolve installed and available versions using AppExt
-    final installedVersion = loadedApp.installedPackage?.version;
+    final installedPackage = loadedApp.installedPackage;
+    final installedVersion = installedPackage?.version;
+    final installedVersionCode = installedPackage?.versionCode;
     final availableVersion = loadedApp.latestFileMetadata?.version;
+    final availableVersionCode = loadedApp.latestFileMetadata?.versionCode;
+    final isInstalled = loadedApp.isInstalled;
     final updateAvailable = loadedApp.hasUpdate;
     final downgradeAvailable = loadedApp.hasDowngrade;
 
@@ -67,10 +71,12 @@ class VersionPillWidget extends HookConsumerWidget {
         availableVersion != null) {
       return _buildDualVersionPills(
         context,
-        loadedApp,
         installedVersion,
+        installedVersionCode,
         availableVersion,
+        availableVersionCode,
         isDowngrade: downgradeAvailable,
+        updateAvailable: updateAvailable,
       );
     }
 
@@ -83,10 +89,11 @@ class VersionPillWidget extends HookConsumerWidget {
 
     return _buildVersionPill(
       context,
-      loadedApp,
       version,
       AppColors.darkPillBackground,
       Colors.white,
+      isInstalled: isInstalled,
+      updateAvailable: updateAvailable,
     );
   }
 
@@ -103,15 +110,13 @@ class VersionPillWidget extends HookConsumerWidget {
 
   Widget _buildDualVersionPills(
     BuildContext context,
-    App loadedApp,
     String installedVersion,
-    String availableVersion, {
+    int? installedVersionCode,
+    String availableVersion,
+    int? availableVersionCode, {
     bool isDowngrade = false,
+    bool updateAvailable = false,
   }) {
-    // Get version codes
-    final installedVersionCode = loadedApp.installedPackage?.versionCode;
-    final availableVersionCode = loadedApp.latestFileMetadata?.versionCode;
-
     // When version strings are equal but version codes differ, show version codes in parentheses
     final showVersionCodes =
         installedVersion == availableVersion &&
@@ -126,7 +131,6 @@ class VersionPillWidget extends HookConsumerWidget {
         Flexible(
           child: _buildVersionPill(
             context,
-            loadedApp,
             installedVersion,
             Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
             Theme.of(context).colorScheme.onSurface,
@@ -146,7 +150,6 @@ class VersionPillWidget extends HookConsumerWidget {
         Flexible(
           child: _buildVersionPill(
             context,
-            loadedApp,
             availableVersion,
             isDowngrade
                 ? Theme.of(context).colorScheme.outline.withValues(alpha: 0.3)
@@ -154,7 +157,9 @@ class VersionPillWidget extends HookConsumerWidget {
             isDowngrade
                 ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5)
                 : Colors.white,
+            isInstalled: true,
             isDowngrade: isDowngrade,
+            updateAvailable: updateAvailable,
             versionCode: showVersionCodes ? availableVersionCode : null,
           ),
         ),
@@ -164,12 +169,13 @@ class VersionPillWidget extends HookConsumerWidget {
 
   Widget _buildVersionPill(
     BuildContext context,
-    App loadedApp,
     String version,
     Color backgroundColor,
     Color textColor, {
     bool isInstalledVersion = false,
+    bool isInstalled = false,
     bool isDowngrade = false,
+    bool updateAvailable = false,
     int? versionCode,
   }) {
     // Build display version with optional version code in parentheses
@@ -181,7 +187,7 @@ class VersionPillWidget extends HookConsumerWidget {
       if (isDowngrade) {
         // Downgrade forbidden
         statusIcon = Icon(Icons.block, size: 12, color: textColor);
-      } else if (!loadedApp.isInstalled) {
+      } else if (!isInstalled) {
         // Can install
         statusIcon = const Icon(
           Icons.download_rounded,
@@ -189,7 +195,7 @@ class VersionPillWidget extends HookConsumerWidget {
           color: Colors.white,
         );
       } else {
-        if (loadedApp.hasUpdate) {
+        if (updateAvailable) {
           // Can update
           statusIcon = const Icon(
             Icons.update_outlined,

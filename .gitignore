@@ -49,8 +49,10 @@ app.*.map.json
 
 # FVM (commit only the version pin/config; never the SDK itself)
 !.fvmrc
-.fvm/**
 
 .env
 
 reference/*
+
+# FVM Version Cache
+.fvm/

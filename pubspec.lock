@@ -4,11 +4,9 @@ packages:
   amber_signer:
     dependency: "direct main"
     description:
-      path: "."
-      ref: "6cbedbe"
-      resolved-ref: "6cbedbe6ae58a952c564979002258840921b041b"
-      url: "https://github.com/purplebase/amber_signer"
-    source: git
+      path: "../../purplebase/amber_signer"
+      relative: true
+    source: path
     version: "0.2.0"
   any_link_preview:
     dependency: "direct main"
@@ -684,11 +682,9 @@ packages:
   models:
     dependency: "direct main"
     description:
-      path: "."
-      ref: "4ef180e4d1832d2895030046d7bf4a251578f2df"
-      resolved-ref: "4ef180e4d1832d2895030046d7bf4a251578f2df"
-      url: "https://github.com/purplebase/models"
-    source: git
+      path: "../../purplebase/models"
+      relative: true
+    source: path
     version: "0.3.3"
   nm:
     dependency: transitive
@@ -869,11 +865,9 @@ packages:
   purplebase:
     dependency: "direct main"
     description:
-      path: "."
-      ref: "4d1db7dd5096c6bfef398a8d14747b1e3eba930d"
-      resolved-ref: "4d1db7dd5096c6bfef398a8d14747b1e3eba930d"
-      url: "https://github.com/purplebase/purplebase"
-    source: git
+      path: "../../purplebase/purplebase"
+      relative: true
+    source: path
     version: "0.3.3"
   qr:
     dependency: transitive
