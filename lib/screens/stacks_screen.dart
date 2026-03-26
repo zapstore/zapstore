@@ -2,14 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
+import 'package:skeletonizer/skeletonizer.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
+import 'package:zapstore/theme.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/app_stack_container.dart';
 
 const int _kPageSize = 10;
 
-class AllStacksScreen extends HookConsumerWidget {
-  const AllStacksScreen({super.key});
+class StacksScreen extends HookConsumerWidget {
+  const StacksScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -25,7 +27,7 @@ class AllStacksScreen extends HookConsumerWidget {
         tags: {
           '#f': {platform},
         },
-        source: const LocalAndRemoteSource(relays: 'social'),
+        source: const LocalAndRemoteSource(relays: 'AppCatalog'),
         subscriptionPrefix: 'app-all-stacks',
         schemaFilter: appStackEventFilter,
       ),
@@ -49,10 +51,7 @@ class AllStacksScreen extends HookConsumerWidget {
     final followingPubkeys =
         contactListState?.models.firstOrNull?.followingPubkeys;
 
-    final allStacks = switch (appStacksState) {
-      StorageData(:final models) => models.toList(),
-      _ => <AppStack>[],
-    };
+    final allStacks = appStacksState.models.toList();
 
     final sortedStacks = _sortStacks(
       allStacks,
@@ -134,12 +133,32 @@ class AllStacksScreen extends HookConsumerWidget {
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Text('App Stacks', style: context.textTheme.headlineMedium),
+              child: Text(
+                'App Stacks',
+                style: context.textTheme.headlineMedium,
+              ),
             ),
           ),
-          if (appStacksState is StorageLoading && allStacks.isEmpty)
-            const SliverFillRemaining(
-              child: Center(child: CircularProgressIndicator()),
+          if (appStacksState is StorageLoading && sortedStacks.isEmpty)
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              sliver: SliverGrid(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 10,
+                  mainAxisSpacing: 10,
+                  childAspectRatio: 1.15,
+                ),
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) => SkeletonizerConfig(
+                    data: AppColors.getSkeletonizerConfig(
+                      Theme.of(context).brightness,
+                    ),
+                    child: const Skeletonizer(child: StackCardSkeleton()),
+                  ),
+                  childCount: _kPageSize,
+                ),
+              ),
             )
           else if (sortedStacks.isEmpty)
             SliverFillRemaining(
@@ -147,9 +166,16 @@ class AllStacksScreen extends HookConsumerWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.layers_outlined, size: 48, color: Colors.grey[400]),
+                    Icon(
+                      Icons.layers_outlined,
+                      size: 48,
+                      color: Colors.grey[400],
+                    ),
                     const SizedBox(height: 16),
-                    Text('No stacks found', style: context.textTheme.titleMedium),
+                    Text(
+                      'No stacks found',
+                      style: context.textTheme.titleMedium,
+                    ),
                   ],
                 ),
               ),
@@ -164,20 +190,17 @@ class AllStacksScreen extends HookConsumerWidget {
                   mainAxisSpacing: 10,
                   childAspectRatio: 1.15,
                 ),
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) {
-                    final stack = displayedStacks[index];
-                    final author = authorsMap[stack.event.pubkey];
-                    return StackCard(
-                      stack: stack,
-                      author: author,
-                      isAuthorLoading: isAuthorsLoading && author == null,
-                      previewIdentifiers: stackPreviewIds[stack.id] ?? [],
-                      appsMap: appsMap,
-                    );
-                  },
-                  childCount: displayedStacks.length,
-                ),
+                delegate: SliverChildBuilderDelegate((context, index) {
+                  final stack = displayedStacks[index];
+                  final author = authorsMap[stack.event.pubkey];
+                  return StackCard(
+                    stack: stack,
+                    author: author,
+                    isAuthorLoading: isAuthorsLoading && author == null,
+                    previewIdentifiers: stackPreviewIds[stack.id] ?? [],
+                    appsMap: appsMap,
+                  );
+                }, childCount: displayedStacks.length),
               ),
             ),
           SliverToBoxAdapter(
@@ -192,14 +215,15 @@ class AllStacksScreen extends HookConsumerWidget {
                       ),
                     )
                   : sortedStacks.isNotEmpty
-                      ? Center(
-                          child: Text(
-                            'No more stacks to load',
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(color: Colors.grey[600]),
-                          ),
-                        )
-                      : const SizedBox.shrink(),
+                  ? Center(
+                      child: Text(
+                        'No more stacks to load',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    )
+                  : const SizedBox.shrink(),
             ),
           ),
           const SliverToBoxAdapter(child: SizedBox(height: 16)),
@@ -232,12 +256,16 @@ List<AppStack> _sortStacks(
     others.sort((a, b) => b.event.createdAt.compareTo(a.event.createdAt));
     return [...followed, ...others];
   } else {
-    final franzapStacks =
-        stacks.where((s) => s.pubkey == kFranzapPubkey).toList();
-    final otherStacks =
-        stacks.where((s) => s.pubkey != kFranzapPubkey).toList();
+    final franzapStacks = stacks
+        .where((s) => s.pubkey == kFranzapPubkey)
+        .toList();
+    final otherStacks = stacks
+        .where((s) => s.pubkey != kFranzapPubkey)
+        .toList();
 
-    franzapStacks.sort((a, b) => b.event.createdAt.compareTo(a.event.createdAt));
+    franzapStacks.sort(
+      (a, b) => b.event.createdAt.compareTo(a.event.createdAt),
+    );
     otherStacks.sort((a, b) => b.event.createdAt.compareTo(a.event.createdAt));
     return [...franzapStacks, ...otherStacks];
   }

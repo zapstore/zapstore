@@ -638,6 +638,7 @@ class _AddToStackDialogSignedIn extends HookConsumerWidget {
             identifier: collectionId,
             platform: platform,
           );
+          partialStack.addCommunityKey(kZapstoreCommunityPubkey);
 
           // Add existing apps in order
           for (final appId in existingAppIds) {
@@ -651,7 +652,7 @@ class _AddToStackDialogSignedIn extends HookConsumerWidget {
           await ref.storage.save({signedStack});
           await ref.storage.publish({
             signedStack,
-          }, source: RemoteSource(relays: 'social'));
+          }, source: RemoteSource(relays: {'social', 'AppCatalog'}));
         }
       }
 
@@ -666,6 +667,7 @@ class _AddToStackDialogSignedIn extends HookConsumerWidget {
             identifier: collectionId,
             platform: platform,
           );
+          partialStack.addCommunityKey(kZapstoreCommunityPubkey);
 
           // Re-add all apps except the one we're removing, preserving order
           // Get raw app IDs from event tags as a list to preserve order
@@ -682,7 +684,7 @@ class _AddToStackDialogSignedIn extends HookConsumerWidget {
           await ref.storage.save({signedStack});
           await ref.storage.publish({
             signedStack,
-          }, source: RemoteSource(relays: 'social'));
+          }, source: RemoteSource(relays: {'social', 'AppCatalog'}));
         }
       }
 
