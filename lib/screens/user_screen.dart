@@ -527,6 +527,7 @@ class _RepublishStacksButton extends HookConsumerWidget {
                         identifier: stack.identifier,
                         platform: platform,
                       );
+                      partialStack.addCommunityKey(kZapstoreCommunityPubkey);
 
                       for (final appId in appIds) {
                         partialStack.addApp(appId);
@@ -536,7 +537,7 @@ class _RepublishStacksButton extends HookConsumerWidget {
                       await ref.storage.save({signedStack});
                       ref.storage.publish({
                         signedStack,
-                      }, source: RemoteSource(relays: 'social'));
+                      }, source: RemoteSource(relays: {'social', 'AppCatalog'}));
                     }
 
                     progressCount.value++;

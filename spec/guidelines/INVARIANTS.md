@@ -39,6 +39,11 @@ If any invariant is violated, the implementation is incorrect.
 - Parsing unknown, missing, or future tags must not crash the app.
 - Partial or invalid data must degrade gracefully.
 
+## App Stack (kind 30267) Tag Rules
+
+- Encrypted stacks (private collections, e.g. "Saved Apps") MUST NOT include a community `p` tag or `h` tag.
+- Only public stacks may carry a community `p` tag to associate them with a community.
+
 ## Lifecycle Safety
 
 - Subscriptions must always be cancellable.

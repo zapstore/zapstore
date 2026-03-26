@@ -90,13 +90,7 @@ class AppStackContainer extends HookConsumerWidget {
     final visibleCount = useState(_kInitialStacks);
 
     if (showSkeleton) {
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _StackSectionHeader(showSeeAll: false),
-          _buildSkeleton(context),
-        ],
-      );
+      return _buildSkeleton(context);
     }
 
     final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
@@ -111,7 +105,7 @@ class AppStackContainer extends HookConsumerWidget {
         tags: {
           '#f': {platform},
         },
-        source: const LocalAndRemoteSource(relays: 'social'),
+        source: const LocalAndRemoteSource(relays: 'AppCatalog'),
         subscriptionPrefix: 'app-stack',
         schemaFilter: appStackEventFilter,
       ),
@@ -142,13 +136,7 @@ class AppStackContainer extends HookConsumerWidget {
     };
 
     if (allStacks.isEmpty) {
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _StackSectionHeader(showSeeAll: false),
-          _buildSkeleton(context),
-        ],
-      );
+      return _buildSkeleton(context);
     }
 
     // Sort stacks
@@ -229,60 +217,85 @@ class AppStackContainer extends HookConsumerWidget {
     }, [scrollController, sortedStacks.length]);
 
     // 2-row horizontal scroll layout
-    final numColumns = (displayedStacks.length + 1) ~/ 2;
+    // Add a "See more" card after the last stack if there are more stacks
+    final showSeeMore = sortedStacks.length > _kInitialStacks;
+    // Total items = displayed stacks + optional "See more" placeholder
+    final totalItems = displayedStacks.length + (showSeeMore ? 1 : 0);
+    final numColumns = (totalItems + 1) ~/ 2;
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _StackSectionHeader(showSeeAll: sortedStacks.length > _kInitialStacks),
-        SingleChildScrollView(
-          controller: scrollController,
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.only(left: 12, right: 12),
-          clipBehavior: Clip.none,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              for (int col = 0; col < numColumns; col++)
-                Padding(
-                  padding: const EdgeInsets.only(right: 10),
-                  child: SizedBox(
-                    width: 160,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (col * 2 < displayedStacks.length)
-                          StackCard(
-                            stack: displayedStacks[col * 2],
-                            author: authorsMap[displayedStacks[col * 2].event.pubkey],
-                            isAuthorLoading: isAuthorLoading(
-                              displayedStacks[col * 2].event.pubkey,
-                            ),
-                            previewIdentifiers:
-                                stackPreviewIds[displayedStacks[col * 2].id] ?? [],
-                            appsMap: appsMap,
-                          ),
-                        if (col * 2 + 1 < displayedStacks.length) ...[
-                          const SizedBox(height: 10),
-                          StackCard(
-                            stack: displayedStacks[col * 2 + 1],
-                            author: authorsMap[displayedStacks[col * 2 + 1].event.pubkey],
-                            isAuthorLoading: isAuthorLoading(
-                              displayedStacks[col * 2 + 1].event.pubkey,
-                            ),
-                            previewIdentifiers:
-                                stackPreviewIds[displayedStacks[col * 2 + 1].id] ?? [],
-                            appsMap: appsMap,
-                          ),
-                        ],
-                      ],
+    return SingleChildScrollView(
+      controller: scrollController,
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.only(left: 12, right: 12),
+      clipBehavior: Clip.none,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (int col = 0; col < numColumns; col++)
+            Padding(
+              padding: const EdgeInsets.only(right: 10),
+              child: SizedBox(
+                width: 160,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildItemAtIndex(
+                      context,
+                      col * 2,
+                      displayedStacks,
+                      authorsMap,
+                      isAuthorLoading,
+                      stackPreviewIds,
+                      appsMap,
+                      showSeeMore,
+                      totalItems,
                     ),
-                  ),
+                    if (col * 2 + 1 < totalItems) ...[
+                      const SizedBox(height: 10),
+                      _buildItemAtIndex(
+                        context,
+                        col * 2 + 1,
+                        displayedStacks,
+                        authorsMap,
+                        isAuthorLoading,
+                        stackPreviewIds,
+                        appsMap,
+                        showSeeMore,
+                        totalItems,
+                      ),
+                    ],
+                  ],
                 ),
-            ],
-          ),
-        ),
-      ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildItemAtIndex(
+    BuildContext context,
+    int index,
+    List<AppStack> displayedStacks,
+    Map<String, Profile> authorsMap,
+    bool Function(String) isAuthorLoading,
+    Map<String, List<String>> stackPreviewIds,
+    Map<String, App> appsMap,
+    bool showSeeMore,
+    int totalItems,
+  ) {
+    final isSeeMore = showSeeMore && index == totalItems - 1;
+    if (isSeeMore) {
+      return _SeeMoreCard();
+    }
+    if (index >= displayedStacks.length) return const SizedBox.shrink();
+    final stack = displayedStacks[index];
+    return StackCard(
+      stack: stack,
+      author: authorsMap[stack.event.pubkey],
+      isAuthorLoading: isAuthorLoading(stack.event.pubkey),
+      previewIdentifiers: stackPreviewIds[stack.id] ?? [],
+      appsMap: appsMap,
     );
   }
 
@@ -304,9 +317,9 @@ class AppStackContainer extends HookConsumerWidget {
                   child: const Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      _SkeletonStackCard(),
+                      StackCardSkeleton(),
                       SizedBox(height: 10),
-                      _SkeletonStackCard(),
+                      StackCardSkeleton(),
                     ],
                   ),
                 ),
@@ -319,47 +332,42 @@ class AppStackContainer extends HookConsumerWidget {
   }
 }
 
-/// Section header with title and optional "See all" button
-class _StackSectionHeader extends StatelessWidget {
-  const _StackSectionHeader({required this.showSeeAll});
-
-  final bool showSeeAll;
-
+/// "See more" card that navigates to AllStacksScreen
+class _SeeMoreCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 0, 6, 8),
-      child: Row(
-        children: [
-          Text('App Stacks', style: context.textTheme.titleLarge),
-          const Spacer(),
-          if (showSeeAll)
-            TextButton(
-              onPressed: () {
-                final segments = GoRouterState.of(context).uri.pathSegments;
-                final first = segments.isNotEmpty ? segments.first : 'search';
-                context.push('/$first/stacks');
-              },
-              style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                visualDensity: VisualDensity.compact,
-              ),
-              child: Text(
-                'See all',
-                style: context.textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-              ),
+    return GestureDetector(
+      onTap: () {
+        final segments = GoRouterState.of(context).uri.pathSegments;
+        final first = segments.isNotEmpty ? segments.first : 'search';
+        context.push('/$first/stacks');
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
+            width: 1,
+          ),
+        ),
+        padding: const EdgeInsets.all(12),
+        child: Center(
+          child: Text(
+            'See more',
+            style: context.textTheme.titleMedium?.copyWith(
+              color: Theme.of(context).colorScheme.primary,
             ),
-        ],
+          ),
+        ),
       ),
     );
   }
 }
 
 /// Skeleton card for loading state
-class _SkeletonStackCard extends StatelessWidget {
-  const _SkeletonStackCard();
+class StackCardSkeleton extends StatelessWidget {
+  const StackCardSkeleton({super.key});
 
   @override
   Widget build(BuildContext context) {
