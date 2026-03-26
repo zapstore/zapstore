@@ -554,7 +554,7 @@ Future<PayInvoiceResult> _executeZapPayment(
 
   final result = await command.execute(
     connectionUri: nwcString,
-    ref: ref,
+    reader: ref.read(storageNotifierProvider.notifier),
     timeout: const Duration(seconds: 30),
   );
 
