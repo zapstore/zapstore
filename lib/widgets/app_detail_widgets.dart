@@ -64,6 +64,32 @@ class ReleaseNotes extends StatelessWidget {
   }
 }
 
+/// Multi-line skeleton shown while release notes are loading
+class ReleaseNotesSkeleton extends StatelessWidget {
+  const ReleaseNotesSkeleton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (int i = 0; i < 4; i++)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: SizedBox(
+                height: 14,
+                width: i == 3 ? 160 : double.infinity,
+                child: buildGradientLoader(context),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 /// Row of social action buttons (zap, bookmark, app stack, share)
 class SocialActionsRow extends HookConsumerWidget {
   const SocialActionsRow({super.key, required this.app, required this.author});
