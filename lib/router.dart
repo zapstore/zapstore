@@ -6,6 +6,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/screens/main_scaffold.dart';
 import 'package:zapstore/screens/app_detail_screen.dart';
+import 'package:zapstore/screens/all_stacks_screen.dart';
 import 'package:zapstore/screens/app_stack_screen.dart';
 import 'package:zapstore/screens/user_screen.dart';
 import 'package:zapstore/screens/search_screen.dart';
@@ -84,6 +85,19 @@ GoRoute _stackDetailRoute() {
   );
 }
 
+/// Helper to build all-stacks route
+GoRoute _allStacksRoute() {
+  return GoRoute(
+    path: 'stacks',
+    pageBuilder: (context, state) {
+      return _noTransitionPage(
+        state: state,
+        child: const AllStacksScreen(),
+      );
+    },
+  );
+}
+
 /// Helper to build user route
 GoRoute _userRoute() {
   return GoRoute(
@@ -123,7 +137,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                   state: state,
                   child: const SearchScreen(),
                 ),
-                routes: [_appDetailRoute(), _stackDetailRoute(), _userRoute()],
+                routes: [_appDetailRoute(), _stackDetailRoute(), _allStacksRoute(), _userRoute()],
               ),
             ],
           ),
@@ -136,7 +150,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                   state: state,
                   child: const UpdatesScreen(),
                 ),
-                routes: [_appDetailRoute(), _stackDetailRoute(), _userRoute()],
+                routes: [_appDetailRoute(), _stackDetailRoute(), _allStacksRoute(), _userRoute()],
               ),
             ],
           ),
@@ -149,7 +163,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                   state: state,
                   child: const ProfileScreen(),
                 ),
-                routes: [_appDetailRoute(), _stackDetailRoute(), _userRoute()],
+                routes: [_appDetailRoute(), _stackDetailRoute(), _allStacksRoute(), _userRoute()],
               ),
             ],
           ),

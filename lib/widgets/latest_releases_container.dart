@@ -294,7 +294,7 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
   }
 
   final Ref ref;
-  static const int _pageSize = 10;
+  static const int _pageSize = 5;
   ProviderSubscription<StorageState<App>>? _sub;
   // We keep a fixed live head window from query(); older pages are appended
 

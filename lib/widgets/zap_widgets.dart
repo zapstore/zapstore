@@ -416,7 +416,7 @@ class ZapAmountDialog extends HookConsumerWidget {
                         if (signer == null) {
                           signer = Bip340PrivateKeySigner(
                             Utils.generateRandomHex64(),
-                            ref.ref,
+                            ref.asRef,
                           );
                           await signer.signIn(registerSigner: false);
                         }
@@ -456,7 +456,7 @@ class ZapAmountDialog extends HookConsumerWidget {
                           await _executeZapPayment(
                             signedZapRequest,
                             nwcString,
-                            ref.ref,
+                            ref.asRef,
                           );
                           if (toastContext != null && toastContext.mounted) {
                             toastContext.showInfo('⚡ Zap sent! $amount sats');
@@ -690,7 +690,7 @@ class NWCZapDialog extends HookConsumerWidget {
               try {
                 await secureStorage.setNWCString(nwcString.trim());
                 ref.invalidate(hasNwcStringProvider);
-                await _executeZapPayment(signedZapRequest, nwcString, ref.ref);
+                await _executeZapPayment(signedZapRequest, nwcString, ref.asRef);
                 if (toastContext != null && toastContext.mounted) {
                   toastContext.showInfo('⚡ Zap sent! $amount sats');
                 }

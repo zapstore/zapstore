@@ -61,7 +61,7 @@ extension AppExt on App {
 }
 
 extension WidgetRefExt on WidgetRef {
-  Ref get ref => read(Provider((ref) => ref));
+  Ref get asRef => read(Provider((ref) => ref));
 }
 
 /// Extension to handle both old and new format certificate hashes

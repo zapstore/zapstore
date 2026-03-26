@@ -1,9 +1,9 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
+import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
-import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 import '../utils/extensions.dart';
@@ -18,21 +18,21 @@ const int _kInitialStacks = 6;
 const int _kBatchSize = 6;
 
 /// Get the raw `a` tag values from the stack's event (available immediately)
-Set<String> _getRawAppTagValues(AppStack stack) {
+Set<String> getRawAppTagValues(AppStack stack) {
   return stack.event.getTagSetValues('a');
 }
 
 /// Extract just the d-tag (identifier) from a full addressable id
-String? _extractIdentifier(String addressableId) {
+String? extractStackIdentifier(String addressableId) {
   final parts = addressableId.split(':');
   return parts.length >= 3 ? parts.sublist(2).join(':') : null;
 }
 
 /// Helper to compute preview app identifiers for a stack (3 apps max)
-List<String> _getPreviewIdentifiers(AppStack stack) {
-  final rawTags = _getRawAppTagValues(stack).toList()
+List<String> getPreviewIdentifiers(AppStack stack) {
+  final rawTags = getRawAppTagValues(stack).toList()
     ..shuffle(Random(stack.id.hashCode));
-  return rawTags.take(3).map(_extractIdentifier).whereType<String>().toList();
+  return rawTags.take(3).map(extractStackIdentifier).whereType<String>().toList();
 }
 
 /// Sort app stacks: franzap/following first, then by recency
@@ -90,7 +90,13 @@ class AppStackContainer extends HookConsumerWidget {
     final visibleCount = useState(_kInitialStacks);
 
     if (showSkeleton) {
-      return _buildSkeleton(context);
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _StackSectionHeader(showSeeAll: false),
+          _buildSkeleton(context),
+        ],
+      );
     }
 
     final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
@@ -136,7 +142,13 @@ class AppStackContainer extends HookConsumerWidget {
     };
 
     if (allStacks.isEmpty) {
-      return _buildSkeleton(context);
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _StackSectionHeader(showSeeAll: false),
+          _buildSkeleton(context),
+        ],
+      );
     }
 
     // Sort stacks
@@ -174,7 +186,7 @@ class AppStackContainer extends HookConsumerWidget {
     final allPreviewIdentifiers = <String>{};
     final stackPreviewIds = <String, List<String>>{};
     for (final stack in displayedStacks) {
-      final ids = _getPreviewIdentifiers(stack);
+      final ids = getPreviewIdentifiers(stack);
       stackPreviewIds[stack.id] = ids;
       allPreviewIdentifiers.addAll(ids);
     }
@@ -219,59 +231,58 @@ class AppStackContainer extends HookConsumerWidget {
     // 2-row horizontal scroll layout
     final numColumns = (displayedStacks.length + 1) ~/ 2;
 
-    return SingleChildScrollView(
-      controller: scrollController,
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.only(left: 12, right: 12),
-      clipBehavior: Clip.none,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          for (int col = 0; col < numColumns; col++)
-            Padding(
-              padding: const EdgeInsets.only(right: 10),
-              child: SizedBox(
-                width: 160,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Top item
-                    if (col * 2 < displayedStacks.length)
-                      _StackCard(
-                        stack: displayedStacks[col * 2],
-                        author:
-                            authorsMap[displayedStacks[col * 2].event.pubkey],
-                        isAuthorLoading: isAuthorLoading(
-                          displayedStacks[col * 2].event.pubkey,
-                        ),
-                        previewIdentifiers:
-                            stackPreviewIds[displayedStacks[col * 2].id] ?? [],
-                        appsMap: appsMap,
-                      ),
-                    // Bottom item
-                    if (col * 2 + 1 < displayedStacks.length) ...[
-                      const SizedBox(height: 10),
-                      _StackCard(
-                        stack: displayedStacks[col * 2 + 1],
-                        author:
-                            authorsMap[displayedStacks[col * 2 + 1]
-                                .event
-                                .pubkey],
-                        isAuthorLoading: isAuthorLoading(
-                          displayedStacks[col * 2 + 1].event.pubkey,
-                        ),
-                        previewIdentifiers:
-                            stackPreviewIds[displayedStacks[col * 2 + 1].id] ??
-                            [],
-                        appsMap: appsMap,
-                      ),
-                    ],
-                  ],
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _StackSectionHeader(showSeeAll: sortedStacks.length > _kInitialStacks),
+        SingleChildScrollView(
+          controller: scrollController,
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.only(left: 12, right: 12),
+          clipBehavior: Clip.none,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (int col = 0; col < numColumns; col++)
+                Padding(
+                  padding: const EdgeInsets.only(right: 10),
+                  child: SizedBox(
+                    width: 160,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (col * 2 < displayedStacks.length)
+                          StackCard(
+                            stack: displayedStacks[col * 2],
+                            author: authorsMap[displayedStacks[col * 2].event.pubkey],
+                            isAuthorLoading: isAuthorLoading(
+                              displayedStacks[col * 2].event.pubkey,
+                            ),
+                            previewIdentifiers:
+                                stackPreviewIds[displayedStacks[col * 2].id] ?? [],
+                            appsMap: appsMap,
+                          ),
+                        if (col * 2 + 1 < displayedStacks.length) ...[
+                          const SizedBox(height: 10),
+                          StackCard(
+                            stack: displayedStacks[col * 2 + 1],
+                            author: authorsMap[displayedStacks[col * 2 + 1].event.pubkey],
+                            isAuthorLoading: isAuthorLoading(
+                              displayedStacks[col * 2 + 1].event.pubkey,
+                            ),
+                            previewIdentifiers:
+                                stackPreviewIds[displayedStacks[col * 2 + 1].id] ?? [],
+                            appsMap: appsMap,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-            ),
-        ],
-      ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -303,6 +314,44 @@ class AppStackContainer extends HookConsumerWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Section header with title and optional "See all" button
+class _StackSectionHeader extends StatelessWidget {
+  const _StackSectionHeader({required this.showSeeAll});
+
+  final bool showSeeAll;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 0, 6, 8),
+      child: Row(
+        children: [
+          Text('App Stacks', style: context.textTheme.titleLarge),
+          const Spacer(),
+          if (showSeeAll)
+            TextButton(
+              onPressed: () {
+                final segments = GoRouterState.of(context).uri.pathSegments;
+                final first = segments.isNotEmpty ? segments.first : 'search';
+                context.push('/$first/stacks');
+              },
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                visualDensity: VisualDensity.compact,
+              ),
+              child: Text(
+                'See all',
+                style: context.textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -357,8 +406,9 @@ class _SkeletonStackCard extends StatelessWidget {
 }
 
 /// Individual stack card with vertical layout
-class _StackCard extends StatelessWidget {
-  const _StackCard({
+class StackCard extends StatelessWidget {
+  const StackCard({
+    super.key,
     required this.stack,
     required this.author,
     required this.previewIdentifiers,
@@ -374,7 +424,7 @@ class _StackCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final totalApps = _getRawAppTagValues(stack).length;
+    final totalApps = getRawAppTagValues(stack).length;
 
     // Resolve preview apps from the pre-loaded map
     final previewApps = previewIdentifiers
