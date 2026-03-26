@@ -703,11 +703,10 @@ class _DebugMessagesSection extends HookConsumerWidget {
                                 if (relay.lastError != null) ...[
                                   const SizedBox(height: 2),
                                   Text(
-                                    relay.lastError!,
-                                    style: const TextStyle(
+                                    _humanizeRelayError(relay.lastError!),
+                                    style: TextStyle(
                                       fontSize: 10,
-                                      color: Colors.white,
-                                      fontFamily: 'monospace',
+                                      color: Colors.orange.shade300,
                                     ),
                                   ),
                                 ],
@@ -1699,4 +1698,24 @@ class _AboutSection extends ConsumerWidget {
       ),
     );
   }
+}
+
+String _humanizeRelayError(String raw) {
+  final lower = raw.toLowerCase();
+  if (lower.contains('timeoutexception') || lower.contains('future not completed')) {
+    return 'Connection timed out';
+  }
+  if (lower.contains('max retries exceeded')) {
+    return 'Failed after max retries';
+  }
+  if (lower.contains('connection refused') || lower.contains('econnrefused')) {
+    return 'Connection refused';
+  }
+  if (lower.contains('network') || lower.contains('socket')) {
+    return 'Network error';
+  }
+  if (lower.contains('ping timeout') || lower.contains('zombie')) {
+    return 'Connection lost (ping timeout)';
+  }
+  return raw.length > 60 ? '${raw.substring(0, 60)}…' : raw;
 }
