@@ -44,12 +44,8 @@ class AppDetailScreen extends HookConsumerWidget {
         },
         limit: 1,
         and: (a) => {
-          a.latestRelease.query(
-            and: (release) => {
-              release.latestMetadata.query(),
-              release.latestAsset.query(),
-            },
-          ),
+          a.latestAsset.query(),
+          a.latestRelease.query(),
         },
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
         subscriptionPrefix: 'app-detail-$appId',
@@ -66,12 +62,8 @@ class AppDetailScreen extends HookConsumerWidget {
         },
         limit: 1,
         and: (a) => {
-          a.latestRelease.query(
-            and: (release) => {
-              release.latestMetadata.query(),
-              release.latestAsset.query(),
-            },
-          ),
+          a.latestAsset.query(),
+          a.latestRelease.query(),
         },
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
         subscriptionPrefix: 'app-detail-$appId',
@@ -95,16 +87,15 @@ class AppDetailScreen extends HookConsumerWidget {
       },
     );
 
-    // Handle loading/error states when app not yet available
-    final isLoading = appState is StorageLoading;
     final app = appState.models.firstOrNull;
 
     if (appState case StorageError(:final exception)) {
       return _ErrorScaffold(message: exception.toString());
     }
 
-    // Show skeleton only if loading with no models yet
-    if (isLoading && app == null) {
+    if (app == null) {
+      // StorageLoading with no models yet: show skeleton
+      // StorageData with no models: app not found (handled by ref.listen pop)
       return const Scaffold(
         body: SafeArea(
           child: SingleChildScrollView(
@@ -115,11 +106,7 @@ class AppDetailScreen extends HookConsumerWidget {
       );
     }
 
-    return _AppDetailContent(
-      app: app,
-      appState: appState,
-      isLoading: isLoading,
-    );
+    return _AppDetailContent(app: app);
   }
 }
 
@@ -150,22 +137,12 @@ class _ErrorScaffold extends StatelessWidget {
 
 /// Internal widget that displays app details
 class _AppDetailContent extends HookConsumerWidget {
-  final App? app;
-  final StorageState<App> appState;
-  final bool isLoading;
+  final App app;
 
-  const _AppDetailContent({
-    required this.app,
-    required this.appState,
-    required this.isLoading,
-  });
+  const _AppDetailContent({required this.app});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final app = this.app;
-    if (app == null) {
-      return const _ErrorScaffold(message: 'App not found');
-    }
 
     final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
     final isSignedIn = signedInPubkey != null;
@@ -182,10 +159,7 @@ class _AppDetailContent extends HookConsumerWidget {
         subscriptionPrefix: 'app-detail-profile',
       ),
     );
-    final author = switch (authorState) {
-      StorageData(:final models) => models.firstOrNull,
-      _ => null,
-    };
+    final author = authorState.models.firstOrNull;
 
     final latestRelease = app.latestRelease.value;
     final latestMetadata = app.installable;
@@ -195,29 +169,6 @@ class _AppDetailContent extends HookConsumerWidget {
       installedPackageProvider(app.identifier),
     );
     final isInstalled = installedPackage != null;
-
-    // Show skeleton while relationships are loading
-    // Always show loading indicator here - relationships are still pending
-    if (latestRelease == null || latestMetadata == null) {
-      return Scaffold(
-        body: SafeArea(
-          child: Stack(
-            children: [
-              const SingleChildScrollView(
-                padding: EdgeInsets.only(top: 16, bottom: 80),
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 16),
-                  child: AppDetailSkeleton(),
-                ),
-              ),
-              InstallButton(app: app, release: latestRelease),
-              _buildFloatingMenu(context, ref, app, isInstalled, isSignedIn),
-              _buildLoadingIndicator(context),
-            ],
-          ),
-        ),
-      );
-    }
 
     return Scaffold(
       body: SafeArea(
@@ -235,7 +186,7 @@ class _AppDetailContent extends HookConsumerWidget {
                   ),
 
                   // Published by / Released at section
-                  if (app.isRelaySigned)
+                  if (app.isRelaySigned && latestMetadata != null)
                     Padding(
                       padding: const EdgeInsets.only(
                         left: 16,
@@ -322,98 +273,103 @@ class _AppDetailContent extends HookConsumerWidget {
                     ),
                   ),
 
-                  // Latest release section
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Container(
-                                height: 1,
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurface.withValues(alpha: 0.2),
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                              ),
-                              child: Text(
-                                'LATEST RELEASE',
-                                style: context.textTheme.labelLarge?.copyWith(
-                                  color: Theme.of(context).colorScheme.onSurface
-                                      .withValues(alpha: 0.85),
-                                  letterSpacing: 1.5,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            Expanded(
-                              child: Container(
-                                height: 1,
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurface.withValues(alpha: 0.2),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurface.withValues(alpha: 0.05),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
+                  // Latest release section — shown as soon as version is known
+                  if (latestMetadata != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 12),
+                          Row(
                             children: [
-                              Text(
-                                'Version:',
-                                style: context.textTheme.bodyMedium,
-                              ),
-                              Gap(4),
-                              Text(
-                                latestMetadata.version,
-                                style: context.textTheme.bodyMedium?.copyWith(
-                                  fontWeight: FontWeight.bold,
+                              Expanded(
+                                child: Container(
+                                  height: 1,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface.withValues(alpha: 0.2),
                                 ),
                               ),
-                              Gap(4),
-                              Text(
-                                '(${formatDate(latestRelease.createdAt)})',
-                                style: context.textTheme.bodyMedium?.copyWith(
-                                  color: Theme.of(context).colorScheme.onSurface
-                                      .withValues(alpha: 0.6),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                ),
+                                child: Text(
+                                  'LATEST RELEASE',
+                                  style: context.textTheme.labelLarge?.copyWith(
+                                    color: Theme.of(context).colorScheme.onSurface
+                                        .withValues(alpha: 0.85),
+                                    letterSpacing: 1.5,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              Expanded(
+                                child: Container(
+                                  height: 1,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface.withValues(alpha: 0.2),
                                 ),
                               ),
                             ],
                           ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 20),
-                          child: ReleaseNotes(release: latestRelease),
-                        ),
-                      ],
+                          const SizedBox(height: 16),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withValues(alpha: 0.05),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  'Version:',
+                                  style: context.textTheme.bodyMedium,
+                                ),
+                                Gap(4),
+                                Text(
+                                  latestMetadata.version,
+                                  style: context.textTheme.bodyMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                Gap(4),
+                                Text(
+                                  '(${formatDate(latestMetadata.createdAt)})',
+                                  style: context.textTheme.bodyMedium?.copyWith(
+                                    color: Theme.of(context).colorScheme.onSurface
+                                        .withValues(alpha: 0.6),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 20),
+                            child: latestRelease != null
+                                ? ReleaseNotes(release: latestRelease)
+                                : const ReleaseNotesSkeleton(),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
 
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: AppInfoTable(app: app, fileMetadata: latestMetadata),
-                  ),
+                  if (latestMetadata != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: AppInfoTable(app: app, fileMetadata: latestMetadata),
+                    ),
 
-                  CommentsSection(app: app, fileMetadata: latestMetadata),
+                  if (latestMetadata != null)
+                    CommentsSection(app: app, fileMetadata: latestMetadata),
 
                   // Debug section
                   if (showDebugSections)
@@ -433,57 +389,7 @@ class _AppDetailContent extends HookConsumerWidget {
             // Floating three-dot menu
             _buildFloatingMenu(context, ref, app, isInstalled, isSignedIn),
 
-            // Loading indicator while fetching more data
-            if (isLoading) _buildLoadingIndicator(context),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLoadingIndicator(BuildContext context) {
-    return Positioned(
-      top: 8,
-      left: 0,
-      right: 0,
-      child: Center(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: Theme.of(
-              context,
-            ).colorScheme.surface.withValues(alpha: 0.95),
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.1),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                width: 14,
-                height: 14,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Refreshing...',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.onSurface.withValues(alpha: 0.7),
-                ),
-              ),
-            ],
-          ),
         ),
       ),
     );

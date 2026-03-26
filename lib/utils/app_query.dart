@@ -7,8 +7,11 @@ import 'package:models/models.dart';
 /// This is the primary query path for app listings. Each SoftwareAsset carries
 /// version, versionCode, hash, urls, and platform — everything needed for
 /// app cards and update detection — and links directly to its App.
-AutoDisposeStateNotifierProvider<RequestNotifier<SoftwareAsset>,
-    StorageState<SoftwareAsset>> appAssetsQuery({
+AutoDisposeStateNotifierProvider<
+  RequestNotifier<SoftwareAsset>,
+  StorageState<SoftwareAsset>
+>
+appAssetsQuery({
   Set<String>? authors,
   Map<String, Set<String>>? tags,
   String? search,
@@ -25,7 +28,16 @@ AutoDisposeStateNotifierProvider<RequestNotifier<SoftwareAsset>,
     since: since,
     until: until,
     limit: limit,
-    and: (asset) => {asset.app.query(), asset.author.query()},
+    and: (asset) => {
+      asset.app.query(source: const LocalAndRemoteSource(stream: false)),
+      asset.author.query(
+        source: const LocalAndRemoteSource(
+          relays: {'vertex', 'social'},
+          cachedFor: Duration(hours: 2),
+          stream: false,
+        ),
+      ),
+    },
     source: source,
     subscriptionPrefix: subscriptionPrefix,
   );
@@ -36,8 +48,11 @@ AutoDisposeStateNotifierProvider<RequestNotifier<SoftwareAsset>,
 ///
 /// Same shape as [appAssetsQuery] but for legacy 1063-only apps.
 /// Delete this function when legacy 1063 support is fully removed.
-AutoDisposeStateNotifierProvider<RequestNotifier<FileMetadata>,
-    StorageState<FileMetadata>> legacyAppQuery({
+AutoDisposeStateNotifierProvider<
+  RequestNotifier<FileMetadata>,
+  StorageState<FileMetadata>
+>
+legacyAppQuery({
   Set<String>? authors,
   Map<String, Set<String>>? tags,
   String? search,
@@ -54,7 +69,15 @@ AutoDisposeStateNotifierProvider<RequestNotifier<FileMetadata>,
     since: since,
     until: until,
     limit: limit,
-    and: (fm) => {fm.app.query(), fm.author.query()},
+    and: (fm) => {
+      fm.app.query(source: const LocalAndRemoteSource(stream: false)),
+      fm.author.query(
+        source: const LocalAndRemoteSource(
+          cachedFor: Duration(hours: 2),
+          stream: false,
+        ),
+      ),
+    },
     source: source,
     subscriptionPrefix: subscriptionPrefix,
   );
@@ -104,7 +127,7 @@ Future<AssetFetchResult> fetchAppsByAsset(
     subscriptionPrefix: '$subscriptionPrefix-apps',
   );
 
-  await _loadAuthors(storage, apps, source, '$subscriptionPrefix-authors');
+  await _loadAuthors(storage, apps, '$subscriptionPrefix-authors');
 
   return AssetFetchResult(apps, assets.length);
 }
@@ -145,7 +168,7 @@ Future<AssetFetchResult> fetchLegacyAppsByMetadata(
     subscriptionPrefix: '$subscriptionPrefix-apps',
   );
 
-  await _loadAuthors(storage, apps, source, '$subscriptionPrefix-authors');
+  await _loadAuthors(storage, apps, '$subscriptionPrefix-authors');
 
   return AssetFetchResult(apps, metadatas.length);
 }
@@ -153,7 +176,6 @@ Future<AssetFetchResult> fetchLegacyAppsByMetadata(
 Future<void> _loadAuthors(
   StorageNotifier storage,
   List<App> apps,
-  Source? source,
   String subscriptionPrefix,
 ) async {
   if (apps.isEmpty) return;
@@ -164,7 +186,10 @@ Future<void> _loadAuthors(
   if (authorFilters.isEmpty) return;
   await storage.query(
     Request<Profile>(authorFilters),
-    source: source,
+    source: const LocalAndRemoteSource(
+      relays: {'vertex', 'social'},
+      cachedFor: Duration(hours: 2),
+    ),
     subscriptionPrefix: subscriptionPrefix,
   );
 }

@@ -34,12 +34,10 @@ extension AppExt on App {
       ref.read(packageManagerProvider.notifier).isInstalled(identifier);
 
   /// Resolved installable for the current platform.
-  /// Prefers direct SoftwareAsset (3063) via `latestAsset` relationship,
-  /// falls back to Release chain (1063).
+  /// Uses direct SoftwareAsset (3063) via `latestAsset`, or legacy
+  /// FileMetadata (1063) via `latestRelease` for apps not yet on 3063.
   Installable? get installable =>
-      latestAsset.value ??
-      latestRelease.value?.latestAsset.value ??
-      latestRelease.value?.latestMetadata.value;
+      latestAsset.value ?? latestRelease.value?.latestMetadata.value;
 
   /// Whether there is an update available for the installed app.
   /// Delegates to PackageManager (versionCode-only comparison).
@@ -65,8 +63,12 @@ extension WidgetRefExt on WidgetRef {
   Ref get asRef => read(Provider((ref) => ref));
 }
 
-/// Extension to get APK certificate hashes from either format.
+/// Extension adding event-level accessors to Installable implementations.
 extension InstallableExt on Installable {
+  /// Creation timestamp from the underlying Nostr event.
+  DateTime get createdAt => (this as Model<dynamic>).event.createdAt;
+
+
   /// Returns the primary APK certificate hash.
   /// SoftwareAsset: uses apkCertificateHashes. FileMetadata: uses apkSignatureHash.
   String? get certificateHash {
