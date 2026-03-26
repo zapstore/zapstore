@@ -130,10 +130,7 @@ class AppStackContainer extends HookConsumerWidget {
     final followingPubkeys =
         contactListState?.models.firstOrNull?.followingPubkeys;
 
-    final allStacks = switch (appStacksState) {
-      StorageData(:final models) => models.toList(),
-      _ => <AppStack>[],
-    };
+    final allStacks = appStacksState.models.toList();
 
     if (allStacks.isEmpty) {
       return _buildSkeleton(context);
