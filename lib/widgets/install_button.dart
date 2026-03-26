@@ -40,7 +40,7 @@ class InstallButton extends ConsumerWidget {
     final hasUpdate = app.hasUpdate;
     final hasDowngrade = app.hasDowngrade;
     final hasRelease = release != null;
-    final fileMetadata = app.latestFileMetadata;
+    final fileMetadata = app.installable;
 
     // Listen for errors to show toasts
     ref.listen(installOperationProvider(app.identifier), (prev, next) {
@@ -104,7 +104,7 @@ class InstallButton extends ConsumerWidget {
     required bool hasUpdate,
     required bool hasDowngrade,
     required bool hasRelease,
-    required FileMetadata? fileMetadata,
+    required Installable? fileMetadata,
     required double fontSize,
   }) {
     // Completed is a terminal "result" state and may linger for batch progress UX.
@@ -285,7 +285,7 @@ class InstallButton extends ConsumerWidget {
   }
 
   String? _formatTotalSizeMb() {
-    final sizeBytes = app.latestFileMetadata?.size;
+    final sizeBytes = app.installable?.size;
     if (sizeBytes == null || sizeBytes <= 0) return null;
     final mb = sizeBytes / (1024 * 1024);
     return '${mb.toStringAsFixed(1)} MB';
@@ -561,7 +561,7 @@ class InstallButton extends ConsumerWidget {
   Future<void> _startDownload(
     BuildContext context,
     WidgetRef ref,
-    FileMetadata fileMetadata,
+    Installable fileMetadata,
   ) async {
     final pm = ref.read(packageManagerProvider.notifier);
     await pm.startDownload(app.identifier, fileMetadata, displayName: app.name);

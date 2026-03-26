@@ -188,7 +188,7 @@ class _AppDetailContent extends HookConsumerWidget {
     };
 
     final latestRelease = app.latestRelease.value;
-    final latestMetadata = app.latestFileMetadata;
+    final latestMetadata = app.installable;
 
     // Check if app is installed for menu options
     final installedPackage = ref.watch(
@@ -391,7 +391,7 @@ class _AppDetailContent extends HookConsumerWidget {
                               ),
                               Gap(4),
                               Text(
-                                '(${formatDate(latestMetadata.createdAt)})',
+                                '(${formatDate(latestRelease.createdAt)})',
                                 style: context.textTheme.bodyMedium?.copyWith(
                                   color: Theme.of(context).colorScheme.onSurface
                                       .withValues(alpha: 0.6),

@@ -25,11 +25,11 @@ class UpdateAllRow extends ConsumerWidget {
         onPressed: () async {
           final pm = ref.read(packageManagerProvider.notifier);
           final items = allUpdates
-              .where((app) => app.latestFileMetadata != null)
+              .where((app) => app.installable != null)
               .map(
                 (app) => (
                   appId: app.identifier,
-                  target: app.latestFileMetadata!,
+                  target: app.installable!,
                   displayName: app.name,
                 ),
               )

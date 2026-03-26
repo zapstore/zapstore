@@ -382,7 +382,7 @@ class CategorizedUpdatesNotifier extends Notifier<CategorizedUpdates> {
 
     for (final app in installedApps) {
       final pkg = installedMap[app.identifier]!;
-      final latest = app.latestFileMetadata;
+      final latest = app.installable;
 
       // Determine if update available using versionCode (via PackageManager)
       final pm = ref.read(packageManagerProvider.notifier);

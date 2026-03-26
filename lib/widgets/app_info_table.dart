@@ -13,7 +13,7 @@ class AppInfoTable extends HookConsumerWidget {
   const AppInfoTable({super.key, required this.app, this.fileMetadata});
 
   final App app;
-  final FileMetadata? fileMetadata;
+  final Installable? fileMetadata;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

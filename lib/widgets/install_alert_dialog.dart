@@ -61,7 +61,7 @@ class InstallAlertDialog extends HookConsumerWidget {
                   '${app.name ?? app.identifier} will be installed from its original release location:',
               oneLine: false,
               showFullUrl: true,
-              url: app.latestFileMetadata!.urls.first,
+              url: app.installable!.urls.first,
               size: baseTextSize,
             ),
           ] else ...[

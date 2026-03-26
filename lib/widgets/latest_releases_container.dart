@@ -4,6 +4,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/services/updates_service.dart';
+import 'package:zapstore/utils/app_query.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'app_card.dart';
 
@@ -295,47 +296,34 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
 
   final Ref ref;
   static const int _pageSize = 5;
-  ProviderSubscription<StorageState<App>>? _sub;
-  // We keep a fixed live head window from query(); older pages are appended
+  ProviderSubscription<StorageState<SoftwareAsset>>? _sub;
 
   void _startQuery() {
     _sub?.close();
 
-    _sub = ref.listen<StorageState<App>>(
-      query<App>(
+    _sub = ref.listen<StorageState<SoftwareAsset>>(
+      appAssetsQuery(
         limit: _pageSize,
         tags: {
           '#f': {'android-arm64-v8a'},
         },
-        and: (app) => {
-          app.latestRelease.query(
-            source: const LocalAndRemoteSource(
-              relays: 'AppCatalog',
-              stream: false,
-            ),
-            and: (release) => {
-              release.latestMetadata.query(),
-              release.latestAsset.query(),
-            },
-          ),
-        },
-        // NOTE: It must stream=true
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: true),
         subscriptionPrefix: 'app-latest',
       ),
-      (previous, next) async {
-        // Always mirror storage state and ensure olderApps don't duplicate the live head
-        if (next is StorageData<App>) {
-          final liveIds = next.models.map((a) => a.id).toSet();
+      (previous, next) {
+        final appState = _appsFromAssetState(next);
+
+        if (appState is StorageData<App>) {
+          final liveIds = appState.models.map((a) => a.id).toSet();
           final filteredOlder = state.olderApps
               .where((a) => !liveIds.contains(a.id))
               .toList();
-          state = state.copyWith(storage: next, olderApps: filteredOlder);
+          state = state.copyWith(storage: appState, olderApps: filteredOlder);
         } else {
-          state = state.copyWith(storage: next);
+          state = state.copyWith(storage: appState);
         }
 
-        if (next is StorageError<App>) {
+        if (appState is StorageError<App>) {
           state = state.copyWith(isLoadingMore: false);
         }
       },
@@ -343,10 +331,31 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
     );
   }
 
-  /// Fetch authors for a page of apps (used during pagination)
-  /// Note: Profiles are now loaded reactively via `query<Profile>` in individual widgets
-  Future<void> _loadRelationshipsFor(List<App> appsPage) async {
-    // No-op: profiles are now loaded reactively via `query<Profile>` with caching
+  /// Derive a `StorageState<App>` from the SoftwareAsset query results.
+  StorageState<App> _appsFromAssetState(StorageState<SoftwareAsset> assetState) {
+    return switch (assetState) {
+      StorageLoading<SoftwareAsset>() => StorageLoading<App>(
+          _uniqueAppsFromAssets(assetState.models),
+        ),
+      StorageData<SoftwareAsset>(:final models) => StorageData<App>(
+          _uniqueAppsFromAssets(models),
+        ),
+      StorageError<SoftwareAsset>(:final exception) =>
+        StorageError<App>(const [], exception: exception),
+    };
+  }
+
+  /// Extract unique Apps from assets, preserving order (newest first).
+  List<App> _uniqueAppsFromAssets(List<SoftwareAsset> assets) {
+    final seen = <String>{};
+    final apps = <App>[];
+    for (final asset in assets) {
+      final app = asset.app.value;
+      if (app != null && seen.add(app.identifier)) {
+        apps.add(app);
+      }
+    }
+    return apps;
   }
 
   Future<void> loadMore() async {
@@ -362,68 +371,26 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
     state = state.copyWith(isLoadingMore: true);
 
     try {
-      // Fetch older apps
-      final olderPage = await ref.storage.query(
-        RequestFilter<App>(
-          until: oldest,
-          limit: _pageSize,
-          tags: {
-            '#f': {'android-arm64-v8a'},
-          },
-        ).toRequest(),
+      final result = await fetchAppsByAsset(
+        ref.storage,
+        tags: {
+          '#f': {'android-arm64-v8a'},
+        },
+        until: oldest,
+        limit: _pageSize,
         source: const LocalAndRemoteSource(stream: false),
         subscriptionPrefix: 'app-latest-older',
       );
 
-      if (olderPage.isNotEmpty) {
-        // Load relationships: releases and their file metadata (same relay group)
-        final releases = await ref.storage.query(
-          Request<Release>(
-            olderPage
-                .map((app) => app.latestRelease.req?.filters.firstOrNull)
-                .nonNulls
-                .toList(),
-          ),
-          source: const RemoteSource(stream: false),
-          subscriptionPrefix: 'app-latest-releases',
-        );
-
-        // Load file metadata for the releases (old format)
-        if (releases.isNotEmpty) {
-          await ref.storage.query(
-            Request<FileMetadata>(
-              releases
-                  .map((r) => r.latestMetadata.req?.filters.firstOrNull)
-                  .nonNulls
-                  .toList(),
-            ),
-            source: const RemoteSource(stream: false),
-            subscriptionPrefix: 'app-latest-metadata',
-          );
-          // Load software assets for the releases (new format)
-          await ref.storage.query(
-            Request<SoftwareAsset>(
-              releases
-                  .map((r) => r.latestAsset.req?.filters.firstOrNull)
-                  .nonNulls
-                  .toList(),
-            ),
-            source: const RemoteSource(stream: false),
-            subscriptionPrefix: 'app-latest-assets',
-          );
-        }
-
-        // Load release authors from different relay group (social)
-        await _loadRelationshipsFor(olderPage);
-
+      if (result.apps.isNotEmpty) {
         final existingIds = combined.map((a) => a.id).toSet();
-        final uniqueOlder = olderPage
+        final uniqueOlder = result.apps
             .where((a) => !existingIds.contains(a.id))
             .toList();
         state = state.copyWith(
           olderApps: [...state.olderApps, ...uniqueOlder],
           isLoadingMore: false,
-          hasMore: olderPage.length >= _pageSize,
+          hasMore: result.assetCount >= _pageSize,
         );
       } else {
         state = state.copyWith(isLoadingMore: false, hasMore: false);

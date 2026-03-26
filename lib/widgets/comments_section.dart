@@ -17,7 +17,7 @@ class CommentsSection extends HookConsumerWidget {
   const CommentsSection({super.key, required this.app, this.fileMetadata});
 
   final App app;
-  final FileMetadata? fileMetadata;
+  final Installable? fileMetadata;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -112,7 +112,7 @@ class _CommentsSectionLayout extends StatelessWidget {
   final Object? errorException;
   final Widget addCommentButton;
   final App? app;
-  final FileMetadata? fileMetadata;
+  final Installable? fileMetadata;
   final AppStack? stack;
 
   @override
@@ -247,7 +247,7 @@ class _ThreadedCommentCard extends HookConsumerWidget {
   final Comment comment;
   final int depth;
   final App? app;
-  final FileMetadata? fileMetadata;
+  final Installable? fileMetadata;
   final AppStack? stack;
 
   // Thread line colors for different depths
@@ -478,7 +478,7 @@ class _ThreadedCommentCard extends HookConsumerWidget {
 class _AddCommentButton extends ConsumerWidget {
   const _AddCommentButton({required this.fileMetadata, required this.app});
 
-  final FileMetadata fileMetadata;
+  final Installable fileMetadata;
   final App app;
 
   @override
@@ -547,7 +547,7 @@ class _AddStackCommentButton extends ConsumerWidget {
 class _CommentComposer extends HookConsumerWidget {
   const _CommentComposer({required this.fileMetadata, required this.app});
 
-  final FileMetadata fileMetadata;
+  final Installable fileMetadata;
   final App app;
 
   @override
@@ -701,7 +701,7 @@ class _ReplyComposer extends HookConsumerWidget {
 
   final Comment parentComment;
   final App? app;
-  final FileMetadata? fileMetadata;
+  final Installable? fileMetadata;
   final AppStack? stack;
 
   @override

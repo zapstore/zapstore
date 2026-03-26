@@ -277,7 +277,7 @@ class _ZappersListSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final metadataId = app.latestFileMetadata?.id;
+    final metadataId = app.installable?.id;
 
     // Query zaps on app (via #a tag)
     final zapsState = ref.watch(
@@ -925,7 +925,7 @@ class DebugVersionsSection extends HookConsumerWidget {
     WidgetRef ref,
     App app,
     Release release,
-    FileMetadata metadata,
+    Installable metadata,
   ) async {
     // Use PackageManager to start download
     final pm = ref.read(packageManagerProvider.notifier);
