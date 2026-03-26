@@ -8,7 +8,7 @@ import 'package:zapstore/theme.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/app_stack_container.dart';
 
-const int _kPageSize = 10;
+const int _kPageSize = 6;
 
 class StacksScreen extends HookConsumerWidget {
   const StacksScreen({super.key});
@@ -28,7 +28,7 @@ class StacksScreen extends HookConsumerWidget {
           '#f': {platform},
         },
         source: const LocalAndRemoteSource(relays: 'AppCatalog'),
-        subscriptionPrefix: 'app-all-stacks',
+        subscriptionPrefix: 'app-stacks',
         schemaFilter: appStackEventFilter,
       ),
     );

@@ -110,7 +110,7 @@ class LatestReleasesContainer extends HookConsumerWidget {
 
         const SizedBox(height: 8),
 
-        if (storage is StorageLoading<App> || storage.models.isEmpty)
+        if (storage is StorageLoading<App> && storage.models.isEmpty)
           Column(
             children: List.generate(
               3,
