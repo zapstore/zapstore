@@ -200,7 +200,7 @@ class _UserZapsList extends HookConsumerWidget {
       for (final entry in appTags.entries) {
         allAppTags[entry.key] = {...?allAppTags[entry.key], ...entry.value};
       }
-      final metadata = app.latestFileMetadata;
+      final metadata = app.installable;
       if (metadata != null) {
         metadataIds.add(metadata.id);
       }

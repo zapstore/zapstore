@@ -81,7 +81,7 @@ class RelevantWhoFollowContainer extends HookConsumerWidget {
     );
 
     // Also query zaps on the latest metadata if available
-    final latestMetadata = app.latestFileMetadata;
+    final latestMetadata = app.installable;
     final metadataZapsState = latestMetadata != null
         ? ref.watch(
             query<Zap>(

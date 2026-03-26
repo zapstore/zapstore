@@ -47,7 +47,7 @@ final class DummyPackageManager extends PackageManager {
     String filePath, {
     required String expectedHash,
     required int expectedSize,
-    required FileMetadata target,
+    required Installable target,
   }) async {
     // Mock: simulate install delay then add to installed
     await Future.delayed(const Duration(milliseconds: 500));

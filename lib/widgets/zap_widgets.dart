@@ -427,7 +427,7 @@ class ZapAmountDialog extends HookConsumerWidget {
                             : await secureStorage.getNWCString();
 
                         // Build zap request
-                        final latestMetadata = app.latestFileMetadata;
+                        final latestMetadata = app.installable;
                         final author = app.author.value;
 
                         if (latestMetadata == null || author == null) {
@@ -445,7 +445,7 @@ class ZapAmountDialog extends HookConsumerWidget {
                         if (comment.isNotEmpty) zapRequest.comment = comment;
                         zapRequest.linkProfileByPubkey(author.pubkey);
                         zapRequest.linkModel(app);
-                        zapRequest.linkModel(latestMetadata);
+                        zapRequest.linkModelById(latestMetadata.id);
                         zapRequest.relays = socialRelays;
 
                         final signedZapRequest = await zapRequest.signWith(

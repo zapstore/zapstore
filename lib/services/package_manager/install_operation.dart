@@ -21,8 +21,7 @@ const watchdogCheckInterval = Duration(seconds: 30);
 /// Represents an active install operation for an app.
 /// When there's no operation, the app simply has no entry in the operations map.
 sealed class InstallOperation {
-  /// The target file metadata being installed (works for both FileMetadata and SoftwareAsset)
-  final FileMetadata target;
+  final Installable target;
 
   const InstallOperation({required this.target});
 }

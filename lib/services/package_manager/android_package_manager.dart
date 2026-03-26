@@ -451,7 +451,7 @@ final class AndroidPackageManager extends PackageManager {
 
   /// Directly update installed package from target metadata.
   /// This ensures we don't depend on Android's package DB timing.
-  void _updateInstalledPackage(String appId, FileMetadata target) {
+  void _updateInstalledPackage(String appId, Installable target) {
     final existingPkg = state.installed[appId];
     final newPkg = PackageInfo(
       appId: appId,
@@ -482,7 +482,7 @@ final class AndroidPackageManager extends PackageManager {
     String filePath, {
     required String expectedHash,
     required int expectedSize,
-    required FileMetadata target,
+    required Installable target,
   }) async {
     // Permission is already checked by _proceedToInstall in base class
     // No need for redundant _ensureInstallPermission() call here

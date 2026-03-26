@@ -28,22 +28,22 @@ class VersionPillWidget extends HookConsumerWidget {
       packageManagerProvider.select((s) => s.installed[app.identifier]),
     );
 
-    // Watch app with relationships to ensure Release and FileMetadata are loaded
+    // Watch app with relationships from local cache only — parent screens are
+    // responsible for loading data from remote.
     final appState = ref.watch(
       model<App>(
         app,
         and: (a) => {
+          a.latestAsset.query(source: const LocalSource()),
           a.latestRelease.query(
-            source: const LocalAndRemoteSource(
-              relays: 'AppCatalog',
-              stream: false,
-            ),
+            source: const LocalSource(),
             and: (release) => {
-              release.latestMetadata.query(),
-              release.latestAsset.query(),
+              release.latestMetadata.query(source: const LocalSource()),
+              release.latestAsset.query(source: const LocalSource()),
             },
           ),
         },
+        source: const LocalSource(),
         subscriptionPrefix: 'app-version-pill',
       ),
     );
@@ -58,8 +58,8 @@ class VersionPillWidget extends HookConsumerWidget {
     final installedPackage = loadedApp.installedPackage;
     final installedVersion = installedPackage?.version;
     final installedVersionCode = installedPackage?.versionCode;
-    final availableVersion = loadedApp.latestFileMetadata?.version;
-    final availableVersionCode = loadedApp.latestFileMetadata?.versionCode;
+    final availableVersion = loadedApp.installable?.version;
+    final availableVersionCode = loadedApp.installable?.versionCode;
     final isInstalled = loadedApp.isInstalled;
     final updateAvailable = loadedApp.hasUpdate;
     final downgradeAvailable = loadedApp.hasDowngrade;

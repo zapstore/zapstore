@@ -33,17 +33,18 @@ extension AppExt on App {
   bool get isInstalled =>
       ref.read(packageManagerProvider.notifier).isInstalled(identifier);
 
-  /// Latest file metadata associated to the latest release
-  /// Prefers SoftwareAsset (new format) over FileMetadata (old format)
-  /// Note: assumes latest metadata has been loaded for the current platform
-  FileMetadata? get latestFileMetadata =>
+  /// Resolved installable for the current platform.
+  /// Prefers direct SoftwareAsset (3063) via `latestAsset` relationship,
+  /// falls back to Release chain (1063).
+  Installable? get installable =>
+      latestAsset.value ??
       latestRelease.value?.latestAsset.value ??
       latestRelease.value?.latestMetadata.value;
 
   /// Whether there is an update available for the installed app.
   /// Delegates to PackageManager (versionCode-only comparison).
   bool get hasUpdate {
-    final latest = latestFileMetadata;
+    final latest = installable;
     if (latest == null) return false;
     return ref.read(packageManagerProvider.notifier).hasUpdate(identifier, latest);
   }
@@ -51,7 +52,7 @@ extension AppExt on App {
   /// Whether the relay version would be a downgrade from the installed version.
   /// Delegates to PackageManager (versionCode-only comparison).
   bool get hasDowngrade {
-    final latest = latestFileMetadata;
+    final latest = installable;
     if (latest == null) return false;
     return ref.read(packageManagerProvider.notifier).hasDowngrade(identifier, latest);
   }
@@ -64,29 +65,24 @@ extension WidgetRefExt on WidgetRef {
   Ref get asRef => read(Provider((ref) => ref));
 }
 
-/// Extension to handle both old and new format certificate hashes
-extension FileMetadataExt on FileMetadata {
-  /// Returns the APK certificate hash, checking new format first then old
-  /// New format (SoftwareAsset): apkCertificateHashes (Set)
-  /// Old format (FileMetadata): apkSignatureHash (String?)
+/// Extension to get APK certificate hashes from either format.
+extension InstallableExt on Installable {
+  /// Returns the primary APK certificate hash.
+  /// SoftwareAsset: uses apkCertificateHashes. FileMetadata: uses apkSignatureHash.
   String? get certificateHash {
-    // Try new format first (SoftwareAsset has apkCertificateHashes)
     if (this is SoftwareAsset) {
       final hashes = (this as SoftwareAsset).apkCertificateHashes;
       if (hashes.isNotEmpty) return hashes.first;
     }
-    // Fall back to old format
     return apkSignatureHash;
   }
 
-  /// Returns all APK certificate hashes
+  /// Returns all APK certificate hashes.
   Set<String> get certificateHashes {
-    // Try new format first
     if (this is SoftwareAsset) {
       final hashes = (this as SoftwareAsset).apkCertificateHashes;
       if (hashes.isNotEmpty) return hashes;
     }
-    // Fall back to old format (single hash as set)
     return apkSignatureHash != null ? {apkSignatureHash!} : {};
   }
 }

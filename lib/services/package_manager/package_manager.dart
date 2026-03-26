@@ -331,7 +331,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
   /// [displayName] is shown in system notification (defaults to appId if null)
   Future<bool> startDownload(
     String appId,
-    FileMetadata target, {
+    Installable target, {
     String? displayName,
   }) async {
     await _ensureDownloaderReady();
@@ -376,7 +376,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
   /// Queue multiple downloads at once - staggered to prevent UI flood.
   /// This is the primary method for "Update All" functionality.
   Future<void> queueDownloads(
-    List<({String appId, FileMetadata target, String? displayName})> items,
+    List<({String appId, Installable target, String? displayName})> items,
   ) async {
     await _ensureDownloaderReady();
 
@@ -671,7 +671,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
   /// Advances the specified app AND all other apps awaiting permission.
   Future<void> onPermissionGranted(String appId) async {
     // Collect all apps that need to advance (AwaitingPermission or permissionDenied failures)
-    final toAdvance = <String, (FileMetadata target, String filePath)>{};
+    final toAdvance = <String, (Installable target, String filePath)>{};
 
     for (final entry in state.operations.entries) {
       final id = entry.key;
@@ -708,7 +708,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
 
   Future<void> _startDownloadTask(
     String appId,
-    FileMetadata target,
+    Installable target,
     String downloadUrl, {
     String? displayName,
     bool isCdnRetry = false,
@@ -932,7 +932,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
 
   Future<void> _handleDownloadComplete(
     String appId,
-    FileMetadata target,
+    Installable target,
     DownloadTask task,
   ) async {
     // Remove from active downloads
@@ -1050,7 +1050,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
   /// Check permission and proceed to install
   Future<void> _proceedToInstall(
     String appId,
-    FileMetadata target,
+    Installable target,
     String filePath,
   ) async {
     if (!await hasPermission()) {
@@ -1085,7 +1085,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
   }
 
   /// Add app to install queue and trigger processing.
-  void _addToInstallQueue(String appId, FileMetadata target, String filePath) {
+  void _addToInstallQueue(String appId, Installable target, String filePath) {
     if (!installQueue.contains(appId)) {
       installQueue.add(appId);
     }
@@ -1096,7 +1096,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
   /// Perform the actual installation
   Future<void> _performInstall(
     String appId,
-    FileMetadata target,
+    Installable target,
     String filePath,
   ) async {
     try {
@@ -1210,7 +1210,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
     String appId,
     TaskRecord record,
     DownloadTask task,
-    FileMetadata fileMetadata,
+    Installable fileMetadata,
   ) async {
     switch (record.status) {
       case TaskStatus.complete:
@@ -1319,13 +1319,23 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
     return (metaData.isNotEmpty ? metaData : null, null, false);
   }
 
-  Future<FileMetadata?> _loadFileMetadata(
+  Future<Installable?> _loadFileMetadata(
     String? metadataId,
     String filename,
   ) async {
     final storage = ref.read(storageNotifierProvider.notifier);
 
     if (metadataId != null) {
+      // Try SoftwareAsset (3063) first
+      try {
+        final assets = await storage.query(
+          RequestFilter<SoftwareAsset>(ids: {metadataId}).toRequest(),
+          subscriptionPrefix: 'app-file-metadata-asset',
+        );
+        if (assets.isNotEmpty) return assets.first;
+      } catch (_) {}
+
+      // Fall back to FileMetadata (1063)
       try {
         final results = await storage.query(
           RequestFilter<FileMetadata>(ids: {metadataId}).toRequest(),
@@ -1338,6 +1348,14 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
     final dotIndex = filename.lastIndexOf('.');
     final hash = dotIndex > 0 ? filename.substring(0, dotIndex) : filename;
     if (hash.isNotEmpty) {
+      try {
+        final assets = await storage.query(
+          RequestFilter<SoftwareAsset>(search: hash).toRequest(),
+          subscriptionPrefix: 'app-file-metadata-asset-search',
+        );
+        if (assets.isNotEmpty) return assets.first;
+      } catch (_) {}
+
       try {
         final results = await storage.query(
           RequestFilter<FileMetadata>(search: hash).toRequest(),
@@ -1363,7 +1381,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
     String filePath, {
     required String expectedHash,
     required int expectedSize,
-    required FileMetadata target,
+    required Installable target,
   });
 
   Future<void> uninstall(String appId);
@@ -1386,7 +1404,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
   ///
   /// Comparison uses Android versionCode only. Returns false when either
   /// versionCode is unavailable or the app is not installed.
-  bool hasUpdate(String appId, FileMetadata latest) {
+  bool hasUpdate(String appId, Installable latest) {
     final installed = state.installed[appId];
     if (installed == null) return false;
     final installedCode = installed.versionCode;
@@ -1399,7 +1417,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
   ///
   /// Comparison uses Android versionCode only. Returns false when either
   /// versionCode is unavailable or the app is not installed.
-  bool hasDowngrade(String appId, FileMetadata latest) {
+  bool hasDowngrade(String appId, Installable latest) {
     final installed = state.installed[appId];
     if (installed == null) return false;
     final installedCode = installed.versionCode;

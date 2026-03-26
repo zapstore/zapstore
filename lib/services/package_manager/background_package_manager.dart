@@ -22,7 +22,7 @@ final class BackgroundPackageManager extends PackageManager {
     String filePath, {
     required String expectedHash,
     required int expectedSize,
-    required FileMetadata target,
+    required Installable target,
   }) {
     throw UnsupportedError('Install not supported in background');
   }
