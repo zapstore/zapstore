@@ -348,8 +348,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
       }
     }
 
-    final downloadUrl = target.urls.firstOrNull;
-    if (downloadUrl == null || downloadUrl.isEmpty) {
+    if (target.urls.firstOrNull == null || target.urls.firstOrNull!.isEmpty) {
       setOperation(
         appId,
         OperationFailed(
@@ -387,9 +386,8 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
     // Queue items with staggered delays to prevent UI flood
     for (var i = 0; i < toQueue.length; i++) {
       final item = toQueue[i];
-      final downloadUrl = item.target.urls.firstOrNull;
-
-      if (downloadUrl == null || downloadUrl.isEmpty) {
+      if (item.target.urls.firstOrNull == null ||
+          item.target.urls.firstOrNull!.isEmpty) {
         setOperation(
           item.appId,
           OperationFailed(
@@ -706,6 +704,18 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
   // DOWNLOAD INTERNALS
   // ═══════════════════════════════════════════════════════════════════════════
 
+  /// Returns the effective download URL for [target].
+  ///
+  /// If the first URL is already on cdn.zapstore.dev it is used as-is.
+  /// Otherwise we route through the CDN redirect endpoint so that downloads
+  /// are tracked regardless of the original host (e.g. GitHub releases).
+  String? _resolveDownloadUrl(Installable target) {
+    final first = target.urls.firstOrNull;
+    if (first == null || first.isEmpty) return null;
+    if (Uri.tryParse(first)?.host == 'cdn.zapstore.dev') return first;
+    return 'https://cdn.zapstore.dev/${target.hash}?redirect=true';
+  }
+
   Future<void> _startDownloadTask(
     String appId,
     Installable target,
@@ -978,7 +988,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
           continue;
         }
 
-        final downloadUrl = op.target.urls.firstOrNull;
+        final downloadUrl = _resolveDownloadUrl(op.target);
         if (downloadUrl == null) {
           setOperation(
             appId,
