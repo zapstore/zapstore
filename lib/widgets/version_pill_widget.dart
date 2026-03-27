@@ -44,7 +44,7 @@ class VersionPillWidget extends HookConsumerWidget {
           ),
         },
         source: const LocalSource(),
-        subscriptionPrefix: 'app-version-pill',
+        subscriptionPrefix: 'app-version-pill-${app.identifier}',
       ),
     );
 
