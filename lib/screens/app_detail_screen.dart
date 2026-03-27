@@ -45,7 +45,9 @@ class AppDetailScreen extends HookConsumerWidget {
         limit: 1,
         and: (a) => {
           a.latestAsset.query(),
-          a.latestRelease.query(),
+          a.latestRelease.query(
+            and: (release) => {release.latestMetadata.query()},
+          ),
         },
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
         subscriptionPrefix: 'app-detail-$appId',
@@ -63,7 +65,9 @@ class AppDetailScreen extends HookConsumerWidget {
         limit: 1,
         and: (a) => {
           a.latestAsset.query(),
-          a.latestRelease.query(),
+          a.latestRelease.query(
+            and: (release) => {release.latestMetadata.query()},
+          ),
         },
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
         subscriptionPrefix: 'app-detail-$appId',

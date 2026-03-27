@@ -5,7 +5,7 @@ import 'package:models/models.dart';
 
 import '../widgets/app_stack_container.dart';
 import '../widgets/latest_releases_container.dart';
-import '../widgets/app_card.dart';
+import '../widgets/search_app_card.dart';
 import '../utils/extensions.dart';
 import '../main.dart';
 import '../services/package_manager/package_manager.dart';
@@ -40,8 +40,6 @@ class SearchScreen extends HookConsumerWidget {
     }, [searchFocusNode]);
 
     final trimmedQuery = searchQuery.value.trim();
-
-    // Authors are now loaded via profileProvider in individual AppCards with caching
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -157,17 +155,9 @@ class _SearchResultsSection extends HookConsumerWidget {
     final searchResultsState = ref.watch(
       query<App>(
         search: searchQuery,
-        limit: 20,
+        limit: 10,
         tags: {
           '#f': {platform},
-        },
-        and: (app) => {
-          app.latestRelease.query(
-            and: (release) => {
-              release.latestMetadata.query(),
-              release.latestAsset.query(),
-            },
-          ),
         },
         // Force the search to hit the default relay group (relay.zapstore.dev)
         // so a connection appears in Debug Info when searching.
@@ -203,7 +193,10 @@ class _SearchResultsSection extends HookConsumerWidget {
       children: [
         if (isSearching)
           Column(
-            children: List.generate(2, (_) => const AppCard(isLoading: true)),
+            children: List.generate(
+              2,
+              (_) => const SearchAppCard(isLoading: true),
+            ),
           )
         else if (error != null)
           Padding(
@@ -248,12 +241,7 @@ class _SearchResultsSection extends HookConsumerWidget {
           )
         else
           Column(
-            children: [
-              // App Cards - authors loaded via profileProvider in AppCard
-              ...results.map(
-                (app) => AppCard(app: app, showUpdateArrow: app.hasUpdate),
-              ),
-            ],
+            children: results.map((app) => SearchAppCard(app: app)).toList(),
           ),
         const SizedBox(height: 24),
       ],
