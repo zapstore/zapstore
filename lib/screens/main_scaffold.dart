@@ -151,12 +151,9 @@ class MobileScaffold extends ConsumerWidget {
             ),
           ],
         ),
-        child: MediaQuery.removePadding(
-          context: context,
-          removeBottom: true,
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Theme(
+        child: SafeArea(
+          top: false,
+          child: Theme(
               data: Theme.of(context).copyWith(
                 splashFactory: NoSplash.splashFactory,
                 highlightColor: Colors.transparent,
@@ -294,7 +291,6 @@ class MobileScaffold extends ConsumerWidget {
             ),
           ),
         ),
-      ),
     );
   }
 }
