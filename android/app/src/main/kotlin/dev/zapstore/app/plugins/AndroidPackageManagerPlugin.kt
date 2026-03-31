@@ -819,22 +819,37 @@ class AndroidPackageManagerPlugin :
         var session: PackageInstaller.Session? = null
 
         try {
-            // Step 2: Check if this is an update
+            // Step 2: Read the real package name from the APK manifest.
+            // The caller passes the Nostr event's app identifier, which is our event routing key.
+            // setAppPackageName() must receive the actual manifest package name or Android will
+            // reject the install with INSTALL_FAILED_INVALID_APK if they diverge.
+            val apkPackageName = try {
+                context.packageManager.getPackageArchiveInfo(apkFile.absolutePath, 0)?.packageName
+            } catch (_: Exception) {
+                null
+            }
+            if (apkPackageName != null && apkPackageName != packageName) {
+                Log.w(TAG, "APK package name '$apkPackageName' differs from event identifier '$packageName'")
+            }
+
+            // Step 3: Check if this is an update
             val isUpdate =
                     try {
-                        context.packageManager.getPackageInfo(packageName, 0)
+                        context.packageManager.getPackageInfo(apkPackageName ?: packageName, 0)
                         true
                     } catch (_: PackageManager.NameNotFoundException) {
                         false
                     }
 
-            // Step 3: Abandon any existing session and create new one
+            // Step 4: Abandon any existing session and create new one
             abandonExistingSession(packageName)
 
             val sessionParams =
                     PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
                             .apply {
-                                setAppPackageName(packageName)
+                                // Use the APK-derived name for Android's install validation;
+                                // fall back to the Dart-provided name if parsing failed.
+                                setAppPackageName(apkPackageName ?: packageName)
                                 setInstallLocation(
                                         android.content.pm.PackageInfo.INSTALL_LOCATION_AUTO
                                 )
@@ -856,7 +871,7 @@ class AndroidPackageManagerPlugin :
             session = packageInstaller.openSession(sessionId)
             sessionToPackage[sessionId] = packageName
 
-            // Step 4: Single-pass verify + copy with progress reporting
+            // Step 5: Single-pass verify + copy with progress reporting
             val digest = if (expectedHash != null) MessageDigest.getInstance("SHA-256") else null
 
             FileInputStream(apkFile).use { fis ->
@@ -900,7 +915,7 @@ class AndroidPackageManagerPlugin :
                 }
             }
 
-            // Step 5: Verify hash if expected
+            // Step 6: Verify hash if expected
             if (digest != null && expectedHash != null) {
                 val actualHash = digest.digest().joinToString("") { "%02x".format(it) }
                 if (!actualHash.equals(expectedHash, ignoreCase = true)) {
@@ -922,7 +937,7 @@ class AndroidPackageManagerPlugin :
                 }
             }
 
-            // Step 6: Emit STARTED *before* commit to avoid race with SUCCESS broadcast
+            // Step 7: Emit STARTED *before* commit to avoid race with SUCCESS broadcast
             // For silent installs, the SUCCESS broadcast can arrive immediately after commit.
             // We use a CountDownLatch to ensure STARTED is processed on main thread before
             // we call commit(), which could trigger an immediate broadcast.
@@ -934,7 +949,7 @@ class AndroidPackageManagerPlugin :
             // Wait for STARTED to be emitted (timeout prevents deadlock if main thread is blocked)
             startedLatch.await(1, TimeUnit.SECONDS)
 
-            // Step 7: Commit the session - this triggers the install broadcast
+            // Step 8: Commit the session - this triggers the install broadcast
             val intent =
                     Intent(context.applicationContext, InstallResultReceiver::class.java).apply {
                         putExtra("sessionId", sessionId)
