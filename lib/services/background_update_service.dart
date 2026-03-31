@@ -234,6 +234,32 @@ Future<bool> _checkForUpdatesInBackground(Set<String>? appCatalogRelays) async {
         }
       }
 
+      // NIP-09: fetch kind-5 deletion events since last sync.
+      // No author filter — the AppCatalog relay is curated and the `since`
+      // cursor keeps incremental runs cheap. The DB layer auto-processes
+      // each kind-5 event (removes referenced events, records in deletions
+      // table). We then clean up the kind-5 events themselves as housekeeping,
+      // but save the cursor regardless — a cleanup failure is non-critical.
+      final secureStorage = SecureStorageService();
+      final lastDeletionSync = await secureStorage.getDeletionsSyncedUntil();
+      final deletionRequests = await storage.query(
+        RequestFilter<EventDeletionRequest>(
+          since: lastDeletionSync,
+          limit: 99,
+        ).toRequest(subscriptionPrefix: 'app-bg-deletions'),
+        source: const RemoteSource(relays: 'AppCatalog', stream: false),
+      );
+      await secureStorage.setDeletionsSyncedUntil(DateTime.now());
+      if (deletionRequests.isNotEmpty) {
+        try {
+          await (storage as PurplebaseStorageNotifier)
+              .delete(deletionRequests.map((d) => d.id).toSet());
+        } catch (_) {
+          // Orphaned kind-5 rows are harmless; referenced events are
+          // already removed by the DB layer during save.
+        }
+      }
+
       // Re-query apps from local to ensure relationships are loaded
       final appsWithRelations = await storage.query(
         RequestFilter<App>(

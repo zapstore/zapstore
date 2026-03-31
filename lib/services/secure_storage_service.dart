@@ -116,6 +116,34 @@ class SecureStorageService {
     }
   }
 
+  // =========================================================================
+  // Deletion Sync Timestamp (for NIP-09 incremental checks)
+  // =========================================================================
+
+  static const _deletionSyncedUntilKey = 'deletion_synced_until';
+
+  /// Get the timestamp of the last successful NIP-09 deletion sync.
+  /// Used as `since` on the next kind-5 query so checks are incremental.
+  Future<DateTime?> getDeletionsSyncedUntil() async {
+    final value = await _storage.read(key: _deletionSyncedUntilKey);
+    if (int.tryParse(value ?? '') case final ms?) {
+      return DateTime.fromMillisecondsSinceEpoch(ms);
+    }
+    return null;
+  }
+
+  /// Persist the deletion sync cursor after a successful kind-5 fetch.
+  Future<void> setDeletionsSyncedUntil(DateTime time) async {
+    await _storage.write(
+      key: _deletionSyncedUntilKey,
+      value: '${time.millisecondsSinceEpoch}',
+    );
+  }
+
+  // =========================================================================
+  // App Catalog Relays
+  // =========================================================================
+
   /// Store app catalog relay URLs.
   ///
   /// This is the local source of truth for relay configuration,
