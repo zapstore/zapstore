@@ -21,7 +21,6 @@ class AppStackScreen extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Query stack with apps and author relationships
     final stackState = ref.watch(
       query<AppStack>(
         authors: authorPubkey != null ? {authorPubkey!} : null,
@@ -29,51 +28,52 @@ class AppStackScreen extends HookConsumerWidget {
           '#d': {stackId},
         },
         limit: 1,
-        source: LocalAndRemoteSource(stream: true, relays: 'social'),
-        subscriptionPrefix: 'app-stack-$stackId',
+        source: const LocalAndRemoteSource(
+          relays: 'AppCatalog',
+          stream: false,
+        ),
+        subscriptionPrefix: 'app-stack-detail-$stackId',
       ),
     );
 
-    return switch (stackState) {
-      StorageError(:final exception) => _ErrorScaffold(
-        message: exception.toString(),
-      ),
-      StorageData(:final models) => _AppStackContentWithApps(
-        stack: models.firstOrNull,
-      ),
-      StorageLoading() => Scaffold(
+    if (stackState case StorageError(:final exception)) {
+      return _ErrorScaffold(message: exception.toString());
+    }
+
+    final stack = stackState.models.firstOrNull;
+
+    if (stack == null) {
+      return Scaffold(
         body: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
           child: _AppStackSkeleton(),
         ),
-      ),
-    };
+      );
+    }
+
+    return _AppStackContentWithApps(stack: stack);
   }
 }
 
 /// Intermediate widget that loads apps with their release relationships
 class _AppStackContentWithApps extends HookConsumerWidget {
-  final AppStack? stack;
+  final AppStack stack;
 
   const _AppStackContentWithApps({required this.stack});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (stack == null) {
-      return const _ErrorScaffold(message: 'Stack not found');
-    }
-
     // Derive identifiers directly from the raw event tags — stable and complete
     // regardless of what's been cached locally. The 'a' tag format is
     // '32267:pubkey:d-tag'; we extract just the d-tag (identifier) part.
-    final appIdentifiers = stack!.event
+    final appIdentifiers = stack.event
         .getTagSetValues('a')
         .where((id) => id.startsWith('32267:'))
         .map((id) => id.split(':').skip(2).join(':'))
         .toSet();
 
     if (appIdentifiers.isEmpty) {
-      return _AppStackContent(stack: stack!, apps: const []);
+      return _AppStackContent(stack: stack, apps: const []);
     }
 
     // Query apps with release and metadata relationships (same pattern as search/user screens)
@@ -92,7 +92,7 @@ class _AppStackContentWithApps extends HookConsumerWidget {
           ),
         },
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
-        subscriptionPrefix: 'app-stack-apps-${stack!.identifier}',
+        subscriptionPrefix: 'app-stack-apps-${stack.identifier}',
       ),
     );
 
@@ -103,7 +103,7 @@ class _AppStackContentWithApps extends HookConsumerWidget {
         .whereType<App>()
         .toList();
 
-    return _AppStackContent(stack: stack!, apps: orderedApps);
+    return _AppStackContent(stack: stack, apps: orderedApps);
   }
 }
 

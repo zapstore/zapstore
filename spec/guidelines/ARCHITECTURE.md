@@ -100,6 +100,95 @@ onPressed: () async {
 }
 ```
 
+### Paged lists with live subscription (infinite scroll)
+
+Use `PagedSubscriptionNotifier<T>` (`lib/utils/paged_subscription_notifier.dart`)
+for any list that is sorted descending by date, supports infinite scroll, and
+should reflect new items without user action.
+
+**Rules:**
+
+- The **first page only** uses `stream: true`. It serves local cache immediately
+  and merges relay events in the background (local-first).
+- **All older pages** use `stream: false` with an `until` cursor pointing 1 ms
+  before the oldest loaded item. Never subscribe to older pages.
+- Scroll listeners call `notifier.loadMore()` — the base class handles
+  deduplication, the `isLoadingMore` guard, and `hasMore` detection.
+
+**How to implement:**
+
+```dart
+class MyNotifier extends PagedSubscriptionNotifier<MyModel> {
+  MyNotifier(super.ref);
+
+  ProviderSubscription<StorageState<MyModel>>? _sub;
+
+  @override int get pageSize => 10;
+
+  @override
+  void startSubscription() {
+    _sub?.close();
+    _sub = ref.listen(
+      query<MyModel>(
+        limit: pageSize,
+        source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: true),
+        subscriptionPrefix: 'app-my-list',
+      ),
+      (_, next) => updateFirstPage(next),
+      fireImmediately: true,
+    );
+  }
+
+  @override
+  Future<({List<MyModel> items, int count})> fetchOlderPage(DateTime until) async {
+    final items = await ref.storage.query(
+      RequestFilter<MyModel>(until: until, limit: pageSize).toRequest(),
+      source: const LocalAndRemoteSource(stream: false),
+      subscriptionPrefix: 'app-my-list-older',
+    );
+    return (items: items, count: items.length);
+  }
+
+  @override String getId(MyModel item) => item.id;
+  @override DateTime getCreatedAt(MyModel item) => item.event.createdAt;
+
+  @override void dispose() { _sub?.close(); super.dispose(); }
+}
+
+final myListProvider = StateNotifierProvider<MyNotifier, PagedState<MyModel>>(
+  (ref) => MyNotifier(ref),
+);
+```
+
+**In the widget:**
+
+```dart
+// Infinite scroll trigger
+useEffect(() {
+  void onScroll() {
+    final s = ref.read(myListProvider);
+    if (s.isLoadingMore || !s.hasMore) return;
+    if (scrollController.position.pixels >=
+        scrollController.position.maxScrollExtent - 300) {
+      ref.read(myListProvider.notifier).loadMore();
+    }
+  }
+  scrollController.addListener(onScroll);
+  return () => scrollController.removeListener(onScroll);
+}, [scrollController]);
+
+// Consume state
+final state = ref.watch(myListProvider);
+final items = state.combined; // first page + all older pages
+
+// Loading / error / content
+if (state.firstPage is StorageLoading && items.isEmpty) { /* skeleton */ }
+else if (state.firstPage is StorageError) { /* error */ }
+else { /* list */ }
+```
+
+**Examples:** `LatestReleasesNotifier` (apps via assets), `StacksNotifier` (stacks directly).
+
 ### Subscription prefix naming
 
 All queries using the `AppCatalog` relay group MUST prefix their `subscriptionPrefix` with `app-`. This is used in the backend.

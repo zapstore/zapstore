@@ -24,6 +24,7 @@ import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/widgets/common/note_parser.dart';
 import 'package:zapstore/widgets/nwc_widgets.dart';
 import 'package:zapstore/widgets/relay_management_card.dart';
+import 'package:zapstore/screens/app_stacks_screen.dart';
 
 /// Profile screen for authentication and app settings
 class ProfileScreen extends ConsumerWidget {
@@ -201,6 +202,7 @@ class _AuthenticationSection extends ConsumerWidget {
             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
         ),
+        _StackMigrationWarning(pubkey: pubkey),
       ],
     );
   }
@@ -254,6 +256,77 @@ class _AuthenticationSection extends ConsumerWidget {
         context.showError('Sign out failed', technicalDetails: '$e');
       }
     }
+  }
+}
+
+class _StackMigrationWarning extends ConsumerWidget {
+  const _StackMigrationWarning({required this.pubkey});
+
+  final String pubkey;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final platform = ref.read(packageManagerProvider.notifier).platform;
+    final stacksState = ref.watch(
+      query<AppStack>(
+        authors: {pubkey},
+        where: (s) => stackNeedsMigration(s, platform),
+        source: LocalAndRemoteSource(
+          relays: {'social', 'AppCatalog'},
+          stream: false,
+        ),
+        subscriptionPrefix: 'app-user-stacks-migration-profile',
+      ),
+    );
+
+    final count = stacksState.models.length;
+    if (count == 0) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: InkWell(
+        onTap: () {
+          final segments = GoRouterState.of(context).uri.pathSegments;
+          final first = segments.isNotEmpty ? segments.first : 'search';
+          context.push('/$first/stacks');
+        },
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: Theme.of(context).colorScheme.error.withValues(alpha: 0.4),
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.warning_amber_rounded,
+                size: 16,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '$count stack${count == 1 ? '' : 's'} need${count == 1 ? 's' : ''} updating — tap to fix',
+                  style: context.textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onErrorContainer,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              Icon(
+                Icons.arrow_forward,
+                size: 14,
+                color: Theme.of(context).colorScheme.error,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 

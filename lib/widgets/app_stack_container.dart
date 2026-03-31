@@ -14,7 +14,7 @@ import 'common/profile_avatar.dart';
 import 'common/profile_name_widget.dart';
 
 /// Number of stacks to show initially and load per batch
-const int _kInitialStacks = 6;
+const int _kInitialStacks = 8;
 const int _kBatchSize = 6;
 
 /// Get the raw `a` tag values from the stack's event (available immediately)
@@ -35,46 +35,12 @@ List<String> getPreviewIdentifiers(AppStack stack) {
   return rawTags.take(3).map(extractStackIdentifier).whereType<String>().toList();
 }
 
-/// Sort app stacks: franzap/following first, then by recency
-List<AppStack> _sortStacks(
-  List<AppStack> stacks, {
-  String? signedInPubkey,
-  Set<String>? followingPubkeys,
-}) {
+/// Shuffle stacks with a daily seed for variety
+List<AppStack> _shuffleStacks(List<AppStack> stacks, {String? signedInPubkey}) {
   final today = DateTime.now();
   final dateSeed = today.year * 10000 + today.month * 100 + today.day;
   final userSeed = signedInPubkey?.hashCode ?? 0;
-  final random = Random(dateSeed ^ userSeed);
-
-  if (signedInPubkey != null &&
-      followingPubkeys != null &&
-      followingPubkeys.isNotEmpty) {
-    final followed = <AppStack>[];
-    final others = <AppStack>[];
-
-    for (final stack in stacks) {
-      if (followingPubkeys.contains(stack.pubkey)) {
-        followed.add(stack);
-      } else {
-        others.add(stack);
-      }
-    }
-
-    followed.shuffle(random);
-    others.sort((a, b) => b.event.createdAt.compareTo(a.event.createdAt));
-    return [...followed, ...others];
-  } else {
-    final franzapStacks = stacks
-        .where((s) => s.pubkey == kFranzapPubkey)
-        .toList();
-    final otherStacks = stacks
-        .where((s) => s.pubkey != kFranzapPubkey)
-        .toList();
-
-    franzapStacks.shuffle(random);
-    otherStacks.sort((a, b) => b.event.createdAt.compareTo(a.event.createdAt));
-    return [...franzapStacks, ...otherStacks];
-  }
+  return stacks.toList()..shuffle(Random(dateSeed ^ userSeed));
 }
 
 /// App Stack Container - horizontally scrollable 2-row grid of stack cards
@@ -95,13 +61,13 @@ class AppStackContainer extends HookConsumerWidget {
 
     final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
 
-    // Get platform from package manager for filtering
     final platform = ref.read(packageManagerProvider.notifier).platform;
 
-    // Query 30 stacks WITHOUT loading apps (fast, from local storage)
+    // Only show stacks curated by the zapstore community
     final appStacksState = ref.watch(
       query<AppStack>(
-        limit: 30,
+        authors: {kZapstoreCommunityPubkey},
+        limit: 20,
         tags: {
           '#f': {platform},
         },
@@ -111,61 +77,18 @@ class AppStackContainer extends HookConsumerWidget {
       ),
     );
 
-    // Get contact list for sorting
-    final contactListState = signedInPubkey != null
-        ? ref.watch(
-            query<ContactList>(
-              authors: {signedInPubkey},
-              limit: 1,
-              source: const LocalAndRemoteSource(
-                relays: 'social',
-                stream: false,
-                cachedFor: Duration(hours: 1),
-              ),
-              subscriptionPrefix: 'app-stack-contacts',
-            ),
-          )
-        : null;
-
-    final followingPubkeys =
-        contactListState?.models.firstOrNull?.followingPubkeys;
-
     final allStacks = appStacksState.models.toList();
 
     if (allStacks.isEmpty) {
       return _buildSkeleton(context);
     }
 
-    // Sort stacks
-    final sortedStacks = _sortStacks(
+    final sortedStacks = _shuffleStacks(
       allStacks,
       signedInPubkey: signedInPubkey,
-      followingPubkeys: followingPubkeys,
     );
 
-    // Only show up to visibleCount
     final displayedStacks = sortedStacks.take(visibleCount.value).toList();
-
-    // Batch load author profiles for displayed stacks
-    final authorPubkeys = displayedStacks.map((s) => s.event.pubkey).toSet();
-    final authorsState = ref.watch(
-      query<Profile>(
-        authors: authorPubkeys,
-        source: const LocalAndRemoteSource(
-          relays: {'social', 'vertex'},
-          cachedFor: Duration(hours: 2),
-        ),
-        subscriptionPrefix: 'app-stack-authors',
-      ),
-    );
-    final authorsMap = {
-      for (final profile in authorsState.models) profile.pubkey: profile,
-    };
-    final isAuthorsLoading = authorsState is StorageLoading;
-
-    // Helper to check if a specific author is loading (loading AND not in cache)
-    bool isAuthorLoading(String pubkey) =>
-        isAuthorsLoading && authorsMap[pubkey] == null;
 
     // Batch load preview apps for displayed stacks (3 per stack)
     final allPreviewIdentifiers = <String>{};
@@ -213,10 +136,8 @@ class AppStackContainer extends HookConsumerWidget {
       return () => scrollController.removeListener(onScroll);
     }, [scrollController, sortedStacks.length]);
 
-    // 2-row horizontal scroll layout
-    // Add a "See more" card after the last stack if there are more stacks
+    // 2-row horizontal scroll layout with "See more" card
     final showSeeMore = sortedStacks.length > _kInitialStacks;
-    // Total items = displayed stacks + optional "See more" placeholder
     final totalItems = displayedStacks.length + (showSeeMore ? 1 : 0);
     final numColumns = (totalItems + 1) ~/ 2;
 
@@ -240,8 +161,6 @@ class AppStackContainer extends HookConsumerWidget {
                       context,
                       col * 2,
                       displayedStacks,
-                      authorsMap,
-                      isAuthorLoading,
                       stackPreviewIds,
                       appsMap,
                       showSeeMore,
@@ -253,8 +172,6 @@ class AppStackContainer extends HookConsumerWidget {
                         context,
                         col * 2 + 1,
                         displayedStacks,
-                        authorsMap,
-                        isAuthorLoading,
                         stackPreviewIds,
                         appsMap,
                         showSeeMore,
@@ -274,8 +191,6 @@ class AppStackContainer extends HookConsumerWidget {
     BuildContext context,
     int index,
     List<AppStack> displayedStacks,
-    Map<String, Profile> authorsMap,
-    bool Function(String) isAuthorLoading,
     Map<String, List<String>> stackPreviewIds,
     Map<String, App> appsMap,
     bool showSeeMore,
@@ -289,8 +204,7 @@ class AppStackContainer extends HookConsumerWidget {
     final stack = displayedStacks[index];
     return StackCard(
       stack: stack,
-      author: authorsMap[stack.event.pubkey],
-      isAuthorLoading: isAuthorLoading(stack.event.pubkey),
+      showAuthor: false,
       previewIdentifiers: stackPreviewIds[stack.id] ?? [],
       appsMap: appsMap,
     );
@@ -415,10 +329,11 @@ class StackCard extends StatelessWidget {
   const StackCard({
     super.key,
     required this.stack,
-    required this.author,
     required this.previewIdentifiers,
     required this.appsMap,
+    this.author,
     this.isAuthorLoading = false,
+    this.showAuthor = true,
   });
 
   final AppStack stack;
@@ -426,12 +341,12 @@ class StackCard extends StatelessWidget {
   final List<String> previewIdentifiers;
   final Map<String, App> appsMap;
   final bool isAuthorLoading;
+  final bool showAuthor;
 
   @override
   Widget build(BuildContext context) {
     final totalApps = getRawAppTagValues(stack).length;
 
-    // Resolve preview apps from the pre-loaded map
     final previewApps = previewIdentifiers
         .map((id) => appsMap[id])
         .whereType<App>()
@@ -476,22 +391,24 @@ class StackCard extends StatelessWidget {
                 fontSize: (context.textTheme.titleMedium?.fontSize ?? 16) * 0.9,
               ),
             ),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                ProfileAvatar(profile: author, radius: 9),
-                const SizedBox(width: 5),
-                Expanded(
-                  child: ProfileNameWidget(
-                    pubkey: stack.event.pubkey,
-                    profile: author,
-                    isLoading: isAuthorLoading,
-                    style: profileStyle,
-                    skeletonWidth: 80,
+            if (showAuthor) ...[
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  ProfileAvatar(profile: author, radius: 9),
+                  const SizedBox(width: 5),
+                  Expanded(
+                    child: ProfileNameWidget(
+                      pubkey: stack.event.pubkey,
+                      profile: author,
+                      isLoading: isAuthorLoading,
+                      style: profileStyle,
+                      skeletonWidth: 80,
+                    ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
+            ],
             const SizedBox(height: 8),
             _AppIconsRow(apps: previewApps, totalApps: totalApps),
           ],

@@ -1,12 +1,8 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
-import 'package:zapstore/services/notification_service.dart';
-import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/utils/extensions.dart';
 import '../theme.dart';
 import '../widgets/common/note_parser.dart';
@@ -140,10 +136,6 @@ class UserScreen extends HookConsumerWidget {
                 final stack = stacks[index];
                 return _StackLinkCard(stack: stack, pubkey: pubkey);
               }, childCount: stacks.length),
-            ),
-            // Republish stacks button - only for signed-in user viewing their own profile
-            SliverToBoxAdapter(
-              child: _RepublishStacksButton(stacks: stacks, pubkey: pubkey),
             ),
           ],
 
@@ -443,135 +435,3 @@ class _UserBio extends HookWidget {
   }
 }
 
-class _RepublishStacksButton extends HookConsumerWidget {
-  const _RepublishStacksButton({
-    required this.stacks,
-    required this.pubkey,
-  });
-
-  final List<AppStack> stacks;
-  final String pubkey;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
-
-    // Only show if user is viewing their own profile
-    if (signedInPubkey == null || signedInPubkey != pubkey) {
-      return const SizedBox.shrink();
-    }
-
-    final isLoading = useState(false);
-    final progressCount = useState(0);
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-      child: FilledButton.icon(
-        onPressed: isLoading.value
-            ? null
-            : () async {
-                isLoading.value = true;
-                progressCount.value = 0;
-                try {
-                  final signer = ref.read(Signer.activeSignerProvider);
-                  if (signer == null) {
-                    if (context.mounted) {
-                      context.showError('Sign in required');
-                    }
-                    return;
-                  }
-
-                  final platform =
-                      ref.read(packageManagerProvider.notifier).platform;
-
-                  for (final stack in stacks) {
-                    // Get existing app IDs from the stack
-                    final appIds = stack.event.getTagSetValues('a').toList();
-
-                    // Check if it's an encrypted stack (has content but no 'a' tags)
-                    final isEncrypted =
-                        stack.content.isNotEmpty && appIds.isEmpty;
-
-                    if (isEncrypted) {
-                      // For encrypted stacks, decrypt, then re-encrypt with platform
-                      try {
-                        final decryptedContent = await signer.nip44Decrypt(
-                          stack.content,
-                          signedInPubkey,
-                        );
-                        final existingAppIds =
-                            (jsonDecode(decryptedContent) as List)
-                                .cast<String>();
-
-                        final partialStack = PartialAppStack.withEncryptedApps(
-                          name: stack.name ?? stack.identifier,
-                          identifier: stack.identifier,
-                          apps: existingAppIds,
-                          platform: platform,
-                        );
-
-                        final signedStack =
-                            await partialStack.signWith(signer);
-                        await ref.storage.save({signedStack});
-                        ref.storage.publish({
-                          signedStack,
-                        }, source: RemoteSource(relays: 'social'));
-                      } catch (e) {
-                        // Skip stacks that can't be decrypted
-                        continue;
-                      }
-                    } else {
-                      // For public stacks, rebuild with platform
-                      final partialStack = PartialAppStack(
-                        name: stack.name ?? stack.identifier,
-                        identifier: stack.identifier,
-                        platform: platform,
-                      );
-                      partialStack.addCommunityKey(kZapstoreCommunityPubkey);
-
-                      for (final appId in appIds) {
-                        partialStack.addApp(appId);
-                      }
-
-                      final signedStack = await partialStack.signWith(signer);
-                      await ref.storage.save({signedStack});
-                      ref.storage.publish({
-                        signedStack,
-                      }, source: RemoteSource(relays: {'social', 'AppCatalog'}));
-                    }
-
-                    progressCount.value++;
-                  }
-
-                  if (context.mounted) {
-                    context.showInfo(
-                      'Republished ${progressCount.value} stacks with platform tag',
-                    );
-                  }
-                } catch (e) {
-                  if (context.mounted) {
-                    context.showError(
-                      'Failed to republish stacks',
-                      technicalDetails: '$e',
-                    );
-                  }
-                } finally {
-                  isLoading.value = false;
-                }
-              },
-        icon: isLoading.value
-            ? const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Icon(Icons.publish, size: 18),
-        label: Text(
-          isLoading.value
-              ? 'Republishing ${progressCount.value}/${stacks.length}...'
-              : 'Republish stacks (${stacks.length})',
-        ),
-      ),
-    );
-  }
-}

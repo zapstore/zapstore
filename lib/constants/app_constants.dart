@@ -22,30 +22,41 @@ const kZapstoreCommunityPubkey =
 /// Identifier for storing user saved apps
 const kAppBookmarksIdentifier = 'zapstore-bookmarks';
 
-/// Event filter for app stacks - excludes saved apps and stacks with zero App references
+/// Event filter for app stacks - must run as schemaFilter so rejected events
+/// are never stored in local SQLite.
+///
+/// Rejects:
+/// - Private/encrypted stacks (non-empty content, kind 30267 only)
+/// - The user's own saved-apps bookmark stack
+/// - Stacks with no public App (32267) references
 bool appStackEventFilter(Map<String, dynamic> event) {
+  // Guard: only apply to AppStack events (kind 30267).
+  // Other kinds (e.g. App kind 32267) also use content and must not be rejected.
+  final kind = event['kind'] as int?;
+  if (kind != null && kind != 30267) return true;
+
+  // Private stacks store encrypted app IDs in content — reject before storage
+  final content = event['content'] as String?;
+  if (content != null && content.isNotEmpty) return false;
+
   final tags = event['tags'] as List<dynamic>?;
   if (tags == null) return false;
 
-  // Check for saved apps identifier in 'd' tag
   for (final tag in tags) {
-    if (tag is List && tag.isNotEmpty && tag[0] == 'd') {
-      if (tag.length > 1 && tag[1] == kAppBookmarksIdentifier) {
-        return false;
-      }
+    if (tag is! List || tag.isEmpty) continue;
+    if (tag[0] == 'd' && tag.length > 1 && tag[1] == kAppBookmarksIdentifier) {
+      return false;
     }
   }
 
-  // Check for at least one 'a' tag starting with '32267:' (App kind)
   for (final tag in tags) {
-    if (tag is List && tag.isNotEmpty && tag[0] == 'a') {
-      if (tag.length > 1 && tag[1] is String && tag[1].startsWith('32267:')) {
-        return true;
-      }
+    if (tag is! List || tag.isEmpty) continue;
+    if (tag[0] == 'a' && tag.length > 1 &&
+        tag[1] is String && (tag[1] as String).startsWith('32267:')) {
+      return true;
     }
   }
 
-  // No valid App references found
   return false;
 }
 
