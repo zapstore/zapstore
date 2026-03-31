@@ -1542,7 +1542,6 @@ class BatchProgress {
   const BatchProgress({
     required this.total,
     required this.completed,
-    required this.completedLabel,
     required this.downloading,
     required this.verifying,
     required this.installing,
@@ -1557,9 +1556,6 @@ class BatchProgress {
 
   /// Operations that completed successfully
   final int completed;
-
-  /// Label for completed operations: "updated", "installed", or "completed" (mixed)
-  final String completedLabel;
 
   /// Operations currently downloading
   final int downloading;
@@ -1587,11 +1583,6 @@ class BatchProgress {
   /// Whether all operations are complete (all terminal)
   bool get isAllComplete => !hasInProgress && total > 0;
 
-  /// Status text for display - simple "X of Y completed" format
-  String get statusText {
-    if (total == 0) return '';
-    return '$completed of $total completed';
-  }
 }
 
 /// Provider for batch progress - ALL state derived from operations map.
@@ -1605,7 +1596,6 @@ final batchProgressProvider = Provider<BatchProgress?>((ref) {
 
   // Count operations by type
   int completed = 0,
-      completedUpdates = 0,
       downloading = 0,
       verifying = 0,
       installing = 0,
@@ -1616,7 +1606,6 @@ final batchProgressProvider = Provider<BatchProgress?>((ref) {
     switch (op) {
       case Completed():
         completed++;
-        if (op.isUpdate) completedUpdates++;
       case DownloadQueued() || ReadyToInstall():
         queued++;
       case Downloading() || DownloadPaused():
@@ -1657,18 +1646,9 @@ final batchProgressProvider = Provider<BatchProgress?>((ref) {
       ? BatchPhase.completed
       : BatchPhase.idle;
 
-  // Derive label: "updated" if all updates, "installed" if all new, "completed" if mixed
-  final completedInstalls = completed - completedUpdates;
-  final completedLabel = completedUpdates > 0 && completedInstalls == 0
-      ? 'updated'
-      : completedInstalls > 0 && completedUpdates == 0
-      ? 'installed'
-      : 'completed';
-
   return BatchProgress(
     total: total,
     completed: completed,
-    completedLabel: completedLabel,
     downloading: downloading,
     verifying: verifying,
     installing: installing,

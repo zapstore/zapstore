@@ -200,8 +200,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         ref.read(packageManagerProvider.notifier).syncInstalledPackages(),
       );
 
-      // Clear completed operations when navigating AWAY from updates
-      // This cleans up the "All done" state without affecting the count while visible
+      // Clear completed operations when navigating away from updates
       if (wasUpdatesRoute && !isUpdatesRoute) {
         ref.read(packageManagerProvider.notifier).clearCompletedOperations();
       }

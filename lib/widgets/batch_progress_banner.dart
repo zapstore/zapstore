@@ -6,7 +6,6 @@ import 'package:zapstore/theme.dart';
 import 'package:zapstore/utils/extensions.dart';
 
 /// "Update All" button row.
-/// Progress and "All done" states are handled by sticky banners in _UpdatesListBody.
 class UpdateAllRow extends ConsumerWidget {
   const UpdateAllRow({super.key, required this.allUpdates});
 

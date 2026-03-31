@@ -775,9 +775,8 @@ final class AndroidPackageManager extends PackageManager {
             (installedV != null && installedV == targetV);
 
         // Only clear if we can establish completion reliably.
-        // Transition to Completed (not clearOperation) so batchProgressProvider
-        // counts this app. The Completed op stays until the user dismisses the
-        // banner or clearCompletedOperations runs.
+        // Transition to Completed (not clearOperation) so the op stays until
+        // clearCompletedOperations runs (auto-clear timer or navigation away).
         if (completed) {
           debugPrint(
             '[PackageManager] Sync: completing operation for $appId '

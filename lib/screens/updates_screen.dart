@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:auto_size_text/auto_size_text.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -376,51 +375,29 @@ class _UpdatesListBody extends HookConsumerWidget {
     // Combine all updates for the Update All button
     final allUpdates = [...automaticUpdates, ...manualUpdates];
 
-    // Watch batch progress and track "All done" state
+    // Auto-clear completed operations after 3 seconds
     final progress = ref.watch(batchProgressProvider);
-    final showAllDone = useState(false);
     final wasInProgress = useRef(false);
-
-    // Detect transition from in-progress to all-complete.
-    // FEAT-001 spec: "After 3 seconds with no in-progress operations,
-    // completed operations auto-clear."
     final autoClearTimer = useRef<Timer?>(null);
     useEffect(() {
       if (progress != null && progress.hasInProgress) {
         autoClearTimer.value?.cancel();
         wasInProgress.value = true;
-        showAllDone.value = false; // Reset if new operations start
       } else if (wasInProgress.value &&
           progress != null &&
           progress.isAllComplete) {
-        // Just finished - show "All done" banner briefly, then auto-clear
-        showAllDone.value = true;
         wasInProgress.value = false;
         autoClearTimer.value = Timer(const Duration(seconds: 3), () {
-          if (showAllDone.value) {
-            showAllDone.value = false;
-            ref
-                .read(packageManagerProvider.notifier)
-                .clearCompletedOperations();
-          }
+          ref
+              .read(packageManagerProvider.notifier)
+              .clearCompletedOperations();
         });
       } else if (progress == null) {
-        // Operations cleared externally
         autoClearTimer.value?.cancel();
         wasInProgress.value = false;
-        showAllDone.value = false;
       }
       return () => autoClearTimer.value?.cancel();
     }, [progress?.hasInProgress, progress?.isAllComplete]);
-
-    // Determine what to show (mutually exclusive states):
-    // - "All done" banner after completion
-    // - Progress indicator during operations
-    // - Update All button when idle with updates available
-    final showStickyAllDone = showAllDone.value;
-    final activeProgress = progress != null && progress.hasInProgress
-        ? progress
-        : null;
 
     return RefreshIndicator(
       // Hide the spinner - _LastCheckedIndicator already shows "Checking for updates..."
@@ -431,39 +408,8 @@ class _UpdatesListBody extends HookConsumerWidget {
       onRefresh: () => ref.read(updatePollerProvider.notifier).checkNow(),
       child: CustomScrollView(
         slivers: [
-          // Sticky status banner (all done or progress) - only for batch operations (>1)
-          if (showStickyAllDone && (progress?.total ?? 0) > 1)
-            SliverPersistentHeader(
-              pinned: true,
-              delegate: _StickyBannerDelegate(
-                child: _StatusBannerContent(
-                  icon: Icons.check_circle_rounded,
-                  iconColor: Colors.green.shade400,
-                  text: 'All done (${progress?.completed ?? 0} ${progress?.completedLabel ?? 'completed'})',
-                  failedCount: progress?.failed ?? 0,
-                  showDismiss: true,
-                  onTap: () {
-                    showAllDone.value = false;
-                    ref
-                        .read(packageManagerProvider.notifier)
-                        .clearCompletedOperations();
-                  },
-                ),
-              ),
-            )
-          else if (activeProgress != null && activeProgress.total > 1)
-            SliverPersistentHeader(
-              pinned: true,
-              delegate: _StickyBannerDelegate(
-                child: _StatusBannerContent(
-                  isLoading: true,
-                  text: activeProgress.statusText,
-                  failedCount: activeProgress.failed,
-                ),
-              ),
-            )
           // Update All button (when idle with 2+ updates available)
-          else if (allUpdates.length > 1)
+          if (allUpdates.length > 1)
             SliverToBoxAdapter(child: UpdateAllRow(allUpdates: allUpdates)),
           // Main content
           SliverList(
@@ -547,144 +493,6 @@ class _UpdatesListBody extends HookConsumerWidget {
             }, childCount: items.length),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// Delegate for sticky status banner.
-/// Uses SizedBox.expand to guarantee we fill the declared extent.
-class _StickyBannerDelegate extends SliverPersistentHeaderDelegate {
-  const _StickyBannerDelegate({required this.child});
-
-  final Widget child;
-
-  // Matches UpdateAllRow: 44px content + 8px bottom margin = 52px
-  static const double _height = 52.0;
-
-  @override
-  Widget build(
-    BuildContext context,
-    double shrinkOffset,
-    bool overlapsContent,
-  ) {
-    // SizedBox.expand guarantees we fill exactly maxExtent
-    return SizedBox.expand(
-      child: ColoredBox(
-        color: Theme.of(context).scaffoldBackgroundColor,
-        // Match UpdateAllRow margin: 16 left/right, 0 top, 8 bottom
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: child,
-        ),
-      ),
-    );
-  }
-
-  @override
-  double get maxExtent => _height;
-
-  @override
-  double get minExtent => _height;
-
-  @override
-  bool shouldRebuild(covariant _StickyBannerDelegate oldDelegate) =>
-      child != oldDelegate.child;
-}
-
-/// Status banner content (used inside sticky header or standalone).
-/// When used standalone, wrap in appropriate padding.
-class _StatusBannerContent extends StatelessWidget {
-  const _StatusBannerContent({
-    required this.text,
-    this.icon,
-    this.iconColor,
-    this.isLoading = false,
-    this.failedCount = 0,
-    this.showDismiss = false,
-    this.onTap,
-  });
-
-  final String text;
-  final IconData? icon;
-  final Color? iconColor;
-  final bool isLoading;
-  final int failedCount;
-  final bool showDismiss;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          color: AppColors.darkPillBackground,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            // Leading indicator (spinner or icon)
-            if (isLoading)
-              const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(
-                  strokeWidth: 3,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              )
-            else if (icon != null)
-              Icon(icon, size: 18, color: iconColor ?? Colors.white),
-            const SizedBox(width: 12),
-
-            // Main text - bold
-            Expanded(
-              child: AutoSizeText(
-                text,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  fontFamily: kFontFamily,
-                ),
-                maxLines: 1,
-                minFontSize: 10,
-              ),
-            ),
-
-            // Failed badge (if any)
-            if (failedCount > 0) ...[
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade700,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  '$failedCount failed',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            ],
-
-            // Dismiss icon
-            if (showDismiss) ...[
-              const SizedBox(width: 8),
-              Icon(
-                Icons.close,
-                size: 16,
-                color: Colors.white.withValues(alpha: 0.6),
-              ),
-            ],
-          ],
-        ),
       ),
     );
   }
