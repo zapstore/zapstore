@@ -321,6 +321,16 @@ final class AndroidPackageManager extends PackageManager {
 
       case InstallStatus.failed:
         final failureType = _errorCodeToFailureType(errorCode, message);
+
+        // Hash mismatch may mean the upstream release was replaced after
+        // indexing (e.g. GitHub). Attempt one CDN-by-hash retry before
+        // surfacing the error — the CDN stores the original file by hash.
+        if (failureType == FailureType.hashMismatch &&
+            tryHashMismatchCdnRetry(appId, existingOp)) {
+          clearInstallSlot(appId);
+          break;
+        }
+
         final userMessage = _getUserFriendlyMessage(failureType);
         // Preserve technical details: combine original message and description
         final technicalDetails = [

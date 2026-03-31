@@ -138,6 +138,11 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
   int get maxConcurrentDownloads =>
       DeviceCapabilitiesCache.capabilities.maxConcurrentDownloads;
 
+  /// Tracks appIds that have already had a CDN-by-hash retry attempted.
+  /// Used to prevent infinite retry loops for both 404 and hash-mismatch cases.
+  @protected
+  final Set<String> cdnRetriedApps = {};
+
   Future<void> _ensureDownloaderReady() => _downloaderInit;
 
   /// Hook called when an app transitions into [ReadyToInstall].
@@ -335,6 +340,8 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
     String? displayName,
   }) async {
     await _ensureDownloaderReady();
+    // Reset CDN retry state so a manual retry after failure can attempt CDN again
+    cdnRetriedApps.remove(appId);
     final existing = getOperation(appId);
     if (existing != null) {
       // We keep terminal states (Completed/Failed) in the operations map briefly so
@@ -863,13 +870,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
 
       case TaskStatus.notFound:
         // 404 error - retry with CDN fallback if not already tried
-        if (!isCdnRetry) {
-          final cdnUrl = 'https://cdn.zapstore.dev/${target.hash}';
-          unawaited(
-            _startDownloadTask(appId, target, cdnUrl, isCdnRetry: true),
-          );
-          return;
-        }
+        if (_tryCdnRetry(appId, target)) return;
         // CDN also returned 404 - fail the operation
         activeDownloads.remove(appId);
         setOperation(
@@ -1300,6 +1301,32 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
   // ═══════════════════════════════════════════════════════════════════════════
   // HELPERS
   // ═══════════════════════════════════════════════════════════════════════════
+
+  /// Attempt a CDN-by-hash retry download for [appId].
+  ///
+  /// Returns true and starts the retry download if this is the first attempt.
+  /// Returns false if a CDN retry has already been attempted (caller should fail).
+  bool _tryCdnRetry(String appId, Installable target) {
+    if (cdnRetriedApps.contains(appId)) return false;
+    cdnRetriedApps.add(appId);
+    final cdnUrl = 'https://cdn.zapstore.dev/${target.hash}';
+    unawaited(_startDownloadTask(appId, target, cdnUrl, isCdnRetry: true));
+    return true;
+  }
+
+  /// Called by platform subclasses when a hash mismatch is detected after
+  /// download. Attempts a CDN-by-hash retry before surfacing the error.
+  ///
+  /// Returns true if a retry was started (caller should NOT set OperationFailed).
+  /// Returns false if CDN was already tried (caller SHOULD set OperationFailed).
+  @protected
+  bool tryHashMismatchCdnRetry(String appId, InstallOperation op) {
+    if (!_tryCdnRetry(appId, op.target)) return false;
+    // Delete the bad file — the CDN will serve the correct one
+    final filePath = op.filePath;
+    if (filePath != null) _deleteFile(filePath);
+    return true;
+  }
 
   void _deleteFile(String filePath) {
     try {
