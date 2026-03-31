@@ -404,6 +404,13 @@ class ZapAmountDialog extends HookConsumerWidget {
                     final amount = selectedAmount.value;
                     final comment = commentController.text.trim();
 
+                    // Capture ref-dependent values before dialog is disposed
+                    final currentSigner = ref.read(Signer.activeSignerProvider);
+                    final storageNotifier = ref.read(
+                      storageNotifierProvider.notifier,
+                    );
+                    final refAsRef = ref.asRef;
+
                     // Close dialog immediately on tap (no loading state)
                     if (context.mounted) {
                       rootNavigator.pop(true);
@@ -412,11 +419,11 @@ class ZapAmountDialog extends HookConsumerWidget {
                     unawaited(() async {
                       try {
                         // Prepare signer (ephemeral if needed)
-                        var signer = ref.read(Signer.activeSignerProvider);
+                        var signer = currentSigner;
                         if (signer == null) {
                           signer = Bip340PrivateKeySigner(
                             Utils.generateRandomHex64(),
-                            ref.asRef,
+                            refAsRef,
                           );
                           await signer.signIn(registerSigner: false);
                         }
@@ -436,8 +443,7 @@ class ZapAmountDialog extends HookConsumerWidget {
                           );
                         }
 
-                        final socialRelays = await ref
-                            .read(storageNotifierProvider.notifier)
+                        final socialRelays = await storageNotifier
                             .resolveRelays('social');
 
                         final zapRequest = PartialZapRequest();
@@ -456,7 +462,7 @@ class ZapAmountDialog extends HookConsumerWidget {
                           await _executeZapPayment(
                             signedZapRequest,
                             nwcString,
-                            ref.asRef,
+                            refAsRef,
                           );
                           if (toastContext != null && toastContext.mounted) {
                             toastContext.showInfo('⚡ Zap sent! $amount sats');
@@ -681,6 +687,9 @@ class NWCZapDialog extends HookConsumerWidget {
             final toastContext =
                 rootNavigatorKey.currentState?.overlay?.context;
 
+            // Capture ref-dependent values before dialog is disposed
+            final refAsRef = ref.asRef;
+
             // Close dialog immediately on tap (no loading state)
             if (context.mounted) {
               Navigator.pop(context);
@@ -689,8 +698,8 @@ class NWCZapDialog extends HookConsumerWidget {
             unawaited(() async {
               try {
                 await secureStorage.setNWCString(nwcString.trim());
-                ref.invalidate(hasNwcStringProvider);
-                await _executeZapPayment(signedZapRequest, nwcString, ref.asRef);
+                refAsRef.invalidate(hasNwcStringProvider);
+                await _executeZapPayment(signedZapRequest, nwcString, refAsRef);
                 if (toastContext != null && toastContext.mounted) {
                   toastContext.showInfo('⚡ Zap sent! $amount sats');
                 }
