@@ -16,12 +16,10 @@ class InstallButton extends ConsumerWidget {
   const InstallButton({
     super.key,
     required this.app,
-    this.release,
     this.compact = false,
   });
 
   final App app;
-  final Release? release;
   final bool compact;
 
   @override
@@ -39,7 +37,6 @@ class InstallButton extends ConsumerWidget {
         isInstalled && (operation == null || operation is Completed);
     final hasUpdate = app.hasUpdate;
     final hasDowngrade = app.hasDowngrade;
-    final hasRelease = release != null;
     final fileMetadata = app.installable;
 
     // Listen for errors to show toasts
@@ -59,7 +56,6 @@ class InstallButton extends ConsumerWidget {
       isInstalled: isInstalled,
       hasUpdate: hasUpdate,
       hasDowngrade: hasDowngrade,
-      hasRelease: hasRelease,
       fileMetadata: fileMetadata,
       fontSize: fontSize,
     );
@@ -103,7 +99,6 @@ class InstallButton extends ConsumerWidget {
     required bool isInstalled,
     required bool hasUpdate,
     required bool hasDowngrade,
-    required bool hasRelease,
     required Installable? fileMetadata,
     required double fontSize,
   }) {
@@ -243,13 +238,18 @@ class InstallButton extends ConsumerWidget {
       }
 
       if (hasUpdate) {
+        if (fileMetadata == null) {
+          return _buildSimpleButton(
+            context, 'Update', null,
+            fontSize: fontSize,
+            isDisabled: true,
+          );
+        }
         return _buildAsyncButton(
           context,
           ref,
           text: 'Update',
-          onPressed: hasRelease && fileMetadata != null
-              ? () => _startDownload(context, ref, fileMetadata)
-              : null,
+          onPressed: () => _startDownload(context, ref, fileMetadata),
           fontSize: fontSize,
         );
       }
@@ -266,13 +266,18 @@ class InstallButton extends ConsumerWidget {
     }
 
     // Not installed
+    if (fileMetadata == null) {
+      return _buildSimpleButton(
+        context, 'Install', null,
+        fontSize: fontSize,
+        isDisabled: true,
+      );
+    }
     return _buildAsyncButton(
       context,
       ref,
       text: 'Install',
-      onPressed: hasRelease && fileMetadata != null
-          ? () => _startDownload(context, ref, fileMetadata)
-          : null,
+      onPressed: () => _startDownload(context, ref, fileMetadata),
       fontSize: fontSize,
       needsTrustCheck: true,
     );

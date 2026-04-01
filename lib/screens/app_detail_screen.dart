@@ -277,100 +277,108 @@ class _AppDetailContent extends HookConsumerWidget {
                     ),
                   ),
 
-                  // Latest release section — shown as soon as version is known
-                  if (latestMetadata != null)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Container(
-                                  height: 1,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurface.withValues(alpha: 0.2),
+                  // Latest release section — always shown; skeletons until metadata loads
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Container(
+                                height: 1,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.2),
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              child: Text(
+                                'LATEST RELEASE',
+                                style: context.textTheme.labelLarge?.copyWith(
+                                  color: Theme.of(context).colorScheme.onSurface
+                                      .withValues(alpha: 0.85),
+                                  letterSpacing: 1.5,
+                                  fontWeight: FontWeight.bold,
                                 ),
                               ),
-                              Padding(
+                            ),
+                            Expanded(
+                              child: Container(
+                                height: 1,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.2),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        latestMetadata != null
+                            ? Container(
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
+                                  horizontal: 12,
+                                  vertical: 8,
                                 ),
-                                child: Text(
-                                  'LATEST RELEASE',
-                                  style: context.textTheme.labelLarge?.copyWith(
-                                    color: Theme.of(context).colorScheme.onSurface
-                                        .withValues(alpha: 0.85),
-                                    letterSpacing: 1.5,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                              Expanded(
-                                child: Container(
-                                  height: 1,
+                                decoration: BoxDecoration(
                                   color: Theme.of(
                                     context,
-                                  ).colorScheme.onSurface.withValues(alpha: 0.2),
+                                  ).colorScheme.onSurface.withValues(alpha: 0.05),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      'Version:',
+                                      style: context.textTheme.bodyMedium,
+                                    ),
+                                    Gap(4),
+                                    Text(
+                                      latestMetadata.version,
+                                      style: context.textTheme.bodyMedium
+                                          ?.copyWith(fontWeight: FontWeight.bold),
+                                    ),
+                                    Gap(4),
+                                    Text(
+                                      '(${formatDate(latestMetadata.createdAt)})',
+                                      style: context.textTheme.bodyMedium?.copyWith(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurface
+                                            .withValues(alpha: 0.6),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: SizedBox(
+                                  height: 32,
+                                  width: 220,
+                                  child: buildGradientLoader(context),
                                 ),
                               ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurface.withValues(alpha: 0.05),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  'Version:',
-                                  style: context.textTheme.bodyMedium,
-                                ),
-                                Gap(4),
-                                Text(
-                                  latestMetadata.version,
-                                  style: context.textTheme.bodyMedium?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                Gap(4),
-                                Text(
-                                  '(${formatDate(latestMetadata.createdAt)})',
-                                  style: context.textTheme.bodyMedium?.copyWith(
-                                    color: Theme.of(context).colorScheme.onSurface
-                                        .withValues(alpha: 0.6),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 20),
-                            child: latestRelease != null
-                                ? ReleaseNotes(release: latestRelease)
-                                : const ReleaseNotesSkeleton(),
-                          ),
-                        ],
-                      ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 20),
+                          child: latestRelease != null
+                              ? ReleaseNotes(release: latestRelease)
+                              : const ReleaseNotesSkeleton(),
+                        ),
+                      ],
                     ),
+                  ),
 
-                  if (latestMetadata != null)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: AppInfoTable(app: app, fileMetadata: latestMetadata),
-                    ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: AppInfoTable(app: app, fileMetadata: latestMetadata),
+                  ),
 
                   if (latestMetadata != null)
                     CommentsSection(app: app, fileMetadata: latestMetadata),
@@ -388,7 +396,7 @@ class _AppDetailContent extends HookConsumerWidget {
             ),
 
             // Sticky install button
-            InstallButton(app: app, release: latestRelease),
+            InstallButton(app: app),
 
             // Floating three-dot menu
             _buildFloatingMenu(context, ref, app, isInstalled, isSignedIn),

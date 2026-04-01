@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:models/models.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/widgets/app_detail_widgets.dart';
 import 'package:zapstore/widgets/download_text_container.dart';
 import 'package:zapstore/theme.dart';
 
@@ -86,51 +87,56 @@ class AppInfoTable extends HookConsumerWidget {
       );
     }
 
-    if (fileMetadata?.hash != null) {
-      final full = fileMetadata!.hash;
-      rows.add(
-        _InfoRow(label: 'File hash', value: full.abbreviate(), copyValue: full),
-      );
-    }
+    if (fileMetadata != null) {
+      if (fileMetadata!.hash.isNotEmpty) {
+        final full = fileMetadata!.hash;
+        rows.add(
+          _InfoRow(label: 'File hash', value: full.abbreviate(), copyValue: full),
+        );
+      }
 
-    if (fileMetadata?.certificateHash != null) {
-      final full = fileMetadata!.certificateHash!;
-      rows.add(
-        _InfoRow(
-          label: 'Certificate hash',
-          value: full.abbreviate(),
-          copyValue: full,
-        ),
-      );
-    }
-
-    if (fileMetadata?.size != null) {
-      final sizeInBytes = fileMetadata!.size!;
-      final sizeInMB = (sizeInBytes / (1024 * 1024)).toStringAsFixed(2);
-      rows.add(_InfoRow(label: 'Size', value: '$sizeInMB MB'));
-    }
-
-    if (fileMetadata?.versionCode != null) {
-      // Get installed package info for comparison
-      final installedPackage = app.installedPackage;
-      final installedVersionCode = installedPackage?.versionCode;
-      final availableVersionCode = fileMetadata!.versionCode!;
-
-      rows.add(
-        _InfoRow(
-          label: 'Version code',
-          value: availableVersionCode.toString(),
-          valueWidget: _buildVersionCodePills(
-            context,
-            ref,
-            installedVersionCode,
-            availableVersionCode,
+      if (fileMetadata!.certificateHash != null) {
+        final full = fileMetadata!.certificateHash!;
+        rows.add(
+          _InfoRow(
+            label: 'Certificate hash',
+            value: full.abbreviate(),
+            copyValue: full,
           ),
-        ),
-      );
+        );
+      }
+
+      if (fileMetadata!.size != null) {
+        final sizeInBytes = fileMetadata!.size!;
+        final sizeInMB = (sizeInBytes / (1024 * 1024)).toStringAsFixed(2);
+        rows.add(_InfoRow(label: 'Size', value: '$sizeInMB MB'));
+      }
+
+      if (fileMetadata!.versionCode != null) {
+        final installedPackage = app.installedPackage;
+        final installedVersionCode = installedPackage?.versionCode;
+        final availableVersionCode = fileMetadata!.versionCode!;
+
+        rows.add(
+          _InfoRow(
+            label: 'Version code',
+            value: availableVersionCode.toString(),
+            valueWidget: _buildVersionCodePills(
+              context,
+              ref,
+              installedVersionCode,
+              availableVersionCode,
+            ),
+          ),
+        );
+      }
+    } else {
+      rows.add(const _InfoRowSkeleton(label: 'File hash'));
+      rows.add(const _InfoRowSkeleton(label: 'Size'));
+      rows.add(const _InfoRowSkeleton(label: 'Version code'));
     }
 
-    // Add release date as the last row
+    // Release date — skeleton when release not yet loaded
     final release = app.latestRelease.value;
     if (release?.createdAt != null) {
       rows.add(
@@ -139,6 +145,8 @@ class AppInfoTable extends HookConsumerWidget {
           value: DateFormat('MMM d, y').format(release!.createdAt),
         ),
       );
+    } else if (fileMetadata == null) {
+      rows.add(const _InfoRowSkeleton(label: 'Release date'));
     }
 
     return rows;
@@ -220,6 +228,47 @@ class AppInfoTable extends HookConsumerWidget {
           fontWeight: FontWeight.bold,
           color: textColor,
         ),
+      ),
+    );
+  }
+}
+
+class _InfoRowSkeleton extends StatelessWidget {
+  const _InfoRowSkeleton({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(
+            label,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: Colors.grey[600]),
+            maxLines: 1,
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: SizedBox(
+                    height: 14,
+                    width: 80,
+                    child: buildGradientLoader(context),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
