@@ -13,11 +13,7 @@ import 'package:zapstore/widgets/install_alert_dialog.dart';
 import 'package:zapstore/theme.dart';
 
 class InstallButton extends ConsumerWidget {
-  const InstallButton({
-    super.key,
-    required this.app,
-    this.compact = false,
-  });
+  const InstallButton({super.key, required this.app, this.compact = false});
 
   final App app;
   final bool compact;
@@ -57,6 +53,7 @@ class InstallButton extends ConsumerWidget {
       hasUpdate: hasUpdate,
       hasDowngrade: hasDowngrade,
       fileMetadata: fileMetadata,
+      installedPkg: installedPkg,
       fontSize: fontSize,
     );
 
@@ -100,13 +97,15 @@ class InstallButton extends ConsumerWidget {
     required bool hasUpdate,
     required bool hasDowngrade,
     required Installable? fileMetadata,
+    required PackageInfo? installedPkg,
     required double fontSize,
   }) {
     // Completed is a terminal "result" state and may linger for batch progress UX.
     // If the app is no longer installed (e.g. user uninstalled right after install),
     // ignore a stale Completed op so we fall back to the normal "Install" UI.
-    final effectiveOperation =
-        (!isInstalled && operation is Completed) ? null : operation;
+    final effectiveOperation = (!isInstalled && operation is Completed)
+        ? null
+        : operation;
 
     // Handle operation states first
     if (effectiveOperation != null) {
@@ -205,14 +204,12 @@ class InstallButton extends ConsumerWidget {
           showSpinner: true,
         ),
 
-        OperationFailed(:final type, :final needsForceUpdate) =>
-          _buildErrorButton(
-            context,
-            ref,
-            type: type,
-            needsForceUpdate: needsForceUpdate,
-            fontSize: fontSize,
-          ),
+        OperationFailed(:final type) => _buildErrorButton(
+          context,
+          ref,
+          type: type,
+          fontSize: fontSize,
+        ),
 
         Completed() => _buildAsyncButton(
           context,
@@ -240,9 +237,31 @@ class InstallButton extends ConsumerWidget {
       if (hasUpdate) {
         if (fileMetadata == null) {
           return _buildSimpleButton(
-            context, 'Update', null,
+            context,
+            'Update',
+            null,
             fontSize: fontSize,
             isDisabled: true,
+          );
+        }
+        final installedHash = installedPkg?.signatureHash ?? '';
+        final targetHashes = fileMetadata.certificateHashes;
+        final isCertMismatch =
+            installedHash.isNotEmpty &&
+            targetHashes.isNotEmpty &&
+            !targetHashes.contains(installedHash);
+        if (isCertMismatch) {
+          return _buildSimpleButton(
+            context,
+            'Certificate mismatch',
+            () => _showCertMismatchDialog(
+              ref,
+              context,
+              installedPkg,
+              fileMetadata,
+            ),
+            fontSize: fontSize,
+            isError: true,
           );
         }
         return _buildAsyncButton(
@@ -268,7 +287,9 @@ class InstallButton extends ConsumerWidget {
     // Not installed
     if (fileMetadata == null) {
       return _buildSimpleButton(
-        context, 'Install', null,
+        context,
+        'Install',
+        null,
         fontSize: fontSize,
         isDisabled: true,
       );
@@ -476,19 +497,8 @@ class InstallButton extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref, {
     required FailureType type,
-    required bool needsForceUpdate,
     required double fontSize,
   }) {
-    if (needsForceUpdate) {
-      return _buildSimpleButton(
-        context,
-        'Force update',
-        () => _showForceUpdateDialog(ref, context),
-        fontSize: fontSize,
-        isError: true,
-      );
-    }
-
     return _buildSimpleButton(
       context,
       'Error (tap for details)',
@@ -675,21 +685,19 @@ class InstallButton extends ConsumerWidget {
     );
   }
 
-  Future<void> _showForceUpdateDialog(
+  Future<void> _showCertMismatchDialog(
     WidgetRef ref,
     BuildContext context,
+    PackageInfo? installedPkg,
+    Installable fileMetadata,
   ) async {
-    final installedPkg = ref.read(installedPackageProvider(app.identifier));
-    final operation = ref.read(installOperationProvider(app.identifier));
-    if (operation is! OperationFailed) return;
-
-    final updateVersion = operation.target.version;
     final currentVersion = installedPkg?.version ?? 'Unknown';
     final currentCertHash = installedPkg?.signatureHash ?? 'Unknown';
-    final updateCertHash = operation.target.apkSignatureHash ?? 'Unknown';
+    final updateCertHash = fileMetadata.certificateHash ?? 'Unknown';
+    final updateVersion = fileMetadata.version;
     final author = app.author.value;
 
-    final shouldProceed = await showBaseDialog<bool>(
+    await showBaseDialog<void>(
       context: context,
       dialog: Builder(
         builder: (dialogContext) => BaseDialog(
@@ -697,7 +705,7 @@ class InstallButton extends ConsumerWidget {
             Icons.security,
             color: Theme.of(dialogContext).colorScheme.error,
           ),
-          title: const BaseDialogTitle('Certificate Mismatch'),
+          title: const BaseDialogTitle('Certificate mismatch'),
           content: BaseDialogContent(
             children: [
               if (author != null)
@@ -731,46 +739,31 @@ class InstallButton extends ConsumerWidget {
               const SizedBox(height: 12),
               const Text(
                 'Android security prevents updating apps signed by different certificates. '
-                'Contact the publisher for details.',
-                style: TextStyle(fontSize: 14),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'To proceed anyway, uninstall the current version and install the new one. '
-                'ALL APP DATA WILL BE LOST.',
+                'Contact the publisher for details. You can uninstall and install again.',
                 style: TextStyle(fontSize: 14),
               ),
             ],
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancel'),
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Close'),
             ),
             FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                _uninstallApp(ref, context);
+              },
               style: FilledButton.styleFrom(
                 backgroundColor: Theme.of(dialogContext).colorScheme.error,
                 foregroundColor: Colors.white,
               ),
-              child: const Text('Uninstall & Install'),
+              child: const Text('Uninstall'),
             ),
           ],
         ),
       ),
     );
-
-    if (shouldProceed == true && context.mounted) {
-      try {
-        final pm = ref.read(packageManagerProvider.notifier);
-        await pm.forceUpdate(app.identifier);
-      } catch (e) {
-        final errorMessage = e.toString();
-        if (context.mounted && !errorMessage.contains('cancelled')) {
-          context.showError('Update failed', technicalDetails: errorMessage);
-        }
-      }
-    }
   }
 
   String _abbr(String v) {

@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/services/package_manager/installed_packages_snapshot.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
+import 'package:zapstore/utils/extensions.dart';
 
 /// Install status values from native side.
 ///
@@ -49,6 +50,7 @@ class NativeErrorCode {
   static const invalidFile = 'invalidFile';
   static const installFailed = 'installFailed';
   static const certMismatch = 'certMismatch';
+  static const certMetadataMismatch = 'certMetadataMismatch';
   static const permissionDenied = 'permissionDenied';
   static const insufficientStorage = 'insufficientStorage';
   static const incompatible = 'incompatible';
@@ -392,6 +394,7 @@ final class AndroidPackageManager extends PackageManager {
         NativeErrorCode.invalidFile => FailureType.invalidFile,
         NativeErrorCode.installFailed => FailureType.installFailed,
         NativeErrorCode.certMismatch => FailureType.certMismatch,
+        NativeErrorCode.certMetadataMismatch => FailureType.certMetadataMismatch,
         NativeErrorCode.permissionDenied => FailureType.permissionDenied,
         NativeErrorCode.insufficientStorage => FailureType.insufficientStorage,
         NativeErrorCode.incompatible => FailureType.incompatible,
@@ -441,6 +444,8 @@ final class AndroidPackageManager extends PackageManager {
         'Invalid app file. The download may be corrupt.',
       FailureType.certMismatch =>
         'Update signed by different developer. Uninstall current version to update.',
+      FailureType.certMetadataMismatch =>
+        'APK signing certificate does not match what the publisher declared. This file may have been tampered with.',
       FailureType.permissionDenied =>
         'Permission required. Please grant install permission and try again.',
       FailureType.insufficientStorage =>
@@ -512,6 +517,7 @@ final class AndroidPackageManager extends PackageManager {
             'packageName': appId,
             'expectedHash': expectedHash,
             'expectedSize': expectedSize,
+            'expectedCertHashes': target.certificateHashes.toList(),
           })
           .timeout(const Duration(seconds: 30), onTimeout: () => null);
 

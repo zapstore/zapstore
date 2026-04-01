@@ -214,8 +214,6 @@ class OperationFailed extends InstallOperation {
     this.filePath,
   });
 
-  /// Whether this requires force update (uninstall + install)
-  bool get needsForceUpdate => type == FailureType.certMismatch;
 }
 
 /// Types of failures that can occur during install operations
@@ -234,6 +232,9 @@ enum FailureType {
 
   /// Certificate/signature mismatch - needs force update (uninstall + install)
   certMismatch,
+
+  /// APK signing certificate does not match what the publisher declared in Nostr metadata
+  certMetadataMismatch,
 
   /// User doesn't have install permission
   permissionDenied,

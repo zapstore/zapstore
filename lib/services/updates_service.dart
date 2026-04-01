@@ -276,8 +276,6 @@ class CategorizedUpdatesNotifier extends Notifier<CategorizedUpdates> {
 
   @override
   CategorizedUpdates build() {
-    ref.onDispose(() => _lastCategorization = null);
-
     // Keep poller alive; only rebuild when completion status changes
     final pollerHasCompleted = ref.watch(
       updatePollerProvider.select((s) => s.lastCheckTime != null),

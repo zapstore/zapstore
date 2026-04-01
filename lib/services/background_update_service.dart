@@ -264,25 +264,38 @@ Future<bool> _checkForUpdatesInBackground(Set<String>? appCatalogRelays) async {
         }
       }
 
-      // Re-query apps from local to ensure relationships are loaded
-      final appsWithRelations = await storage.query(
-        RequestFilter<App>(
-          tags: {
-            '#d': installedIds,
-            '#f': {platform},
-          },
-        ).toRequest(),
-        source: const LocalSource(),
-      );
-
-      // Collect apps with updates
-      final updatableApps = appsWithRelations
-          .where((app) => app.hasUpdate)
-          .toList();
+      // Determine which apps have updates directly from the installables we
+      // already fetched — avoids a relationship-loading re-query that would
+      // always produce null installables (no `and:` in background context).
+      final updatableInstallables = <String, Installable>{};
+      for (final asset in assets) {
+        if (packageManager.hasUpdate(asset.appIdentifier, asset)) {
+          updatableInstallables[asset.appIdentifier] = asset;
+        }
+      }
+      for (final meta in metadatas) {
+        if (!updatableInstallables.containsKey(meta.appIdentifier) &&
+            packageManager.hasUpdate(meta.appIdentifier, meta)) {
+          updatableInstallables[meta.appIdentifier] = meta;
+        }
+      }
 
       // Show notification if updates found (throttled to once per 72h)
-      if (updatableApps.isNotEmpty) {
-        await _showUpdateNotificationIfNeeded(updatableApps);
+      if (updatableInstallables.isNotEmpty) {
+        // Fetch App objects from local DB for display names only
+        final updatableApps = await storage.query(
+          RequestFilter<App>(
+            tags: {
+              '#d': updatableInstallables.keys.toSet(),
+              '#f': {platform},
+            },
+          ).toRequest(),
+          source: const LocalSource(),
+        );
+        await _showUpdateNotificationIfNeeded(
+          updatableApps,
+          updatableInstallables,
+        );
       }
 
       return true;
@@ -299,9 +312,17 @@ Future<bool> _checkForUpdatesInBackground(Set<String>? appCatalogRelays) async {
 /// Show a local notification for available updates.
 /// Only notifies if:
 /// 1. User hasn't opened app in 24+ hours
-/// 2. There are updates with release.createdAt > seenUntil AND > lastOpened
+/// 2. There are updates with installable.createdAt > seenUntil AND > lastOpened
 ///    (new since both last notification AND last time user saw the app)
-Future<void> _showUpdateNotificationIfNeeded(List<App> updates) async {
+///
+/// [installables] maps app identifier → the installable (SoftwareAsset or
+/// FileMetadata) that represents the available update. Its `createdAt` is used
+/// for freshness checks instead of `app.latestRelease.value` which is not
+/// populated in the background isolate context.
+Future<void> _showUpdateNotificationIfNeeded(
+  List<App> updates,
+  Map<String, Installable> installables,
+) async {
   final secureStorage = SecureStorageService();
 
   // Skip if user recently opened the app
@@ -311,16 +332,17 @@ Future<void> _showUpdateNotificationIfNeeded(List<App> updates) async {
     return;
   }
 
-  // Get the "seen until" timestamp - updates with release.createdAt > this are new
+  // Get the "seen until" timestamp - updates with createdAt > this are new
   final seenUntil = await secureStorage.getSeenUntil();
 
   // Filter to only updates that are genuinely new:
-  // - release.createdAt > seenUntil (not already notified via background)
-  // - release.createdAt > lastOpened (not already seen when user opened app)
+  // - installable.createdAt > seenUntil (not already notified via background)
+  // - installable.createdAt > lastOpened (not already seen when user opened app)
   // This prevents nagging about updates user saw in the app but chose to ignore
   final newUpdates = updates.where((app) {
-    final releaseTime = app.latestRelease.value?.event.createdAt;
-    if (releaseTime == null) return false;
+    final installable = installables[app.identifier];
+    if (installable == null) return false;
+    final releaseTime = installable.createdAt;
 
     // Must be newer than last notification (if any)
     if (seenUntil != null && !releaseTime.isAfter(seenUntil)) {

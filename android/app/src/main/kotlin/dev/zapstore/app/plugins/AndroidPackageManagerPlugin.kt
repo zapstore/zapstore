@@ -72,6 +72,7 @@ object ErrorCode {
     const val INVALID_FILE = "invalidFile"
     const val INSTALL_FAILED = "installFailed"
     const val CERT_MISMATCH = "certMismatch"
+    const val CERT_METADATA_MISMATCH = "certMetadataMismatch"
     const val PERMISSION_DENIED = "permissionDenied"
     const val INSUFFICIENT_STORAGE = "insufficientStorage"
     const val INCOMPATIBLE = "incompatible"
@@ -645,12 +646,14 @@ class AndroidPackageManagerPlugin :
                 val packageName = call.argument<String>("packageName")
                 val expectedHash = call.argument<String>("expectedHash")
                 val expectedSize = call.argument<Number>("expectedSize")?.toLong()
+                val expectedCertHashes =
+                        call.argument<List<String>>("expectedCertHashes") ?: emptyList()
 
                 if (filePath == null || packageName == null) {
                     result.error("MISSING_ARGUMENT", "filePath and packageName required", null)
                     return
                 }
-                installApk(filePath, packageName, expectedHash, expectedSize, result)
+                installApk(filePath, packageName, expectedHash, expectedSize, expectedCertHashes, result)
             }
             "canInstallSilently" -> {
                 val packageName = call.argument<String>("packageName")
@@ -699,6 +702,7 @@ class AndroidPackageManagerPlugin :
             packageName: String,
             expectedHash: String?,
             expectedSize: Long?,
+            expectedCertHashes: List<String>,
             result: Result
     ) {
         val file = File(filePath)
@@ -770,7 +774,7 @@ class AndroidPackageManagerPlugin :
 
         // All heavy I/O work runs on background thread to prevent ANRs
         val t = Thread {
-            verifyAndInstall(file, packageName, expectedHash, expectedSize)
+            verifyAndInstall(file, packageName, expectedHash, expectedSize, expectedCertHashes)
             verificationThreads.remove(packageName)
         }
         verificationThreads[packageName] = t
@@ -797,7 +801,8 @@ class AndroidPackageManagerPlugin :
             apkFile: File,
             packageName: String,
             expectedHash: String?,
-            expectedSize: Long?
+            expectedSize: Long?,
+            expectedCertHashes: List<String>
     ) {
         // Step 1: Validate APK format before doing any heavy work
         if (!isValidApkFormat(apkFile)) {
@@ -830,6 +835,40 @@ class AndroidPackageManagerPlugin :
             }
             if (apkPackageName != null && apkPackageName != packageName) {
                 Log.w(TAG, "APK package name '$apkPackageName' differs from event identifier '$packageName'")
+            }
+
+            // Step 2b: Verify APK signing certificate against Nostr metadata (apk_certificate_hash)
+            if (expectedCertHashes.isNotEmpty()) {
+                val actualCertHashes = extractApkCertHashes(apkFile.absolutePath)
+                if (actualCertHashes == null) {
+                    mainHandler.post {
+                        emitInstallStatus(
+                                packageName,
+                                InstallStatus.FAILED,
+                                "Could not extract signing certificate from APK",
+                                ErrorCode.CERT_METADATA_MISMATCH
+                        )
+                    }
+                    return
+                }
+                val matched = actualCertHashes.any { actual ->
+                    expectedCertHashes.any { expected -> actual.equals(expected, ignoreCase = true) }
+                }
+                if (!matched) {
+                    val actualHex = actualCertHashes.joinToString(", ")
+                    val expectedHex = expectedCertHashes.joinToString(", ")
+                    Log.w(TAG, "Cert mismatch for $packageName. Expected: $expectedHex  Actual: $actualHex")
+                    mainHandler.post {
+                        emitInstallStatus(
+                                packageName,
+                                InstallStatus.FAILED,
+                                "Certificate mismatch",
+                                ErrorCode.CERT_METADATA_MISMATCH,
+                                "APK signing certificate does not match what the publisher declared.\n\nExpected: $expectedHex\nActual: $actualHex"
+                        )
+                    }
+                    return
+                }
             }
 
             // Step 3: Check if this is an update
@@ -1005,6 +1044,41 @@ class AndroidPackageManagerPlugin :
                         ErrorCode.INSTALL_FAILED
                 )
             }
+        }
+    }
+
+    /**
+     * Extracts signing certificate hashes from an APK file.
+     *
+     * Returns SHA-256 hashes of the DER-encoded X.509 certificates (lowercase hex), matching the
+     * algorithm used by zsp to produce apk_certificate_hash in NIP-82 SoftwareAsset events.
+     *
+     * Uses SigningInfo.apkContentsSigners (API 28+) which prefers v3 key-rotation signers over
+     * v2/v1, consistent with apkverifier.PickBestApkCert used in zsp.
+     *
+     * Returns null if extraction fails (treat as verification error, not skip).
+     */
+    private fun extractApkCertHashes(apkPath: String): List<String>? {
+        return try {
+            val packageInfo =
+                    context.packageManager.getPackageArchiveInfo(
+                            apkPath,
+                            PackageManager.GET_SIGNING_CERTIFICATES
+                    )
+                            ?: return null
+
+            val signers = packageInfo.signingInfo?.apkContentsSigners ?: return null
+            if (signers.isEmpty()) return null
+
+            val digest = MessageDigest.getInstance("SHA-256")
+            signers.map { sig ->
+                digest.reset()
+                digest.update(sig.toByteArray())
+                digest.digest().joinToString("") { "%02x".format(it) }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to extract APK cert hashes from $apkPath: ${e.message}")
+            null
         }
     }
 

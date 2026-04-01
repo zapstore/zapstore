@@ -609,57 +609,6 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
     await _performInstall(appId, op.target, op.filePath);
   }
 
-  /// Force update (uninstall + install) from OperationFailed with certMismatch
-  Future<void> forceUpdate(String appId) async {
-    final op = getOperation(appId);
-    if (op is! OperationFailed || !op.needsForceUpdate) return;
-
-    final filePath = op.filePath;
-    if (filePath == null || !await File(filePath).exists()) {
-      setOperation(
-        appId,
-        OperationFailed(
-          target: op.target,
-          type: FailureType.downloadFailed,
-          message: 'Downloaded file not found. Please download again.',
-        ),
-      );
-      return;
-    }
-
-    setOperation(appId, Uninstalling(target: op.target, filePath: filePath));
-
-    try {
-      await uninstall(appId);
-      await _performInstall(appId, op.target, filePath);
-    } catch (e) {
-      final errorMessage = e.toString();
-      if (!errorMessage.contains('cancelled')) {
-        setOperation(
-          appId,
-          OperationFailed(
-            target: op.target,
-            type: FailureType.installFailed,
-            message: 'Update failed.',
-            description: errorMessage,
-            filePath: filePath,
-          ),
-        );
-      } else {
-        setOperation(
-          appId,
-          OperationFailed(
-            target: op.target,
-            type: FailureType.certMismatch,
-            message:
-                'Update signed by different developer. Uninstall current version to update.',
-            filePath: filePath,
-          ),
-        );
-      }
-    }
-  }
-
   /// Dismiss error and clean up
   void dismissError(String appId) {
     final op = getOperation(appId);
