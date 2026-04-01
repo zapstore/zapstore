@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/main.dart';
@@ -21,18 +22,25 @@ class UpdatePollerState {
   const UpdatePollerState({
     this.isChecking = false,
     this.lastCheckTime,
+    this.lastError,
   });
 
   final bool isChecking;
   final DateTime? lastCheckTime;
 
+  /// User-facing message from the last failed check, null when healthy.
+  final String? lastError;
+
   UpdatePollerState copyWith({
     bool? isChecking,
     DateTime? lastCheckTime,
+    String? lastError,
+    bool clearError = false,
   }) {
     return UpdatePollerState(
       isChecking: isChecking ?? this.isChecking,
       lastCheckTime: lastCheckTime ?? this.lastCheckTime,
+      lastError: clearError ? null : (lastError ?? this.lastError),
     );
   }
 }
@@ -127,10 +135,17 @@ class UpdatePollerNotifier extends Notifier<UpdatePollerState> {
           .syncInstalledPackages();
       await _fetchUpdatesFromRemote();
       _hasCompletedFirstFetch = true;
-      state = state.copyWith(isChecking: false, lastCheckTime: DateTime.now());
+      state = state.copyWith(
+        isChecking: false,
+        lastCheckTime: DateTime.now(),
+        clearError: true,
+      );
     } catch (e) {
-      // Network failure - degrade gracefully, retry on next cycle
-      state = state.copyWith(isChecking: false);
+      debugPrint('[UpdatePoller] Check failed: $e');
+      state = state.copyWith(
+        isChecking: false,
+        lastError: 'Update check failed — will retry',
+      );
     }
   }
 
@@ -257,12 +272,16 @@ class CategorizedUpdates {
 }
 
 class CategorizedUpdatesNotifier extends Notifier<CategorizedUpdates> {
+  CategorizedUpdates? _lastCategorization;
+
   @override
   CategorizedUpdates build() {
-    // Watch the poller to keep it alive (MainScaffold watches us)
-    final pollerState = ref.watch(updatePollerProvider);
-    // If poller has completed at least once, don't show skeleton for loading states
-    final pollerHasCompleted = pollerState.lastCheckTime != null;
+    ref.onDispose(() => _lastCategorization = null);
+
+    // Keep poller alive; only rebuild when completion status changes
+    final pollerHasCompleted = ref.watch(
+      updatePollerProvider.select((s) => s.lastCheckTime != null),
+    );
 
     // Wait for app initialization
     final initState = ref.watch(appInitializationProvider);
@@ -270,18 +289,22 @@ class CategorizedUpdatesNotifier extends Notifier<CategorizedUpdates> {
       return CategorizedUpdates.empty;
     }
 
-    // Watch installed packages from PackageManager
-    final pmState = ref.watch(packageManagerProvider);
-    final installedPackages = pmState.installed.values.toList();
-    final installedIds = pmState.installed.keys.toSet();
+    // Watch only installed map and scanning flag (ignore operations)
+    final installed = ref.watch(
+      packageManagerProvider.select((s) => s.installed),
+    );
+    final isScanning = ref.watch(
+      packageManagerProvider.select((s) => s.isScanning),
+    );
+    final installedPackages = installed.values.toList();
+    final installedIds = installed.keys.toSet();
 
-    // If still scanning for installed packages, show skeleton
-    if (pmState.isScanning && installedIds.isEmpty) {
+    if (isScanning && installedIds.isEmpty) {
       return CategorizedUpdates.empty;
     }
 
-    // If no apps installed, show empty state (not skeleton)
     if (installedIds.isEmpty) {
+      _lastCategorization = null;
       return const CategorizedUpdates(
         automaticUpdates: [],
         manualUpdates: [],
@@ -316,24 +339,33 @@ class CategorizedUpdatesNotifier extends Notifier<CategorizedUpdates> {
       ),
     );
 
-    return switch (appsState) {
-      // If poller completed but query still loading, show uncataloged (not skeleton)
-      StorageLoading() => pollerHasCompleted
-          ? _buildUncatalogedOnly(installedPackages)
-          : CategorizedUpdates.empty,
-      StorageError() => const CategorizedUpdates(
-        automaticUpdates: [],
-        manualUpdates: [],
-        upToDateApps: [],
-        uncatalogedApps: [],
-        showSkeleton: false,
-      ),
+    // Preserve previous categorization during transient loading/error phases
+    // so the screen doesn't flash back to skeleton or uncataloged state.
+    final result = switch (appsState) {
+      StorageLoading() => _lastCategorization ??
+          (pollerHasCompleted
+              ? _buildUncatalogedOnly(installedPackages)
+              : CategorizedUpdates.empty),
+      StorageError() => _lastCategorization ??
+          const CategorizedUpdates(
+            automaticUpdates: [],
+            manualUpdates: [],
+            upToDateApps: [],
+            uncatalogedApps: [],
+            showSkeleton: false,
+          ),
       StorageData(:final models) => _categorize(
         models,
         installedPackages,
         installedIds,
       ),
     };
+
+    if (appsState is StorageData) {
+      _lastCategorization = result;
+    }
+
+    return result;
   }
 
   /// Build state with all packages as uncataloged (when query hasn't loaded yet

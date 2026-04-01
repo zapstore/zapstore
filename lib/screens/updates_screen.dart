@@ -86,6 +86,7 @@ class _LastCheckedIndicator extends HookConsumerWidget {
     final pollerState = ref.watch(updatePollerProvider);
     final lastCheckTime = pollerState.lastCheckTime;
     final isChecking = pollerState.isChecking;
+    final lastError = pollerState.lastError;
 
     // Force rebuild every minute to keep relative time fresh
     final ticker = useState(0);
@@ -96,41 +97,63 @@ class _LastCheckedIndicator extends HookConsumerWidget {
       return timer.cancel;
     }, const []);
 
-    // Show spinner if actively checking OR if first check hasn't completed yet
     final showSpinner = isChecking || lastCheckTime == null;
 
     final statusText = showSpinner
         ? 'Checking for updates...'
         : 'Last checked: ${_formatRelativeTime(lastCheckTime)}';
 
+    final mutedColor =
+        Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5);
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          if (showSpinner)
-            const SizedBox(
-              width: 12,
-              height: 12,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          else
-            Icon(
-              Icons.schedule,
-              size: 14,
-              color: Theme.of(
-                context,
-              ).colorScheme.onSurface.withValues(alpha: 0.5),
-            ),
-          const SizedBox(width: 8),
-          Text(
-            statusText,
-            style: context.textTheme.bodySmall?.copyWith(
-              color: Theme.of(
-                context,
-              ).colorScheme.onSurface.withValues(alpha: 0.6),
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (showSpinner)
+                const SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
+                Icon(Icons.schedule, size: 14, color: mutedColor),
+              const SizedBox(width: 8),
+              Text(
+                statusText,
+                style: context.textTheme.bodySmall?.copyWith(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
+              ),
+            ],
           ),
+          if (lastError != null && !isChecking)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.warning_amber_rounded,
+                    size: 13,
+                    color: Colors.amber.shade700,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    lastError,
+                    style: context.textTheme.bodySmall?.copyWith(
+                      color: Colors.amber.shade700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );

@@ -185,53 +185,57 @@ Future<bool> _checkForUpdatesInBackground(Set<String>? appCatalogRelays) async {
       }
 
       final installedIds = pmState.installed.keys.toSet();
+      final platform = packageManager.platform;
 
-      // Query for apps with updates from relay
+      // Installable-first: mirrors the foreground poller's fetch strategy.
+      // SoftwareAsset (3063) first, FileMetadata (1063) fallback, then Apps.
       final storage = container.read(storageNotifierProvider.notifier);
-      final apps = await storage.query(
-        RequestFilter<App>(
-          tags: {
-            '#d': installedIds,
-            '#f': {packageManager.platform},
-          },
-        ).toRequest(subscriptionPrefix: 'app-bg-updates'),
+
+      final assets = await storage.query(
+        RequestFilter<SoftwareAsset>(
+          tags: {'#i': installedIds, '#f': {platform}},
+        ).toRequest(subscriptionPrefix: 'app-bg-assets'),
         source: const RemoteSource(relays: 'AppCatalog', stream: false),
       );
 
-      // Load releases and their metadata/assets (required for hasUpdate)
-      if (apps.isNotEmpty) {
-        final releaseFilters = apps
-            .map((app) => app.latestRelease.req?.filters.firstOrNull)
-            .nonNulls
-            .toList();
-        if (releaseFilters.isNotEmpty) {
-          final List<Release> releases = await storage.query(
-            Request<Release>(releaseFilters, subscriptionPrefix: 'app-bg-releases'),
-            source: const RemoteSource(relays: 'AppCatalog', stream: false),
-          );
-
-          final metadataFilters = releases
-              .map((r) => r.latestMetadata.req?.filters.firstOrNull)
+      final coveredIds = assets.map((a) => a.appIdentifier).toSet();
+      final uncoveredIds = installedIds.difference(coveredIds);
+      var metadatas = const <FileMetadata>[];
+      if (uncoveredIds.isNotEmpty) {
+        metadatas = await storage.query(
+          RequestFilter<FileMetadata>(
+            tags: {'#i': uncoveredIds, '#f': {platform}},
+          ).toRequest(subscriptionPrefix: 'app-bg-metadata'),
+          source: const RemoteSource(relays: 'AppCatalog', stream: false),
+        );
+        if (metadatas.isNotEmpty) {
+          final releaseFilters = metadatas
+              .map((m) => m.release.req?.filters.firstOrNull)
               .nonNulls
               .toList();
-          if (metadataFilters.isNotEmpty) {
+          if (releaseFilters.isNotEmpty) {
             await storage.query(
-              Request<FileMetadata>(metadataFilters, subscriptionPrefix: 'app-bg-metadata'),
-              source: const RemoteSource(relays: 'AppCatalog', stream: false),
-            );
-          }
-
-          final assetFilters = releases
-              .map((r) => r.latestAsset.req?.filters.firstOrNull)
-              .nonNulls
-              .toList();
-          if (assetFilters.isNotEmpty) {
-            await storage.query(
-              Request<SoftwareAsset>(assetFilters, subscriptionPrefix: 'app-bg-assets'),
+              Request<Release>(
+                releaseFilters,
+                subscriptionPrefix: 'app-bg-releases',
+              ),
               source: const RemoteSource(relays: 'AppCatalog', stream: false),
             );
           }
         }
+      }
+
+      final allCatalogedIds = {
+        ...coveredIds,
+        ...metadatas.map((m) => m.appIdentifier),
+      };
+      if (allCatalogedIds.isNotEmpty) {
+        await storage.query(
+          RequestFilter<App>(
+            tags: {'#d': allCatalogedIds, '#f': {platform}},
+          ).toRequest(subscriptionPrefix: 'app-bg-apps'),
+          source: const RemoteSource(relays: 'AppCatalog', stream: false),
+        );
       }
 
       // NIP-09: fetch kind-5 deletion events since last sync.
@@ -265,7 +269,7 @@ Future<bool> _checkForUpdatesInBackground(Set<String>? appCatalogRelays) async {
         RequestFilter<App>(
           tags: {
             '#d': installedIds,
-            '#f': {packageManager.platform},
+            '#f': {platform},
           },
         ).toRequest(),
         source: const LocalSource(),
