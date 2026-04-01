@@ -71,8 +71,6 @@ final class AndroidPackageManager extends PackageManager {
 
   static const _methodChannel = MethodChannel('android_package_manager');
   static const _eventChannel = EventChannel('android_package_manager/events');
-  static const _pendingUserActionTimeout = Duration(seconds: 10);
-
   bool _supportsSilentInstall = false;
   int _syncGeneration = 0;
   StreamSubscription<dynamic>? _eventSubscription;
@@ -230,29 +228,13 @@ final class AndroidPackageManager extends PackageManager {
         break;
 
       case InstallStatus.pendingUserAction:
-        // If pending user action lingers too long, treat it like dismiss/cancel
-        // and surface "Install (retry)" instead of staying stuck requesting.
-        if (existingOp is Installing &&
-            !existingOp.isSilent &&
-            DateTime.now().difference(existingOp.startedAt) >=
-                _pendingUserActionTimeout) {
-          if (filePath != null) {
-            setOperation(
-              appId,
-              InstallCancelled(target: target, filePath: filePath),
-            );
-          } else {
-            clearOperation(appId);
-          }
-          clearInstallSlot(appId);
-          break;
-        }
-
         // User action required. Ensure we don't get stuck in Verifying if the
         // STARTED event was missed; show Installing state.
         // Skip if already in Installing or SystemProcessing to preserve the
         // original startedAt timestamp — otherwise the watchdog timeout resets
         // on every pendingUserAction/systemProcessing bounce and never fires.
+        // Dialog dismiss is detected on the Kotlin side via onStart +
+        // findExistingSession, which emits CANCELLED when the session is gone.
         if (filePath != null &&
             existingOp is! Installing &&
             existingOp is! SystemProcessing) {

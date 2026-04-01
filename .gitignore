@@ -56,3 +56,5 @@ reference/*
 
 # FVM Version Cache
 .fvm/
+
+bugs/

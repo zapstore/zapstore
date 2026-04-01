@@ -353,10 +353,27 @@ class AndroidPackageManagerPlugin :
         Log.d(TAG, "App foregrounded")
 
         if (!wasForeground) {
-            // Re-launch any pending install dialogs
             for ((packageName, intent) in pendingUserActionIntents.toMap()) {
-                Log.d(TAG, "Re-launching pending dialog for $packageName")
-                launchConfirmDialog(packageName, intent)
+                val sessionActive = findExistingSession(packageName) != null
+                if (sessionActive) {
+                    // Session still alive — user was in another app, dialog is still pending.
+                    // Re-show it so the user can act on it without hunting for it.
+                    Log.d(TAG, "Re-launching pending dialog for $packageName (session active)")
+                    launchConfirmDialog(packageName, intent)
+                } else {
+                    // Session is gone — dialog was dismissed without confirming.
+                    // Emit CANCELLED so Dart transitions to InstallCancelled immediately.
+                    Log.d(TAG, "Session gone for $packageName on foreground — emitting cancelled")
+                    pendingUserActionIntents.remove(packageName)
+                    val sessionId = sessionToPackage.entries.find { it.value == packageName }?.key ?: -1
+                    clearWatchdog(packageName)
+                    onInstallResult(
+                        sessionId = sessionId,
+                        status = InstallStatus.CANCELLED,
+                        packageName = packageName,
+                        message = "Install dialog dismissed"
+                    )
+                }
             }
         }
     }

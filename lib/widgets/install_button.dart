@@ -175,7 +175,7 @@ class InstallButton extends ConsumerWidget {
           isSilent
               ? (isInstalled ? 'Updating...' : 'Installing...')
               : (isInstalled ? 'Requesting update' : 'Requesting installation'),
-          null, // Not tappable - auto-transitions to retry after 10s if no response
+          null, // Not tappable - transitions to retry when Kotlin detects dialog dismissed
           fontSize: fontSize,
           showSpinner: true,
         ),
