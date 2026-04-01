@@ -123,7 +123,11 @@ class MobileScaffold extends ConsumerWidget {
     final categorized = ref.watch(categorizedUpdatesProvider);
     final poller = ref.watch(updatePollerProvider);
     final updateCount = ref.watch(updateCountProvider);
-    final isLoadingUpdates = categorized.showSkeleton || poller.isChecking;
+    // Spinner only during first-time sync; once a check has completed, show
+    // the count badge even while a subsequent check is in progress.
+    final isFirstSync =
+        poller.lastCheckTime == null &&
+        (categorized.showSkeleton || poller.isChecking);
 
     return Scaffold(
       body: Container(
@@ -219,7 +223,7 @@ class MobileScaffold extends ConsumerWidget {
                         clipBehavior: Clip.none,
                         children: [
                           const Icon(Icons.update),
-                          if (isLoadingUpdates)
+                          if (isFirstSync)
                             Positioned(
                               right: -8,
                               top: -8,
@@ -321,7 +325,9 @@ class DesktopScaffold extends ConsumerWidget {
     final categorized = ref.watch(categorizedUpdatesProvider);
     final poller = ref.watch(updatePollerProvider);
     final updateCount = ref.watch(updateCountProvider);
-    final isLoadingUpdates = categorized.showSkeleton || poller.isChecking;
+    final isFirstSync =
+        poller.lastCheckTime == null &&
+        (categorized.showSkeleton || poller.isChecking);
 
     return Scaffold(
       body: Container(
@@ -375,7 +381,7 @@ class DesktopScaffold extends ConsumerWidget {
                         clipBehavior: Clip.none,
                         children: [
                           const Icon(Icons.update),
-                          if (isLoadingUpdates)
+                          if (isFirstSync)
                             Positioned(
                               right: -8,
                               top: -8,

@@ -135,89 +135,85 @@ class UpdatePollerNotifier extends Notifier<UpdatePollerState> {
   }
 
   /// Fetch updates from remote relays and write to local DB.
-  /// Similar pattern to background_update_service.dart.
+  ///
+  /// Installable-first: fetches SoftwareAsset (3063) for installed apps,
+  /// then FileMetadata (1063) for any apps not covered by 3063, then
+  /// resolves parent Apps (32267) for display. All data lands in local DB
+  /// before the poller marks the check as complete.
   Future<void> _fetchUpdatesFromRemote() async {
     final pmState = ref.read(packageManagerProvider);
-    if (pmState.installed.isEmpty) {
-      return; // No installed apps to check
-    }
+    if (pmState.installed.isEmpty) return;
 
     final installedIds = pmState.installed.keys.toSet();
     final platform = ref.read(packageManagerProvider.notifier).platform;
     final storage = ref.read(storageNotifierProvider.notifier);
 
-    // Query for apps from remote
-    final apps = await storage.query(
-      RequestFilter<App>(
-        tags: {
-          '#d': installedIds,
-          '#f': {platform},
-        },
+    // 1. Fetch SoftwareAsset (3063) — covers most apps
+    final assets = await storage.query(
+      RequestFilter<SoftwareAsset>(
+        tags: {'#i': installedIds, '#f': {platform}},
       ).toRequest(),
       source: const RemoteSource(relays: 'AppCatalog', stream: false),
       subscriptionPrefix: 'app-updates-poll',
     );
 
-    if (apps.isEmpty) return;
-
-    // Load releases for the apps
-    final releaseFilters = apps
-        .map((app) => app.latestRelease.req?.filters.firstOrNull)
-        .nonNulls
-        .toList();
-
-    if (releaseFilters.isEmpty) return;
-
-    final releases = await storage.query(
-      Request<Release>(releaseFilters),
-      source: const RemoteSource(relays: 'AppCatalog', stream: false),
-      subscriptionPrefix: 'app-updates-poll-releases',
-    );
-
-    if (releases.isEmpty) return;
-
-    // Load file metadata for the releases
-    final metadataFilters = releases
-        .map((r) => r.latestMetadata.req?.filters.firstOrNull)
-        .nonNulls
-        .toList();
-
-    if (metadataFilters.isNotEmpty) {
-      await storage.query(
-        Request<FileMetadata>(metadataFilters),
+    // 2. Fetch FileMetadata (1063) for apps not covered by 3063
+    final coveredIds = assets.map((a) => a.appIdentifier).toSet();
+    final uncoveredIds = installedIds.difference(coveredIds);
+    var metadatas = const <FileMetadata>[];
+    if (uncoveredIds.isNotEmpty) {
+      metadatas = await storage.query(
+        RequestFilter<FileMetadata>(
+          tags: {'#i': uncoveredIds, '#f': {platform}},
+        ).toRequest(),
         source: const RemoteSource(relays: 'AppCatalog', stream: false),
-        subscriptionPrefix: 'app-updates-poll-metadata',
+        subscriptionPrefix: 'app-updates-poll-legacy',
       );
+      // Fetch Releases for 1063 apps (needed for App → Release → FileMetadata chain)
+      if (metadatas.isNotEmpty) {
+        final releaseFilters = metadatas
+            .map((m) => m.release.req?.filters.firstOrNull)
+            .nonNulls
+            .toList();
+        if (releaseFilters.isNotEmpty) {
+          await storage.query(
+            Request<Release>(releaseFilters),
+            source: const RemoteSource(relays: 'AppCatalog', stream: false),
+            subscriptionPrefix: 'app-updates-poll-legacy-releases',
+          );
+        }
+      }
     }
 
-    // Load software assets for the releases
-    final assetFilters = releases
-        .map((r) => r.latestAsset.req?.filters.firstOrNull)
-        .nonNulls
-        .toList();
-
-    if (assetFilters.isNotEmpty) {
-      await storage.query(
-        Request<SoftwareAsset>(assetFilters),
+    // 3. Resolve parent Apps for display (name, icon, etc.)
+    final allCatalogedIds = {
+      ...coveredIds,
+      ...metadatas.map((m) => m.appIdentifier),
+    };
+    if (allCatalogedIds.isNotEmpty) {
+      final apps = await storage.query(
+        RequestFilter<App>(
+          tags: {'#d': allCatalogedIds, '#f': {platform}},
+        ).toRequest(),
         source: const RemoteSource(relays: 'AppCatalog', stream: false),
-        subscriptionPrefix: 'app-updates-poll-assets',
+        subscriptionPrefix: 'app-updates-poll-apps',
       );
-    }
 
-    // Fetch author profiles in background (fire and forget)
-    final authorPubkeys = apps.map((a) => a.event.pubkey).toSet();
-    if (authorPubkeys.isNotEmpty) {
-      unawaited(
-        storage.query(
-          RequestFilter<Profile>(authors: authorPubkeys).toRequest(),
-          source: const LocalAndRemoteSource(
-            relays: {'social', 'vertex'},
-            cachedFor: Duration(hours: 2),
-            stream: false,
+      // Author profiles for display (fire and forget)
+      final authorPubkeys = apps.map((a) => a.event.pubkey).toSet();
+      if (authorPubkeys.isNotEmpty) {
+        unawaited(
+          storage.query(
+            RequestFilter<Profile>(authors: authorPubkeys).toRequest(),
+            source: const LocalAndRemoteSource(
+              relays: {'social', 'vertex'},
+              cachedFor: Duration(hours: 2),
+              stream: false,
+            ),
+            subscriptionPrefix: 'app-updates-profiles',
           ),
-          subscriptionPrefix: 'app-updates-profiles',
-        ),
-      );
+        );
+      }
     }
   }
 }
@@ -297,7 +293,9 @@ class CategorizedUpdatesNotifier extends Notifier<CategorizedUpdates> {
 
     final platform = ref.read(packageManagerProvider.notifier).platform;
 
-    // Query LOCAL ONLY for apps matching installed IDs
+    // Local-only query: App with both installable paths loaded.
+    // 3063 apps resolve via latestAsset; 1063-only apps via latestRelease chain.
+    // The poller writes all data to local DB first; this just reads it.
     final appsState = ref.watch(
       query<App>(
         tags: {
@@ -305,11 +303,11 @@ class CategorizedUpdatesNotifier extends Notifier<CategorizedUpdates> {
           '#f': {platform},
         },
         and: (app) => {
+          app.latestAsset.query(source: const LocalSource()),
           app.latestRelease.query(
             source: const LocalSource(),
             and: (release) => {
               release.latestMetadata.query(source: const LocalSource()),
-              release.latestAsset.query(source: const LocalSource()),
             },
           ),
         },
@@ -380,12 +378,11 @@ class CategorizedUpdatesNotifier extends Notifier<CategorizedUpdates> {
       (a) => installedMap.containsKey(a.identifier),
     );
 
+    final pm = ref.read(packageManagerProvider.notifier);
+
     for (final app in installedApps) {
       final pkg = installedMap[app.identifier]!;
       final latest = app.installable;
-
-      // Determine if update available using versionCode (via PackageManager)
-      final pm = ref.read(packageManagerProvider.notifier);
       final hasUpdate = latest != null && pm.hasUpdate(app.identifier, latest);
 
       if (hasUpdate) {

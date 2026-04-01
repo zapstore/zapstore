@@ -470,10 +470,7 @@ class _AppCardUpdateButtonSection extends ConsumerWidget {
         const Gap(10),
         ConstrainedBox(
           constraints: const BoxConstraints(minHeight: 38),
-          child: _CompactInstallButton(
-            app: app,
-            release: app.latestRelease.value,
-          ),
+          child: _CompactInstallButton(app: app),
         ),
       ],
     );
@@ -512,13 +509,12 @@ class _AppCardZapEncouragementSection extends ConsumerWidget {
 /// Compact wrapper around InstallButton for use in app cards
 class _CompactInstallButton extends ConsumerWidget {
   final App app;
-  final Release? release;
 
-  const _CompactInstallButton({required this.app, this.release});
+  const _CompactInstallButton({required this.app});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return InstallButton(app: app, release: release, compact: true);
+    return InstallButton(app: app, compact: true);
   }
 }
 
