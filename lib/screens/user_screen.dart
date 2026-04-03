@@ -40,6 +40,7 @@ class UserScreen extends HookConsumerWidget {
         },
         limit: 20,
         and: (app) => {
+          app.latestAsset.query(),
           app.latestRelease.query(
             and: (release) => {
               release.latestMetadata.query(),

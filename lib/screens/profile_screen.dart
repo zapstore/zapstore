@@ -1605,9 +1605,17 @@ class _SavedAppsList extends ConsumerWidget {
     final savedAppsState = ref.watch(
       query<App>(
         tags: {'#d': identifiers},
-        and: (app) => {app.latestRelease.query()},
-        source: const LocalSource(),
-        subscriptionPrefix: 'profile-saved-apps',
+        and: (app) => {
+          app.latestAsset.query(),
+          app.latestRelease.query(
+            and: (release) => {release.latestMetadata.query()},
+          ),
+        },
+        source: const LocalAndRemoteSource(
+          relays: 'AppCatalog',
+          stream: false,
+        ),
+        subscriptionPrefix: 'app-profile-saved-apps',
       ),
     );
 
