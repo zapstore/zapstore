@@ -42,27 +42,23 @@ android {
     }
 
     // Release signing is optional:
-    // - With a complete key.properties -> signed (for Play/GitHub releases)
-    // - Without key.properties (or incomplete) -> unsigned (for reproducible builds / F-Droid)
-    val releaseSigningConfig = if (keystorePropertiesFile.exists()) {
-        val alias = keystoreProperties.getProperty("keyAlias")?.trim().orEmpty()
-        val keyPass = keystoreProperties.getProperty("keyPassword")?.trim().orEmpty()
-        val storePath = keystoreProperties.getProperty("storeFile")?.trim().orEmpty()
-        val storePass = keystoreProperties.getProperty("storePassword")?.trim().orEmpty()
+    // - With ZAPSTORE_KEY_PATH + ZAPSTORE_KEY_PASSWORD env vars -> signed
+    // - Without env vars -> unsigned (for reproducible builds / F-Droid)
+    val envKeyPassword = System.getenv("ZAPSTORE_KEY_PASSWORD")?.trim()
+    val envKeyPath = System.getenv("ZAPSTORE_KEY_PATH")?.trim()
 
-        val store = storePath.takeIf { it.isNotBlank() }?.let { file(it) }
-        val isComplete = alias.isNotBlank() && keyPass.isNotBlank() && store != null && store.exists() && storePass.isNotBlank()
+    val envKeyAlias = System.getenv("ZAPSTORE_KEY_ALIAS")?.trim()
 
-        if (isComplete) {
-            signingConfigs.create("release") {
-                storeFile = store
-                storePassword = storePass
-                keyAlias = alias
-                keyPassword = keyPass
-            }
-        } else {
-            logger.warn("key.properties found but incomplete. Building unsigned release APK.")
-            null
+    val releaseSigningConfig = if (envKeyPassword != null && envKeyPath != null && envKeyAlias != null) {
+        val store = file(envKeyPath)
+        if (!store.exists()) {
+            error("ZAPSTORE_KEY_PATH points to a file that does not exist: $envKeyPath")
+        }
+        signingConfigs.create("release") {
+            storeFile = store
+            storePassword = envKeyPassword
+            keyAlias = envKeyAlias
+            keyPassword = envKeyPassword
         }
     } else {
         null
