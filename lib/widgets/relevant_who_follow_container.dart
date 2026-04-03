@@ -385,7 +385,7 @@ Future<Model<dynamic>?> _runDVMRequest(
 
     await ref.read(storageNotifierProvider.notifier).publish(
       {request},
-      source: source,
+      relays: relays,
     );
 
     return await completer.future.timeout(timeout);

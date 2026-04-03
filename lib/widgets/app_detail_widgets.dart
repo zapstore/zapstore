@@ -274,7 +274,7 @@ class SocialActionsRow extends HookConsumerWidget {
       await ref.storage.save({signedStack});
       ref.storage.publish({
         signedStack,
-      }, source: RemoteSource(relays: 'social'));
+      }, relays: {'social', 'AppCatalog'});
 
       if (context.mounted) {
         context.showInfo(

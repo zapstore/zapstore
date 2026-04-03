@@ -677,7 +677,7 @@ class _CommentComposer extends HookConsumerWidget {
       final signedComment = await comment.signWith(signer);
 
       await signedComment.save();
-      await signedComment.publish(source: RemoteSource(relays: 'social'));
+      await signedComment.publish(relays: {'social', 'AppCatalog'});
 
       if (context.mounted) {
         Navigator.pop(context);
@@ -890,7 +890,7 @@ class _ReplyComposer extends HookConsumerWidget {
       final signedReply = await reply.signWith(signer);
 
       await signedReply.save();
-      await signedReply.publish(source: RemoteSource(relays: 'social'));
+      await signedReply.publish(relays: {'social', 'AppCatalog'});
 
       if (context.mounted) {
         Navigator.pop(context);
@@ -1020,7 +1020,7 @@ class _StackCommentComposer extends HookConsumerWidget {
       final signedComment = await comment.signWith(signer);
 
       await signedComment.save();
-      await signedComment.publish(source: RemoteSource(relays: 'social'));
+      await signedComment.publish(relays: {'social', 'AppCatalog'});
 
       if (context.mounted) {
         Navigator.pop(context);

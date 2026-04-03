@@ -167,7 +167,7 @@ class SaveAppDialog extends HookConsumerWidget {
       await ref.storage.save({signedStack});
       ref.storage.publish({
         signedStack,
-      }, source: RemoteSource(relays: 'social'));
+      }, relays: {'social', 'AppCatalog'});
 
       if (context.mounted) {
         Navigator.pop(context);
@@ -652,7 +652,7 @@ class _AddToStackDialogSignedIn extends HookConsumerWidget {
           await ref.storage.save({signedStack});
           await ref.storage.publish({
             signedStack,
-          }, source: RemoteSource(relays: {'social', 'AppCatalog'}));
+          }, relays: {'social', 'AppCatalog'});
         }
       }
 
@@ -684,7 +684,7 @@ class _AddToStackDialogSignedIn extends HookConsumerWidget {
           await ref.storage.save({signedStack});
           await ref.storage.publish({
             signedStack,
-          }, source: RemoteSource(relays: {'social', 'AppCatalog'}));
+          }, relays: {'social', 'AppCatalog'});
         }
       }
 

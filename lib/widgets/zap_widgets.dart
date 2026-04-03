@@ -445,6 +445,8 @@ class ZapAmountDialog extends HookConsumerWidget {
 
                         final socialRelays = await storageNotifier
                             .resolveRelays('social');
+                        final appCatalogRelays = await storageNotifier
+                            .resolveRelays('AppCatalog');
 
                         final zapRequest = PartialZapRequest();
                         zapRequest.amount = amount * 1000; // msats
@@ -452,7 +454,7 @@ class ZapAmountDialog extends HookConsumerWidget {
                         zapRequest.linkProfileByPubkey(author.pubkey);
                         zapRequest.linkModel(app);
                         zapRequest.linkModelById(latestMetadata.id);
-                        zapRequest.relays = socialRelays;
+                        zapRequest.relays = {...socialRelays, ...appCatalogRelays};
 
                         final signedZapRequest = await zapRequest.signWith(
                           signer,
