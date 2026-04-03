@@ -293,6 +293,15 @@ class _StackHeader extends StatelessWidget {
             ),
           ],
         ),
+        if (stack.description case final description?) ...[
+          const SizedBox(height: 12),
+          Text(
+            description,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
+        ],
       ],
     );
   }

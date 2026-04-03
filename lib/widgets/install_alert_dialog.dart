@@ -33,7 +33,24 @@ class InstallAlertDialog extends HookConsumerWidget {
       _ => null,
     };
     if (publisher == null) {
-      return const SizedBox.shrink();
+      return const BaseDialog(
+        title: BaseDialogTitle('Trust this app?'),
+        content: BaseDialogContent(
+          children: [
+            Center(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [],
+      );
     }
     final trustedSignerNotifier = useState(false);
     final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
@@ -55,15 +72,17 @@ class InstallAlertDialog extends HookConsumerWidget {
               oneLine: false,
               size: baseTextSize,
             ),
-            Gap(10),
-            DownloadTextContainer(
-              beforeText:
-                  '${app.name ?? app.identifier} will be installed from its original release location:',
-              oneLine: false,
-              showFullUrl: true,
-              url: app.installable!.urls.first,
-              size: baseTextSize,
-            ),
+            if (app.installable?.urls.firstOrNull != null) ...[
+              Gap(10),
+              DownloadTextContainer(
+                beforeText:
+                    '${app.name ?? app.identifier} will be installed from its original release location:',
+                oneLine: false,
+                showFullUrl: true,
+                url: app.installable!.urls.first,
+                size: baseTextSize,
+              ),
+            ],
           ] else ...[
             canPersistTrust
                 ? RelevantWhoFollowContainer(app: app, size: baseTextSize)

@@ -23,8 +23,23 @@ class UpdateAllRow extends ConsumerWidget {
       child: TextButton.icon(
         onPressed: () async {
           final pm = ref.read(packageManagerProvider.notifier);
+          final pmState = ref.read(packageManagerProvider);
           final items = allUpdates
-              .where((app) => app.installable != null)
+              .where((app) {
+                final target = app.installable;
+                if (target == null) return false;
+                // Skip apps with cert mismatch — they will fail during
+                // install and waste bandwidth.
+                final installedHash =
+                    pmState.installed[app.identifier]?.signatureHash ?? '';
+                final targetHashes = target.certificateHashes;
+                if (installedHash.isNotEmpty &&
+                    targetHashes.isNotEmpty &&
+                    !targetHashes.contains(installedHash)) {
+                  return false;
+                }
+                return true;
+              })
               .map(
                 (app) => (
                   appId: app.identifier,

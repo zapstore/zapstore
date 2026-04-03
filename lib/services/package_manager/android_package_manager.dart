@@ -751,14 +751,13 @@ final class AndroidPackageManager extends PackageManager {
         final installedPkg = packages[appId];
         final targetVc = op.target.versionCode;
         final installedVc = installedPkg?.versionCode;
-        final targetV = op.target.version;
-        final installedV = installedPkg?.version;
 
+        // Only use versionCode comparison — version string matching could
+        // give false positives when the same string maps to different builds.
         final completed =
-            (targetVc != null &&
-                installedVc != null &&
-                installedVc >= targetVc) ||
-            (installedV != null && installedV == targetV);
+            targetVc != null &&
+            installedVc != null &&
+            installedVc >= targetVc;
 
         // Only clear if we can establish completion reliably.
         // Transition to Completed (not clearOperation) so the op stays until
@@ -766,7 +765,7 @@ final class AndroidPackageManager extends PackageManager {
         if (completed) {
           debugPrint(
             '[PackageManager] Sync: completing operation for $appId '
-            '(installedVc=$installedVc, targetVc=$targetVc, installedV=$installedV, targetV=$targetV)',
+            '(installedVc=$installedVc, targetVc=$targetVc)',
           );
           // Sync fallback: state.installed was already overwritten with native
           // data above (line 723), so we must NOT call _updateInstalledPackage
@@ -778,7 +777,7 @@ final class AndroidPackageManager extends PackageManager {
         } else {
           debugPrint(
             '[PackageManager] Sync: keeping operation for $appId '
-            '(installedVc=$installedVc, targetVc=$targetVc, installedV=$installedV, targetV=$targetV)',
+            '(installedVc=$installedVc, targetVc=$targetVc)',
           );
         }
       }

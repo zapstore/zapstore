@@ -564,7 +564,9 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
     await _performInstall(appId, op.target, op.filePath);
   }
 
-  /// Retry install from InstallCancelled state
+  /// Retry install from InstallCancelled state.
+  /// Routes through the install queue to respect the single-active-install
+  /// constraint (Android PackageInstaller limitation).
   Future<void> retryInstall(String appId) async {
     final op = getOperation(appId);
     if (op is! InstallCancelled) return;
@@ -581,11 +583,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
       return;
     }
 
-    // Exit InstallCancelled immediately so UI shows progress and native
-    // install events are no longer ignored by AndroidPackageManager.
-    setOperation(appId, Installing(target: op.target, filePath: op.filePath));
-
-    await _performInstall(appId, op.target, op.filePath);
+    _addToInstallQueue(appId, op.target, op.filePath);
   }
 
   /// Dismiss error and clean up
