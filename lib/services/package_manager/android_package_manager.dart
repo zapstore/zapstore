@@ -173,17 +173,15 @@ final class AndroidPackageManager extends PackageManager {
       return;
     }
 
-    // INVARIANT: Don't process terminal events for already terminal operations.
-    // This prevents stale or duplicate events from corrupting state.
-    // For example, a stale 'cancelled' event arriving after 'success' would
-    // clear the Completed operation (since Completed has no filePath).
-    if (existingOp.isTerminal &&
-        (status == InstallStatus.success ||
-            status == InstallStatus.failed ||
-            status == InstallStatus.cancelled)) {
-      debugPrint(
-        '[PackageManager] Ignoring terminal event $status for already terminal operation ${existingOp.runtimeType}',
-      );
+    // Don't process duplicate terminal events, but let SUCCESS override
+    // OperationFailed — Android is the authoritative source for install
+    // outcomes, so a late SUCCESS (e.g. arriving after a watchdog timeout)
+    // must be honoured.
+    if (existingOp is Completed) {
+      return;
+    }
+    if (existingOp is OperationFailed &&
+        status != InstallStatus.success) {
       return;
     }
 

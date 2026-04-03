@@ -214,7 +214,8 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
     }
   }
 
-  /// Check for operations stuck too long (Dart-side fallback if native events stop).
+  /// Check for stalled downloads (Dart-side watchdog).
+  /// Install phases are managed by native callbacks and don't need Dart polling.
   void _checkForStaleOperations() {
     final now = DateTime.now();
     var needsQueueProcessing = false;
@@ -222,51 +223,29 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
     for (final entry in state.operations.entries) {
       final appId = entry.key;
       final op = entry.value;
-      final timestamp = op.watchdogTimestamp;
+      if (op is! Downloading) continue;
 
-      if (timestamp == null || now.difference(timestamp) <= watchdogTimeout) {
-        continue;
-      }
+      final lastProgress = op.lastProgressAt;
+      if (now.difference(lastProgress) <= watchdogTimeout) continue;
 
       debugPrint(
-        '[PackageManager] Watchdog: $appId stuck in ${op.runtimeType}, '
-        'transitioning to error',
+        '[PackageManager] Watchdog: $appId download stalled, transitioning to error',
       );
 
-      // Use appropriate failure type and cleanup based on operation type
-      if (op is Downloading) {
-        activeDownloads.remove(appId);
-        // Try to cancel the stuck task
-        unawaited(
-          _downloader.cancelTaskWithId(op.taskId).catchError((_) => false),
-        );
-        setOperation(
-          appId,
-          OperationFailed(
-            target: op.target,
-            type: FailureType.downloadFailed,
-            message:
-                'Download timed out. Please check your internet connection and try again.',
-          ),
-        );
-        needsQueueProcessing = true;
-      } else {
-        setOperation(
-          appId,
-          OperationFailed(
-            target: op.target,
-            type: FailureType.installFailed,
-            message: 'Installation timed out. Please try again.',
-            filePath: op.filePath,
-          ),
-        );
-        if (op is Installing ||
-            op is SystemProcessing ||
-            op is ReadyToInstall) {
-          clearInstallSlot(appId);
-          needsQueueProcessing = true;
-        }
-      }
+      activeDownloads.remove(appId);
+      unawaited(
+        _downloader.cancelTaskWithId(op.taskId).catchError((_) => false),
+      );
+      setOperation(
+        appId,
+        OperationFailed(
+          target: op.target,
+          type: FailureType.downloadFailed,
+          message:
+              'Download timed out. Please check your internet connection and try again.',
+        ),
+      );
+      needsQueueProcessing = true;
     }
 
     if (needsQueueProcessing) {

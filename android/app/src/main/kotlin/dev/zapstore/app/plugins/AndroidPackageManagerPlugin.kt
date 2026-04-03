@@ -39,8 +39,7 @@ private const val UNINSTALL_POLL_INTERVAL_MS = 500L
 
 /** Watchdog timeouts (bounded with backoff to avoid false negatives on slow devices) */
 private const val VERIFY_WATCHDOG_MS = 10_000L
-private const val INSTALL_WATCHDOG_MS = 10_000L
-private const val MAX_INSTALL_WATCHDOG_MS = 120_000L
+private const val MAX_VERIFY_WATCHDOG_MS = 120_000L
 
 /** Buffer size for file operations - 256KB to reduce syscall overhead on large APKs */
 private const val COPY_BUFFER_SIZE = 262144
@@ -108,13 +107,13 @@ class AndroidPackageManagerPlugin :
     private val verificationThreads = ConcurrentHashMap<String, Thread>()
 
     /** Track sessions that are pending user action (so we can detect when user accepts) */
-    private val sessionsPendingUserAction = mutableSetOf<Int>()
+    private val sessionsPendingUserAction: MutableSet<Int> = ConcurrentHashMap.newKeySet()
 
     /** Track sessions that have emitted INSTALLING status (to avoid duplicates) */
-    private val sessionsInstalling = mutableSetOf<Int>()
+    private val sessionsInstalling: MutableSet<Int> = ConcurrentHashMap.newKeySet()
 
     /** Track sessions that have been committed (abandonSession won't work for these) */
-    private val committedSessions = mutableSetOf<Int>()
+    private val committedSessions: MutableSet<Int> = ConcurrentHashMap.newKeySet()
 
     /** Track sessions that have already emitted SUCCESS (to avoid duplicates from onFinished) */
     private val sessionsCompletedSuccessfully = mutableSetOf<Int>()
@@ -550,80 +549,43 @@ class AndroidPackageManagerPlugin :
         watchdogDeadlineMs.remove(appId)
     }
 
+    /**
+     * Schedule a watchdog for the verification stage only.
+     *
+     * Post-commit, Android is the source of truth — InstallResultReceiver /
+     * SessionCallback.onFinished always deliver a terminal event. The watchdog
+     * is cleared when STARTED is emitted (see [updateWatchdog]).
+     */
     private fun scheduleWatchdog(appId: String, initialDelayMs: Long) {
         val gen = bumpWatchdogGen(appId)
         val now = System.currentTimeMillis()
         val deadline =
                 watchdogDeadlineMs[appId]
-                        ?: (now + MAX_INSTALL_WATCHDOG_MS).also { watchdogDeadlineMs[appId] = it }
+                        ?: (now + MAX_VERIFY_WATCHDOG_MS).also { watchdogDeadlineMs[appId] = it }
 
         mainHandler.postDelayed(
                 {
                     if (watchdogGen[appId] != gen) return@postDelayed
 
-                    // "Ping" reality before timing out.
-                    val hasSession = hasActiveSession(appId)
-                    val hasPendingUi = pendingUserActionIntents.containsKey(appId)
                     val verifyThread = verificationThreads[appId]
                     val verifyingAlive = verifyThread?.isAlive == true
 
-                    // If work is still happening, extend (bounded by deadline).
                     val now2 = System.currentTimeMillis()
-                    if (now2 < deadline && (hasSession || hasPendingUi || verifyingAlive)) {
-                        // Nudge Dart to show the most accurate state (esp. after reconnect).
-                        // NOTE: We do NOT re-launch the dialog here. The initial launch via
-                        // ActivityContext (same task) is reliable, and onStart already handles
-                        // the case where the user backgrounded and returned. Re-launching on
-                        // every watchdog tick caused the dialog to reappear while visible.
-                        if (hasPendingUi) {
-                            emitInstallStatus(
-                                    appId,
-                                    InstallStatus.PENDING_USER_ACTION,
-                                    "User confirmation pending"
-                            )
-                        } else if (hasSession) {
-                            emitInstallStatus(appId, InstallStatus.STARTED)
-                        } else if (verifyingAlive) {
-                            emitInstallStatus(appId, InstallStatus.VERIFYING)
-                        }
-                        // Backoff: next check is another INSTALL_WATCHDOG_MS.
-                        scheduleWatchdog(appId, INSTALL_WATCHDOG_MS)
+                    if (now2 < deadline && verifyingAlive) {
+                        emitInstallStatus(appId, InstallStatus.VERIFYING)
+                        scheduleWatchdog(appId, VERIFY_WATCHDOG_MS)
                         return@postDelayed
                     }
 
-                    // Check if session is committed - if so, we can't abandon it
-                    val sessionId = sessionToPackage.entries.find { it.value == appId }?.key
-                    val isCommitted = sessionId != null && sessionId in committedSessions
-
-                    if (isCommitted) {
-                        // Session is committed - Android is in control, we cannot abort
-                        // Keep waiting and show "system processing" status
-                        Log.w(
-                                TAG,
-                                "Watchdog: Session for $appId is committed (sessionId=$sessionId), system is processing. Cannot timeout."
-                        )
-                        emitInstallStatus(
-                                appId,
-                                InstallStatus.SYSTEM_PROCESSING,
-                                "System is processing..."
-                        )
-                        // Extend deadline significantly - Android will eventually complete or fail
-                        watchdogDeadlineMs[appId] =
-                                System.currentTimeMillis() + MAX_INSTALL_WATCHDOG_MS
-                        scheduleWatchdog(appId, INSTALL_WATCHDOG_MS * 2)
-                        return@postDelayed
-                    }
-
-                    // Deadline exceeded or no evidence of progress: fail fast and cleanup.
                     Log.w(
                             TAG,
-                            "Watchdog timeout for $appId (hasSession=$hasSession, pendingUi=$hasPendingUi, verifyingAlive=$verifyingAlive, isCommitted=$isCommitted)"
+                            "Verify watchdog timeout for $appId (verifyingAlive=$verifyingAlive)"
                     )
                     abandonExistingSession(appId)
                     emitInstallStatus(
                             appId,
                             InstallStatus.FAILED,
-                            "Installation timed out. Please retry.",
+                            "Verification timed out. Please retry.",
                             ErrorCode.INSTALL_TIMEOUT
                     )
                     clearWatchdog(appId)
@@ -635,17 +597,12 @@ class AndroidPackageManagerPlugin :
     private fun updateWatchdog(appId: String, status: String) {
         when (status) {
             InstallStatus.VERIFYING, InstallStatus.VERIFYING_PROGRESS -> {
-                // Start watchdog for verify stage
                 scheduleWatchdog(appId, VERIFY_WATCHDOG_MS)
             }
-            InstallStatus.STARTED,
-            InstallStatus.PENDING_USER_ACTION,
-            InstallStatus.INSTALLING,
-            InstallStatus.SYSTEM_PROCESSING -> {
-                // Start/refresh watchdog for install stage
-                scheduleWatchdog(appId, INSTALL_WATCHDOG_MS)
-            }
-            InstallStatus.SUCCESS, InstallStatus.FAILED, InstallStatus.CANCELLED -> {
+            else -> {
+                // Once STARTED (session committed), Android is the source of truth.
+                // InstallResultReceiver / SessionCallback.onFinished will deliver the
+                // terminal event. No watchdog needed post-commit.
                 clearWatchdog(appId)
                 verificationThreads.remove(appId)
             }
@@ -1020,8 +977,10 @@ class AndroidPackageManagerPlugin :
                             PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
                     )
 
+            // Mark committed BEFORE commit() so the watchdog (running on main
+            // thread) can never observe a committed session as uncommitted.
+            committedSessions.add(sessionId)
             session.commit(pendingIntent.intentSender)
-            committedSessions.add(sessionId) // Mark as committed - abandonSession won't work now
             Log.d(TAG, "Session $sessionId committed for $packageName")
             session.close()
             session = null // Prevent double-close in finally

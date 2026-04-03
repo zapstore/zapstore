@@ -263,13 +263,10 @@ extension InstallOperationX on InstallOperation {
       this is SystemProcessing ||
       this is Uninstalling;
 
-  /// Whether this operation needs watchdog monitoring (waiting for native events)
-  bool get needsWatchdog =>
-      this is Downloading ||
-      this is Verifying ||
-      this is Installing ||
-      this is SystemProcessing ||
-      (this is ReadyToInstall && (this as ReadyToInstall).triggeredAt != null);
+  /// Whether this operation needs Dart-side watchdog monitoring.
+  /// Only downloads are monitored — install phases are managed by native
+  /// callbacks (Android PackageInstaller / SessionCallback).
+  bool get needsWatchdog => this is Downloading;
 
   /// Whether this operation is in the verification phase
   bool get isVerifying => this is Verifying;
@@ -279,18 +276,6 @@ extension InstallOperationX on InstallOperation {
 
   /// Whether this operation is still in progress (not terminal)
   bool get isInProgress => !isTerminal;
-
-  /// Get the relevant timestamp for watchdog monitoring.
-  /// For downloads: last progress update (activity-based, so slow downloads survive).
-  /// For other phases: when the phase started.
-  DateTime? get watchdogTimestamp => switch (this) {
-    Downloading(:final lastProgressAt) => lastProgressAt,
-    Verifying(:final startedAt) => startedAt,
-    Installing(:final startedAt) => startedAt,
-    SystemProcessing(:final startedAt) => startedAt,
-    ReadyToInstall(:final triggeredAt) => triggeredAt,
-    _ => null,
-  };
 
   /// Get file path if available
   String? get filePath => switch (this) {
