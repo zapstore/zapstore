@@ -10,9 +10,7 @@ import 'app_card.dart';
 const _pageSize = 5;
 
 final latestReleasesProvider = appAssetsQuery(
-  tags: {
-    '#f': {'android-arm64-v8a'},
-  },
+  tags: {'#f': {'android-arm64-v8a'}},
   limit: _pageSize,
   source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: true),
   subscriptionPrefix: 'app-latest',
@@ -30,7 +28,8 @@ class LatestReleasesContainer extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(latestReleasesProvider);
+    // Don't query storage until initialization completes
+    final state = showSkeleton ? null : ref.watch(latestReleasesProvider);
 
     final olderAssets = useState(<SoftwareAsset>[]);
     final isLoadingMore = useState(false);
@@ -44,11 +43,11 @@ class LatestReleasesContainer extends HookConsumerWidget {
     final pinnedIds = pinnedApps.map((a) => a.id).toSet();
 
     final seenIds = <String>{};
-    final firstPageApps = state.models
+    final firstPageApps = state?.models
         .map((asset) => asset.app.value)
         .nonNulls
         .where((app) => !pinnedIds.contains(app.id) && seenIds.add(app.id))
-        .toList();
+        .toList() ?? [];
 
     final olderApps = olderAssets.value
         .map((asset) => asset.app.value)
@@ -59,6 +58,7 @@ class LatestReleasesContainer extends HookConsumerWidget {
     final combinedApps = [...pinnedApps, ...firstPageApps, ...olderApps];
 
     useEffect(() {
+      if (state == null) return null;
       void onScroll() {
         if (isLoadingMore.value || !hasMore.value) return;
         if (scrollController.position.pixels >=
@@ -66,7 +66,6 @@ class LatestReleasesContainer extends HookConsumerWidget {
           _loadMore(ref, state, olderAssets, isLoadingMore, hasMore);
         }
       }
-
       scrollController.addListener(onScroll);
       return () => scrollController.removeListener(onScroll);
     }, [scrollController, state]);
@@ -76,20 +75,16 @@ class LatestReleasesContainer extends HookConsumerWidget {
       children: [
         _buildHeader(context),
         const SizedBox(height: 8),
-        if (showSkeleton ||
+        if (showSkeleton || state == null ||
             (state is StorageLoading<SoftwareAsset> && combinedApps.isEmpty) ||
             (state.models.isNotEmpty && combinedApps.isEmpty))
-          Column(
-            children: List.generate(3, (_) => const AppCard(isLoading: true)),
-          )
+          Column(children: List.generate(3, (_) => const AppCard(isLoading: true)))
         else if (state is StorageError<SoftwareAsset>)
           _buildError(context, state.exception.toString())
         else ...[
-          ...combinedApps.map(
-            (app) => AppCard(app: app, showUpdateArrow: app.hasUpdate),
-          ),
+          ...combinedApps.map((app) => AppCard(app: app, showUpdateArrow: app.hasUpdate)),
           if (isLoadingMore.value)
-            ...List.generate(3, (_) => const AppCard(isLoading: true)),
+            ...List.generate(_pageSize, (_) => const AppCard(isLoading: true)),
         ],
         const SizedBox(height: 24),
       ],
@@ -113,9 +108,7 @@ class LatestReleasesContainer extends HookConsumerWidget {
             child: Text(
               'LATEST RELEASES',
               style: context.textTheme.labelLarge?.copyWith(
-                color: Theme.of(
-                  context,
-                ).colorScheme.onSurface.withValues(alpha: 0.85),
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.85),
                 letterSpacing: 1.5,
                 fontWeight: FontWeight.bold,
               ),
@@ -137,11 +130,7 @@ class LatestReleasesContainer extends HookConsumerWidget {
             const SizedBox(height: 16),
             Text('Error loading apps', style: context.textTheme.titleMedium),
             const SizedBox(height: 8),
-            Text(
-              error,
-              style: context.textTheme.bodySmall,
-              textAlign: TextAlign.center,
-            ),
+            Text(error, style: context.textTheme.bodySmall, textAlign: TextAlign.center),
           ],
         ),
       ),
@@ -173,9 +162,7 @@ Future<void> _loadMore(
     final storage = ref.read(storageNotifierProvider.notifier);
     final items = await storage.query(
       RequestFilter<SoftwareAsset>(
-        tags: {
-          '#f': {'android-arm64-v8a'},
-        },
+        tags: {'#f': {'android-arm64-v8a'}},
         until: oldest,
         limit: _pageSize,
       ).toRequest(),
