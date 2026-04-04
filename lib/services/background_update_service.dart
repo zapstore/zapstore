@@ -2,14 +2,15 @@ import 'dart:io' show Directory, File, Platform;
 import 'dart:ui' as ui;
 
 import 'package:background_downloader/background_downloader.dart' hide Request;
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/widgets.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:workmanager/workmanager.dart';
 import 'package:zapstore/router.dart';
@@ -456,10 +457,10 @@ class BackgroundUpdateService {
     );
   }
 
-  /// Initialize local notifications plugin and request permission
+  /// Initialize local notifications plugin and request permission (release/profile only).
   Future<void> _initializeNotifications() async {
-    // Request notification permission on Android 13+ (API 33+)
-    if (Platform.isAndroid) {
+    // Request notification permission on Android 13+ (API 33+); skip in debug / dev runs.
+    if (Platform.isAndroid && !kDebugMode) {
       final status = await Permission.notification.status;
       if (!status.isGranted) {
         await Permission.notification.request();
