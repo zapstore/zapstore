@@ -124,8 +124,8 @@ class SearchScreen extends HookConsumerWidget {
 
                   // Latest Releases Container
                   LatestReleasesContainer(
-                    scrollController: scrollController,
                     showSkeleton: !(initState.hasValue || initState.hasError),
+                    scrollController: scrollController,
                   ),
 
                   const SizedBox(height: 16), // Bottom padding

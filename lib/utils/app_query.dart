@@ -29,50 +29,10 @@ appAssetsQuery({
     until: until,
     limit: limit,
     and: (asset) => {
-      asset.app.query(source: const LocalAndRemoteSource(stream: false)),
+      asset.app.query(source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false)),
       asset.author.query(
         source: const LocalAndRemoteSource(
           relays: {'vertex', 'social'},
-          cachedFor: Duration(hours: 2),
-          stream: false,
-        ),
-      ),
-    },
-    source: source,
-    subscriptionPrefix: subscriptionPrefix,
-  );
-}
-
-/// Reactive query provider: fetches FileMetadata (1063) events and resolves
-/// their parent App (32267) via the direct `#i` → `#d` relationship.
-///
-/// Same shape as [appAssetsQuery] but for legacy 1063-only apps.
-/// Delete this function when legacy 1063 support is fully removed.
-AutoDisposeStateNotifierProvider<
-  RequestNotifier<FileMetadata>,
-  StorageState<FileMetadata>
->
-legacyAppQuery({
-  Set<String>? authors,
-  Map<String, Set<String>>? tags,
-  String? search,
-  DateTime? since,
-  DateTime? until,
-  int? limit,
-  Source? source,
-  required String subscriptionPrefix,
-}) {
-  return query<FileMetadata>(
-    authors: authors,
-    tags: tags,
-    search: search,
-    since: since,
-    until: until,
-    limit: limit,
-    and: (fm) => {
-      fm.app.query(source: const LocalAndRemoteSource(stream: false)),
-      fm.author.query(
-        source: const LocalAndRemoteSource(
           cachedFor: Duration(hours: 2),
           stream: false,
         ),
@@ -130,47 +90,6 @@ Future<AssetFetchResult> fetchAppsByAsset(
   await _loadAuthors(storage, apps, '$subscriptionPrefix-authors');
 
   return AssetFetchResult(apps, assets.length);
-}
-
-/// Imperative one-shot: fetches a page of FileMetadata (1063) events,
-/// resolves their parent Apps, and pre-loads author profiles.
-/// Same shape as [fetchAppsByAsset] but for legacy 1063-only apps.
-Future<AssetFetchResult> fetchLegacyAppsByMetadata(
-  StorageNotifier storage, {
-  Map<String, Set<String>>? tags,
-  DateTime? until,
-  int? limit,
-  Source? source,
-  required String subscriptionPrefix,
-}) async {
-  final metadatas = await storage.query(
-    RequestFilter<FileMetadata>(
-      tags: tags,
-      until: until,
-      limit: limit,
-    ).toRequest(),
-    source: source,
-    subscriptionPrefix: subscriptionPrefix,
-  );
-
-  if (metadatas.isEmpty) return const AssetFetchResult([], 0);
-
-  final appFilters = metadatas
-      .map((fm) => fm.app.req?.filters.firstOrNull)
-      .nonNulls
-      .toList();
-
-  if (appFilters.isEmpty) return AssetFetchResult(const [], metadatas.length);
-
-  final apps = await storage.query(
-    Request<App>(appFilters),
-    source: source,
-    subscriptionPrefix: '$subscriptionPrefix-apps',
-  );
-
-  await _loadAuthors(storage, apps, '$subscriptionPrefix-authors');
-
-  return AssetFetchResult(apps, metadatas.length);
 }
 
 Future<void> _loadAuthors(
