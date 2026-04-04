@@ -3,17 +3,17 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/services/updates_service.dart';
+import 'package:zapstore/utils/app_query.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'app_card.dart';
 
 const _pageSize = 5;
 
-final latestReleasesProvider = query<SoftwareAsset>(
-  limit: _pageSize,
+final latestReleasesProvider = appAssetsQuery(
   tags: {
     '#f': {'android-arm64-v8a'},
   },
-  and: (asset) => {asset.app.query()},
+  limit: _pageSize,
   source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: true),
   subscriptionPrefix: 'app-latest',
 );
@@ -66,6 +66,7 @@ class LatestReleasesContainer extends HookConsumerWidget {
           _loadMore(ref, state, olderAssets, isLoadingMore, hasMore);
         }
       }
+
       scrollController.addListener(onScroll);
       return () => scrollController.removeListener(onScroll);
     }, [scrollController, state]);
@@ -75,13 +76,20 @@ class LatestReleasesContainer extends HookConsumerWidget {
       children: [
         _buildHeader(context),
         const SizedBox(height: 8),
-        if (showSkeleton || (state is StorageLoading<SoftwareAsset> && combinedApps.isEmpty))
-          Column(children: List.generate(3, (_) => const AppCard(isLoading: true)))
+        if (showSkeleton ||
+            (state is StorageLoading<SoftwareAsset> && combinedApps.isEmpty) ||
+            (state.models.isNotEmpty && combinedApps.isEmpty))
+          Column(
+            children: List.generate(3, (_) => const AppCard(isLoading: true)),
+          )
         else if (state is StorageError<SoftwareAsset>)
           _buildError(context, state.exception.toString())
         else ...[
-          ...combinedApps.map((app) => AppCard(app: app, showUpdateArrow: app.hasUpdate)),
-          if (isLoadingMore.value) const AppCard(isLoading: true),
+          ...combinedApps.map(
+            (app) => AppCard(app: app, showUpdateArrow: app.hasUpdate),
+          ),
+          if (isLoadingMore.value)
+            ...List.generate(3, (_) => const AppCard(isLoading: true)),
         ],
         const SizedBox(height: 24),
       ],
@@ -105,7 +113,9 @@ class LatestReleasesContainer extends HookConsumerWidget {
             child: Text(
               'LATEST RELEASES',
               style: context.textTheme.labelLarge?.copyWith(
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.85),
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.85),
                 letterSpacing: 1.5,
                 fontWeight: FontWeight.bold,
               ),
@@ -127,7 +137,11 @@ class LatestReleasesContainer extends HookConsumerWidget {
             const SizedBox(height: 16),
             Text('Error loading apps', style: context.textTheme.titleMedium),
             const SizedBox(height: 8),
-            Text(error, style: context.textTheme.bodySmall, textAlign: TextAlign.center),
+            Text(
+              error,
+              style: context.textTheme.bodySmall,
+              textAlign: TextAlign.center,
+            ),
           ],
         ),
       ),
@@ -159,7 +173,9 @@ Future<void> _loadMore(
     final storage = ref.read(storageNotifierProvider.notifier);
     final items = await storage.query(
       RequestFilter<SoftwareAsset>(
-        tags: {'#f': {'android-arm64-v8a'}},
+        tags: {
+          '#f': {'android-arm64-v8a'},
+        },
         until: oldest,
         limit: _pageSize,
       ).toRequest(),
