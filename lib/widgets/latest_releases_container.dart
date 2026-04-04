@@ -84,7 +84,12 @@ class LatestReleasesContainer extends HookConsumerWidget {
         else ...[
           ...combinedApps.map((app) => AppCard(app: app, showUpdateArrow: app.hasUpdate)),
           if (isLoadingMore.value)
-            ...List.generate(_pageSize, (_) => const AppCard(isLoading: true)),
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Center(
+                child: CircularProgressIndicator(),
+              ),
+            ),
         ],
         const SizedBox(height: 24),
       ],
