@@ -1076,7 +1076,7 @@ packages:
     source: hosted
     version: "2.4.0"
   sqlite3:
-    dependency: transitive
+    dependency: "direct dev"
     description:
       name: sqlite3
       sha256: "3145bd74dcdb4fd6f5c6dda4d4e4490a8087d7f286a14dee5d37087290f0f8a2"
@@ -1292,7 +1292,7 @@ packages:
     source: hosted
     version: "1.1.1"
   web_socket:
-    dependency: transitive
+    dependency: "direct dev"
     description:
       name: web_socket
       sha256: "3c12d96c0c9a4eec095246debcea7b86c0324f22df69893d538fcc6f1b8cce83"

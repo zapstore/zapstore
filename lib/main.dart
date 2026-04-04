@@ -1,8 +1,9 @@
 import 'dart:async';
-import 'dart:io' show Platform;
+import 'dart:io' show File, Platform;
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
@@ -235,6 +236,9 @@ final appInitializationProvider = FutureProvider<void>((ref) async {
   // Clear storage if requested from a clear all operation
   await maybeClearStorage(dbPath);
 
+  // Seed database on first launch so new users see content immediately
+  await _maybeCopySeedDatabase(dbPath);
+
   // Load local relay config BEFORE storage init
   // This ensures custom relays work even when signed out
   final secureStorage = ref.read(secureStorageServiceProvider);
@@ -290,6 +294,26 @@ final appInitializationProvider = FutureProvider<void>((ref) async {
 final amberSignerProvider = Provider<AmberSigner>(
   (ref) => AmberSigner(ref, persistence: SecureStoragePubkeyPersistence()),
 );
+
+/// Copy the bundled seed database on first launch so the UI has content
+/// before relay data arrives. No-op if the database already exists.
+Future<void> _maybeCopySeedDatabase(String dbPath) async {
+  final dbFile = File(dbPath);
+  if (dbFile.existsSync()) return;
+  try {
+    final seedData = await rootBundle.load('assets/seed.db');
+    await dbFile.create(recursive: true);
+    await dbFile.writeAsBytes(
+      seedData.buffer.asUint8List(
+        seedData.offsetInBytes,
+        seedData.lengthInBytes,
+      ),
+      flush: true,
+    );
+  } catch (_) {
+    // Non-fatal: the app works fine without the seed — just a cold start
+  }
+}
 
 Future<void> _attemptAutoSignIn(Ref ref) async {
   try {
