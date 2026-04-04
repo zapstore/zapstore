@@ -10,7 +10,7 @@ import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/paged_subscription_notifier.dart';
 import 'package:zapstore/widgets/app_stack_container.dart';
 
-const int _kPageSize = 20;
+const int _kPageSize = 60;
 
 // ---------------------------------------------------------------------------
 // Notifier & provider
@@ -446,12 +446,12 @@ class _MigrationBanner extends HookConsumerWidget {
               onPressed: isLoading.value
                   ? null
                   : () => _migrateStacks(
-                        context,
-                        ref,
-                        isLoading,
-                        progressCount,
-                        stacks,
-                      ),
+                      context,
+                      ref,
+                      isLoading,
+                      progressCount,
+                      stacks,
+                    ),
               icon: isLoading.value
                   ? const SizedBox(
                       width: 16,
@@ -505,13 +505,13 @@ class _MigrationBanner extends HookConsumerWidget {
         }
 
         // Add one second so relays accept the replacement
-        partialStack.event.createdAt = stack.event.createdAt.add(const Duration(seconds: 1));
+        partialStack.event.createdAt = stack.event.createdAt.add(
+          const Duration(seconds: 1),
+        );
 
         final signedStack = await partialStack.signWith(signer);
         await ref.storage.save({signedStack});
-        ref.storage.publish({
-          signedStack,
-        }, relays: {'social', 'AppCatalog'});
+        ref.storage.publish({signedStack}, relays: {'social', 'AppCatalog'});
 
         progressCount.value++;
       }

@@ -17,6 +17,7 @@ import 'package:zapstore/router.dart';
 import 'package:zapstore/services/package_manager/background_package_manager.dart';
 import 'package:zapstore/services/package_manager/dummy_package_manager.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
+import 'package:zapstore/services/catalog_fetcher.dart';
 import 'package:zapstore/services/secure_storage_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 
@@ -139,18 +140,14 @@ Future<bool> _performWeeklyCleanup() async {
   }
 }
 
-/// Background update check logic - runs in a separate isolate.
-/// Note: Cannot directly reuse [CategorizedUpdatesNotifier] since this runs
-/// in an isolated WorkManager context without the main app's Riverpod setup.
+/// Background update check logic - runs in a separate isolate via WorkManager.
 ///
 /// [appCatalogRelays] - Relay URLs resolved from main isolate. Falls back to
 /// default relay if not provided.
 Future<bool> _checkForUpdatesInBackground(Set<String>? appCatalogRelays) async {
   try {
-    // Use provided relays or fall back to default
     final relays = appCatalogRelays ?? {'wss://relay.zapstore.dev'};
 
-    // Create a fresh provider container for background work
     final container = ProviderContainer(
       overrides: [
         storageNotifierProvider.overrideWith(PurplebaseStorageNotifier.new),
@@ -163,7 +160,6 @@ Future<bool> _checkForUpdatesInBackground(Set<String>? appCatalogRelays) async {
     );
 
     try {
-      // Initialize Purplebase with same DB path as main app
       final dir = await getApplicationSupportDirectory();
       final dbPath = path.join(dir.path, 'zapstore.db');
 
@@ -176,68 +172,21 @@ Future<bool> _checkForUpdatesInBackground(Set<String>? appCatalogRelays) async {
         ).future,
       );
 
-      // Get installed packages directly from Android system
       final packageManager = container.read(packageManagerProvider.notifier);
       await packageManager.syncInstalledPackages();
 
       final pmState = container.read(packageManagerProvider);
       if (pmState.installed.isEmpty) {
-        return true; // No installed apps to check
+        return true;
       }
 
-      final installedIds = pmState.installed.keys.toSet();
-      final platform = packageManager.platform;
-
-      // Installable-first: mirrors the foreground poller's fetch strategy.
-      // SoftwareAsset (3063) first, FileMetadata (1063) fallback, then Apps.
       final storage = container.read(storageNotifierProvider.notifier);
-
-      final assets = await storage.query(
-        RequestFilter<SoftwareAsset>(
-          tags: {'#i': installedIds, '#f': {platform}},
-        ).toRequest(subscriptionPrefix: 'app-bg-assets'),
-        source: const RemoteSource(relays: 'AppCatalog', stream: false),
+      final catalog = await fetchCatalog(
+        storage: storage,
+        installedIds: pmState.installed.keys.toSet(),
+        platform: packageManager.platform,
+        subscriptionPrefix: 'app-bg',
       );
-
-      final coveredIds = assets.map((a) => a.appIdentifier).toSet();
-      final uncoveredIds = installedIds.difference(coveredIds);
-      var metadatas = const <FileMetadata>[];
-      if (uncoveredIds.isNotEmpty) {
-        metadatas = await storage.query(
-          RequestFilter<FileMetadata>(
-            tags: {'#i': uncoveredIds, '#f': {platform}},
-          ).toRequest(subscriptionPrefix: 'app-bg-metadata'),
-          source: const RemoteSource(relays: 'AppCatalog', stream: false),
-        );
-        if (metadatas.isNotEmpty) {
-          final releaseFilters = metadatas
-              .map((m) => m.release.req?.filters.firstOrNull)
-              .nonNulls
-              .toList();
-          if (releaseFilters.isNotEmpty) {
-            await storage.query(
-              Request<Release>(
-                releaseFilters,
-                subscriptionPrefix: 'app-bg-releases',
-              ),
-              source: const RemoteSource(relays: 'AppCatalog', stream: false),
-            );
-          }
-        }
-      }
-
-      final allCatalogedIds = {
-        ...coveredIds,
-        ...metadatas.map((m) => m.appIdentifier),
-      };
-      if (allCatalogedIds.isNotEmpty) {
-        await storage.query(
-          RequestFilter<App>(
-            tags: {'#d': allCatalogedIds, '#f': {platform}},
-          ).toRequest(subscriptionPrefix: 'app-bg-apps'),
-          source: const RemoteSource(relays: 'AppCatalog', stream: false),
-        );
-      }
 
       // NIP-09: fetch kind-5 deletion events since last sync.
       // No author filter — the AppCatalog relay is curated and the `since`
@@ -251,8 +200,9 @@ Future<bool> _checkForUpdatesInBackground(Set<String>? appCatalogRelays) async {
         RequestFilter<EventDeletionRequest>(
           since: lastDeletionSync,
           limit: 99,
-        ).toRequest(subscriptionPrefix: 'app-bg-deletions'),
+        ).toRequest(),
         source: const RemoteSource(relays: 'AppCatalog', stream: false),
+        subscriptionPrefix: 'app-bg-deletions',
       );
       await secureStorage.setDeletionsSyncedUntil(DateTime.now());
       if (deletionRequests.isNotEmpty) {
@@ -265,30 +215,19 @@ Future<bool> _checkForUpdatesInBackground(Set<String>? appCatalogRelays) async {
         }
       }
 
-      // Determine which apps have updates directly from the installables we
-      // already fetched — avoids a relationship-loading re-query that would
-      // always produce null installables (no `and:` in background context).
       final updatableInstallables = <String, Installable>{};
-      for (final asset in assets) {
-        if (packageManager.hasUpdate(asset.appIdentifier, asset)) {
-          updatableInstallables[asset.appIdentifier] = asset;
-        }
-      }
-      for (final meta in metadatas) {
-        if (!updatableInstallables.containsKey(meta.appIdentifier) &&
-            packageManager.hasUpdate(meta.appIdentifier, meta)) {
-          updatableInstallables[meta.appIdentifier] = meta;
+      for (final entry in catalog.installableByApp.entries) {
+        if (packageManager.hasUpdate(entry.key, entry.value)) {
+          updatableInstallables[entry.key] = entry.value;
         }
       }
 
-      // Show notification if updates found (throttled to once per 72h)
       if (updatableInstallables.isNotEmpty) {
-        // Fetch App objects from local DB for display names only
         final updatableApps = await storage.query(
           RequestFilter<App>(
             tags: {
               '#d': updatableInstallables.keys.toSet(),
-              '#f': {platform},
+              '#f': {packageManager.platform},
             },
           ).toRequest(),
           source: const LocalSource(),
@@ -304,8 +243,6 @@ Future<bool> _checkForUpdatesInBackground(Set<String>? appCatalogRelays) async {
       container.dispose();
     }
   } catch (e) {
-    // Background task failed - return false to indicate failure
-    // WorkManager may retry based on configuration
     return false;
   }
 }

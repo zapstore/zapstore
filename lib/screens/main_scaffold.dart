@@ -119,12 +119,9 @@ class MobileScaffold extends ConsumerWidget {
         ),
       ),
     );
-    // Watch categorized to keep poller alive (poller is watched by categorized)
     final categorized = ref.watch(categorizedUpdatesProvider);
     final poller = ref.watch(updatePollerProvider);
     final updateCount = ref.watch(updateCountProvider);
-    // Spinner only during first-time sync; once a check has completed, show
-    // the count badge even while a subsequent check is in progress.
     final isFirstSync =
         poller.lastCheckTime == null &&
         (categorized.showSkeleton || poller.isChecking);
@@ -321,7 +318,6 @@ class DesktopScaffold extends ConsumerWidget {
         ),
       ),
     );
-    // Watch categorized to keep poller alive (poller is watched by categorized)
     final categorized = ref.watch(categorizedUpdatesProvider);
     final poller = ref.watch(updatePollerProvider);
     final updateCount = ref.watch(updateCountProvider);

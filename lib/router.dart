@@ -14,6 +14,7 @@ import 'package:zapstore/screens/updates_screen.dart';
 import 'package:zapstore/screens/profile_screen.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/services/deep_link_resolver.dart';
+import 'package:zapstore/services/updates_service.dart';
 
 /// Root paths for each navigation branch (used for back navigation handling)
 const kBranchRoots = ['/search', '/updates', '/profile'];
@@ -199,6 +200,15 @@ final routerProvider = Provider<GoRouter>((ref) {
       unawaited(
         ref.read(packageManagerProvider.notifier).syncInstalledPackages(),
       );
+
+      // Re-derive catalog from local DB when arriving at updates tab so
+      // data written by other screens or the background service is visible
+      // without waiting for the next poll cycle.
+      if (isUpdatesRoute && !wasUpdatesRoute) {
+        unawaited(
+          ref.read(updatePollerProvider.notifier).refreshFromLocal(),
+        );
+      }
 
       // Clear completed operations when navigating away from updates
       if (wasUpdatesRoute && !isUpdatesRoute) {

@@ -4,8 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/main.dart';
+import 'package:zapstore/services/catalog_fetcher.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
-import 'package:zapstore/utils/extensions.dart';
 
 /// How often to poll for updates from remote relays
 const _pollInterval = Duration(minutes: 5);
@@ -14,233 +14,9 @@ const _pollInterval = Duration(minutes: 5);
 const _refreshCooldown = Duration(seconds: 30);
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// UPDATE POLLER - Handles remote fetching on timer + pull-to-refresh
+// CATEGORIZED UPDATES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/// State for the update poller
-class UpdatePollerState {
-  const UpdatePollerState({
-    this.isChecking = false,
-    this.lastCheckTime,
-    this.lastError,
-  });
-
-  final bool isChecking;
-  final DateTime? lastCheckTime;
-
-  /// User-facing message from the last failed check, null when healthy.
-  final String? lastError;
-
-  UpdatePollerState copyWith({
-    bool? isChecking,
-    DateTime? lastCheckTime,
-    String? lastError,
-    bool clearError = false,
-  }) {
-    return UpdatePollerState(
-      isChecking: isChecking ?? this.isChecking,
-      lastCheckTime: lastCheckTime ?? this.lastCheckTime,
-      lastError: clearError ? null : (lastError ?? this.lastError),
-    );
-  }
-}
-
-/// Notifier that handles polling for updates from remote relays.
-/// Kept alive by MainScaffold watching categorizedUpdatesProvider.
-class UpdatePollerNotifier extends Notifier<UpdatePollerState> {
-  Timer? _pollTimer;
-  bool _hasCompletedFirstFetch = false;
-
-  /// Preserved state across rebuilds (build() would otherwise reset it)
-  UpdatePollerState? _preservedState;
-
-  @override
-  UpdatePollerState build() {
-    ref.onDispose(() {
-      _pollTimer?.cancel();
-      _preservedState = null;
-      _hasCompletedFirstFetch = false;
-    });
-
-    // Wait for app initialization before starting timer
-    final initState = ref.watch(appInitializationProvider);
-    if (initState is! AsyncData) {
-      return _preservedState ?? const UpdatePollerState();
-    }
-
-    // Listen (not watch) to package manager to trigger fetch when packages
-    // become available, without causing state reset on every change
-    ref.listen(packageManagerProvider, (prev, next) {
-      final hadPackages = prev?.installed.isNotEmpty ?? false;
-      final hasPackages = next.installed.isNotEmpty;
-
-      // Trigger initial fetch when packages become available for first time
-      if (!hadPackages && hasPackages && !_hasCompletedFirstFetch) {
-        checkNow();
-      }
-    });
-
-    // Start periodic polling timer (only once, timer persists across rebuilds)
-    if (_pollTimer == null) {
-      _pollTimer = Timer.periodic(_pollInterval, (_) => checkNow());
-
-      // Check if packages are already available
-      final pmState = ref.read(packageManagerProvider);
-      if (pmState.installed.isNotEmpty && !_hasCompletedFirstFetch) {
-        Future.microtask(() => checkNow());
-      }
-    }
-
-    // Return preserved state if we have one, otherwise initial state
-    return _preservedState ?? const UpdatePollerState();
-  }
-
-  /// Override state setter to preserve state across rebuilds
-  @override
-  set state(UpdatePollerState newState) {
-    _preservedState = newState;
-    super.state = newState;
-  }
-
-  /// Trigger an update check. Called by timer and pull-to-refresh.
-  ///
-  /// - If already checking: returns immediately
-  /// - If checked <30s ago: silently skipped
-  Future<void> checkNow() async {
-    // Already checking - UI is already showing spinner, just return
-    if (state.isChecking) return;
-
-    // Throttle: skip if checked recently (but allow first fetch always)
-    if (_hasCompletedFirstFetch && state.lastCheckTime != null) {
-      final timeSinceLastCheck = DateTime.now().difference(
-        state.lastCheckTime!,
-      );
-      if (timeSinceLastCheck < _refreshCooldown) return;
-    }
-
-    state = state.copyWith(isChecking: true);
-
-    try {
-      // Sync installed packages first so relay data is compared against
-      // fresh installed state (catches sideloads, external updates, etc.)
-      await ref
-          .read(packageManagerProvider.notifier)
-          .syncInstalledPackages();
-      await _fetchUpdatesFromRemote();
-      _hasCompletedFirstFetch = true;
-      state = state.copyWith(
-        isChecking: false,
-        lastCheckTime: DateTime.now(),
-        clearError: true,
-      );
-    } catch (e) {
-      debugPrint('[UpdatePoller] Check failed: $e');
-      // Mark as completed even on failure so the UI escapes the skeleton and
-      // shows uncataloged apps rather than spinning forever.
-      _hasCompletedFirstFetch = true;
-      state = state.copyWith(
-        isChecking: false,
-        lastCheckTime: DateTime.now(),
-        lastError: 'Update check failed — will retry',
-      );
-    }
-  }
-
-  /// Fetch updates from remote relays and write to local DB.
-  ///
-  /// Installable-first: fetches SoftwareAsset (3063) for installed apps,
-  /// then FileMetadata (1063) for any apps not covered by 3063, then
-  /// resolves parent Apps (32267) for display. All data lands in local DB
-  /// before the poller marks the check as complete.
-  Future<void> _fetchUpdatesFromRemote() async {
-    final pmState = ref.read(packageManagerProvider);
-    if (pmState.installed.isEmpty) return;
-
-    final installedIds = pmState.installed.keys.toSet();
-    final platform = ref.read(packageManagerProvider.notifier).platform;
-    final storage = ref.read(storageNotifierProvider.notifier);
-
-    // 1. Fetch SoftwareAsset (3063) — covers most apps
-    final assets = await storage.query(
-      RequestFilter<SoftwareAsset>(
-        tags: {'#i': installedIds, '#f': {platform}},
-      ).toRequest(),
-      source: const RemoteSource(relays: 'AppCatalog', stream: false),
-      subscriptionPrefix: 'app-updates-poll',
-    );
-
-    // 2. Fetch FileMetadata (1063) for apps not covered by 3063
-    final coveredIds =
-        assets.map((a) => a.appIdentifier).where((id) => id.isNotEmpty).toSet();
-    final uncoveredIds = installedIds.difference(coveredIds);
-    var metadatas = const <FileMetadata>[];
-    if (uncoveredIds.isNotEmpty) {
-      metadatas = await storage.query(
-        RequestFilter<FileMetadata>(
-          tags: {'#i': uncoveredIds, '#f': {platform}},
-        ).toRequest(),
-        source: const RemoteSource(relays: 'AppCatalog', stream: false),
-        subscriptionPrefix: 'app-updates-poll-legacy',
-      );
-      // Fetch Releases for 1063 apps (needed for App → Release → FileMetadata chain)
-      if (metadatas.isNotEmpty) {
-        final releaseFilters = metadatas
-            .map((m) => m.release.req?.filters.firstOrNull)
-            .nonNulls
-            .toList();
-        if (releaseFilters.isNotEmpty) {
-          await storage.query(
-            Request<Release>(releaseFilters),
-            source: const RemoteSource(relays: 'AppCatalog', stream: false),
-            subscriptionPrefix: 'app-updates-poll-legacy-releases',
-          );
-        }
-      }
-    }
-
-    // 3. Resolve parent Apps for display (name, icon, etc.)
-    final allCatalogedIds = {
-      ...coveredIds,
-      ...metadatas.map((m) => m.appIdentifier),
-    };
-    if (allCatalogedIds.isNotEmpty) {
-      final apps = await storage.query(
-        RequestFilter<App>(
-          tags: {'#d': allCatalogedIds, '#f': {platform}},
-        ).toRequest(),
-        source: const RemoteSource(relays: 'AppCatalog', stream: false),
-        subscriptionPrefix: 'app-updates-poll-apps',
-      );
-
-      // Author profiles for display (fire and forget)
-      final authorPubkeys = apps.map((a) => a.event.pubkey).toSet();
-      if (authorPubkeys.isNotEmpty) {
-        unawaited(
-          storage.query(
-            RequestFilter<Profile>(authors: authorPubkeys).toRequest(),
-            source: const LocalAndRemoteSource(
-              relays: {'social', 'vertex'},
-              cachedFor: Duration(hours: 2),
-              stream: false,
-            ),
-            subscriptionPrefix: 'app-updates-profiles',
-          ),
-        );
-      }
-    }
-  }
-}
-
-final updatePollerProvider =
-    NotifierProvider<UpdatePollerNotifier, UpdatePollerState>(
-      UpdatePollerNotifier.new,
-    );
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// CATEGORIZED UPDATES - Reactive query for UI
-// ═══════════════════════════════════════════════════════════════════════════════
-
-/// Categorized apps state for the Updates screen
 class CategorizedUpdates {
   const CategorizedUpdates({
     required this.automaticUpdates,
@@ -253,11 +29,7 @@ class CategorizedUpdates {
   final List<App> automaticUpdates;
   final List<App> manualUpdates;
   final List<App> upToDateApps;
-
-  /// Apps installed on device but not found in any relay catalog
   final List<PackageInfo> uncatalogedApps;
-
-  /// Whether to show skeleton (cold start only)
   final bool showSkeleton;
 
   static const empty = CategorizedUpdates(
@@ -269,158 +41,266 @@ class CategorizedUpdates {
   );
 }
 
-class CategorizedUpdatesNotifier extends Notifier<CategorizedUpdates> {
-  CategorizedUpdates? _lastCategorization;
+// ═══════════════════════════════════════════════════════════════════════════════
+// UPDATE POLLER STATE
+// ═══════════════════════════════════════════════════════════════════════════════
 
-  @override
-  CategorizedUpdates build() {
-    // Keep poller alive for periodic background refresh.
-    // Select a constant so poller state changes don't trigger rebuilds.
-    ref.watch(updatePollerProvider.select((_) => null));
+class UpdatePollerState {
+  const UpdatePollerState({
+    this.isChecking = false,
+    this.lastCheckTime,
+    this.lastError,
+    this.apps = const [],
+    this.installableByApp = const {},
+    this.catalogedIds = const {},
+  });
 
-    final initState = ref.watch(appInitializationProvider);
-    if (initState is! AsyncData) {
-      return CategorizedUpdates.empty;
-    }
+  final bool isChecking;
+  final DateTime? lastCheckTime;
+  final String? lastError;
 
-    final installed = ref.watch(
-      packageManagerProvider.select((s) => s.installed),
-    );
-    final isScanning = ref.watch(
-      packageManagerProvider.select((s) => s.isScanning),
-    );
-    final installedPackages = installed.values.toList();
-    final installedIds = installed.keys.toSet();
+  /// App objects fetched from relay, used for display (name, icon, author)
+  final List<App> apps;
 
-    if (isScanning && installedIds.isEmpty) {
-      return CategorizedUpdates.empty;
-    }
+  /// appIdentifier → Installable (3063 or 1063), used for update comparison
+  final Map<String, Installable> installableByApp;
 
-    if (installedIds.isEmpty) {
-      _lastCategorization = null;
-      return const CategorizedUpdates(
-        automaticUpdates: [],
-        manualUpdates: [],
-        upToDateApps: [],
-        uncatalogedApps: [],
-        showSkeleton: false,
-      );
-    }
+  /// All app identifiers found in relay catalog (superset of apps list,
+  /// since an installable may exist without a corresponding App object)
+  final Set<String> catalogedIds;
 
-    final platform = ref.read(packageManagerProvider.notifier).platform;
-
-    // Reactive query: reads local cache immediately, fetches from relay on
-    // cold start, and refreshes whenever new data is written to local DB
-    // (e.g. by the periodic poller).
-    const source = LocalAndRemoteSource(
-      relays: 'AppCatalog',
-      stream: false,
-    );
-    final appsState = ref.watch(
-      query<App>(
-        tags: {
-          '#d': installedIds,
-          '#f': {platform},
-        },
-        and: (app) => {
-          app.latestAsset.query(source: source),
-          app.latestRelease.query(
-            source: source,
-            and: (release) => {
-              release.latestMetadata.query(source: source),
-            },
-          ),
-        },
-        source: source,
-        subscriptionPrefix: 'app-updates',
-      ),
-    );
-
-    return switch (appsState) {
-      // Loading: use cached categorization if available, otherwise skeleton
-      StorageLoading(:final models) when models.isNotEmpty =>
-        _categorize(models, installedPackages, installedIds),
-      StorageLoading() =>
-        _lastCategorization ?? CategorizedUpdates.empty,
-      StorageError() =>
-        _lastCategorization ?? const CategorizedUpdates(
-          automaticUpdates: [],
-          manualUpdates: [],
-          upToDateApps: [],
-          uncatalogedApps: [],
-          showSkeleton: false,
-        ),
-      StorageData(:final models) => () {
-        final result = _categorize(models, installedPackages, installedIds);
-        _lastCategorization = result;
-        return result;
-      }(),
-    };
-  }
-
-  CategorizedUpdates _categorize(
-    List<App> apps,
-    List<PackageInfo> installedPackages,
-    Set<String> installedIds,
-  ) {
-    final installedMap = {for (final pkg in installedPackages) pkg.appId: pkg};
-    final catalogedAppIds = apps.map((a) => a.identifier).toSet();
-    final pm = ref.read(packageManagerProvider.notifier);
-
-    final automaticUpdates = <App>[];
-    final manualUpdates = <App>[];
-    final upToDateApps = <App>[];
-
-    for (final app in apps) {
-      final pkg = installedMap[app.identifier];
-      if (pkg == null) continue;
-
-      final latest = app.installable;
-      final hasUpdate = latest != null && pm.hasUpdate(app.identifier, latest);
-
-      if (hasUpdate) {
-        if (pkg.canInstallSilently) {
-          automaticUpdates.add(app);
-        } else {
-          manualUpdates.add(app);
-        }
-      } else {
-        upToDateApps.add(app);
-      }
-    }
-
-    int byName(App a, App b) => (a.name ?? a.identifier)
-        .toLowerCase()
-        .compareTo((b.name ?? b.identifier).toLowerCase());
-    automaticUpdates.sort(byName);
-    manualUpdates.sort(byName);
-    upToDateApps.sort(byName);
-
-    final uncatalogedApps = installedPackages
-        .where((pkg) => !catalogedAppIds.contains(pkg.appId))
-        .toList()
-      ..sort(
-        (a, b) => (a.name ?? a.appId).toLowerCase().compareTo(
-          (b.name ?? b.appId).toLowerCase(),
-        ),
-      );
-
-    return CategorizedUpdates(
-      automaticUpdates: automaticUpdates,
-      manualUpdates: manualUpdates,
-      upToDateApps: upToDateApps,
-      uncatalogedApps: uncatalogedApps,
+  UpdatePollerState copyWith({
+    bool? isChecking,
+    DateTime? lastCheckTime,
+    String? lastError,
+    bool clearError = false,
+    List<App>? apps,
+    Map<String, Installable>? installableByApp,
+    Set<String>? catalogedIds,
+  }) {
+    return UpdatePollerState(
+      isChecking: isChecking ?? this.isChecking,
+      lastCheckTime: lastCheckTime ?? this.lastCheckTime,
+      lastError: clearError ? null : (lastError ?? this.lastError),
+      apps: apps ?? this.apps,
+      installableByApp: installableByApp ?? this.installableByApp,
+      catalogedIds: catalogedIds ?? this.catalogedIds,
     );
   }
-
 }
 
-final categorizedUpdatesProvider =
-    NotifierProvider<CategorizedUpdatesNotifier, CategorizedUpdates>(
-      CategorizedUpdatesNotifier.new,
+// ═══════════════════════════════════════════════════════════════════════════════
+// UPDATE POLLER - Fetches catalog data from relays
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
+  UpdatePollerNotifier(this.ref) : super(const UpdatePollerState()) {
+    _init();
+  }
+
+  final Ref ref;
+  Timer? _pollTimer;
+
+  void _init() {
+    ref.listen<AsyncValue<void>>(appInitializationProvider, (prev, next) {
+      if (prev is! AsyncData && next is AsyncData) {
+        _startPolling();
+      }
+    }, fireImmediately: true);
+  }
+
+  void _startPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(_pollInterval, (_) => checkNow());
+    checkNow();
+  }
+
+  /// Trigger an update check. Called by timer and pull-to-refresh.
+  Future<void> checkNow() async {
+    if (state.isChecking) return;
+
+    if (state.lastCheckTime != null) {
+      final elapsed = DateTime.now().difference(state.lastCheckTime!);
+      if (elapsed < _refreshCooldown) return;
+    }
+
+    state = state.copyWith(isChecking: true);
+
+    try {
+      await ref.read(packageManagerProvider.notifier).syncInstalledPackages();
+      await _fetchCatalog();
+      state = state.copyWith(
+        isChecking: false,
+        lastCheckTime: DateTime.now(),
+        clearError: true,
+      );
+    } catch (e) {
+      debugPrint('[UpdatePoller] Check failed: $e');
+      state = state.copyWith(
+        isChecking: false,
+        lastCheckTime: DateTime.now(),
+        lastError: 'Update check failed — will retry',
+      );
+    }
+  }
+
+  /// Fetch catalog data from relays and store in state.
+  /// Categorization is done by [categorizedUpdatesProvider].
+  Future<void> _fetchCatalog() async {
+    final pmState = ref.read(packageManagerProvider);
+    if (pmState.installed.isEmpty) {
+      state = state.copyWith(
+        apps: const [],
+        installableByApp: const {},
+        catalogedIds: const {},
+      );
+      return;
+    }
+
+    final storage = ref.read(storageNotifierProvider.notifier);
+    final result = await fetchCatalog(
+      storage: storage,
+      installedIds: pmState.installed.keys.toSet(),
+      platform: ref.read(packageManagerProvider.notifier).platform,
+      subscriptionPrefix: 'app-updates-poll',
     );
 
-/// Provider that calculates the total number of apps with available updates
+    final authorPubkeys = result.apps.map((a) => a.event.pubkey).toSet();
+    if (authorPubkeys.isNotEmpty) {
+      unawaited(
+        storage.query(
+          RequestFilter<Profile>(authors: authorPubkeys).toRequest(),
+          source: const LocalAndRemoteSource(
+            relays: {'social', 'vertex'},
+            cachedFor: Duration(hours: 2),
+            stream: false,
+          ),
+          subscriptionPrefix: 'app-updates-profiles',
+        ),
+      );
+    }
+
+    state = state.copyWith(
+      apps: result.apps,
+      installableByApp: result.installableByApp,
+      catalogedIds: result.catalogedIds,
+    );
+  }
+
+  /// Re-derive catalog from local DB without hitting relays.
+  /// Call when returning to the updates screen so that data written by
+  /// other code paths (detail screen, background service) is picked up
+  /// without waiting for the next poll cycle.
+  Future<void> refreshFromLocal() async {
+    final pmState = ref.read(packageManagerProvider);
+    if (pmState.installed.isEmpty) return;
+
+    final storage = ref.read(storageNotifierProvider.notifier);
+    final result = await fetchCatalog(
+      storage: storage,
+      installedIds: pmState.installed.keys.toSet(),
+      platform: ref.read(packageManagerProvider.notifier).platform,
+      subscriptionPrefix: 'app-updates-local',
+      source: const LocalSource(),
+    );
+
+    state = state.copyWith(
+      apps: result.apps,
+      installableByApp: result.installableByApp,
+      catalogedIds: result.catalogedIds,
+    );
+  }
+
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    super.dispose();
+  }
+}
+
+final updatePollerProvider =
+    StateNotifierProvider<UpdatePollerNotifier, UpdatePollerState>(
+      (ref) => UpdatePollerNotifier(ref),
+    );
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CATEGORIZED UPDATES PROVIDER
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Pure synchronous derivation from poller catalog + installed packages.
+/// Rebuilds when either changes.
+final categorizedUpdatesProvider = Provider<CategorizedUpdates>((ref) {
+  final pollerState = ref.watch(updatePollerProvider);
+  final installed = ref.watch(
+    packageManagerProvider.select((s) => s.installed),
+  );
+
+  if (pollerState.lastCheckTime == null) {
+    return CategorizedUpdates.empty;
+  }
+
+  if (installed.isEmpty) {
+    return const CategorizedUpdates(
+      automaticUpdates: [],
+      manualUpdates: [],
+      upToDateApps: [],
+      uncatalogedApps: [],
+    );
+  }
+
+  final pm = ref.read(packageManagerProvider.notifier);
+  final installableByApp = pollerState.installableByApp;
+  final catalogedIds = pollerState.catalogedIds;
+
+  final automaticUpdates = <App>[];
+  final manualUpdates = <App>[];
+  final upToDateApps = <App>[];
+
+  for (final app in pollerState.apps) {
+    final pkg = installed[app.identifier];
+    if (pkg == null) continue;
+
+    final installable = installableByApp[app.identifier];
+    final hasUpdate =
+        installable != null && pm.hasUpdate(app.identifier, installable);
+
+    if (hasUpdate) {
+      if (pkg.canInstallSilently) {
+        automaticUpdates.add(app);
+      } else {
+        manualUpdates.add(app);
+      }
+    } else {
+      upToDateApps.add(app);
+    }
+  }
+
+  int byName(App a, App b) => (a.name ?? a.identifier).toLowerCase().compareTo(
+    (b.name ?? b.identifier).toLowerCase(),
+  );
+  automaticUpdates.sort(byName);
+  manualUpdates.sort(byName);
+  upToDateApps.sort(byName);
+
+  final uncatalogedApps =
+      installed.values
+          .where((pkg) => !catalogedIds.contains(pkg.appId))
+          .toList()
+        ..sort(
+          (a, b) => (a.name ?? a.appId).toLowerCase().compareTo(
+            (b.name ?? b.appId).toLowerCase(),
+          ),
+        );
+
+  return CategorizedUpdates(
+    automaticUpdates: automaticUpdates,
+    manualUpdates: manualUpdates,
+    upToDateApps: upToDateApps,
+    uncatalogedApps: uncatalogedApps,
+  );
+});
+
+/// Total number of apps with available updates
 final updateCountProvider = Provider<int>((ref) {
   final categorized = ref.watch(categorizedUpdatesProvider);
   if (categorized.showSkeleton) return 0;

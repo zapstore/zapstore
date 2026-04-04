@@ -273,9 +273,9 @@ final appInitializationProvider = FutureProvider<void>((ref) async {
   // Record app open time for background notification throttling
   await secureStorage.setLastAppOpenedTime(DateTime.now());
 
-  // These run in background - don't block UI
+  // Ensure installed packages are available before anything categorizes
   final packageManager = ref.read(packageManagerProvider.notifier);
-  unawaited(packageManager.syncInstalledPackages());
+  await packageManager.syncInstalledPackages();
 
   final backgroundService = ref.read(backgroundUpdateServiceProvider);
   unawaited(backgroundService.initialize());
