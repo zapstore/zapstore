@@ -104,25 +104,18 @@ class UpdatePollerNotifier extends Notifier<UpdatePollerState> {
 
   /// Trigger an update check. Called by timer and pull-to-refresh.
   ///
-  /// Throttling behavior (per FEAT-003):
-  /// - If already checking: returns immediately (UI already showing spinner)
-  /// - If checked <30s ago: shows "checking" state for 2s without network (fake fetch)
+  /// - If already checking: returns immediately
+  /// - If checked <30s ago: silently skipped
   Future<void> checkNow() async {
     // Already checking - UI is already showing spinner, just return
     if (state.isChecking) return;
 
-    // Throttle: if checked recently, do a fake fetch (but allow first fetch always)
+    // Throttle: skip if checked recently (but allow first fetch always)
     if (_hasCompletedFirstFetch && state.lastCheckTime != null) {
       final timeSinceLastCheck = DateTime.now().difference(
         state.lastCheckTime!,
       );
-      if (timeSinceLastCheck < _refreshCooldown) {
-        // Fake fetch: show spinner for 2s without hitting network
-        state = state.copyWith(isChecking: true);
-        await Future.delayed(const Duration(seconds: 2));
-        state = state.copyWith(isChecking: false);
-        return;
-      }
+      if (timeSinceLastCheck < _refreshCooldown) return;
     }
 
     state = state.copyWith(isChecking: true);
@@ -142,8 +135,12 @@ class UpdatePollerNotifier extends Notifier<UpdatePollerState> {
       );
     } catch (e) {
       debugPrint('[UpdatePoller] Check failed: $e');
+      // Mark as completed even on failure so the UI escapes the skeleton and
+      // shows uncataloged apps rather than spinning forever.
+      _hasCompletedFirstFetch = true;
       state = state.copyWith(
         isChecking: false,
+        lastCheckTime: DateTime.now(),
         lastError: 'Update check failed — will retry',
       );
     }
@@ -173,7 +170,8 @@ class UpdatePollerNotifier extends Notifier<UpdatePollerState> {
     );
 
     // 2. Fetch FileMetadata (1063) for apps not covered by 3063
-    final coveredIds = assets.map((a) => a.appIdentifier).toSet();
+    final coveredIds =
+        assets.map((a) => a.appIdentifier).where((id) => id.isNotEmpty).toSet();
     final uncoveredIds = installedIds.difference(coveredIds);
     var metadatas = const <FileMetadata>[];
     if (uncoveredIds.isNotEmpty) {
@@ -239,7 +237,7 @@ final updatePollerProvider =
     );
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// CATEGORIZED UPDATES - Reactive local-only query for UI
+// CATEGORIZED UPDATES - Reactive query for UI
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /// Categorized apps state for the Updates screen
@@ -276,18 +274,15 @@ class CategorizedUpdatesNotifier extends Notifier<CategorizedUpdates> {
 
   @override
   CategorizedUpdates build() {
-    // Keep poller alive; only rebuild when completion status changes
-    final pollerHasCompleted = ref.watch(
-      updatePollerProvider.select((s) => s.lastCheckTime != null),
-    );
+    // Keep poller alive for periodic background refresh.
+    // Select a constant so poller state changes don't trigger rebuilds.
+    ref.watch(updatePollerProvider.select((_) => null));
 
-    // Wait for app initialization
     final initState = ref.watch(appInitializationProvider);
     if (initState is! AsyncData) {
       return CategorizedUpdates.empty;
     }
 
-    // Watch only installed map and scanning flag (ignore operations)
     final installed = ref.watch(
       packageManagerProvider.select((s) => s.installed),
     );
@@ -314,9 +309,13 @@ class CategorizedUpdatesNotifier extends Notifier<CategorizedUpdates> {
 
     final platform = ref.read(packageManagerProvider.notifier).platform;
 
-    // Local-only query: App with both installable paths loaded.
-    // 3063 apps resolve via latestAsset; 1063-only apps via latestRelease chain.
-    // The poller writes all data to local DB first; this just reads it.
+    // Reactive query: reads local cache immediately, fetches from relay on
+    // cold start, and refreshes whenever new data is written to local DB
+    // (e.g. by the periodic poller).
+    const source = LocalAndRemoteSource(
+      relays: 'AppCatalog',
+      stream: false,
+    );
     final appsState = ref.watch(
       query<App>(
         tags: {
@@ -324,64 +323,39 @@ class CategorizedUpdatesNotifier extends Notifier<CategorizedUpdates> {
           '#f': {platform},
         },
         and: (app) => {
-          app.latestAsset.query(source: const LocalSource()),
+          app.latestAsset.query(source: source),
           app.latestRelease.query(
-            source: const LocalSource(),
+            source: source,
             and: (release) => {
-              release.latestMetadata.query(source: const LocalSource()),
+              release.latestMetadata.query(source: source),
             },
           ),
         },
-        source: const LocalSource(),
-        subscriptionPrefix: 'app-updates-local',
+        source: source,
+        subscriptionPrefix: 'app-updates',
       ),
     );
 
-    // Preserve previous categorization during transient loading/error phases
-    // so the screen doesn't flash back to skeleton or uncataloged state.
-    final result = switch (appsState) {
-      StorageLoading() => _lastCategorization ??
-          (pollerHasCompleted
-              ? _buildUncatalogedOnly(installedPackages)
-              : CategorizedUpdates.empty),
-      StorageError() => _lastCategorization ??
-          const CategorizedUpdates(
-            automaticUpdates: [],
-            manualUpdates: [],
-            upToDateApps: [],
-            uncatalogedApps: [],
-            showSkeleton: false,
-          ),
-      StorageData(:final models) => _categorize(
-        models,
-        installedPackages,
-        installedIds,
-      ),
-    };
-
-    if (appsState is StorageData) {
-      _lastCategorization = result;
-    }
-
-    return result;
-  }
-
-  /// Build state with all packages as uncataloged (when query hasn't loaded yet
-  /// but poller completed - means relay has no data for these apps)
-  CategorizedUpdates _buildUncatalogedOnly(List<PackageInfo> installedPackages) {
-    final sorted = installedPackages.toList()
-      ..sort(
-        (a, b) => (a.name ?? a.appId).toLowerCase().compareTo(
-          (b.name ?? b.appId).toLowerCase(),
+    return switch (appsState) {
+      // Loading: use cached categorization if available, otherwise skeleton
+      StorageLoading(:final models) when models.isNotEmpty =>
+        _categorize(models, installedPackages, installedIds),
+      StorageLoading() =>
+        _lastCategorization ?? CategorizedUpdates.empty,
+      StorageError() =>
+        _lastCategorization ?? const CategorizedUpdates(
+          automaticUpdates: [],
+          manualUpdates: [],
+          upToDateApps: [],
+          uncatalogedApps: [],
+          showSkeleton: false,
         ),
-      );
-    return CategorizedUpdates(
-      automaticUpdates: const [],
-      manualUpdates: const [],
-      upToDateApps: const [],
-      uncatalogedApps: sorted,
-      showSkeleton: false,
-    );
+      StorageData(:final models) => () {
+        final result = _categorize(models, installedPackages, installedIds);
+        _lastCategorization = result;
+        return result;
+      }(),
+    };
   }
 
   CategorizedUpdates _categorize(
@@ -389,29 +363,18 @@ class CategorizedUpdatesNotifier extends Notifier<CategorizedUpdates> {
     List<PackageInfo> installedPackages,
     Set<String> installedIds,
   ) {
+    final installedMap = {for (final pkg in installedPackages) pkg.appId: pkg};
+    final catalogedAppIds = apps.map((a) => a.identifier).toSet();
+    final pm = ref.read(packageManagerProvider.notifier);
+
     final automaticUpdates = <App>[];
     final manualUpdates = <App>[];
     final upToDateApps = <App>[];
 
-    // Build lookup map from passed-in data
-    final installedMap = {for (final pkg in installedPackages) pkg.appId: pkg};
+    for (final app in apps) {
+      final pkg = installedMap[app.identifier];
+      if (pkg == null) continue;
 
-    // Track ALL apps returned from local query as "cataloged"
-    final catalogedAppIds = apps.map((a) => a.identifier).toSet();
-
-    // Check if ANY installed app has a match in local DB
-    // If not, we should show skeleton (cold start state)
-    final hasAnyMatch = installedIds.any(catalogedAppIds.contains);
-
-    // Only process apps that are actually installed
-    final installedApps = apps.where(
-      (a) => installedMap.containsKey(a.identifier),
-    );
-
-    final pm = ref.read(packageManagerProvider.notifier);
-
-    for (final app in installedApps) {
-      final pkg = installedMap[app.identifier]!;
       final latest = app.installable;
       final hasUpdate = latest != null && pm.hasUpdate(app.identifier, latest);
 
@@ -422,37 +385,31 @@ class CategorizedUpdatesNotifier extends Notifier<CategorizedUpdates> {
           manualUpdates.add(app);
         }
       } else {
-        // No update available - app is up to date
         upToDateApps.add(app);
       }
     }
 
-    // Find installed packages without catalog metadata
-    final uncatalogedApps =
-        installedPackages
-            .where((pkg) => !catalogedAppIds.contains(pkg.appId))
-            .toList()
-          ..sort(
-            (a, b) => (a.name ?? a.appId).toLowerCase().compareTo(
-              (b.name ?? b.appId).toLowerCase(),
-            ),
-          );
-
     int byName(App a, App b) => (a.name ?? a.identifier)
         .toLowerCase()
         .compareTo((b.name ?? b.identifier).toLowerCase());
-
     automaticUpdates.sort(byName);
     manualUpdates.sort(byName);
     upToDateApps.sort(byName);
+
+    final uncatalogedApps = installedPackages
+        .where((pkg) => !catalogedAppIds.contains(pkg.appId))
+        .toList()
+      ..sort(
+        (a, b) => (a.name ?? a.appId).toLowerCase().compareTo(
+          (b.name ?? b.appId).toLowerCase(),
+        ),
+      );
 
     return CategorizedUpdates(
       automaticUpdates: automaticUpdates,
       manualUpdates: manualUpdates,
       upToDateApps: upToDateApps,
       uncatalogedApps: uncatalogedApps,
-      // Show skeleton only if installed apps exist but NONE match local DB
-      showSkeleton: installedIds.isNotEmpty && !hasAnyMatch,
     );
   }
 

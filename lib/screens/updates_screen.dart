@@ -12,7 +12,6 @@ import 'package:zapstore/widgets/batch_progress_banner.dart';
 import 'package:zapstore/widgets/common/badges.dart';
 import 'package:zapstore/widgets/app_card.dart';
 
-/// Screen for managing app updates
 class UpdatesScreen extends ConsumerWidget {
   const UpdatesScreen({super.key});
 
@@ -20,7 +19,6 @@ class UpdatesScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final categorized = ref.watch(categorizedUpdatesProvider);
 
-    // Show skeleton only on cold start (no installed apps matched yet)
     if (categorized.showSkeleton) {
       return Scaffold(
         body: Padding(
@@ -33,19 +31,17 @@ class UpdatesScreen extends ConsumerWidget {
     return Scaffold(
       body: Padding(
         padding: const EdgeInsets.only(top: 16),
-        child: _UpdatesContent(categorized: categorized),
+        child: _UpdatesList(categorized: categorized),
       ),
     );
   }
 }
 
-/// Loading skeleton shown while fetching updates on cold start
 class _LoadingSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(
       children: [
-        // "Checking for updates..." indicator at top
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
@@ -68,7 +64,6 @@ class _LoadingSkeleton extends StatelessWidget {
             ],
           ),
         ),
-        // Skeleton app cards using existing AppCard skeleton
         const AppCard(isLoading: true),
         const AppCard(isLoading: true),
         const AppCard(isLoading: true),
@@ -77,7 +72,6 @@ class _LoadingSkeleton extends StatelessWidget {
   }
 }
 
-/// Shows when updates were last checked
 class _LastCheckedIndicator extends HookConsumerWidget {
   const _LastCheckedIndicator();
 
@@ -169,31 +163,8 @@ class _LastCheckedIndicator extends HookConsumerWidget {
   }
 }
 
-/// Item types for the updates list
-enum _UpdatesItemType {
-  lastChecked,
-  installingHeader,
-  installingApp,
-  automaticHeader,
-  automaticApp,
-  manualHeader,
-  manualApp,
-  upToDateHeader,
-  upToDateApp,
-  uncatalogedHeader,
-  uncatalogedApp,
-}
-
-class _UpdatesItem {
-  final _UpdatesItemType type;
-  final App? app;
-  final PackageInfo? packageInfo;
-
-  const _UpdatesItem(this.type, {this.app, this.packageInfo});
-}
-
-class _UpdatesContent extends HookConsumerWidget {
-  const _UpdatesContent({required this.categorized});
+class _UpdatesList extends ConsumerWidget {
+  const _UpdatesList({required this.categorized});
 
   final CategorizedUpdates categorized;
 
@@ -204,7 +175,7 @@ class _UpdatesContent extends HookConsumerWidget {
     final upToDateApps = categorized.upToDateApps;
     final uncatalogedApps = categorized.uncatalogedApps;
 
-    // Watch operations from PackageManager
+    // Resolve installing apps (active operations not already in update lists)
     final operations = ref.watch(
       packageManagerProvider.select((s) => s.operations),
     );
@@ -213,47 +184,18 @@ class _UpdatesContent extends HookConsumerWidget {
         .map((entry) => entry.key)
         .toSet();
 
-    // Always use the same widget type to preserve scroll position
-    return _UpdatesListBodyWithInstallingAppIds(
-      installingAppIds: activeAppIds,
-      automaticUpdates: automaticUpdates,
-      manualUpdates: manualUpdates,
-      upToDateApps: upToDateApps,
-      uncatalogedApps: uncatalogedApps,
-    );
-  }
-}
-
-class _UpdatesListBodyWithInstallingAppIds extends ConsumerWidget {
-  const _UpdatesListBodyWithInstallingAppIds({
-    required this.installingAppIds,
-    required this.automaticUpdates,
-    required this.manualUpdates,
-    required this.upToDateApps,
-    required this.uncatalogedApps,
-  });
-
-  final Set<String> installingAppIds;
-  final List<App> automaticUpdates;
-  final List<App> manualUpdates;
-  final List<App> upToDateApps;
-  final List<PackageInfo> uncatalogedApps;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
     final updateAppIds = {
       ...automaticUpdates.map((a) => a.identifier),
       ...manualUpdates.map((a) => a.identifier),
     };
 
-    // Only query for installing apps if there are active operations
     final List<App> installingApps;
-    if (installingAppIds.isEmpty) {
+    if (activeAppIds.isEmpty) {
       installingApps = const [];
     } else {
       final installingAppsState = ref.watch(
         query<App>(
-          tags: {'#d': installingAppIds},
+          tags: {'#d': activeAppIds},
           and: (app) => {app.latestRelease.query()},
           source: const LocalAndRemoteSource(relays: 'AppCatalog'),
           subscriptionPrefix: 'app-installing-apps',
@@ -262,74 +204,30 @@ class _UpdatesListBodyWithInstallingAppIds extends ConsumerWidget {
       installingApps = installingAppsState.models
           .where(
             (app) =>
-                installingAppIds.contains(app.identifier) &&
+                activeAppIds.contains(app.identifier) &&
                 !updateAppIds.contains(app.identifier),
           )
           .toList();
     }
 
-    return _UpdatesListBody(
-      automaticUpdates: automaticUpdates,
-      manualUpdates: manualUpdates,
-      installingApps: installingApps,
-      upToDateApps: upToDateApps,
-      uncatalogedApps: uncatalogedApps,
-    );
-  }
-}
-
-class _UpdatesListBody extends HookConsumerWidget {
-  const _UpdatesListBody({
-    required this.automaticUpdates,
-    required this.manualUpdates,
-    required this.installingApps,
-    required this.upToDateApps,
-    required this.uncatalogedApps,
-  });
-
-  final List<App> automaticUpdates;
-  final List<App> manualUpdates;
-  final List<App> installingApps;
-  final List<App> upToDateApps;
-  final List<PackageInfo> uncatalogedApps;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
+    // Empty state
     if (automaticUpdates.isEmpty &&
         manualUpdates.isEmpty &&
         installingApps.isEmpty &&
         upToDateApps.isEmpty &&
         uncatalogedApps.isEmpty) {
       final theme = Theme.of(context);
-
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
           children: [
             ColorFiltered(
               colorFilter: const ColorFilter.matrix(<double>[
-                0.2126,
-                0.7152,
-                0.0722,
-                0,
-                0,
-                0.2126,
-                0.7152,
-                0.0722,
-                0,
-                0,
-                0.2126,
-                0.7152,
-                0.0722,
-                0,
-                0,
-                0,
-                0,
-                0,
-                1,
-                0,
+                0.2126, 0.7152, 0.0722, 0, 0,
+                0.2126, 0.7152, 0.0722, 0, 0,
+                0.2126, 0.7152, 0.0722, 0, 0,
+                0, 0, 0, 1, 0,
               ]),
               child: const Text('🎉', style: TextStyle(fontSize: 48)),
             ),
@@ -352,78 +250,9 @@ class _UpdatesListBody extends HookConsumerWidget {
       );
     }
 
-    // Build flat list of items for ListView.builder
-    final items = <_UpdatesItem>[];
-
-    // Add last checked indicator first
-    items.add(const _UpdatesItem(_UpdatesItemType.lastChecked));
-
-    if (installingApps.isNotEmpty) {
-      items.add(const _UpdatesItem(_UpdatesItemType.installingHeader));
-      for (final app in installingApps) {
-        items.add(_UpdatesItem(_UpdatesItemType.installingApp, app: app));
-      }
-    }
-
-    if (automaticUpdates.isNotEmpty) {
-      items.add(const _UpdatesItem(_UpdatesItemType.automaticHeader));
-      for (final app in automaticUpdates) {
-        items.add(_UpdatesItem(_UpdatesItemType.automaticApp, app: app));
-      }
-    }
-
-    if (manualUpdates.isNotEmpty) {
-      items.add(const _UpdatesItem(_UpdatesItemType.manualHeader));
-      for (final app in manualUpdates) {
-        items.add(_UpdatesItem(_UpdatesItemType.manualApp, app: app));
-      }
-    }
-
-    if (upToDateApps.isNotEmpty) {
-      items.add(const _UpdatesItem(_UpdatesItemType.upToDateHeader));
-      for (final app in upToDateApps) {
-        items.add(_UpdatesItem(_UpdatesItemType.upToDateApp, app: app));
-      }
-    }
-
-    if (uncatalogedApps.isNotEmpty) {
-      items.add(const _UpdatesItem(_UpdatesItemType.uncatalogedHeader));
-      for (final pkg in uncatalogedApps) {
-        items.add(
-          _UpdatesItem(_UpdatesItemType.uncatalogedApp, packageInfo: pkg),
-        );
-      }
-    }
-
-    // Combine all updates for the Update All button
     final allUpdates = [...automaticUpdates, ...manualUpdates];
 
-    // Auto-clear completed operations after 3 seconds
-    final progress = ref.watch(batchProgressProvider);
-    final wasInProgress = useRef(false);
-    final autoClearTimer = useRef<Timer?>(null);
-    useEffect(() {
-      if (progress != null && progress.hasInProgress) {
-        autoClearTimer.value?.cancel();
-        wasInProgress.value = true;
-      } else if (wasInProgress.value &&
-          progress != null &&
-          progress.isAllComplete) {
-        wasInProgress.value = false;
-        autoClearTimer.value = Timer(const Duration(seconds: 3), () {
-          ref
-              .read(packageManagerProvider.notifier)
-              .clearCompletedOperations();
-        });
-      } else if (progress == null) {
-        autoClearTimer.value?.cancel();
-        wasInProgress.value = false;
-      }
-      return () => autoClearTimer.value?.cancel();
-    }, [progress?.hasInProgress, progress?.isAllComplete]);
-
     return RefreshIndicator(
-      // Hide the spinner - _LastCheckedIndicator already shows "Checking for updates..."
       color: Colors.transparent,
       backgroundColor: Colors.transparent,
       elevation: 0,
@@ -431,97 +260,122 @@ class _UpdatesListBody extends HookConsumerWidget {
       onRefresh: () => ref.read(updatePollerProvider.notifier).checkNow(),
       child: CustomScrollView(
         slivers: [
-          // Update All button (when idle with 2+ updates available)
           if (allUpdates.length > 1)
             SliverToBoxAdapter(child: UpdateAllRow(allUpdates: allUpdates)),
-          // Main content
-          SliverList(
-            delegate: SliverChildBuilderDelegate((context, index) {
-              final item = items[index];
-              switch (item.type) {
-                case _UpdatesItemType.lastChecked:
-                  return const _LastCheckedIndicator();
-                case _UpdatesItemType.installingHeader:
-                  return _SectionHeader(
-                    icon: Icons.downloading,
-                    title: 'Installing',
-                    count: installingApps.length,
-                  );
-                case _UpdatesItemType.installingApp:
-                  return AppCard(
-                    key: ValueKey('installing_${item.app?.identifier}'),
-                    app: item.app,
-                    showUpdateArrow: false,
-                    showUpdateButton: true,
-                    showZapEncouragement: true,
-                    showDescription: false,
-                  );
-                case _UpdatesItemType.automaticHeader:
-                  return _SectionHeader(
-                    icon: Icons.system_update,
-                    title: 'Updates',
-                    count: automaticUpdates.length,
-                  );
-                case _UpdatesItemType.automaticApp:
-                  return AppCard(
-                    key: ValueKey('automatic_${item.app?.identifier}'),
-                    app: item.app,
-                    showUpdateArrow: true,
-                    showUpdateButton: true,
-                    showZapEncouragement: true,
-                    showDescription: false,
-                  );
-                case _UpdatesItemType.manualHeader:
-                  return _SectionHeader(
-                    icon: Icons.touch_app,
-                    title: 'Manual Updates',
-                    count: manualUpdates.length,
-                    trailing: _ManualUpdatesHelpIcon(),
-                  );
-                case _UpdatesItemType.manualApp:
-                  return AppCard(
-                    key: ValueKey('manual_${item.app?.identifier}'),
-                    app: item.app,
-                    showUpdateArrow: true,
-                    showUpdateButton: true,
-                    showZapEncouragement: true,
-                    showDescription: false,
-                  );
-                case _UpdatesItemType.upToDateHeader:
-                  return _SectionHeader(
-                    icon: Icons.check_circle,
-                    title: 'Up to date',
-                    count: upToDateApps.length,
-                  );
-                case _UpdatesItemType.upToDateApp:
-                  return AppCard(
-                    key: ValueKey('uptodate_${item.app?.identifier}'),
-                    app: item.app,
-                    showUpdateArrow: false,
-                    showDescription: false,
-                  );
-                case _UpdatesItemType.uncatalogedHeader:
-                  return _SectionHeader(
-                    icon: Icons.help_outline,
-                    title: 'Other installed',
-                    count: uncatalogedApps.length,
-                    iconColor: AppColors.darkOnSurfaceSecondary,
-                  );
-                case _UpdatesItemType.uncatalogedApp:
-                  return _UncatalogedAppCard(
-                    key: ValueKey('uncataloged_${item.packageInfo?.appId}'),
-                    packageInfo: item.packageInfo!,
-                  );
-              }
-            }, childCount: items.length),
-          ),
+          const SliverToBoxAdapter(child: _LastCheckedIndicator()),
+          if (installingApps.isNotEmpty)
+            _AppSection(
+              icon: Icons.downloading,
+              title: 'Installing',
+              apps: installingApps,
+              keyPrefix: 'installing',
+              showUpdateButton: true,
+              showZapEncouragement: true,
+            ),
+          if (automaticUpdates.isNotEmpty)
+            _AppSection(
+              icon: Icons.system_update,
+              title: 'Updates',
+              apps: automaticUpdates,
+              keyPrefix: 'automatic',
+              showUpdateArrow: true,
+              showUpdateButton: true,
+              showZapEncouragement: true,
+            ),
+          if (manualUpdates.isNotEmpty)
+            _AppSection(
+              icon: Icons.touch_app,
+              title: 'Manual Updates',
+              apps: manualUpdates,
+              keyPrefix: 'manual',
+              showUpdateArrow: true,
+              showUpdateButton: true,
+              showZapEncouragement: true,
+              headerTrailing: _ManualUpdatesHelpIcon(),
+            ),
+          if (upToDateApps.isNotEmpty)
+            _AppSection(
+              icon: Icons.check_circle,
+              title: 'Up to date',
+              apps: upToDateApps,
+              keyPrefix: 'uptodate',
+            ),
+          if (uncatalogedApps.isNotEmpty) ...[
+            SliverToBoxAdapter(
+              child: _SectionHeader(
+                icon: Icons.help_outline,
+                title: 'Other installed',
+                count: uncatalogedApps.length,
+                iconColor: AppColors.darkOnSurfaceSecondary,
+              ),
+            ),
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) => _UncatalogedAppCard(
+                  key: ValueKey('uncataloged_${uncatalogedApps[index].appId}'),
+                  packageInfo: uncatalogedApps[index],
+                ),
+                childCount: uncatalogedApps.length,
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 }
 
-/// Section header with icon, title, count badge, and optional trailing widget.
+/// A section: header + list of AppCards, rendered as a single sliver.
+class _AppSection extends StatelessWidget {
+  const _AppSection({
+    required this.icon,
+    required this.title,
+    required this.apps,
+    required this.keyPrefix,
+    this.showUpdateArrow = false,
+    this.showUpdateButton = false,
+    this.showZapEncouragement = false,
+    this.headerTrailing,
+  });
+
+  final IconData icon;
+  final String title;
+  final List<App> apps;
+  final String keyPrefix;
+  final bool showUpdateArrow;
+  final bool showUpdateButton;
+  final bool showZapEncouragement;
+  final Widget? headerTrailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return SliverList(
+      delegate: SliverChildBuilderDelegate(
+        (context, index) {
+          if (index == 0) {
+            return _SectionHeader(
+              icon: icon,
+              title: title,
+              count: apps.length,
+              trailing: headerTrailing,
+            );
+          }
+          final app = apps[index - 1];
+          return AppCard(
+            key: ValueKey('${keyPrefix}_${app.identifier}'),
+            app: app,
+            showUpdateArrow: showUpdateArrow,
+            showUpdateButton: showUpdateButton,
+            showZapEncouragement: showZapEncouragement,
+            showDescription: false,
+          );
+        },
+        childCount: apps.length + 1,
+      ),
+    );
+  }
+}
+
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader({
     required this.icon,
@@ -558,7 +412,6 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-/// Help icon that shows explanation for Manual Updates section.
 class _ManualUpdatesHelpIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
@@ -607,7 +460,6 @@ class _UncatalogedAppCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // Generic app icon
           Container(
             width: 50,
             height: 50,
@@ -642,7 +494,6 @@ class _UncatalogedAppCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 8),
-                // Version pill
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 9,

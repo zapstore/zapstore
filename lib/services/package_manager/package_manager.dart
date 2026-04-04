@@ -109,6 +109,9 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
   /// Watchdog timer for detecting stale operations (Dart-side fallback)
   Timer? _watchdogTimer;
 
+  /// Auto-clears terminal operations 3s after all operations finish
+  Timer? _autoClearTimer;
+
   // ═══════════════════════════════════════════════════════════════════════════
   // EXPLICIT QUEUE TRACKING
   // Queues are the source of truth for order; operations map is for UI state.
@@ -192,6 +195,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
   @override
   void dispose() {
     _watchdogTimer?.cancel();
+    _autoClearTimer?.cancel();
     _downloader.unregisterCallbacks();
     super.dispose();
   }
@@ -285,6 +289,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
   void setOperation(String appId, InstallOperation op) {
     state = state.copyWith(operations: {...state.operations, appId: op});
     _updateWatchdogTimer();
+    _scheduleAutoClearIfDone();
   }
 
   void clearOperation(String appId) {
@@ -295,9 +300,10 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
   }
 
   /// Clear all terminal operations from the map.
-  /// Called after the batch completion display timeout.
   /// Terminal states: Completed, OperationFailed, InstallCancelled.
   void clearCompletedOperations() {
+    _autoClearTimer?.cancel();
+    _autoClearTimer = null;
     final remaining = Map.of(state.operations)
       ..removeWhere(
         (_, op) =>
@@ -305,6 +311,25 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
       );
     state = state.copyWith(operations: remaining);
     _updateWatchdogTimer();
+  }
+
+  /// Auto-clear terminal operations 3s after every operation reaches a
+  /// terminal state. Resets if a new non-terminal operation arrives.
+  void _scheduleAutoClearIfDone() {
+    final ops = state.operations.values;
+    final hasActive = ops.any((op) => op.isActive);
+
+    if (hasActive || ops.isEmpty) {
+      _autoClearTimer?.cancel();
+      _autoClearTimer = null;
+      return;
+    }
+
+    // All operations are terminal — schedule cleanup
+    _autoClearTimer ??= Timer(const Duration(seconds: 3), () {
+      _autoClearTimer = null;
+      clearCompletedOperations();
+    });
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1508,7 +1533,6 @@ class BatchProgress {
 
   /// Whether all operations are complete (all terminal)
   bool get isAllComplete => !hasInProgress && total > 0;
-
 }
 
 /// Provider for batch progress - ALL state derived from operations map.
