@@ -175,13 +175,17 @@ Future<void> _loadMore(
       subscriptionPrefix: 'app-latest-older',
     );
 
-    final identifiers = items.map((a) => a.appIdentifier).toSet();
-    if (identifiers.isNotEmpty) {
-      await storage.query(
-        RequestFilter<App>(tags: {'#d': identifiers}).toRequest(),
+    final appFilters = items
+        .map((a) => a.app.req?.filters.firstOrNull)
+        .nonNulls
+        .toList();
+    if (appFilters.isNotEmpty) {
+      final apps = await storage.query(
+        Request<App>(appFilters),
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
         subscriptionPrefix: 'app-latest-older-apps',
       );
+      await loadAuthors(storage, apps, 'app-latest-older-authors');
     }
 
     final existingIds = allAssets.map((a) => a.id).toSet();

@@ -87,12 +87,12 @@ Future<AssetFetchResult> fetchAppsByAsset(
     subscriptionPrefix: '$subscriptionPrefix-apps',
   );
 
-  await _loadAuthors(storage, apps, '$subscriptionPrefix-authors');
+  await loadAuthors(storage, apps, '$subscriptionPrefix-authors');
 
   return AssetFetchResult(apps, assets.length);
 }
 
-Future<void> _loadAuthors(
+Future<void> loadAuthors(
   StorageNotifier storage,
   List<App> apps,
   String subscriptionPrefix,
