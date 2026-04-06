@@ -446,6 +446,7 @@ class _MigrationBanner extends HookConsumerWidget {
         final partialStack = PartialAppStack(
           name: stack.name ?? stack.identifier,
           identifier: stack.identifier,
+          description: stack.description,
           platform: platform,
         );
         partialStack.addCommunityKey(kZapstoreCommunityPubkey);
@@ -461,7 +462,10 @@ class _MigrationBanner extends HookConsumerWidget {
 
         final signedStack = await partialStack.signWith(signer);
         await ref.storage.save({signedStack});
-        ref.storage.publish({signedStack}, relays: {'social', 'AppCatalog'});
+        await ref.storage.publish(
+          {signedStack},
+          relays: {'social', 'AppCatalog'},
+        );
 
         progressCount.value++;
       }
