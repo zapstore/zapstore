@@ -10,8 +10,6 @@ import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/paged_subscription_notifier.dart';
 import 'package:zapstore/widgets/app_stack_container.dart';
 
-const int _kPageSize = 60;
-
 // ---------------------------------------------------------------------------
 // Notifier & provider
 // ---------------------------------------------------------------------------
@@ -28,20 +26,19 @@ class StacksNotifier extends PagedSubscriptionNotifier<AppStack> {
   };
 
   @override
-  int get pageSize => _kPageSize;
-
-  @override
   void startSubscription() {
     _sub?.close();
     _sub = ref.listen(
       query<AppStack>(
-        limit: pageSize,
         tags: _tags,
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: true),
         subscriptionPrefix: 'app-stacks',
         schemaFilter: appStackEventFilter,
       ),
-      (_, next) => updateFirstPage(next),
+      (_, next) {
+        updateFirstPage(next);
+        state = state.copyWith(hasMore: false);
+      },
       fireImmediately: true,
     );
   }
@@ -50,17 +47,7 @@ class StacksNotifier extends PagedSubscriptionNotifier<AppStack> {
   Future<({List<AppStack> items, int count})> fetchOlderPage(
     DateTime until,
   ) async {
-    final storage = ref.read(storageNotifierProvider.notifier);
-    final items = await storage.query(
-      RequestFilter<AppStack>(
-        tags: _tags,
-        until: until,
-        limit: pageSize,
-      ).toRequest(),
-      source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
-      subscriptionPrefix: 'app-stacks-older',
-    );
-    return (items: items, count: items.length);
+    return (items: <AppStack>[], count: 0);
   }
 
   @override
@@ -182,20 +169,6 @@ class AppStacksScreen extends HookConsumerWidget {
         app.identifier: app,
     };
 
-    useEffect(() {
-      void onScroll() {
-        final s = ref.read(stacksProvider);
-        if (s.isLoadingMore || !s.hasMore) return;
-        if (scrollController.position.pixels >=
-            scrollController.position.maxScrollExtent - 300) {
-          ref.read(stacksProvider.notifier).loadMore();
-        }
-      }
-
-      scrollController.addListener(onScroll);
-      return () => scrollController.removeListener(onScroll);
-    }, [scrollController]);
-
     final isInitialLoading = state.firstPage is StorageLoading && items.isEmpty;
 
     return Scaffold(
@@ -280,32 +253,6 @@ class AppStacksScreen extends HookConsumerWidget {
                 }, childCount: items.length),
               ),
             ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: state.isLoadingMore
-                  ? Center(
-                      child: SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 3,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                      ),
-                    )
-                  : !state.hasMore && items.isNotEmpty
-                  ? Center(
-                      child: Text(
-                        'No more stacks to load',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                    )
-                  : const SizedBox.shrink(),
-            ),
-          ),
           const SliverToBoxAdapter(child: SizedBox(height: 16)),
         ],
       ),
