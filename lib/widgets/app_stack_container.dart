@@ -35,12 +35,13 @@ List<String> getPreviewIdentifiers(AppStack stack) {
   return rawTags.take(3).map(extractStackIdentifier).whereType<String>().toList();
 }
 
-/// Shuffle stacks with a daily seed for variety
+/// Seed generated once per app session for stable shuffle order
+final int _sessionSeed = Random().nextInt(1 << 32);
+
+/// Shuffle stacks with a per-session seed for variety
 List<AppStack> _shuffleStacks(List<AppStack> stacks, {String? signedInPubkey}) {
-  final today = DateTime.now();
-  final dateSeed = today.year * 10000 + today.month * 100 + today.day;
   final userSeed = signedInPubkey?.hashCode ?? 0;
-  return stacks.toList()..shuffle(Random(dateSeed ^ userSeed));
+  return stacks.toList()..shuffle(Random(_sessionSeed ^ userSeed));
 }
 
 /// App Stack Container - horizontally scrollable 2-row grid of stack cards
@@ -384,13 +385,23 @@ class StackCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _FadingText(
-              stack.name ?? stack.identifier,
-              style: context.textTheme.titleMedium?.copyWith(
+            Builder(builder: (context) {
+              final titleStyle = context.textTheme.titleMedium?.copyWith(
                 fontFamily: 'Inter',
-                fontSize: (context.textTheme.titleMedium?.fontSize ?? 16) * 0.9,
-              ),
-            ),
+                fontSize:
+                    (context.textTheme.titleMedium?.fontSize ?? 16) * 0.9,
+              );
+              final lineHeight = (titleStyle?.fontSize ?? 14.4) *
+                  (titleStyle?.height ?? 1.2);
+              return SizedBox(
+                height: lineHeight * 2,
+                child: _FadingText(
+                  stack.name ?? stack.identifier,
+                  style: titleStyle,
+                  maxLines: 2,
+                ),
+              );
+            }),
             if (showAuthor) ...[
               const SizedBox(height: 6),
               Row(
@@ -542,10 +553,11 @@ class _AppIconTile extends StatelessWidget {
 
 /// Text widget that applies fade-out effect when text overflows
 class _FadingText extends HookWidget {
-  const _FadingText(this.text, {required this.style});
+  const _FadingText(this.text, {required this.style, this.maxLines = 1});
 
   final String text;
   final TextStyle? style;
+  final int maxLines;
 
   @override
   Widget build(BuildContext context) {
@@ -553,16 +565,16 @@ class _FadingText extends HookWidget {
       builder: (context, constraints) {
         final textPainter = TextPainter(
           text: TextSpan(text: text, style: style),
-          maxLines: 1,
+          maxLines: maxLines,
           textDirection: TextDirection.ltr,
-        )..layout(maxWidth: double.infinity);
+        )..layout(maxWidth: constraints.maxWidth);
 
-        final isOverflowing = textPainter.width > constraints.maxWidth;
+        final isOverflowing = textPainter.didExceedMaxLines;
 
         final textWidget = Text(
           text,
           style: style,
-          maxLines: 1,
+          maxLines: maxLines,
           overflow: TextOverflow.clip,
         );
 
