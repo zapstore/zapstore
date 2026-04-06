@@ -31,7 +31,7 @@ class StacksNotifier extends PagedSubscriptionNotifier<AppStack> {
     _sub = ref.listen(
       query<AppStack>(
         tags: _tags,
-        source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: true),
+        source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
         subscriptionPrefix: 'app-stacks',
         schemaFilter: appStackEventFilter,
       ),
@@ -64,10 +64,12 @@ class StacksNotifier extends PagedSubscriptionNotifier<AppStack> {
 }
 
 final stacksProvider =
-    StateNotifierProvider<StacksNotifier, PagedState<AppStack>>((ref) {
-      final platform = ref.read(packageManagerProvider.notifier).platform;
-      return StacksNotifier(ref, platform: platform);
-    });
+    StateNotifierProvider.autoDispose<StacksNotifier, PagedState<AppStack>>((
+  ref,
+) {
+  final platform = ref.read(packageManagerProvider.notifier).platform;
+  return StacksNotifier(ref, platform: platform);
+});
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -104,7 +106,8 @@ class AppStacksScreen extends HookConsumerWidget {
     final platform = ref.read(packageManagerProvider.notifier).platform;
 
     final state = ref.watch(stacksProvider);
-    final items = state.combined;
+    final items = state.combined
+      ..sort((a, b) => b.event.createdAt.compareTo(a.event.createdAt));
 
     // Query signed-in user's stacks that may need migration
     final signedInPubkey = ref.watch(Signer.activePubkeyProvider);

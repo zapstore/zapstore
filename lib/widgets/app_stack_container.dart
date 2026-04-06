@@ -72,7 +72,7 @@ class AppStackContainer extends HookConsumerWidget {
         tags: {
           '#f': {platform},
         },
-        source: const LocalAndRemoteSource(relays: 'AppCatalog'),
+        source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
         subscriptionPrefix: 'app-stack',
         schemaFilter: appStackEventFilter,
       ),
