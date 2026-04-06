@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-04-06
+
+### Added
+
+- Deep link resolver (#341)
+- Relay hints in NIP-82 app `naddr` encoding so other clients resolve app events against the catalog relay (#343, #344)
+- NIP-09 deletion handling
+- Script to build the seed database for default stacks and apps
+- Indexer pubkey and consistent `subscriptionPrefix` usage for App Catalog subscriptions
+
+### Changed
+
+- New stacks screen with stack migration; faster home loading via asset-first queries and query tuning
+- Updates: more efficient polling and change detection; latest-releases area refactored with clearer loading (spinner) and initialization ordering (no storage queries until init completes)
+- Navigation bar: reduced perceived tap lag and consistent pill height (#333); SafeArea fixes for cut-off bottom bar
+- Install flow: read package name from APK manifest; retry download via CDN on hash mismatch; certificate mismatch UI improved; removed force-update option
+- Humanized relay error messages; improved search results; better app detail skeletons; removed confusing installation progress banner on updates
+- CDN fetch behavior uses redirect where appropriate; social events published to community relay as intended
+- Simplified download watchdog (more reliance on Android); optimized GitHub and F-Droid icons (#352)
+
+### Fixed
+
+- Deep link handling
+- "Can't zap" regression
+- Version pill out of sync with installed/available state
+- APK signature detection; system install dialog dismissed without clear UX
+- Stacks: infinite loading, load-more pagination, display bugs, and migration edge cases
+- Latest releases and catalog loading (including fetcher and parallel release load)
+
 ## [1.0.1] - 2026-02-20
 
 ### Changed
