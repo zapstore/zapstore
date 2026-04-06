@@ -1436,11 +1436,7 @@ class AndroidPackageManagerPlugin :
 
             val signatures =
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                        pkgInfo.signingInfo?.let { si ->
-                            if (si.hasMultipleSigners()) si.apkContentsSigners
-                            else si.signingCertificateHistory
-                        }
-                                ?: emptyArray()
+                        pkgInfo.signingInfo?.apkContentsSigners ?: emptyArray()
                     } else {
                         @Suppress("DEPRECATION") pkgInfo.signatures ?: emptyArray()
                     }
