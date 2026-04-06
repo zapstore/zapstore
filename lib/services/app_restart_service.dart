@@ -12,9 +12,13 @@ Future<void> maybeClearStorage(String dbPath) async {
   final dir = await getApplicationSupportDirectory();
   final marker = File('${dir.path}/$_markerFileName');
   if (await marker.exists()) {
-    final dbFile = File(dbPath);
-    if (await dbFile.exists()) {
-      await dbFile.delete();
+    // Delete the main DB and SQLite WAL-mode companion files.
+    // Leaving stale -wal/-shm behind corrupts the seed database copy.
+    for (final suffix in ['', '-wal', '-shm']) {
+      final f = File('$dbPath$suffix');
+      if (await f.exists()) {
+        await f.delete();
+      }
     }
     await marker.delete();
   }
