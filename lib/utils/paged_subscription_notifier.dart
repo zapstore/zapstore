@@ -108,7 +108,7 @@ abstract class PagedSubscriptionNotifier<T extends Model<dynamic>>
     final oldest = combined
         .map(getCreatedAt)
         .reduce((a, b) => a.isBefore(b) ? a : b)
-        .subtract(const Duration(milliseconds: 1));
+        .subtract(const Duration(seconds: 1));
 
     state = state.copyWith(isLoadingMore: true);
 
@@ -119,10 +119,11 @@ abstract class PagedSubscriptionNotifier<T extends Model<dynamic>>
         final unique = result.items
             .where((item) => !existingIds.contains(getId(item)))
             .toList();
+        final hasMore = unique.isNotEmpty && result.count >= pageSize;
         state = state.copyWith(
           olderItems: [...state.olderItems, ...unique],
           isLoadingMore: false,
-          hasMore: result.count >= pageSize,
+          hasMore: hasMore,
         );
       } else {
         state = state.copyWith(isLoadingMore: false, hasMore: false);

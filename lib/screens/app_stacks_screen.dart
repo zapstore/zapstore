@@ -17,6 +17,9 @@ import 'package:zapstore/widgets/app_stack_container.dart';
 class StacksNotifier extends PagedSubscriptionNotifier<AppStack> {
   StacksNotifier(super.ref, {required this.platform});
 
+  @override
+  int get pageSize => 20;
+
   final String platform;
   ProviderSubscription<StorageState<AppStack>>? _sub;
 
@@ -31,14 +34,12 @@ class StacksNotifier extends PagedSubscriptionNotifier<AppStack> {
     _sub = ref.listen(
       query<AppStack>(
         tags: _tags,
-        source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
+        until: DateTime.now(),
+        limit: pageSize,
+        source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: true),
         subscriptionPrefix: 'app-stacks',
-        schemaFilter: appStackEventFilter,
       ),
-      (_, next) {
-        updateFirstPage(next);
-        state = state.copyWith(hasMore: false);
-      },
+      (_, next) => updateFirstPage(next),
       fireImmediately: true,
     );
   }
@@ -47,7 +48,17 @@ class StacksNotifier extends PagedSubscriptionNotifier<AppStack> {
   Future<({List<AppStack> items, int count})> fetchOlderPage(
     DateTime until,
   ) async {
-    return (items: <AppStack>[], count: 0);
+    final storage = ref.read(storageNotifierProvider.notifier);
+    final items = await storage.query(
+      RequestFilter<AppStack>(
+        tags: _tags,
+        until: until,
+        limit: pageSize,
+      ).toRequest(),
+      source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
+      subscriptionPrefix: 'app-stacks-older',
+    );
+    return (items: items, count: items.length);
   }
 
   @override
@@ -106,8 +117,7 @@ class AppStacksScreen extends HookConsumerWidget {
     final platform = ref.read(packageManagerProvider.notifier).platform;
 
     final state = ref.watch(stacksProvider);
-    final items = state.combined
-      ..sort((a, b) => b.event.createdAt.compareTo(a.event.createdAt));
+    final items = state.combined;
 
     // Query signed-in user's stacks that may need migration
     final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
@@ -173,6 +183,37 @@ class AppStacksScreen extends HookConsumerWidget {
     };
 
     final isInitialLoading = state.firstPage is StorageLoading && items.isEmpty;
+
+    useEffect(() {
+      void onScroll() {
+        if (!scrollController.hasClients) return;
+        final s = ref.read(stacksProvider);
+        if (s.isLoadingMore || !s.hasMore) return;
+        final pos = scrollController.position;
+        if (pos.pixels >= pos.maxScrollExtent - 300) {
+          ref.read(stacksProvider.notifier).loadMore();
+        }
+      }
+
+      scrollController.addListener(onScroll);
+      return () => scrollController.removeListener(onScroll);
+    }, [scrollController]);
+
+    useEffect(() {
+      if (state.firstPage is StorageLoading ||
+          state.isLoadingMore ||
+          !state.hasMore) {
+        return null;
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!scrollController.hasClients) return;
+        final pos = scrollController.position;
+        if (pos.maxScrollExtent <= 0) {
+          ref.read(stacksProvider.notifier).loadMore();
+        }
+      });
+      return null;
+    }, [state.combined.length, state.isLoadingMore]);
 
     return Scaffold(
       body: CustomScrollView(
@@ -254,6 +295,13 @@ class AppStacksScreen extends HookConsumerWidget {
                     showAuthor: true,
                   );
                 }, childCount: items.length),
+              ),
+            ),
+          if (state.isLoadingMore)
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.all(16.0),
+                child: Center(child: CircularProgressIndicator()),
               ),
             ),
           const SliverToBoxAdapter(child: SizedBox(height: 16)),
