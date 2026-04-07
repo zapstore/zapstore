@@ -22,17 +22,30 @@ Set<String> getRawAppTagValues(AppStack stack) {
   return stack.event.getTagSetValues('a');
 }
 
-/// Extract just the d-tag (identifier) from a full addressable id
-String? extractStackIdentifier(String addressableId) {
-  final parts = addressableId.split(':');
-  return parts.length >= 3 ? parts.sublist(2).join(':') : null;
+/// Helper to compute preview app addressable IDs for a stack (3 apps max).
+/// Returns full addressable IDs (e.g. '32267:pubkey:identifier').
+List<String> getPreviewAddressableIds(AppStack stack) {
+  final rawTags = getRawAppTagValues(stack)
+      .where((id) => id.startsWith('32267:'))
+      .toList()
+    ..shuffle(Random(stack.id.hashCode));
+  return rawTags.take(3).toList();
 }
 
-/// Helper to compute preview app identifiers for a stack (3 apps max)
-List<String> getPreviewIdentifiers(AppStack stack) {
-  final rawTags = getRawAppTagValues(stack).toList()
-    ..shuffle(Random(stack.id.hashCode));
-  return rawTags.take(3).map(extractStackIdentifier).whereType<String>().toList();
+/// Decompose addressable IDs (e.g. '32267:pubkey:identifier') into
+/// the sets of authors and identifiers needed for a query filter.
+({Set<String> authors, Set<String> identifiers}) decomposeAddressableIds(
+    Iterable<String> addressableIds) {
+  final authors = <String>{};
+  final identifiers = <String>{};
+  for (final id in addressableIds) {
+    final parts = id.split(':');
+    if (parts.length >= 3) {
+      authors.add(parts[1]);
+      identifiers.add(parts.skip(2).join(':'));
+    }
+  }
+  return (authors: authors, identifiers: identifiers);
 }
 
 /// Seed generated once per app session for stable shuffle order
@@ -95,18 +108,21 @@ class AppStackContainer extends HookConsumerWidget {
     final displayedStacks = sortedStacks.take(visibleCount.value).toList();
 
     // Batch load preview apps for displayed stacks (3 per stack)
-    final allPreviewIdentifiers = <String>{};
+    final allPreviewIds = <String>{};
     final stackPreviewIds = <String, List<String>>{};
     for (final stack in displayedStacks) {
-      final ids = getPreviewIdentifiers(stack);
+      final ids = getPreviewAddressableIds(stack);
       stackPreviewIds[stack.id] = ids;
-      allPreviewIdentifiers.addAll(ids);
+      allPreviewIds.addAll(ids);
     }
 
-    final previewAppsState = allPreviewIdentifiers.isNotEmpty
+    final (:authors, :identifiers) = decomposeAddressableIds(allPreviewIds);
+
+    final previewAppsState = allPreviewIds.isNotEmpty
         ? ref.watch(
             query<App>(
-              tags: {'#d': allPreviewIdentifiers},
+              authors: authors,
+              tags: {'#d': identifiers},
               source: const LocalAndRemoteSource(
                 relays: 'AppCatalog',
                 stream: false,
@@ -118,7 +134,7 @@ class AppStackContainer extends HookConsumerWidget {
 
     final appsMap = {
       for (final app in previewAppsState?.models ?? <App>[])
-        app.identifier: app,
+        app.id: app,
     };
 
     // Infinite horizontal scroll: load more when near end

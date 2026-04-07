@@ -63,24 +63,30 @@ class _AppStackContentWithApps extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Derive identifiers directly from the raw event tags — stable and complete
-    // regardless of what's been cached locally. The 'a' tag format is
-    // '32267:pubkey:d-tag'; we extract just the d-tag (identifier) part.
-    final appIdentifiers = stack.event
+    final appAddressableIds = stack.event
         .getTagSetValues('a')
         .where((id) => id.startsWith('32267:'))
-        .map((id) => id.split(':').skip(2).join(':'))
         .toSet();
 
-    if (appIdentifiers.isEmpty) {
+    if (appAddressableIds.isEmpty) {
       return _AppStackContent(stack: stack, apps: const []);
     }
 
-    // Query apps with release and metadata relationships (same pattern as search/user screens)
+    final authors = <String>{};
+    final identifiers = <String>{};
+    for (final id in appAddressableIds) {
+      final parts = id.split(':');
+      if (parts.length >= 3) {
+        authors.add(parts[1]);
+        identifiers.add(parts.skip(2).join(':'));
+      }
+    }
+
     final appsState = ref.watch(
       query<App>(
+        authors: authors,
         tags: {
-          '#d': appIdentifiers,
+          '#d': identifiers,
           '#f': {'android-arm64-v8a'},
         },
         and: (app) => {
@@ -96,9 +102,9 @@ class _AppStackContentWithApps extends HookConsumerWidget {
       ),
     );
 
-    // Preserve the original stack order where possible
-    final appsMap = {for (final app in appsState.models) app.identifier: app};
-    final orderedApps = appIdentifiers
+    // Key by addressable ID and preserve the original stack order
+    final appsMap = {for (final app in appsState.models) app.id: app};
+    final orderedApps = appAddressableIds
         .map((id) => appsMap[id])
         .whereType<App>()
         .toList();

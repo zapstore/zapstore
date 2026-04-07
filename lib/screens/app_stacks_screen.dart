@@ -156,18 +156,21 @@ class AppStacksScreen extends HookConsumerWidget {
     };
     final isAuthorsLoading = authorsState is StorageLoading;
 
-    final allPreviewIdentifiers = <String>{};
+    final allPreviewIds = <String>{};
     final stackPreviewIds = <String, List<String>>{};
     for (final stack in items) {
-      final ids = getPreviewIdentifiers(stack);
+      final ids = getPreviewAddressableIds(stack);
       stackPreviewIds[stack.id] = ids;
-      allPreviewIdentifiers.addAll(ids);
+      allPreviewIds.addAll(ids);
     }
 
-    final previewAppsState = allPreviewIdentifiers.isNotEmpty
+    final (:authors, :identifiers) = decomposeAddressableIds(allPreviewIds);
+
+    final previewAppsState = allPreviewIds.isNotEmpty
         ? ref.watch(
             query<App>(
-              tags: {'#d': allPreviewIdentifiers},
+              authors: authors,
+              tags: {'#d': identifiers},
               source: const LocalAndRemoteSource(
                 relays: 'AppCatalog',
                 stream: false,
@@ -179,7 +182,7 @@ class AppStacksScreen extends HookConsumerWidget {
 
     final appsMap = {
       for (final app in previewAppsState?.models ?? <App>[])
-        app.identifier: app,
+        app.id: app,
     };
 
     final isInitialLoading = state.firstPage is StorageLoading && items.isEmpty;
@@ -345,19 +348,22 @@ class _MigrationBanner extends HookConsumerWidget {
         profile.pubkey: profile,
     };
 
-    final allPreviewIdentifiers = <String>{};
+    final allPreviewIds = <String>{};
     final stackPreviewIds = <String, List<String>>{};
     for (final stack in stacks) {
-      final ids = getPreviewIdentifiers(stack);
+      final ids = getPreviewAddressableIds(stack);
       stackPreviewIds[stack.id] = ids;
-      allPreviewIdentifiers.addAll(ids);
+      allPreviewIds.addAll(ids);
     }
 
+    final (:authors, :identifiers) = decomposeAddressableIds(allPreviewIds);
+
     // Query preview apps
-    final previewAppsState = allPreviewIdentifiers.isNotEmpty
+    final previewAppsState = allPreviewIds.isNotEmpty
         ? ref.watch(
             query<App>(
-              tags: {'#d': allPreviewIdentifiers},
+              authors: authors,
+              tags: {'#d': identifiers},
               source: const LocalAndRemoteSource(
                 relays: 'AppCatalog',
                 stream: false,
@@ -368,7 +374,7 @@ class _MigrationBanner extends HookConsumerWidget {
         : null;
     final appsMap = {
       for (final app in previewAppsState?.models ?? <App>[])
-        app.identifier: app,
+        app.id: app,
     };
 
     return Container(
