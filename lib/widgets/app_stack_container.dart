@@ -72,7 +72,7 @@ class AppStackContainer extends HookConsumerWidget {
         tags: {
           '#f': {platform},
         },
-        source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
+        source: const LocalAndRemoteSource(relays: 'AppCatalog'),
         subscriptionPrefix: 'app-stack',
         schemaFilter: appStackEventFilter,
       ),
@@ -81,7 +81,10 @@ class AppStackContainer extends HookConsumerWidget {
     final allStacks = appStacksState.models.toList();
 
     if (allStacks.isEmpty) {
-      return _buildSkeleton(context);
+      if (appStacksState is StorageLoading<AppStack>) {
+        return _buildSkeleton(context);
+      }
+      return const SizedBox.shrink();
     }
 
     final sortedStacks = _shuffleStacks(
