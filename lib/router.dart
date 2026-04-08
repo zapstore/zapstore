@@ -13,7 +13,6 @@ import 'package:zapstore/screens/search_screen.dart';
 import 'package:zapstore/screens/updates_screen.dart';
 import 'package:zapstore/screens/profile_screen.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
-import 'package:zapstore/services/deep_link_resolver.dart';
 import 'package:zapstore/services/updates_service.dart';
 
 /// Root paths for each navigation branch (used for back navigation handling)
@@ -117,10 +116,9 @@ final routerProvider = Provider<GoRouter>((ref) {
   final router = GoRouter(
     navigatorKey: rootNavigatorKey,
     initialLocation: '/search',
-    // Intercept deep link URIs that GoRouter cannot match as paths.
-    // This fires before any route is rendered, eliminating the GoException
-    // flash when the app is launched via market:// or https://zapstore.dev.
-    redirect: (context, state) => resolveDeepLinkPath(state.uri),
+    onException: (context, state, router) {
+      router.go('/search');
+    },
     routes: [
       // Single stateful shell route that handles everything
       StatefulShellRoute.indexedStack(

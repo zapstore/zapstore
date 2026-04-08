@@ -284,7 +284,7 @@ final appInitializationProvider = FutureProvider<void>((ref) async {
   final backgroundService = ref.read(backgroundUpdateServiceProvider);
   unawaited(backgroundService.initialize());
 
-  unawaited(ref.read(deepLinkServiceProvider).initialize());
+  await ref.read(deepLinkServiceProvider).initialize();
 
   await _attemptAutoSignIn(ref);
 });

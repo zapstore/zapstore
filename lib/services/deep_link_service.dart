@@ -22,12 +22,14 @@ class DeepLinkService {
 
   /// Initialize the service - call once after app is ready.
   ///
-  /// The initial launch URI is not re-processed here because GoRouter's
-  /// top-level redirect already maps it to the correct path before any
-  /// screen renders. Only links received while the app is running are handled.
+  /// Handles both the cold-launch URI (the link that opened the app) and
+  /// links received while the app is already running.
   Future<void> initialize() async {
     if (_initialized) return;
     _initialized = true;
+
+    final initialUri = await _appLinks.getInitialLink();
+    _handleUri(initialUri);
 
     _subscription = _appLinks.uriLinkStream.listen(_handleUri);
   }

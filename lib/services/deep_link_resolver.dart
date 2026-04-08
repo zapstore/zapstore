@@ -4,19 +4,20 @@ import 'package:flutter/foundation.dart';
 /// the URI is not a recognized deep link.
 ///
 /// Handles:
-/// - `https://zapstore.dev/apps/{id}`
+/// - `https://zapstore.dev/apps/{id}` (full URI from app_links)
+/// - `/apps/{id}` (path-only, as seen by GoRouter's onException)
 /// - `market://details?id=com.example.app`
 /// - `market://search?q=search+query`
 String? resolveDeepLinkPath(Uri uri) {
-  // https://zapstore.dev/apps/<id>
-  if (uri.scheme == 'https' &&
-      uri.host == 'zapstore.dev' &&
-      uri.pathSegments.length == 2 &&
-      uri.pathSegments[0] == 'apps') {
-    final id = uri.pathSegments[1];
-    if (id.isNotEmpty) {
-      debugPrint('App link: app ID = $id');
-      return '/search/app/$id';
+  // https://zapstore.dev/apps/<id>  OR  bare /apps/<id> from GoRouter
+  if (uri.pathSegments.length == 2 && uri.pathSegments[0] == 'apps') {
+    final isFullUri = uri.scheme == 'https' && uri.host == 'zapstore.dev';
+    final isBarePath = uri.host.isEmpty;
+    if (isFullUri || isBarePath) {
+      final id = uri.pathSegments[1];
+      if (id.isNotEmpty) {
+        return '/search/app/$id';
+      }
     }
   }
 
@@ -25,7 +26,6 @@ String? resolveDeepLinkPath(Uri uri) {
     if (uri.host == 'details' || uri.path == '/details') {
       final id = uri.queryParameters['id'];
       if (id != null && id.isNotEmpty) {
-        debugPrint('Market intent: app ID = $id');
         return '/search/app/$id';
       }
     }
