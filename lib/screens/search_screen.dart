@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
+import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 
@@ -27,12 +28,25 @@ class SearchScreen extends HookConsumerWidget {
     // Get platform from package manager
     final platform = ref.read(packageManagerProvider.notifier).platform;
 
-    // Function to perform search (only with 3+ characters)
     final performSearch = useCallback((String query) {
       final trimmed = query.trim();
-      // Keep keyboard open if less than 3 characters
+      final cleaned = trimmed.replaceFirst('nostr:', '');
+      try {
+        final decoded = Utils.decodeShareableIdentifier(cleaned);
+        final path = switch (decoded) {
+          AddressData(:final kind) =>
+            '/search/${kind == 30267 ? 'stack' : 'app'}/$cleaned',
+          ProfileData(:final pubkey) => '/search/user/$pubkey',
+          _ => null,
+        };
+        if (path != null) {
+          searchController.clear();
+          searchQuery.value = '';
+          context.push(path);
+          return;
+        }
+      } catch (_) {}
       if (trimmed.length < 3) {
-        // Re-request focus to keep keyboard open
         searchFocusNode.requestFocus();
         return;
       }
