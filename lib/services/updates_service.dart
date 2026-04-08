@@ -149,19 +149,21 @@ class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
     final storage =
         ref.read(storageNotifierProvider.notifier) as PurplebaseStorageNotifier;
 
-    final result = await fetchCatalog(
-      storage: storage,
-      installedIds: pmState.installed.keys.toSet(),
-      platform: ref.read(packageManagerProvider.notifier).platform,
-      subscriptionPrefix: 'app-updates-poll',
-    );
+    final results = await Future.wait([
+      fetchCatalog(
+        storage: storage,
+        installedIds: pmState.installed.keys.toSet(),
+        platform: ref.read(packageManagerProvider.notifier).platform,
+        subscriptionPrefix: 'app-updates-poll',
+      ),
+      processDeletions(
+        storage: storage,
+        secureStorage: ref.read(secureStorageServiceProvider),
+        subscriptionPrefix: 'app-deletions-poll',
+      ),
+    ]);
 
-    await processDeletions(
-      storage: storage,
-      secureStorage: ref.read(secureStorageServiceProvider),
-      subscriptionPrefix: 'app-deletions-poll',
-    );
-
+    final result = results[0] as CatalogResult;
     state = state.copyWith(catalogedIds: result.catalogedIds);
   }
 

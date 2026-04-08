@@ -20,6 +20,12 @@ Future<void> processDeletions({
 }) async {
   final lastSync = await secureStorage.getDeletionsSyncedUntil();
 
+  // First run: no local data to delete, just seed the cursor.
+  if (lastSync == null) {
+    await secureStorage.setDeletionsSyncedUntil(DateTime.now());
+    return;
+  }
+
   final deletionRequests = await storage.query(
     RequestFilter<EventDeletionRequest>(
       since: lastSync,
