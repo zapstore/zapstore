@@ -188,47 +188,6 @@ Future<bool> _checkForUpdatesInBackground(Set<String>? appCatalogRelays) async {
         subscriptionPrefix: 'app-bg',
       );
 
-      // NIP-09: fetch kind-5 deletion events since last sync.
-      // No author filter — the AppCatalog relay is curated and the `since`
-      // cursor keeps incremental runs cheap. The DB layer auto-processes
-      // each kind-5 event (removes referenced events, records in deletions
-      // table). We then clean up the kind-5 events themselves as housekeeping,
-      // but save the cursor regardless — a cleanup failure is non-critical.
-      final secureStorage = SecureStorageService();
-      final lastDeletionSync = await secureStorage.getDeletionsSyncedUntil();
-      final deletionRequests = await storage.query(
-        RequestFilter<EventDeletionRequest>(
-          since: lastDeletionSync,
-          limit: 99,
-        ).toRequest(),
-        source: const RemoteSource(relays: 'AppCatalog', stream: false),
-        subscriptionPrefix: 'app-bg-deletions',
-      );
-      await secureStorage.setDeletionsSyncedUntil(DateTime.now());
-      if (deletionRequests.isNotEmpty) {
-        // Purplebase's NIP-09 processing only deletes events whose pubkey
-        // matches the kind-5 author. Relay-authority deletions (blacklists)
-        // are signed by zapstore/community keys, not the app author, so
-        // those targets survive. Collect them and delete directly by ID.
-        const trustedAuthorities = {kZapstorePubkey, kZapstoreCommunityPubkey};
-        final authorityTargetIds = deletionRequests
-            .where((dr) => trustedAuthorities.contains(dr.event.pubkey))
-            .expand((dr) => dr.deletedEventIds)
-            .toSet();
-
-        try {
-          final storageNotifier = storage as PurplebaseStorageNotifier;
-          await storageNotifier
-              .delete(deletionRequests.map((d) => d.id).toSet());
-          if (authorityTargetIds.isNotEmpty) {
-            await storageNotifier.delete(authorityTargetIds);
-          }
-        } catch (_) {
-          // Orphaned kind-5 rows are harmless; referenced events are
-          // already removed by the DB layer during save.
-        }
-      }
-
       final updatableInstallables = <String, Installable>{};
       for (final entry in catalog.installableByApp.entries) {
         if (packageManager.hasUpdate(entry.key, entry.value)) {

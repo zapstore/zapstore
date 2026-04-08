@@ -4,8 +4,11 @@ import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/main.dart';
+import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/services/catalog_fetcher.dart';
+import 'package:zapstore/services/deletion_processor.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
+import 'package:zapstore/services/secure_storage_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 
 /// How often to poll for updates from remote relays
@@ -143,11 +146,20 @@ class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
       return;
     }
 
+    final storage =
+        ref.read(storageNotifierProvider.notifier) as PurplebaseStorageNotifier;
+
     final result = await fetchCatalog(
-      storage: ref.read(storageNotifierProvider.notifier),
+      storage: storage,
       installedIds: pmState.installed.keys.toSet(),
       platform: ref.read(packageManagerProvider.notifier).platform,
       subscriptionPrefix: 'app-updates-poll',
+    );
+
+    await processDeletions(
+      storage: storage,
+      secureStorage: ref.read(secureStorageServiceProvider),
+      subscriptionPrefix: 'app-deletions-poll',
     );
 
     state = state.copyWith(catalogedIds: result.catalogedIds);
@@ -211,8 +223,9 @@ final categorizedUpdatesProvider = Provider<CategorizedUpdates>((ref) {
   }
 
   final catalogedIds = pollerState.catalogedIds;
-  final catalogedInstalledIds =
-      installed.keys.where(catalogedIds.contains).toSet();
+  final catalogedInstalledIds = installed.keys
+      .where(catalogedIds.contains)
+      .toSet();
 
   if (catalogedInstalledIds.isEmpty) {
     return CategorizedUpdates(
@@ -221,9 +234,9 @@ final categorizedUpdatesProvider = Provider<CategorizedUpdates>((ref) {
       upToDateApps: const [],
       uncatalogedApps: installed.values.toList()
         ..sort(
-          (a, b) => (a.name ?? a.appId)
-              .toLowerCase()
-              .compareTo((b.name ?? b.appId).toLowerCase()),
+          (a, b) => (a.name ?? a.appId).toLowerCase().compareTo(
+            (b.name ?? b.appId).toLowerCase(),
+          ),
         ),
     );
   }
@@ -236,7 +249,10 @@ final categorizedUpdatesProvider = Provider<CategorizedUpdates>((ref) {
   // the same path used by the detail screen and install button.
   final appsState = ref.watch(
     query<App>(
-      tags: {'#d': catalogedInstalledIds, '#f': {platform}},
+      tags: {
+        '#d': catalogedInstalledIds,
+        '#f': {platform},
+      },
       and: (app) => {
         app.latestAsset.query(source: const LocalSource()),
         app.latestRelease.query(
