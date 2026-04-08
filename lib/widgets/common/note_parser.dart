@@ -1,29 +1,9 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/utils/extensions.dart';
-import 'package:url_launcher/url_launcher.dart';
-
-Future<void> _launchUrlSafely(String url) async {
-  try {
-    String cleanUrl = url.trim();
-    if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
-      cleanUrl = 'https://$cleanUrl';
-    }
-
-    final uri = Uri.parse(cleanUrl);
-
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      try {
-        await launchUrl(uri, mode: LaunchMode.platformDefault);
-      } catch (_) {}
-    }
-  } catch (_) {}
-}
+import 'package:zapstore/utils/nostr_route.dart';
 
 class NoteParser {
   static final RegExp nip19Regex = RegExp(
@@ -48,7 +28,6 @@ class NoteParser {
     Widget? Function(String httpUrl)? onHttpUrl,
     Widget? Function(String hashtag)? onHashtag,
     void Function(String hashtag)? onHashtagTap,
-    void Function(String pubkey)? onProfileTap,
     TextStyle? textStyle,
     TextStyle? linkStyle,
   }) {
@@ -152,7 +131,7 @@ class NoteParser {
           text: match.text,
           style: style,
           recognizer: TapGestureRecognizer()
-            ..onTap = () => _launchUrlSafely(match.text),
+            ..onTap = () => navigateToContent(context, match.text),
         ));
       } else {
         final style =
@@ -202,15 +181,11 @@ enum _EntityType { nip19, http, hashtag }
 class NostrEntityWidget extends StatelessWidget {
   final String entity;
   final List<Color> colorPair;
-  final void Function(String pubkey)? onProfileTap;
-  final void Function(String hashtag)? onHashtagTap;
 
   const NostrEntityWidget({
     super.key,
     required this.entity,
     required this.colorPair,
-    this.onProfileTap,
-    this.onHashtagTap,
   });
 
   @override
@@ -222,7 +197,6 @@ class NostrEntityWidget extends StatelessWidget {
         ProfileData() => ProfileEntityWidget(
           profileData: decoded,
           colorPair: colorPair,
-          onProfileTap: onProfileTap,
         ),
         EventData() => EventEntityWidget(
           eventData: decoded,
@@ -242,13 +216,11 @@ class NostrEntityWidget extends StatelessWidget {
 class ProfileEntityWidget extends ConsumerWidget {
   final ProfileData profileData;
   final List<Color> colorPair;
-  final void Function(String pubkey)? onProfileTap;
 
   const ProfileEntityWidget({
     super.key,
     required this.profileData,
     required this.colorPair,
-    this.onProfileTap,
   });
 
   @override
@@ -264,15 +236,7 @@ class ProfileEntityWidget extends ConsumerWidget {
       ),
     );
 
-    void handleTap() {
-      if (onProfileTap != null) {
-        onProfileTap!(profileData.pubkey);
-      } else {
-        final segments = GoRouterState.of(context).uri.pathSegments;
-        final branch = segments.isNotEmpty ? segments.first : 'search';
-        context.push('/$branch/user/${profileData.pubkey}');
-      }
-    }
+    void handleTap() => pushUser(context, profileData.pubkey);
 
     return switch (profileState) {
       StorageLoading() => GestureDetector(
@@ -294,20 +258,8 @@ class ProfileEntityWidget extends ConsumerWidget {
   }
 
   Widget _buildProfileWidget(BuildContext context, Profile profile) {
-    final displayName = profile.nameOrNpub;
-
-    void handleTap() {
-      if (onProfileTap != null) {
-        onProfileTap!(profileData.pubkey);
-      } else {
-        final segments = GoRouterState.of(context).uri.pathSegments;
-        final branch = segments.isNotEmpty ? segments.first : 'search';
-        context.push('/$branch/user/${profileData.pubkey}');
-      }
-    }
-
     return GestureDetector(
-      onTap: handleTap,
+      onTap: () => pushUser(context, profileData.pubkey),
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: colorPair[0].withValues(alpha: 0.1),
@@ -316,7 +268,7 @@ class ProfileEntityWidget extends ConsumerWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4.0),
           child: Text(
-            displayName,
+            profile.nameOrNpub,
             style: context.textTheme.bodyMedium!.copyWith(
               fontWeight: FontWeight.w500,
               color: colorPair[0],
@@ -411,10 +363,11 @@ class AddressEntityWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: () {
-        final segment = addressData.kind == 30267 ? 'stack' : 'app';
-        final segments = GoRouterState.of(context).uri.pathSegments;
-        final branch = segments.isNotEmpty ? segments.first : 'search';
-        context.push('/$branch/$segment/${addressData.identifier}');
+        if (addressData.kind == 30267) {
+          pushStack(context, addressData.identifier);
+        } else {
+          pushApp(context, addressData.identifier);
+        }
       },
       child: DecoratedBox(
         decoration: BoxDecoration(

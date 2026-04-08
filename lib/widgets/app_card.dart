@@ -3,10 +3,10 @@ import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:go_router/go_router.dart';
 import 'package:markdown/markdown.dart' as md;
 import 'package:skeletonizer/skeletonizer.dart';
 import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/utils/nostr_route.dart';
 import 'package:zapstore/utils/url_utils.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/widgets/zap_widgets.dart';
@@ -55,22 +55,7 @@ class AppCard extends HookConsumerWidget {
         : 'No description available';
 
     Widget buildCard(Profile? publisher, bool isPublisherLoading) => GestureDetector(
-      onTap: () {
-        final segments = GoRouterState.of(context).uri.pathSegments;
-        final first = segments.isNotEmpty ? segments.first : 'search';
-        // Prefer naddr so the detail screen can uniquely identify the app
-        // (identifier + author) and not accidentally resolve to a different
-        // publisher's app with the same identifier.
-        final naddr = Utils.encodeShareableIdentifier(
-          AddressInput(
-            identifier: app!.identifier,
-            author: app!.pubkey,
-            kind: app!.event.kind,
-            relays: const [kDefaultRelay],
-          ),
-        );
-        context.push('/$first/app/$naddr');
-      },
+      onTap: () => pushApp(context, app!.identifier, author: app!.pubkey, kind: app!.event.kind),
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
         padding: const EdgeInsets.all(16),

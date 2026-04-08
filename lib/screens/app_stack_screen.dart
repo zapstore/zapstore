@@ -1,11 +1,11 @@
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/utils/nostr_route.dart';
 import 'package:zapstore/widgets/app_card.dart';
 import 'package:zapstore/widgets/author_container.dart';
 import 'package:zapstore/widgets/comments_section.dart';
@@ -280,11 +280,7 @@ class _StackHeader extends StatelessWidget {
           oneLine: true,
           size: 14,
           isLoading: isAuthorLoading,
-          onTap: () {
-            final segments = GoRouterState.of(context).uri.pathSegments;
-            final first = segments.isNotEmpty ? segments.first : 'search';
-            context.push('/$first/user/${stack.pubkey}');
-          },
+          onTap: () => pushUser(context, stack.pubkey),
         ),
         const SizedBox(height: 4),
         // Last updated timestamp

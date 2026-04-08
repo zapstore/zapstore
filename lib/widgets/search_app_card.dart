@@ -1,11 +1,11 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:markdown/markdown.dart' as md;
 import 'package:models/models.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/utils/nostr_route.dart';
 import 'package:zapstore/utils/url_utils.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import '../theme.dart';
@@ -31,19 +31,12 @@ class SearchAppCard extends ConsumerWidget {
     const iconSize = 48.0;
 
     return GestureDetector(
-      onTap: () {
-        final segments = GoRouterState.of(context).uri.pathSegments;
-        final first = segments.isNotEmpty ? segments.first : 'search';
-        final naddr = Utils.encodeShareableIdentifier(
-          AddressInput(
-            identifier: app!.identifier,
-            author: app!.pubkey,
-            kind: app!.event.kind,
-            relays: const [],
-          ),
-        );
-        context.push('/$first/app/$naddr');
-      },
+      onTap: () => pushApp(
+        context,
+        app!.identifier,
+        author: app!.pubkey,
+        kind: app!.event.kind,
+      ),
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
         padding: const EdgeInsets.all(16),
@@ -164,8 +157,17 @@ class SearchAppCard extends ConsumerWidget {
       }
       if (node is md.Element) {
         final isBlock = const {
-          'p', 'li', 'ul', 'ol', 'blockquote',
-          'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+          'p',
+          'li',
+          'ul',
+          'ol',
+          'blockquote',
+          'h1',
+          'h2',
+          'h3',
+          'h4',
+          'h5',
+          'h6',
         }.contains(node.tag);
         if (node.tag == 'br') buffer.write('\n');
         for (final child in node.children ?? []) {
@@ -193,8 +195,9 @@ class SearchAppCard extends ConsumerWidget {
             borderRadius: BorderRadius.circular(20),
             color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.6),
             border: Border.all(
-              color:
-                  Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
+              color: Theme.of(
+                context,
+              ).colorScheme.outline.withValues(alpha: 0.2),
               width: 1,
             ),
           ),

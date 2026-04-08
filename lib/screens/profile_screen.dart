@@ -17,6 +17,7 @@ import 'package:zapstore/main.dart';
 import 'package:zapstore/services/bookmarks_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/utils/nostr_route.dart';
 import 'package:zapstore/widgets/common/profile_identity_row.dart';
 import 'package:zapstore/widgets/app_card.dart';
 import 'package:zapstore/theme.dart';
@@ -285,11 +286,7 @@ class _StackMigrationWarning extends ConsumerWidget {
     return Padding(
       padding: const EdgeInsets.only(top: 12),
       child: InkWell(
-        onTap: () {
-          final segments = GoRouterState.of(context).uri.pathSegments;
-          final first = segments.isNotEmpty ? segments.first : 'search';
-          context.push('/$first/stacks');
-        },
+        onTap: () => pushStacks(context),
         borderRadius: BorderRadius.circular(8),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),

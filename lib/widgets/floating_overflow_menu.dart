@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:share_plus/share_plus.dart';
@@ -10,6 +9,7 @@ import 'package:zapstore/services/bookmarks_service.dart';
 import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/utils/nostr_route.dart';
 
 /// Floating three-dot overflow menu reusable across detail screens.
 ///
@@ -154,9 +154,7 @@ class FloatingOverflowMenu extends HookConsumerWidget {
   }
 
   void _viewPublisher(BuildContext context) {
-    final segments = GoRouterState.of(context).uri.pathSegments;
-    final first = segments.isNotEmpty ? segments.first : 'search';
-    context.push('/$first/user/$publisherPubkey');
+    pushUser(context, publisherPubkey);
   }
 
   Future<void> _openInBrowser(BuildContext context) async {

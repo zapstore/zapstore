@@ -7,7 +7,6 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:skeletonizer/skeletonizer.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:zapstore/services/bookmarks_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/services/notification_service.dart';
@@ -49,11 +48,6 @@ class ReleaseNotes extends StatelessWidget {
     }
     return ExpandableMarkdown(
       data: release.releaseNotes!,
-      onTapLink: (text, url, title) {
-        if (url != null) {
-          launchUrl(Uri.parse(url));
-        }
-      },
       styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
         blockquoteDecoration: BoxDecoration(
           color: const Color(0xFF1E3A5F), // Dark blue

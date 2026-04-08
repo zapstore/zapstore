@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
-import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/utils/nostr_route.dart';
 import '../theme.dart';
 import '../widgets/common/note_parser.dart';
 import '../widgets/common/profile_identity_row.dart';
@@ -273,20 +273,12 @@ class _StackLinkCard extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       child: InkWell(
-        onTap: () {
-          final segments = GoRouterState.of(context).uri.pathSegments;
-          final first = segments.isNotEmpty ? segments.first : 'search';
-          // Build naddr for the stack
-          final naddr = Utils.encodeShareableIdentifier(
-            AddressInput(
-              identifier: stack.identifier,
-              author: pubkey,
-              kind: stack.event.kind,
-              relays: const [],
-            ),
-          );
-          context.push('/$first/stack/$naddr');
-        },
+        onTap: () => pushStack(
+          context,
+          stack.identifier,
+          author: pubkey,
+          kind: stack.event.kind,
+        ),
         borderRadius: BorderRadius.circular(12),
         child: Container(
           padding: const EdgeInsets.all(16),
@@ -370,12 +362,6 @@ class _UserBio extends HookWidget {
           Theme.of(context).colorScheme.primary,
           Theme.of(context).colorScheme.secondary,
         ],
-        onProfileTap: (pubkey) {
-          final segments = GoRouterState.of(context).uri.pathSegments;
-          final first = segments.isNotEmpty ? segments.first : 'search';
-          context.push('/$first/user/$pubkey');
-        },
-        onHashtagTap: (hashtag) => context.push('/search?q=$hashtag'),
       ),
     );
 

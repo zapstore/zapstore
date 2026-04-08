@@ -1,9 +1,9 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
-import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
+import 'package:zapstore/utils/nostr_route.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 import '../utils/extensions.dart';
@@ -268,11 +268,7 @@ class _SeeMoreCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () {
-        final segments = GoRouterState.of(context).uri.pathSegments;
-        final first = segments.isNotEmpty ? segments.first : 'search';
-        context.push('/$first/stacks');
-      },
+      onTap: () => pushStacks(context),
       child: Container(
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surfaceContainerHighest,
@@ -378,19 +374,12 @@ class StackCard extends StatelessWidget {
     );
 
     return GestureDetector(
-      onTap: () {
-        final segments = GoRouterState.of(context).uri.pathSegments;
-        final first = segments.isNotEmpty ? segments.first : 'search';
-        final naddr = Utils.encodeShareableIdentifier(
-          AddressInput(
-            identifier: stack.identifier,
-            author: stack.pubkey,
-            kind: stack.event.kind,
-            relays: const [],
-          ),
-        );
-        context.push('/$first/stack/$naddr');
-      },
+      onTap: () => pushStack(
+        context,
+        stack.identifier,
+        author: stack.pubkey,
+        kind: stack.event.kind,
+      ),
       child: Container(
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surfaceContainerHighest,

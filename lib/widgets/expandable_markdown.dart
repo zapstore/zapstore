@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/utils/nostr_route.dart';
 
 class ExpandableMarkdown extends HookWidget {
   const ExpandableMarkdown({
@@ -21,8 +22,6 @@ class ExpandableMarkdown extends HookWidget {
     const maxHeight = 170.0;
 
     bool isLikelyLong(String text) {
-      // Simple heuristic to avoid expensive measurement
-      // - Many words OR many newlines => likely long content
       final trimmed = text.trim();
       if (trimmed.isEmpty) return false;
 
@@ -30,16 +29,19 @@ class ExpandableMarkdown extends HookWidget {
       final newlineCount = '\n'.allMatches(trimmed).length;
       final charCount = trimmed.length;
 
-      // Thresholds tuned for typical article blurbs
-      // Show collapse if any of these exceed limits
       return wordCount > 90 || newlineCount > 6 || charCount > 600;
     }
 
     final shouldCollapse = !expanded.value && isLikelyLong(data);
 
+    final effectiveTapLink = onTapLink ??
+        (String text, String? href, String? title) {
+          if (href != null) navigateToContent(context, href);
+        };
+
     final markdown = MarkdownBody(
       data: data,
-      onTapLink: onTapLink,
+      onTapLink: effectiveTapLink,
       styleSheet: styleSheet,
     );
 

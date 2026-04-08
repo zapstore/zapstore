@@ -1,7 +1,6 @@
 import 'package:async_button_builder/async_button_builder.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
-import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:models/models.dart';
@@ -34,7 +33,6 @@ class CommentsSection extends HookConsumerWidget {
         },
         source: LocalAndRemoteSource(stream: true, relays: 'social'),
         subscriptionPrefix: 'app-comments',
-        and: (comment) => {comment.replies.query()},
       ),
     );
 
@@ -76,7 +74,6 @@ class StackCommentsSection extends HookConsumerWidget {
         },
         source: LocalAndRemoteSource(stream: true, relays: 'social'),
         subscriptionPrefix: 'app-stack-comments',
-        and: (comment) => {comment.replies.query()},
       ),
     );
 
@@ -401,11 +398,6 @@ class _ThreadedCommentCard extends HookConsumerWidget {
                                   Theme.of(context).colorScheme.primary,
                                   Theme.of(context).colorScheme.secondary,
                                 ],
-                                onProfileTap: (pubkey) {
-                                  final segments = GoRouterState.of(context).uri.pathSegments;
-                                  final branch = segments.isNotEmpty ? segments.first : 'search';
-                                  context.push('/$branch/user/$pubkey');
-                                },
                               ),
                             ),
                             if (isSignedIn) ...[
