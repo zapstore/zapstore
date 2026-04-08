@@ -206,9 +206,23 @@ Future<bool> _checkForUpdatesInBackground(Set<String>? appCatalogRelays) async {
       );
       await secureStorage.setDeletionsSyncedUntil(DateTime.now());
       if (deletionRequests.isNotEmpty) {
+        // Purplebase's NIP-09 processing only deletes events whose pubkey
+        // matches the kind-5 author. Relay-authority deletions (blacklists)
+        // are signed by zapstore/community keys, not the app author, so
+        // those targets survive. Collect them and delete directly by ID.
+        const trustedAuthorities = {kZapstorePubkey, kZapstoreCommunityPubkey};
+        final authorityTargetIds = deletionRequests
+            .where((dr) => trustedAuthorities.contains(dr.event.pubkey))
+            .expand((dr) => dr.deletedEventIds)
+            .toSet();
+
         try {
-          await (storage as PurplebaseStorageNotifier)
+          final storageNotifier = storage as PurplebaseStorageNotifier;
+          await storageNotifier
               .delete(deletionRequests.map((d) => d.id).toSet());
+          if (authorityTargetIds.isNotEmpty) {
+            await storageNotifier.delete(authorityTargetIds);
+          }
         } catch (_) {
           // Orphaned kind-5 rows are harmless; referenced events are
           // already removed by the DB layer during save.
