@@ -1,4 +1,6 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/utils/extensions.dart';
@@ -156,13 +158,21 @@ class NoteParser {
       );
     }
 
-    // Sort matches by position
+    // Sort matches by position and remove overlaps (e.g. #fragment inside a URL)
     matches.sort((a, b) => a.start.compareTo(b.start));
+    final filtered = <_EntityMatch>[];
+    var lastEnd = -1;
+    for (final m in matches) {
+      if (m.start >= lastEnd) {
+        filtered.add(m);
+        lastEnd = m.end;
+      }
+    }
 
     // Build spans
     int currentPos = 0;
 
-    for (final match in matches) {
+    for (final match in filtered) {
       // Add text before this match
       if (match.start > currentPos) {
         final textBefore = content.substring(currentPos, match.start);
@@ -207,13 +217,24 @@ class NoteParser {
             baseline: TextBaseline.alphabetic,
           ),
         );
-      } else {
-        // Fallback to styled text
+      } else if (match.type == _EntityType.http ||
+          match.type == _EntityType.media) {
         final style =
             linkStyle ??
             textStyle?.copyWith(
               color: Theme.of(context).colorScheme.primary,
-              decoration: TextDecoration.underline,
+            );
+        spans.add(TextSpan(
+          text: match.text,
+          style: style,
+          recognizer: TapGestureRecognizer()
+            ..onTap = () => _launchUrlSafely(match.text),
+        ));
+      } else {
+        final style =
+            linkStyle ??
+            textStyle?.copyWith(
+              color: Theme.of(context).colorScheme.primary,
             );
         spans.add(TextSpan(text: match.text, style: style));
       }
@@ -397,21 +418,26 @@ class ProfileEntityWidget extends ConsumerWidget {
       ),
     );
 
-    // Show animated npub while profile is being loaded
+    void handleTap() {
+      if (onProfileTap != null) {
+        onProfileTap!(profileData.pubkey);
+      } else {
+        final segments = GoRouterState.of(context).uri.pathSegments;
+        final branch = segments.isNotEmpty ? segments.first : 'search';
+        context.push('/$branch/user/${profileData.pubkey}');
+      }
+    }
+
     return switch (profileState) {
       StorageLoading() => GestureDetector(
-        onTap: onProfileTap != null
-            ? () => onProfileTap!(profileData.pubkey)
-            : null,
+        onTap: handleTap,
         child: _AnimatedLoadingChip(
           text: 'npub1${profileData.pubkey.substring(0, 8)}...',
           colorPair: colorPair,
         ),
       ),
       StorageError() || StorageData(models: []) => GestureDetector(
-        onTap: onProfileTap != null
-            ? () => onProfileTap!(profileData.pubkey)
-            : null,
+        onTap: handleTap,
         child: _AnimatedLoadingChip(
           text: 'npub1${profileData.pubkey.substring(0, 8)}...',
           colorPair: colorPair,
@@ -424,10 +450,18 @@ class ProfileEntityWidget extends ConsumerWidget {
   Widget _buildProfileWidget(BuildContext context, Profile profile) {
     final displayName = profile.nameOrNpub;
 
+    void handleTap() {
+      if (onProfileTap != null) {
+        onProfileTap!(profileData.pubkey);
+      } else {
+        final segments = GoRouterState.of(context).uri.pathSegments;
+        final branch = segments.isNotEmpty ? segments.first : 'search';
+        context.push('/$branch/user/${profileData.pubkey}');
+      }
+    }
+
     return GestureDetector(
-      onTap: onProfileTap != null
-          ? () => onProfileTap!(profileData.pubkey)
-          : null,
+      onTap: handleTap,
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: colorPair[0].withValues(alpha: 0.1),
@@ -531,7 +565,10 @@ class AddressEntityWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: () {
-        // Handle address navigation
+        final segment = addressData.kind == 30267 ? 'stack' : 'app';
+        final segments = GoRouterState.of(context).uri.pathSegments;
+        final branch = segments.isNotEmpty ? segments.first : 'search';
+        context.push('/$branch/$segment/${addressData.identifier}');
       },
       child: DecoratedBox(
         decoration: BoxDecoration(

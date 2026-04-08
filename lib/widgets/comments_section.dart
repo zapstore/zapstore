@@ -1,6 +1,7 @@
 import 'package:async_button_builder/async_button_builder.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
+import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:models/models.dart';
@@ -8,6 +9,7 @@ import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/theme.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/auth_widgets.dart';
+import 'package:zapstore/widgets/common/note_parser.dart';
 import 'package:zapstore/widgets/common/profile_avatar.dart';
 import 'package:zapstore/widgets/common/profile_name_widget.dart';
 import 'package:zapstore/widgets/pill_widget.dart';
@@ -387,13 +389,25 @@ class _ThreadedCommentCard extends HookConsumerWidget {
                               ],
                             ),
                             const SizedBox(height: 6),
-                            Text(
+                            NoteParser.parse(
+                              context,
                               comment.content,
-                              style: context.textTheme.bodyMedium?.copyWith(
+                              textStyle: context.textTheme.bodyMedium?.copyWith(
                                 fontSize: isReply ? 13 : null,
                               ),
+                              onNostrEntity: (entity) => NostrEntityWidget(
+                                entity: entity,
+                                colorPair: [
+                                  Theme.of(context).colorScheme.primary,
+                                  Theme.of(context).colorScheme.secondary,
+                                ],
+                                onProfileTap: (pubkey) {
+                                  final segments = GoRouterState.of(context).uri.pathSegments;
+                                  final branch = segments.isNotEmpty ? segments.first : 'search';
+                                  context.push('/$branch/user/$pubkey');
+                                },
+                              ),
                             ),
-                            // Reply button
                             if (isSignedIn) ...[
                               const SizedBox(height: 6),
                               GestureDetector(
