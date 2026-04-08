@@ -11,6 +11,7 @@ import 'package:zapstore/widgets/author_container.dart';
 import 'package:zapstore/widgets/comments_section.dart';
 import 'package:zapstore/widgets/common/badges.dart';
 import 'package:zapstore/widgets/common/time_utils.dart';
+import 'package:zapstore/widgets/floating_overflow_menu.dart';
 import 'package:zapstore/theme.dart';
 
 class AppStackScreen extends HookConsumerWidget {
@@ -167,50 +168,60 @@ class _AppStackContent extends HookConsumerWidget {
     final totalApps = sortedApps.length;
 
     return Scaffold(
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.only(top: 16, bottom: 32),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      body: SafeArea(
+        child: Stack(
           children: [
-            // Stack header
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: _StackHeader(
-                stack: stack,
-                author: author,
-                isAuthorLoading: isAuthorLoading,
-              ),
-            ),
-            const SizedBox(height: 24),
-            // Apps section header with count badge
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
+            SingleChildScrollView(
+              padding: const EdgeInsets.only(top: 16, bottom: 32),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Apps in this stack',
-                    style: context.textTheme.titleLarge,
+                  // Stack header
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: _StackHeader(
+                      stack: stack,
+                      author: author,
+                      isAuthorLoading: isAuthorLoading,
+                    ),
                   ),
-                  const SizedBox(width: 8),
-                  CountBadge(
-                    count: totalApps,
-                    color: AppColors.darkPillBackground,
+                  const SizedBox(height: 24),
+                  // Apps section header with count badge
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        Text(
+                          'Apps in this stack',
+                          style: context.textTheme.titleLarge,
+                        ),
+                        const SizedBox(width: 8),
+                        CountBadge(
+                          count: totalApps,
+                          color: AppColors.darkPillBackground,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Apps list
+                  if (sortedApps.isEmpty)
+                    _EmptyAppsPlaceholder()
+                  else
+                    ...sortedApps.map(
+                      (app) => AppCard(app: app, showUpdateArrow: app.hasUpdate),
+                    ),
+                  // Comments section
+                  Padding(
+                    padding: const EdgeInsets.only(top: 24),
+                    child: StackCommentsSection(stack: stack),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 12),
-            // Apps list
-            if (sortedApps.isEmpty)
-              _EmptyAppsPlaceholder()
-            else
-              ...sortedApps.map(
-                (app) => AppCard(app: app, showUpdateArrow: app.hasUpdate),
-              ),
-            // Comments section
-            Padding(
-              padding: const EdgeInsets.only(top: 24),
-              child: StackCommentsSection(stack: stack),
+            FloatingOverflowMenu(
+              shareUrl: getStackShareUrl(stack),
+              publisherPubkey: stack.pubkey,
             ),
           ],
         ),

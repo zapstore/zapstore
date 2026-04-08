@@ -1,16 +1,11 @@
-import 'dart:convert';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:zapstore/services/bookmarks_service.dart';
-import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/utils/debug_utils.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
@@ -21,6 +16,7 @@ import 'package:zapstore/widgets/author_container.dart';
 import 'package:zapstore/widgets/comments_section.dart';
 import 'package:zapstore/widgets/download_text_container.dart';
 import 'package:zapstore/widgets/expandable_markdown.dart';
+import 'package:zapstore/widgets/floating_overflow_menu.dart';
 import 'package:zapstore/widgets/install_button.dart';
 import 'package:zapstore/widgets/screenshots_gallery.dart';
 
@@ -149,7 +145,6 @@ class _AppDetailContent extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
 
     final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
-    final isSignedIn = signedInPubkey != null;
     final showDebugSections = isDebugMode(signedInPubkey);
 
     // Query author profile from social relays
@@ -167,12 +162,6 @@ class _AppDetailContent extends HookConsumerWidget {
 
     final latestRelease = app.latestRelease.value;
     final latestMetadata = app.installable;
-
-    // Check if app is installed for menu options
-    final installedPackage = ref.watch(
-      installedPackageProvider(app.identifier),
-    );
-    final isInstalled = installedPackage != null;
 
     return Scaffold(
       body: SafeArea(
@@ -399,7 +388,11 @@ class _AppDetailContent extends HookConsumerWidget {
             InstallButton(app: app),
 
             // Floating three-dot menu
-            _buildFloatingMenu(context, ref, app, isInstalled, isSignedIn),
+            FloatingOverflowMenu(
+              shareUrl: getAppShareUrl(app),
+              publisherPubkey: app.pubkey,
+              app: app,
+            ),
 
           ],
         ),
@@ -407,330 +400,4 @@ class _AppDetailContent extends HookConsumerWidget {
     );
   }
 
-  Widget _buildFloatingMenu(
-    BuildContext context,
-    WidgetRef ref,
-    App app,
-    bool isInstalled,
-    bool isSignedIn,
-  ) {
-    return Positioned(
-      top: 8,
-      right: 8,
-      child: _buildOverflowMenu(context, ref, app, isInstalled, isSignedIn),
-    );
-  }
-
-  Widget _buildOverflowMenu(
-    BuildContext context,
-    WidgetRef ref,
-    App app,
-    bool isInstalled,
-    bool isSignedIn,
-  ) {
-    // Watch saved apps to check if app is saved
-    final savedAppsAsync = ref.watch(bookmarksProvider);
-    final savedAppIds = savedAppsAsync.when(
-      data: (ids) => ids,
-      loading: () => <String>{},
-      error: (_, __) => <String>{},
-    );
-    final appAddressableId =
-        '${app.event.kind}:${app.pubkey}:${app.identifier}';
-    final isSaved = savedAppIds.contains(appAddressableId);
-
-    return Material(
-      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.9),
-      shape: const CircleBorder(),
-      elevation: 2,
-      child: PopupMenuButton<String>(
-        icon: const Icon(Icons.more_vert),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        onSelected: (value) {
-          switch (value) {
-            case 'share':
-              _shareApp(context, app);
-              break;
-            case 'copy_link':
-              _copyLink(context, app);
-              break;
-            case 'save_app':
-              _toggleSaveApp(context, ref, app, isSaved);
-              break;
-            case 'view_publisher':
-              _viewPublisher(context, app);
-              break;
-            case 'open_browser':
-              _openInBrowser(context, app);
-              break;
-            case 'open':
-              _openApp(context, ref, app);
-              break;
-            case 'delete':
-              _uninstallApp(context, ref, app);
-              break;
-          }
-        },
-        itemBuilder: (context) => [
-          const PopupMenuItem<String>(
-            value: 'share',
-            child: Row(
-              children: [Icon(Icons.share), SizedBox(width: 12), Text('Share')],
-            ),
-          ),
-          const PopupMenuItem<String>(
-            value: 'copy_link',
-            child: Row(
-              children: [
-                Icon(Icons.link),
-                SizedBox(width: 12),
-                Text('Copy link'),
-              ],
-            ),
-          ),
-          if (isSignedIn)
-            PopupMenuItem<String>(
-              value: 'save_app',
-              child: Row(
-                children: [
-                  Icon(isSaved ? Icons.bookmark : Icons.bookmark_border),
-                  const SizedBox(width: 12),
-                  Text(isSaved ? 'Remove from saved' : 'Save app'),
-                ],
-              ),
-            ),
-          const PopupMenuItem<String>(
-            value: 'view_publisher',
-            child: Row(
-              children: [
-                Icon(Icons.person),
-                SizedBox(width: 12),
-                Text('View publisher'),
-              ],
-            ),
-          ),
-          const PopupMenuItem<String>(
-            value: 'open_browser',
-            child: Row(
-              children: [
-                Icon(Icons.open_in_browser),
-                SizedBox(width: 12),
-                Text('Open in browser'),
-              ],
-            ),
-          ),
-          if (isInstalled) ...[
-            const PopupMenuItem<String>(
-              value: 'open',
-              child: Row(
-                children: [
-                  Icon(Icons.open_in_new),
-                  SizedBox(width: 12),
-                  Text('Open'),
-                ],
-              ),
-            ),
-            const PopupMenuItem<String>(
-              value: 'delete',
-              child: Row(
-                children: [
-                  Icon(Icons.delete_outline),
-                  SizedBox(width: 12),
-                  Text('Delete'),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  String _getAppUrl(App app) {
-    final naddr = Utils.encodeShareableIdentifier(
-      AddressInput(
-        identifier: app.identifier,
-        author: app.pubkey,
-        kind: app.event.kind,
-        relays: const [kDefaultRelay],
-      ),
-    );
-    return 'https://zapstore.dev/apps/$naddr';
-  }
-
-  void _shareApp(BuildContext context, App app) {
-    try {
-      final shareUrl = _getAppUrl(app);
-      SharePlus.instance.share(ShareParams(text: shareUrl));
-    } catch (e) {
-      if (context.mounted) {
-        context.showError('Failed to share app', technicalDetails: '$e');
-      }
-    }
-  }
-
-  void _copyLink(BuildContext context, App app) {
-    try {
-      final shareUrl = _getAppUrl(app);
-      Clipboard.setData(ClipboardData(text: shareUrl));
-    } catch (e) {
-      if (context.mounted) {
-        context.showError('Failed to copy link', technicalDetails: '$e');
-      }
-    }
-  }
-
-  Future<void> _toggleSaveApp(
-    BuildContext context,
-    WidgetRef ref,
-    App app,
-    bool isCurrentlySaved,
-  ) async {
-    try {
-      final signer = ref.read(Signer.activeSignerProvider);
-      final signedInPubkey = ref.read(Signer.activePubkeyProvider);
-
-      if (signer == null || signedInPubkey == null) {
-        if (context.mounted) {
-          context.showError(
-            'Sign in required',
-            description: 'You need to sign in to save apps.',
-          );
-        }
-        return;
-      }
-
-      // Query for existing stack
-      final existingStackState = await ref.storage.query(
-        RequestFilter<AppStack>(
-          authors: {signedInPubkey},
-          tags: {
-            '#d': {kAppBookmarksIdentifier},
-          },
-        ).toRequest(),
-        source: const LocalSource(),
-      );
-      final existingStack = existingStackState.firstOrNull;
-
-      // Get existing app IDs by decrypting if stack exists
-      List<String> existingAppIds = [];
-      if (existingStack != null) {
-        try {
-          final decryptedContent = await signer.nip44Decrypt(
-            existingStack.content,
-            signedInPubkey,
-          );
-          existingAppIds = (jsonDecode(decryptedContent) as List)
-              .cast<String>();
-        } catch (e) {
-          if (context.mounted) {
-            context.showError(
-              'Could not read existing saved apps',
-              description:
-                  'Your previous saved apps could not be decrypted. Starting fresh.',
-              technicalDetails: '$e',
-            );
-          }
-        }
-      }
-
-      // Modify the list
-      final appAddressableId =
-          '${app.event.kind}:${app.pubkey}:${app.identifier}';
-
-      if (isCurrentlySaved) {
-        existingAppIds.remove(appAddressableId);
-      } else {
-        if (!existingAppIds.contains(appAddressableId)) {
-          existingAppIds.add(appAddressableId);
-        }
-      }
-
-      // Create new partial stack with updated list
-      final platform = ref.read(packageManagerProvider.notifier).platform;
-      final partialStack = PartialAppStack.withEncryptedApps(
-        name: 'Saved Apps',
-        identifier: kAppBookmarksIdentifier,
-        apps: existingAppIds,
-        platform: platform,
-      );
-
-      // Sign (encrypts the content)
-      final signedStack = await partialStack.signWith(signer);
-
-      // Save to local storage and publish to relays
-      await ref.storage.save({signedStack});
-      ref.storage.publish({
-        signedStack,
-      }, relays: {'social', 'AppCatalog'});
-
-      if (context.mounted) {
-        context.showInfo(
-          isCurrentlySaved ? 'App removed from saved' : 'App saved',
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        context.showError('Failed to update bookmark', technicalDetails: '$e');
-      }
-    }
-  }
-
-  void _viewPublisher(BuildContext context, App app) {
-    final segments = GoRouterState.of(context).uri.pathSegments;
-    final first = segments.isNotEmpty ? segments.first : 'search';
-    context.push('/$first/user/${app.pubkey}');
-  }
-
-  Future<void> _openInBrowser(BuildContext context, App app) async {
-    try {
-      final url = _getAppUrl(app);
-      final uri = Uri.parse(url);
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      } else {
-        if (context.mounted) {
-          context.showError('Could not open browser');
-        }
-      }
-    } catch (e) {
-      if (context.mounted) {
-        context.showError('Failed to open browser', technicalDetails: '$e');
-      }
-    }
-  }
-
-  Future<void> _openApp(BuildContext context, WidgetRef ref, App app) async {
-    try {
-      final packageManager = ref.read(packageManagerProvider.notifier);
-      await packageManager.launchApp(app.identifier);
-    } catch (e) {
-      if (!context.mounted) return;
-      context.showError(
-        'Failed to launch ${app.name ?? app.identifier}',
-        description:
-            'The app may have been uninstalled or moved. Try reinstalling.',
-        technicalDetails: '$e',
-      );
-    }
-  }
-
-  Future<void> _uninstallApp(
-    BuildContext context,
-    WidgetRef ref,
-    App app,
-  ) async {
-    try {
-      final packageManager = ref.read(packageManagerProvider.notifier);
-      await packageManager.uninstall(app.identifier);
-    } catch (e) {
-      if (context.mounted) {
-        // Don't show error for user cancellation
-        final message = e.toString();
-        if (!message.contains('cancelled')) {
-          context.showError('Uninstall failed', technicalDetails: '$e');
-        }
-      }
-    }
-  }
 }
