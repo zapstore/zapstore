@@ -19,6 +19,7 @@ import 'package:zapstore/widgets/expandable_markdown.dart';
 import 'package:zapstore/widgets/floating_overflow_menu.dart';
 import 'package:zapstore/widgets/install_button.dart';
 import 'package:zapstore/widgets/screenshots_gallery.dart';
+import 'package:zapstore/widgets/stacked_by_row.dart';
 
 class AppDetailScreen extends HookConsumerWidget {
   const AppDetailScreen({super.key, required this.appId, this.authorPubkey});
@@ -178,48 +179,56 @@ class _AppDetailContent extends HookConsumerWidget {
                     child: AppHeader(app: app),
                   ),
 
-                  // Published by / Released at section
-                  if (app.isRelaySigned && latestMetadata != null)
-                    Padding(
-                      padding: const EdgeInsets.only(
-                        left: 16,
-                        right: 16,
-                        bottom: 8,
-                      ),
-                      child: DownloadTextContainer(
-                        url: latestMetadata.urls.first,
-                        size: 14,
-                        onTap: app.repository != null
-                            ? () => launchUrl(Uri.parse(app.repository!))
-                            : null,
-                      ),
-                    )
-                  else
-                    Padding(
-                      padding: const EdgeInsets.only(
-                        left: 16,
-                        right: 16,
-                        bottom: 8,
-                      ),
-                      child: author != null
-                          ? AuthorContainer(
-                              profile: author,
-                              beforeText: 'Published by',
-                              oneLine: true,
-                              size: 14,
-                              app: app,
-                              onTap: () {
-                                final segments = GoRouterState.of(
-                                  context,
-                                ).uri.pathSegments;
-                                final first = segments.isNotEmpty
-                                    ? segments.first
-                                    : 'search';
-                                context.push('/$first/user/${author.pubkey}');
-                              },
-                            )
-                          : const AuthorSkeleton(),
+                  // Published by / Released at + Stacked & zapped by
+                  Padding(
+                    padding: const EdgeInsets.only(
+                      left: 16,
+                      right: 16,
+                      bottom: 8,
                     ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (app.isRelaySigned && latestMetadata != null)
+                          Padding(
+                            padding: const EdgeInsets.all(4),
+                            child: DownloadTextContainer(
+                              url: latestMetadata.urls.first,
+                              size: 14,
+                              onTap: app.repository != null
+                                  ? () => launchUrl(
+                                      Uri.parse(app.repository!))
+                                  : null,
+                            ),
+                          )
+                        else if (author != null)
+                          AuthorContainer(
+                            profile: author,
+                            beforeText: 'Published by',
+                            oneLine: true,
+                            size: 14,
+                            app: app,
+                            onTap: () {
+                              final segments = GoRouterState.of(
+                                context,
+                              ).uri.pathSegments;
+                              final first = segments.isNotEmpty
+                                  ? segments.first
+                                  : 'search';
+                              context.push(
+                                '/$first/user/${author.pubkey}',
+                              );
+                            },
+                          )
+                        else
+                          const AuthorSkeleton(),
+                        Padding(
+                          padding: const EdgeInsets.only(left: 4),
+                          child: StackedByRow(app: app),
+                        ),
+                      ],
+                    ),
+                  ),
 
                   // Screenshots gallery
                   if (app.images.isNotEmpty)
