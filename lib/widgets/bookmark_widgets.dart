@@ -165,9 +165,7 @@ class SaveAppDialog extends HookConsumerWidget {
 
       // Save to local storage and publish to relays
       await ref.storage.save({signedStack});
-      ref.storage.publish({
-        signedStack,
-      }, relays: {'social', 'AppCatalog'});
+      await ref.storage.publish({signedStack}, relays: 'AppCatalog');
 
       if (context.mounted) {
         Navigator.pop(context);
@@ -285,10 +283,8 @@ class _AddToStackDialogSignedIn extends HookConsumerWidget {
     final publicStacksState = ref.watch(
       query<AppStack>(
         authors: {signedInPubkey},
-        and: (stack) => {
-          stack.apps.query(source: const LocalSource()),
-        },
-        source: const LocalAndRemoteSource(relays: 'social', stream: false),
+        and: (stack) => {stack.apps.query(source: const LocalSource())},
+        source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
         subscriptionPrefix: 'app-user-stacks-dialog',
         // Filter at query level: exclude saved-apps stack and stacks with no app references
         schemaFilter: (event) {
@@ -650,9 +646,7 @@ class _AddToStackDialogSignedIn extends HookConsumerWidget {
 
           final signedStack = await partialStack.signWith(signer);
           await ref.storage.save({signedStack});
-          await ref.storage.publish({
-            signedStack,
-          }, relays: {'social', 'AppCatalog'});
+          await ref.storage.publish({signedStack}, relays: 'AppCatalog');
         }
       }
 
@@ -682,9 +676,7 @@ class _AddToStackDialogSignedIn extends HookConsumerWidget {
 
           final signedStack = await partialStack.signWith(signer);
           await ref.storage.save({signedStack});
-          await ref.storage.publish({
-            signedStack,
-          }, relays: {'social', 'AppCatalog'});
+          await ref.storage.publish({signedStack}, relays: 'AppCatalog');
         }
       }
 

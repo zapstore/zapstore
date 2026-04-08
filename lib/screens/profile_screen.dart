@@ -188,17 +188,11 @@ class _AuthenticationSection extends ConsumerWidget {
         FilledButton.icon(
           onPressed: () => _signOut(context, ref),
           icon: const Icon(Icons.logout, size: 14),
-          label: const Text(
-            'Sign Out',
-            style: TextStyle(fontSize: 12),
-          ),
+          label: const Text('Sign Out', style: TextStyle(fontSize: 12)),
           style: FilledButton.styleFrom(
             backgroundColor: Colors.red.shade900,
             foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 6,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             minimumSize: const Size(0, 0),
             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
@@ -272,10 +266,7 @@ class _StackMigrationWarning extends ConsumerWidget {
       query<AppStack>(
         authors: {pubkey},
         where: (s) => stackNeedsMigration(s, platform),
-        source: LocalAndRemoteSource(
-          relays: {'social', 'AppCatalog'},
-          stream: false,
-        ),
+        source: LocalAndRemoteSource(relays: {'AppCatalog'}, stream: false),
         subscriptionPrefix: 'app-user-stacks-migration-profile',
       ),
     );
@@ -291,7 +282,9 @@ class _StackMigrationWarning extends ConsumerWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.5),
+            color: Theme.of(
+              context,
+            ).colorScheme.errorContainer.withValues(alpha: 0.5),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
               color: Theme.of(context).colorScheme.error.withValues(alpha: 0.4),
@@ -1608,10 +1601,7 @@ class _SavedAppsList extends ConsumerWidget {
             and: (release) => {release.latestMetadata.query()},
           ),
         },
-        source: const LocalAndRemoteSource(
-          relays: 'AppCatalog',
-          stream: false,
-        ),
+        source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
         subscriptionPrefix: 'app-profile-saved-apps',
       ),
     );
@@ -1780,7 +1770,8 @@ class _AboutSection extends ConsumerWidget {
 
 String _humanizeRelayError(String raw) {
   final lower = raw.toLowerCase();
-  if (lower.contains('timeoutexception') || lower.contains('future not completed')) {
+  if (lower.contains('timeoutexception') ||
+      lower.contains('future not completed')) {
     return 'Connection timed out';
   }
   if (lower.contains('max retries exceeded')) {

@@ -31,7 +31,7 @@ class CommentsSection extends HookConsumerWidget {
         tags: {
           '#A': {app.id},
         },
-        source: LocalAndRemoteSource(stream: true, relays: 'social'),
+        source: LocalAndRemoteSource(stream: true, relays: 'AppCatalog'),
         subscriptionPrefix: 'app-comments',
       ),
     );
@@ -72,7 +72,7 @@ class StackCommentsSection extends HookConsumerWidget {
         tags: {
           '#A': {stack.id},
         },
-        source: LocalAndRemoteSource(stream: true, relays: 'social'),
+        source: LocalAndRemoteSource(stream: true, relays: 'AppCatalog'),
         subscriptionPrefix: 'app-stack-comments',
       ),
     );
@@ -118,9 +118,7 @@ class _CommentsSectionLayout extends StatelessWidget {
   Widget build(BuildContext context) {
     // Filter to only root comments (those without a parent comment)
     // A root comment has parentKind != 1111 (not replying to another comment)
-    final rootComments = comments
-        .where((c) => c.parentKind != 1111)
-        .toList()
+    final rootComments = comments.where((c) => c.parentKind != 1111).toList()
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
     // Count total including replies
@@ -291,7 +289,8 @@ class _ThreadedCommentCard extends HookConsumerWidget {
     final threadColor = _getThreadColor(depth - 1);
 
     final nameStyle = context.textTheme.titleSmall?.copyWith(
-      fontSize: (context.textTheme.titleSmall?.fontSize ?? 14) *
+      fontSize:
+          (context.textTheme.titleSmall?.fontSize ?? 14) *
           (isReply ? 0.78 : 0.82),
     );
 
@@ -303,10 +302,7 @@ class _ThreadedCommentCard extends HookConsumerWidget {
           decoration: isReply
               ? BoxDecoration(
                   border: Border(
-                    left: BorderSide(
-                      color: threadColor,
-                      width: 3,
-                    ),
+                    left: BorderSide(color: threadColor, width: 3),
                   ),
                 )
               : null,
@@ -320,10 +316,9 @@ class _ThreadedCommentCard extends HookConsumerWidget {
               border: isReply
                   ? null
                   : Border.all(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .outline
-                          .withValues(alpha: 0.2),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.outline.withValues(alpha: 0.2),
                     ),
             ),
             child: Padding(
@@ -334,10 +329,7 @@ class _ThreadedCommentCard extends HookConsumerWidget {
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      ProfileAvatar(
-                        profile: author,
-                        radius: isReply ? 14 : 16,
-                      ),
+                      ProfileAvatar(profile: author, radius: isReply ? 14 : 16),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Column(
@@ -364,7 +356,8 @@ class _ThreadedCommentCard extends HookConsumerWidget {
                                           'on',
                                           style: context.textTheme.bodySmall
                                               ?.copyWith(
-                                                  color: Colors.grey[600]),
+                                                color: Colors.grey[600],
+                                              ),
                                         ),
                                         PillWidget(
                                           TextSpan(text: version),
@@ -376,8 +369,9 @@ class _ThreadedCommentCard extends HookConsumerWidget {
                                   ),
                                 ),
                                 Text(
-                                  DateFormat('MMM d, y')
-                                      .format(comment.createdAt),
+                                  DateFormat(
+                                    'MMM d, y',
+                                  ).format(comment.createdAt),
                                   style: context.textTheme.bodySmall?.copyWith(
                                     color: Colors.grey[600],
                                     fontSize: isReply ? 10 : null,
@@ -418,14 +412,14 @@ class _ThreadedCommentCard extends HookConsumerWidget {
                                     const SizedBox(width: 4),
                                     Text(
                                       'Reply',
-                                      style:
-                                          context.textTheme.labelSmall?.copyWith(
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .primary
-                                            .withValues(alpha: 0.7),
-                                        fontSize: 11,
-                                      ),
+                                      style: context.textTheme.labelSmall
+                                          ?.copyWith(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .primary
+                                                .withValues(alpha: 0.7),
+                                            fontSize: 11,
+                                          ),
                                     ),
                                   ],
                                 ),
@@ -511,7 +505,8 @@ class _AddCommentButton extends ConsumerWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (context) => _CommentComposer(fileMetadata: fileMetadata, app: app),
+      builder: (context) =>
+          _CommentComposer(fileMetadata: fileMetadata, app: app),
     );
   }
 }
@@ -683,7 +678,7 @@ class _CommentComposer extends HookConsumerWidget {
       final signedComment = await comment.signWith(signer);
 
       await signedComment.save();
-      await signedComment.publish(relays: {'social', 'AppCatalog'});
+      await signedComment.publish(relays: 'AppCatalog');
 
       if (context.mounted) {
         Navigator.pop(context);
@@ -766,10 +761,9 @@ class _ReplyComposer extends HookConsumerWidget {
               margin: const EdgeInsets.only(top: 8, bottom: 16),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Theme.of(context)
-                    .colorScheme
-                    .surfaceContainerHighest
-                    .withValues(alpha: 0.5),
+                color: Theme.of(
+                  context,
+                ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
                 borderRadius: BorderRadius.circular(8),
                 border: Border(
                   left: BorderSide(
@@ -781,19 +775,16 @@ class _ReplyComposer extends HookConsumerWidget {
               child: Text(
                 parentComment.content,
                 style: context.textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .onSurface
-                      .withValues(alpha: 0.7),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.7),
                 ),
                 maxLines: 3,
                 overflow: TextOverflow.ellipsis,
               ),
             ),
             if (!isSignedIn) ...[
-              const SignInPrompt(
-                message: 'Sign in to reply to this comment.',
-              ),
+              const SignInPrompt(message: 'Sign in to reply to this comment.'),
             ] else ...[
               TextField(
                 controller: textController,
@@ -896,7 +887,7 @@ class _ReplyComposer extends HookConsumerWidget {
       final signedReply = await reply.signWith(signer);
 
       await signedReply.save();
-      await signedReply.publish(relays: {'social', 'AppCatalog'});
+      await signedReply.publish(relays: 'AppCatalog');
 
       if (context.mounted) {
         Navigator.pop(context);
@@ -1026,7 +1017,7 @@ class _StackCommentComposer extends HookConsumerWidget {
       final signedComment = await comment.signWith(signer);
 
       await signedComment.save();
-      await signedComment.publish(relays: {'social', 'AppCatalog'});
+      await signedComment.publish(relays: 'AppCatalog');
 
       if (context.mounted) {
         Navigator.pop(context);

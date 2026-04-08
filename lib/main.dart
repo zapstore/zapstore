@@ -117,7 +117,8 @@ class ZapstoreApp extends HookConsumerWidget {
           try {
             await ref.read(amberSignerProvider).signOut();
 
-            final toastContext = rootNavigatorKey.currentState?.overlay?.context;
+            final toastContext =
+                rootNavigatorKey.currentState?.overlay?.context;
             if (toastContext != null && toastContext.mounted) {
               toastContext.showInfo('Amber was removed, you were signed out');
             }
@@ -257,7 +258,6 @@ final appInitializationProvider = FutureProvider<void>((ref) async {
         defaultRelays: {
           'default': {_kDefaultAppCatalogRelay},
           'bootstrap': {_kDefaultAppCatalogRelay},
-          // TODO: add 'wss://purplepag.es' back when it's fixed
           'AppCatalog': appCatalogRelays,
           'social': {
             'wss://relay.damus.io',

@@ -195,10 +195,7 @@ class RelevantWhoFollowContainer extends HookConsumerWidget {
           },
         ),
         AsyncError() => Center(
-          child: Text(
-            'Service temporarily unavailable.',
-            style: baseStyle,
-          ),
+          child: Text('Service temporarily unavailable.', style: baseStyle),
         ),
         // Loading state
         _ => Center(
@@ -231,6 +228,7 @@ class RelevantWhoFollowContainer extends HookConsumerWidget {
           query<ContactList>(
             authors: {signedInPubkey},
             limit: 1,
+            // Kind 3 still on social relays
             source: const LocalAndRemoteSource(relays: 'social', stream: false),
             subscriptionPrefix: 'app-user-contacts',
           ),
@@ -383,10 +381,9 @@ Future<Model<dynamic>?> _runDVMRequest(
       }
     });
 
-    await ref.read(storageNotifierProvider.notifier).publish(
-      {request},
-      relays: relays,
-    );
+    await ref.read(storageNotifierProvider.notifier).publish({
+      request,
+    }, relays: relays);
 
     return await completer.future.timeout(timeout);
   } on TimeoutException {
@@ -423,7 +420,10 @@ final relevantWhoFollowProvider = FutureProvider.autoDispose
         final storage = ref.read(storageNotifierProvider.notifier);
         final profiles = await storage.query<Profile>(
           Request([RequestFilter(authors: response.pubkeys)]),
-          source: const LocalAndRemoteSource(relays: 'social', stream: false),
+          source: const LocalAndRemoteSource(
+            relays: {'social', 'vertex'},
+            stream: false,
+          ),
           subscriptionPrefix: 'app-reputation-profiles',
         );
         return profiles;

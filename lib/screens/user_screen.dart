@@ -65,14 +65,11 @@ class UserScreen extends HookConsumerWidget {
         limit: 20,
         and: (pack) => {
           pack.apps.query(
-            source: const LocalAndRemoteSource(
-              relays: 'AppCatalog',
-              stream: false,
-            ),
+            source: const LocalAndRemoteSource(stream: false),
             subscriptionPrefix: 'app-user-screen-stack-apps',
           ),
         },
-        source: LocalAndRemoteSource(stream: false, relays: 'social'),
+        source: LocalAndRemoteSource(stream: false, relays: 'AppCatalog'),
         subscriptionPrefix: 'app-user-stacks',
         schemaFilter: appStackEventFilter,
       ),
@@ -203,7 +200,7 @@ class _UserZapsList extends HookConsumerWidget {
     final appZapsState = ref.watch(
       query<Zap>(
         tags: allAppTags,
-        source: const LocalAndRemoteSource(relays: 'social'),
+        source: const LocalAndRemoteSource(relays: 'AppCatalog'),
         subscriptionPrefix: 'app-user-app-zaps',
       ),
     );
@@ -213,7 +210,7 @@ class _UserZapsList extends HookConsumerWidget {
         ? ref.watch(
             query<Zap>(
               tags: {'#e': metadataIds},
-              source: const LocalAndRemoteSource(relays: 'social'),
+              source: const LocalAndRemoteSource(relays: 'AppCatalog'),
               subscriptionPrefix: 'app-user-metadata-zaps',
             ),
           )
@@ -421,4 +418,3 @@ class _UserBio extends HookWidget {
     );
   }
 }
-

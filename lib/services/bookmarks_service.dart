@@ -21,10 +21,7 @@ final bookmarksProvider = FutureProvider<Set<String>>((ref) async {
       tags: {
         '#d': {kAppBookmarksIdentifier},
       },
-      source: const LocalAndRemoteSource(
-        relays: 'social',
-        stream: false,
-      ),
+      source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
       subscriptionPrefix: 'app-user-saved-apps',
     ),
   );

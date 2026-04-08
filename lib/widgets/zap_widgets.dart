@@ -443,8 +443,6 @@ class ZapAmountDialog extends HookConsumerWidget {
                           );
                         }
 
-                        final socialRelays = await storageNotifier
-                            .resolveRelays('social');
                         final appCatalogRelays = await storageNotifier
                             .resolveRelays('AppCatalog');
 
@@ -454,7 +452,7 @@ class ZapAmountDialog extends HookConsumerWidget {
                         zapRequest.linkProfileByPubkey(author.pubkey);
                         zapRequest.linkModel(app);
                         zapRequest.linkModelById(latestMetadata.id);
-                        zapRequest.relays = {...socialRelays, ...appCatalogRelays};
+                        zapRequest.relays = appCatalogRelays;
 
                         final signedZapRequest = await zapRequest.signWith(
                           signer,

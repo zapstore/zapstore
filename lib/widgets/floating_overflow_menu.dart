@@ -33,7 +33,8 @@ class FloatingOverflowMenu extends HookConsumerWidget {
     final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
     final isSignedIn = signedInPubkey != null;
 
-    final isInstalled = app != null &&
+    final isInstalled =
+        app != null &&
         ref.watch(installedPackageProvider(app!.identifier)) != null;
 
     // Bookmark state (only relevant when app is provided)
@@ -48,14 +49,11 @@ class FloatingOverflowMenu extends HookConsumerWidget {
         elevation: 2,
         child: PopupMenuButton<String>(
           icon: const Icon(Icons.more_vert),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          onSelected: (value) => _onSelected(
-            context,
-            ref,
-            value,
-            isSaved: isSaved,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
           ),
+          onSelected: (value) =>
+              _onSelected(context, ref, value, isSaved: isSaved),
           itemBuilder: (_) => [
             _menuItem('share', Icons.share, 'Share'),
             _menuItem('copy_link', Icons.link, 'Copy link'),
@@ -216,8 +214,8 @@ class FloatingOverflowMenu extends HookConsumerWidget {
             existingStack.content,
             signedInPubkey,
           );
-          existingAppIds =
-              (jsonDecode(decryptedContent) as List).cast<String>();
+          existingAppIds = (jsonDecode(decryptedContent) as List)
+              .cast<String>();
         } catch (e) {
           if (context.mounted) {
             context.showError(
@@ -230,8 +228,7 @@ class FloatingOverflowMenu extends HookConsumerWidget {
         }
       }
 
-      final appAddressableId =
-          '${a.event.kind}:${a.pubkey}:${a.identifier}';
+      final appAddressableId = '${a.event.kind}:${a.pubkey}:${a.identifier}';
 
       if (isCurrentlySaved) {
         existingAppIds.remove(appAddressableId);
@@ -252,7 +249,7 @@ class FloatingOverflowMenu extends HookConsumerWidget {
       final signedStack = await partialStack.signWith(signer);
 
       await ref.storage.save({signedStack});
-      ref.storage.publish({signedStack}, relays: {'social', 'AppCatalog'});
+      ref.storage.publish({signedStack}, relays: 'AppCatalog');
 
       if (context.mounted) {
         context.showInfo(

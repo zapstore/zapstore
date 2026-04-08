@@ -76,11 +76,11 @@ class StacksNotifier extends PagedSubscriptionNotifier<AppStack> {
 
 final stacksProvider =
     StateNotifierProvider.autoDispose<StacksNotifier, PagedState<AppStack>>((
-  ref,
-) {
-  final platform = ref.read(packageManagerProvider.notifier).platform;
-  return StacksNotifier(ref, platform: platform);
-});
+      ref,
+    ) {
+      final platform = ref.read(packageManagerProvider.notifier).platform;
+      return StacksNotifier(ref, platform: platform);
+    });
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -181,8 +181,7 @@ class AppStacksScreen extends HookConsumerWidget {
         : null;
 
     final appsMap = {
-      for (final app in previewAppsState?.models ?? <App>[])
-        app.id: app,
+      for (final app in previewAppsState?.models ?? <App>[]) app.id: app,
     };
 
     final isInitialLoading = state.firstPage is StorageLoading && items.isEmpty;
@@ -373,8 +372,7 @@ class _MigrationBanner extends HookConsumerWidget {
           )
         : null;
     final appsMap = {
-      for (final app in previewAppsState?.models ?? <App>[])
-        app.id: app,
+      for (final app in previewAppsState?.models ?? <App>[]) app.id: app,
     };
 
     return Container(
@@ -516,10 +514,7 @@ class _MigrationBanner extends HookConsumerWidget {
 
         final signedStack = await partialStack.signWith(signer);
         await ref.storage.save({signedStack});
-        await ref.storage.publish(
-          {signedStack},
-          relays: {'social', 'AppCatalog'},
-        );
+        await ref.storage.publish({signedStack}, relays: {'AppCatalog'});
 
         progressCount.value++;
       }

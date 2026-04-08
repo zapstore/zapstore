@@ -266,9 +266,7 @@ class SocialActionsRow extends HookConsumerWidget {
 
       // Save to local storage and publish to relays
       await ref.storage.save({signedStack});
-      ref.storage.publish({
-        signedStack,
-      }, relays: {'social', 'AppCatalog'});
+      ref.storage.publish({signedStack}, relays: 'AppCatalog');
 
       if (context.mounted) {
         context.showInfo(
@@ -303,7 +301,7 @@ class _ZappersListSection extends ConsumerWidget {
     final zapsState = ref.watch(
       query<Zap>(
         tags: app.event.addressableIdTagMap,
-        source: const LocalAndRemoteSource(relays: 'social'),
+        source: const LocalAndRemoteSource(relays: 'AppCatalog'),
         subscriptionPrefix: 'app-zaps',
       ),
     );
@@ -315,7 +313,7 @@ class _ZappersListSection extends ConsumerWidget {
               tags: {
                 '#e': {metadataId},
               },
-              source: const LocalAndRemoteSource(relays: 'social'),
+              source: const LocalAndRemoteSource(relays: 'AppCatalog'),
               subscriptionPrefix: 'app-metadata-zaps',
             ),
           )
@@ -350,9 +348,7 @@ class _ZappersListSection extends ConsumerWidget {
         subscriptionPrefix: 'app-zapper-profiles',
       ),
     );
-    final profilesMap = {
-      for (final p in profilesState.models) p.pubkey: p,
-    };
+    final profilesMap = {for (final p in profilesState.models) p.pubkey: p};
 
     return Padding(
       padding: const EdgeInsets.only(top: 8),
@@ -756,7 +752,10 @@ class DebugVersionsSection extends HookConsumerWidget {
     final releasesState = ref.watch(
       query<Release>(
         tags: app.event.addressableIdTagMap,
-        and: (release) => {release.latestMetadata.query(), release.latestAsset.query()},
+        and: (release) => {
+          release.latestMetadata.query(),
+          release.latestAsset.query(),
+        },
         source: LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
         subscriptionPrefix: 'app-debug-releases',
       ),
