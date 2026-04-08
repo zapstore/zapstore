@@ -30,7 +30,9 @@ class SearchScreen extends HookConsumerWidget {
 
     final performSearch = useCallback((String query) {
       final trimmed = query.trim();
-      final cleaned = trimmed.replaceFirst('nostr:', '');
+      final cleaned = trimmed
+          .replaceFirst('nostr:', '')
+          .replaceFirst(RegExp(r'https?://zapstore\.dev/(?:apps|stacks)/'), '');
       try {
         final decoded = Utils.decodeShareableIdentifier(cleaned);
         final path = switch (decoded) {
