@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3]
+
+### Added
+
+- Floating overflow menu for apps and stacks with shared, reusable component
+- In-app navigation from comment links (Nostr references resolve inside the app)
+- Search supports `naddr`, `npub`, and Zapstore URLs directly in the search input
+
+### Changed
+
+- Improvements on deletion checks
+- Relay configuration tuned for communities
+- Stacks query apps with full pubkey + app ID for correctness
+
+### Fixed
+
+- Deep link handling regression
+
 ## [1.0.2] - 2026-04-06
 
 ### Added
