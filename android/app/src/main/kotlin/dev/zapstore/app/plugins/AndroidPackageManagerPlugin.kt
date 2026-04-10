@@ -1023,14 +1023,38 @@ class AndroidPackageManagerPlugin :
         }
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // SIGNING CERTIFICATE HELPERS
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Returns the current signing certificates from a [android.content.pm.SigningInfo].
+     *
+     * For multiple v1 signers: returns [apkContentsSigners].
+     * For single signer (v2/v3, with or without key rotation): returns the
+     * newest certificate from [signingCertificateHistory] (last element),
+     * which matches what [apkContentsSigners] returns for APK files.
+     */
+    private fun android.content.pm.SigningInfo.currentSigners(): Array<android.content.pm.Signature> {
+        return if (hasMultipleSigners()) {
+            apkContentsSigners ?: emptyArray()
+        } else {
+            val history = signingCertificateHistory
+            if (history.isNullOrEmpty()) emptyArray() else arrayOf(history.last())
+        }
+    }
+
+    private fun android.content.pm.Signature.sha256Hex(): String {
+        return MessageDigest.getInstance("SHA-256")
+                .digest(toByteArray())
+                .joinToString("") { "%02x".format(it) }
+    }
+
     /**
      * Extracts signing certificate hashes from an APK file.
      *
      * Returns SHA-256 hashes of the DER-encoded X.509 certificates (lowercase hex), matching the
      * algorithm used by zsp to produce apk_certificate_hash in NIP-82 SoftwareAsset events.
-     *
-     * Uses SigningInfo.apkContentsSigners (API 28+) which prefers v3 key-rotation signers over
-     * v2/v1, consistent with apkverifier.PickBestApkCert used in zsp.
      *
      * Returns null if extraction fails (treat as verification error, not skip).
      */
@@ -1043,15 +1067,10 @@ class AndroidPackageManagerPlugin :
                     )
                             ?: return null
 
-            val signers = packageInfo.signingInfo?.apkContentsSigners ?: return null
-            if (signers.isEmpty()) return null
+            val signers = packageInfo.signingInfo?.currentSigners()
+            if (signers.isNullOrEmpty()) return null
 
-            val digest = MessageDigest.getInstance("SHA-256")
-            signers.map { sig ->
-                digest.reset()
-                digest.update(sig.toByteArray())
-                digest.digest().joinToString("") { "%02x".format(it) }
-            }
+            signers.map { it.sha256Hex() }
         } catch (e: Exception) {
             Log.w(TAG, "Failed to extract APK cert hashes from $apkPath: ${e.message}")
             null
@@ -1412,13 +1431,13 @@ class AndroidPackageManagerPlugin :
                     "bundleId" to pkg.packageName,
                     "versionName" to pkg.versionName,
                     "versionCode" to versionCode,
-                    "signatureHash" to getSignatureHash(pkg.packageName),
+                    "signatureHashes" to getSignatureHashes(pkg.packageName),
                     "canInstallSilently" to canInstallSilently(pkg.packageName)
             )
         }
     }
 
-    private fun getSignatureHash(packageName: String): String {
+    private fun getSignatureHashes(packageName: String): List<String> {
         return try {
             val pm = context.packageManager
             val pkgInfo =
@@ -1434,20 +1453,16 @@ class AndroidPackageManagerPlugin :
                         pm.getPackageInfo(packageName, PackageManager.GET_SIGNATURES)
                     }
 
-            val signatures =
+            val signers =
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                        pkgInfo.signingInfo?.apkContentsSigners ?: emptyArray()
+                        pkgInfo.signingInfo?.currentSigners() ?: emptyArray()
                     } else {
                         @Suppress("DEPRECATION") pkgInfo.signatures ?: emptyArray()
                     }
 
-            if (signatures.isEmpty()) return ""
-
-            MessageDigest.getInstance("SHA-256").digest(signatures[0].toByteArray()).joinToString(
-                            ""
-                    ) { "%02x".format(it) }
+            signers.map { it.sha256Hex() }
         } catch (_: Exception) {
-            ""
+            emptyList()
         }
     }
 }

@@ -11,21 +11,21 @@ final class DummyPackageManager extends PackageManager {
           name: 'Test App',
           version: '1.0.0',
           versionCode: 1,
-          signatureHash: 'dummy_signature_1',
+          signatureHashes: ['dummy_signature_1'],
         ),
         'dev.zapstore.app': const PackageInfo(
           appId: 'dev.zapstore.app',
           name: 'Zapstore',
           version: '1.0.0',
           versionCode: 1,
-          signatureHash: 'dummy_signature_2',
+          signatureHashes: ['dummy_signature_2'],
         ),
         'com.dummy.browser': const PackageInfo(
           appId: 'com.dummy.browser',
           name: 'Dummy Browser',
           version: '2.1.0',
           versionCode: 210,
-          signatureHash: 'dummy_signature_3',
+          signatureHashes: ['dummy_signature_3'],
         ),
       },
       operations: const {},
@@ -57,7 +57,7 @@ final class DummyPackageManager extends PackageManager {
       appId: appId,
       version: target.version,
       versionCode: target.versionCode,
-      signatureHash: 'mock_signature',
+      signatureHashes: const ['mock_signature'],
       installTime: DateTime.now(),
     );
     state = state.copyWith(installed: newInstalled);

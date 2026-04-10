@@ -30,12 +30,13 @@ class UpdateAllRow extends ConsumerWidget {
                 if (target == null) return false;
                 // Skip apps with cert mismatch — they will fail during
                 // install and waste bandwidth.
-                final installedHash =
-                    pmState.installed[app.identifier]?.signatureHash ?? '';
+                final installedHashes =
+                    pmState.installed[app.identifier]?.signatureHashes ??
+                        const [];
                 final targetHashes = target.certificateHashes;
-                if (installedHash.isNotEmpty &&
+                if (installedHashes.isNotEmpty &&
                     targetHashes.isNotEmpty &&
-                    !targetHashes.contains(installedHash)) {
+                    !installedHashes.any(targetHashes.contains)) {
                   return false;
                 }
                 return true;

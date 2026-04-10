@@ -25,7 +25,7 @@ class InstalledPackagesSnapshot {
               'name': p.name,
               'version': p.version,
               'versionCode': p.versionCode,
-              'signatureHash': p.signatureHash,
+              'signatureHashes': p.signatureHashes,
               'canInstallSilently': p.canInstallSilently,
             },
           )
@@ -69,12 +69,16 @@ class InstalledPackagesSnapshot {
         final map = Map<String, dynamic>.from(item);
         final appId = map['appId'] as String?;
         if (appId == null || appId.isEmpty) continue;
+        final rawHashes = map['signatureHashes'];
+        final signatureHashes = rawHashes is List
+            ? rawHashes.cast<String>().toList()
+            : <String>[];
         result[appId] = PackageInfo(
           appId: appId,
           name: map['name'] as String?,
           version: (map['version'] as String?) ?? '0.0.0',
           versionCode: map['versionCode'] as int?,
-          signatureHash: (map['signatureHash'] as String?) ?? '',
+          signatureHashes: signatureHashes,
           installTime: null,
           canInstallSilently: (map['canInstallSilently'] as bool?) ?? false,
         );

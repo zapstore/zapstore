@@ -453,8 +453,7 @@ final class AndroidPackageManager extends PackageManager {
       name: existingPkg?.name,
       version: target.version,
       versionCode: target.versionCode,
-      // Keep existing signature hash if available, will be updated by sync
-      signatureHash: existingPkg?.signatureHash ?? '',
+      signatureHashes: existingPkg?.signatureHashes ?? const [],
       installTime: DateTime.now(),
       canInstallSilently: existingPkg?.canInstallSilently ?? false,
     );
@@ -709,7 +708,10 @@ final class AndroidPackageManager extends PackageManager {
         final name = app['name'] as String?;
         final version = app['versionName'] as String? ?? '0.0.0';
         final versionCode = app['versionCode'] as int?;
-        final signatureHash = app['signatureHash'] as String? ?? '';
+        final rawHashes = app['signatureHashes'];
+        final signatureHashes = rawHashes is List
+            ? rawHashes.cast<String>().toList()
+            : <String>[];
         final canInstallSilently = app['canInstallSilently'] as bool? ?? false;
 
         if (canInstallSilently) anyCanInstallSilently = true;
@@ -720,7 +722,7 @@ final class AndroidPackageManager extends PackageManager {
             name: name,
             version: version,
             versionCode: versionCode,
-            signatureHash: signatureHash,
+            signatureHashes: signatureHashes,
             installTime: null,
             canInstallSilently: canInstallSilently,
           );

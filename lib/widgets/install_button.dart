@@ -244,12 +244,12 @@ class InstallButton extends ConsumerWidget {
             isDisabled: true,
           );
         }
-        final installedHash = installedPkg?.signatureHash ?? '';
+        final installedHashes = installedPkg?.signatureHashes ?? const [];
         final targetHashes = fileMetadata.certificateHashes;
         final isCertMismatch =
-            installedHash.isNotEmpty &&
+            installedHashes.isNotEmpty &&
             targetHashes.isNotEmpty &&
-            !targetHashes.contains(installedHash);
+            !installedHashes.any(targetHashes.contains);
         if (isCertMismatch) {
           return _buildSimpleButton(
             context,
@@ -692,7 +692,7 @@ class InstallButton extends ConsumerWidget {
     Installable fileMetadata,
   ) async {
     final currentVersion = installedPkg?.version ?? 'Unknown';
-    final currentCertHash = installedPkg?.signatureHash ?? 'Unknown';
+    final currentCertHash = installedPkg?.signatureHashes.firstOrNull ?? 'Unknown';
     final updateCertHash = fileMetadata.certificateHash ?? 'Unknown';
     final updateVersion = fileMetadata.version;
     final author = app.author.value;

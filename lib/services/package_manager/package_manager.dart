@@ -22,7 +22,7 @@ class PackageInfo extends Equatable {
     required this.appId,
     required this.version,
     required this.versionCode,
-    required this.signatureHash,
+    this.signatureHashes = const [],
     this.name,
     this.installTime,
     this.canInstallSilently = false,
@@ -32,7 +32,7 @@ class PackageInfo extends Equatable {
   final String? name;
   final String version;
   final int? versionCode;
-  final String signatureHash;
+  final List<String> signatureHashes;
   final DateTime? installTime;
   final bool canInstallSilently;
 
@@ -42,7 +42,7 @@ class PackageInfo extends Equatable {
     name,
     version,
     versionCode,
-    signatureHash,
+    signatureHashes,
     installTime,
     canInstallSilently,
   ];
