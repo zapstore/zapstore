@@ -297,9 +297,18 @@ final amberSignerProvider = Provider<AmberSigner>(
 
 /// Copy the bundled seed database on first launch so the UI has content
 /// before relay data arrives. No-op if the database already exists.
+/// Skipped when the user has configured a non-default relay, since the
+/// seed was built from [_kDefaultAppCatalogRelay] and would be wrong.
 Future<void> _maybeCopySeedDatabase(String dbPath) async {
   final dbFile = File(dbPath);
   if (dbFile.existsSync()) return;
+
+  final customRelays = await SecureStorageService().getAppCatalogRelays();
+  final isDefault = customRelays == null ||
+      (customRelays.length == 1 &&
+          customRelays.contains(_kDefaultAppCatalogRelay));
+  if (!isDefault) return;
+
   try {
     final seedData = await rootBundle.load('assets/seed.db');
     await dbFile.create(recursive: true);
