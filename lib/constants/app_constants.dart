@@ -22,12 +22,15 @@ const kZapstoreCommunityPubkey =
 /// Identifier for storing user saved apps
 const kAppBookmarksIdentifier = 'zapstore-bookmarks';
 
+/// Identifier for the encrypted backup of installed apps
+const kInstalledAppsBackupIdentifier = 'zapstore-installed-backup';
+
 /// Event filter for app stacks - must run as schemaFilter so rejected events
 /// are never stored in local SQLite.
 ///
 /// Rejects:
 /// - Private/encrypted stacks (non-empty content, kind 30267 only)
-/// - The user's own saved-apps bookmark stack
+/// - The user's own saved-apps bookmark stack and installed-apps backup
 /// - Stacks with no public App (32267) references
 bool appStackEventFilter(Map<String, dynamic> event) {
   // Guard: only apply to AppStack events (kind 30267).
@@ -44,7 +47,10 @@ bool appStackEventFilter(Map<String, dynamic> event) {
 
   for (final tag in tags) {
     if (tag is! List || tag.isEmpty) continue;
-    if (tag[0] == 'd' && tag.length > 1 && tag[1] == kAppBookmarksIdentifier) {
+    if (tag[0] == 'd' &&
+        tag.length > 1 &&
+        (tag[1] == kAppBookmarksIdentifier ||
+            tag[1] == kInstalledAppsBackupIdentifier)) {
       return false;
     }
   }

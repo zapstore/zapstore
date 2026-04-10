@@ -154,6 +154,21 @@ class SecureStorageService {
       value: jsonEncode(relays.toList()),
     );
   }
+
+  // =========================================================================
+  // Installed Apps Backup
+  // =========================================================================
+
+  static const _installedAppsBackupKey = 'installed_apps_backup_enabled';
+
+  Future<bool> isInstalledAppsBackupEnabled() async {
+    final value = await _storage.read(key: _installedAppsBackupKey);
+    return value == 'true';
+  }
+
+  Future<void> setInstalledAppsBackupEnabled(bool enabled) async {
+    await _storage.write(key: _installedAppsBackupKey, value: '$enabled');
+  }
 }
 
 /// Persists the AmberSigner pubkey in flutter_secure_storage.
@@ -188,4 +203,14 @@ final secureStorageServiceProvider = Provider<SecureStorageService>(
 final hasNwcStringProvider = FutureProvider.autoDispose<bool>((ref) async {
   final secureStorage = ref.watch(secureStorageServiceProvider);
   return secureStorage.hasNWCString();
+});
+
+/// Whether the installed apps backup setting is enabled.
+///
+/// Use `ref.invalidate(installedAppsBackupEnabledProvider)` after toggling
+/// the setting to refresh UI.
+final installedAppsBackupEnabledProvider =
+    FutureProvider.autoDispose<bool>((ref) async {
+  final secureStorage = ref.watch(secureStorageServiceProvider);
+  return secureStorage.isInstalledAppsBackupEnabled();
 });

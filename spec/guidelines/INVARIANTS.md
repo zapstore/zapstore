@@ -41,9 +41,7 @@ If any invariant is violated, the implementation is incorrect.
 
 ## App Stack (kind 30267) Tag Rules
 
-- Encrypted stacks (private collections, e.g. "Saved Apps") MUST NOT include a community `p` tag.
-- Only public stacks may carry a community `p` tag to associate them with a community.
-- The `h` tag is used for relay grouping/routing and may appear on both public and private stacks.
+- Encrypted stacks (private collections, e.g. "Saved Apps") MUST NOT include a community `h` tag.
 
 ## Lifecycle Safety
 

@@ -92,6 +92,7 @@ class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
 
   final Ref ref;
   Timer? _pollTimer;
+  List<String> _lastBackedUpIds = [];
 
   void _init() {
     ref.listen<AsyncValue<void>>(appInitializationProvider, (prev, next) {
@@ -126,6 +127,7 @@ class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
         lastCheckTime: DateTime.now(),
         clearError: true,
       );
+      unawaited(_backupInstalledApps());
     } catch (e) {
       debugPrint('[UpdatePoller] Check failed: $e');
       state = state.copyWith(
@@ -184,6 +186,68 @@ class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
     );
 
     state = state.copyWith(catalogedIds: result.catalogedIds);
+  }
+
+  /// Best-effort backup of installed apps as an encrypted private stack.
+  /// Runs after each successful update check. Only publishes when the set
+  /// of cataloged installed apps has changed since the last backup.
+  Future<void> _backupInstalledApps() async {
+    final pubkey = ref.read(Signer.activePubkeyProvider);
+    if (pubkey == null) return;
+
+    final enabled = await ref
+        .read(secureStorageServiceProvider)
+        .isInstalledAppsBackupEnabled();
+    if (!enabled) return;
+
+    final signer = ref.read(Signer.activeSignerProvider)!;
+    final pmNotifier = ref.read(packageManagerProvider.notifier);
+    final installed = ref.read(packageManagerProvider).installed;
+    final platform = pmNotifier.platform;
+    final storage = ref.read(storageNotifierProvider.notifier);
+
+    try {
+      final apps = await storage.query(
+        RequestFilter<App>(
+          tags: {
+            '#d': installed.keys.toSet(),
+            '#f': {platform},
+          },
+        ).toRequest(),
+        source: const LocalSource(),
+        subscriptionPrefix: 'app-backup-resolve',
+      );
+
+      final appIds =
+          apps
+              .map((a) => '${a.event.kind}:${a.event.pubkey}:${a.identifier}')
+              .toList()
+            ..sort();
+
+      if (_listEquals(appIds, _lastBackedUpIds)) return;
+
+      final partialStack = PartialAppStack.withEncryptedApps(
+        name: 'Installed Apps',
+        identifier: kInstalledAppsBackupIdentifier,
+        apps: appIds,
+        platform: platform,
+      );
+
+      final signed = await partialStack.signWith(signer);
+      await storage.save({signed});
+      await storage.publish({signed}, relays: {'AppCatalog', 'social'});
+      _lastBackedUpIds = appIds;
+    } catch (e) {
+      debugPrint('[InstalledAppsBackup] Backup failed: $e');
+    }
+  }
+
+  static bool _listEquals(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 
   @override

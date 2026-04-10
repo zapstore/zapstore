@@ -16,6 +16,7 @@ import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/main.dart';
 import 'package:zapstore/services/bookmarks_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
+import 'package:zapstore/services/secure_storage_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/nostr_route.dart';
 import 'package:zapstore/widgets/common/profile_identity_row.dart';
@@ -1397,6 +1398,35 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
+class _InstalledAppsBackupToggle extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final pubkey = ref.watch(Signer.activePubkeyProvider);
+    if (pubkey == null) return const SizedBox.shrink();
+
+    final backupAsync = ref.watch(installedAppsBackupEnabledProvider);
+    final enabled = backupAsync.valueOrNull ?? false;
+
+    return SwitchListTile(
+      secondary: CircleAvatar(
+        radius: 18,
+        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+        child: Icon(Icons.backup, color: Theme.of(context).colorScheme.primary),
+      ),
+      title: const Text('Back up installed apps'),
+      subtitle: const Text('Encrypted backup to Nostr relays'),
+      value: enabled,
+      contentPadding: EdgeInsets.zero,
+      onChanged: (value) async {
+        await ref
+            .read(secureStorageServiceProvider)
+            .setInstalledAppsBackupEnabled(value);
+        ref.invalidate(installedAppsBackupEnabledProvider);
+      },
+    );
+  }
+}
+
 class _DataManagementSection extends ConsumerWidget {
   const _DataManagementSection();
 
@@ -1413,6 +1443,8 @@ class _DataManagementSection extends ConsumerWidget {
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 16),
+            _InstalledAppsBackupToggle(),
+            const SizedBox(height: 8),
             ListTile(
               leading: CircleAvatar(
                 radius: 18,
