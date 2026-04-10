@@ -77,7 +77,7 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
     _sub?.close();
     _sub = ref.listen(
       query<Release>(
-        until: DateTime.now(),
+        tags: {'#f': {'android-arm64-v8a'}},
         limit: _kPageSize,
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: true),
         subscriptionPrefix: 'app-latest-releases',
@@ -122,7 +122,11 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
     try {
       final storage = ref.read(storageNotifierProvider.notifier);
       final releases = await storage.query(
-        RequestFilter<Release>(until: oldest, limit: _kPageSize).toRequest(),
+        RequestFilter<Release>(
+          tags: {'#f': {'android-arm64-v8a'}},
+          until: oldest,
+          limit: _kPageSize,
+        ).toRequest(),
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
         subscriptionPrefix: 'app-latest-releases-older',
       );
