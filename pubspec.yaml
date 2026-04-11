@@ -2,7 +2,7 @@ name: zapstore
 description: Zapstore mobile app
 publish_to: none
 
-version: 1.0.5+1005
+version: 1.0.6+1006
 
 environment:
   sdk: ^3.8.1
