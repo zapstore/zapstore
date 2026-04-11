@@ -815,12 +815,20 @@ class AndroidPackageManagerPlugin :
             if (expectedCertHashes.isNotEmpty()) {
                 val actualCertHashes = extractApkCertHashes(apkFile.absolutePath)
                 if (actualCertHashes == null) {
+                    val expectedHex = expectedCertHashes.joinToString(", ")
+                    val androidInfo = "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})"
+                    Log.e(TAG, "Cert extraction failed for $packageName on $androidInfo. " +
+                            "Expected hashes: $expectedHex. Check earlier log lines for details (signingInfo state).")
                     mainHandler.post {
                         emitInstallStatus(
                                 packageName,
                                 InstallStatus.FAILED,
                                 "Could not extract signing certificate from APK",
-                                ErrorCode.CERT_METADATA_MISMATCH
+                                ErrorCode.CERT_METADATA_MISMATCH,
+                                "Failed to read signing certificate from downloaded APK.\n\n" +
+                                        "Expected: $expectedHex\nActual: (extraction failed)\n\n" +
+                                        "Device: $androidInfo\n" +
+                                        "Please report this issue."
                         )
                     }
                     return
@@ -831,14 +839,17 @@ class AndroidPackageManagerPlugin :
                 if (!matched) {
                     val actualHex = actualCertHashes.joinToString(", ")
                     val expectedHex = expectedCertHashes.joinToString(", ")
-                    Log.w(TAG, "Cert mismatch for $packageName. Expected: $expectedHex  Actual: $actualHex")
+                    val androidInfo = "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})"
+                    Log.e(TAG, "Cert mismatch for $packageName on $androidInfo. Expected: $expectedHex  Actual: $actualHex")
                     mainHandler.post {
                         emitInstallStatus(
                                 packageName,
                                 InstallStatus.FAILED,
                                 "Certificate mismatch",
                                 ErrorCode.CERT_METADATA_MISMATCH,
-                                "APK signing certificate does not match what the publisher declared.\n\nExpected: $expectedHex\nActual: $actualHex"
+                                "APK signing certificate does not match what the publisher declared.\n\n" +
+                                        "Expected: $expectedHex\nActual: $actualHex\n\n" +
+                                        "Device: $androidInfo"
                         )
                     }
                     return
@@ -1027,23 +1038,6 @@ class AndroidPackageManagerPlugin :
     // SIGNING CERTIFICATE HELPERS
     // ═══════════════════════════════════════════════════════════════════════════════
 
-    /**
-     * Returns the current signing certificates from a [android.content.pm.SigningInfo].
-     *
-     * For multiple v1 signers: returns [apkContentsSigners].
-     * For single signer (v2/v3, with or without key rotation): returns the
-     * newest certificate from [signingCertificateHistory] (last element),
-     * which matches what [apkContentsSigners] returns for APK files.
-     */
-    private fun android.content.pm.SigningInfo.currentSigners(): Array<android.content.pm.Signature> {
-        return if (hasMultipleSigners()) {
-            apkContentsSigners ?: emptyArray()
-        } else {
-            val history = signingCertificateHistory
-            if (history.isNullOrEmpty()) emptyArray() else arrayOf(history.last())
-        }
-    }
-
     private fun android.content.pm.Signature.sha256Hex(): String {
         return MessageDigest.getInstance("SHA-256")
                 .digest(toByteArray())
@@ -1056,6 +1050,11 @@ class AndroidPackageManagerPlugin :
      * Returns SHA-256 hashes of the DER-encoded X.509 certificates (lowercase hex), matching the
      * algorithm used by zsp to produce apk_certificate_hash in NIP-82 SoftwareAsset events.
      *
+     * Uses SigningInfo.apkContentsSigners (API 28+) which returns the current signer for v2/v3
+     * signed APKs (including after key rotation), consistent with apkverifier.PickBestApkCert
+     * used in zsp. Do NOT use signingCertificateHistory here — it can be null or behave
+     * differently across Android versions/OEMs.
+     *
      * Returns null if extraction fails (treat as verification error, not skip).
      */
     private fun extractApkCertHashes(apkPath: String): List<String>? {
@@ -1065,10 +1064,24 @@ class AndroidPackageManagerPlugin :
                             apkPath,
                             PackageManager.GET_SIGNING_CERTIFICATES
                     )
-                            ?: return null
+            if (packageInfo == null) {
+                Log.w(TAG, "extractApkCertHashes: getPackageArchiveInfo returned null for $apkPath")
+                return null
+            }
 
-            val signers = packageInfo.signingInfo?.currentSigners()
-            if (signers.isNullOrEmpty()) return null
+            val signingInfo = packageInfo.signingInfo
+            if (signingInfo == null) {
+                Log.w(TAG, "extractApkCertHashes: signingInfo is null for $apkPath")
+                return null
+            }
+
+            val signers = signingInfo.apkContentsSigners
+            if (signers.isNullOrEmpty()) {
+                Log.w(TAG, "extractApkCertHashes: apkContentsSigners is null/empty for $apkPath " +
+                        "(hasMultipleSigners=${signingInfo.hasMultipleSigners()}, " +
+                        "historySize=${signingInfo.signingCertificateHistory?.size ?: "null"})")
+                return null
+            }
 
             signers.map { it.sha256Hex() }
         } catch (e: Exception) {
@@ -1448,6 +1461,9 @@ class AndroidPackageManagerPlugin :
                                         PackageManager.GET_SIGNING_CERTIFICATES.toLong()
                                 )
                         )
+                    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                        @Suppress("DEPRECATION")
+                        pm.getPackageInfo(packageName, PackageManager.GET_SIGNING_CERTIFICATES)
                     } else {
                         @Suppress("DEPRECATION")
                         pm.getPackageInfo(packageName, PackageManager.GET_SIGNATURES)
@@ -1455,7 +1471,7 @@ class AndroidPackageManagerPlugin :
 
             val signers =
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                        pkgInfo.signingInfo?.currentSigners() ?: emptyArray()
+                        pkgInfo.signingInfo?.apkContentsSigners ?: emptyArray()
                     } else {
                         @Suppress("DEPRECATION") pkgInfo.signatures ?: emptyArray()
                     }
