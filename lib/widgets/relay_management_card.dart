@@ -5,7 +5,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/services/app_restart_service.dart';
 import 'package:zapstore/services/notification_service.dart';
-import 'package:zapstore/services/secure_storage_service.dart';
+import 'package:zapstore/services/settings_service.dart';
 
 /// App Catalog Relay Management Card - manages app catalog relays.
 /// These are relays for discovering apps, NOT social relays like Damus/Primal.
@@ -29,7 +29,7 @@ class RelayManagementCard extends HookConsumerWidget {
 
     // Load local relays once - they only change on app restart
     final localRelaysFuture = useMemoized(
-      () => ref.read(secureStorageServiceProvider).getAppCatalogRelays(),
+      () async => (await ref.read(settingsServiceProvider).load()).appCatalogRelays,
     );
     final localRelaysSnapshot = useFuture(localRelaysFuture);
     final localRelays = localRelaysSnapshot.data?.toList()?..sort();
@@ -154,15 +154,16 @@ class RelayManagementCard extends HookConsumerWidget {
       isApplying.value = true;
 
       try {
-        final secureStorage = ref.read(secureStorageServiceProvider);
+        final settingsService = ref.read(settingsServiceProvider);
         final relaysToSave = displayRelays.toSet();
 
-        // Save to local secure storage
-        await secureStorage.setAppCatalogRelays(relaysToSave);
+        // Save to local settings
+        final updated = await settingsService.update(
+            (s) => s.copyWith(appCatalogRelays: relaysToSave));
 
-        // Verify write succeeded by reading back
-        final verified = await secureStorage.getAppCatalogRelays();
-        if (verified == null || !verified.containsAll(relaysToSave)) {
+        // Verify write succeeded
+        if (updated.appCatalogRelays == null ||
+            !updated.appCatalogRelays!.containsAll(relaysToSave)) {
           throw StateError('Failed to persist relay configuration');
         }
 

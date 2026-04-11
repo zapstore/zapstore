@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:skeletonizer/skeletonizer.dart';
@@ -44,12 +47,17 @@ class AppStackScreen extends HookConsumerWidget {
     final stack = stackState.models.firstOrNull;
 
     if (stack == null) {
-      return Scaffold(
-        body: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: _AppStackSkeleton(),
-        ),
-      );
+      // Still loading — show skeleton
+      if (stackState is StorageLoading) {
+        return Scaffold(
+          body: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: _AppStackSkeleton(),
+          ),
+        );
+      }
+      // Loading complete but stack not found
+      return _NotFoundScaffold(stackId: stackId);
     }
 
     return _AppStackContentWithApps(stack: stack);
@@ -64,10 +72,63 @@ class _AppStackContentWithApps extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final appAddressableIds = stack.event
-        .getTagSetValues('a')
-        .where((id) => id.startsWith('32267:'))
-        .toSet();
+    final isEncrypted = stack.content.isNotEmpty;
+
+    // For encrypted stacks, decrypt content to get app IDs
+    final decryptedAppIds = useState<Set<String>?>(null);
+    final decryptError = useState<String?>(null);
+
+    useEffect(() {
+      if (!isEncrypted) return null;
+
+      Future<void> decrypt() async {
+        final signer = ref.read(Signer.activeSignerProvider);
+        final pubkey = ref.read(Signer.activePubkeyProvider);
+
+        if (signer == null || pubkey == null) {
+          decryptError.value = 'Sign in required to view this stack';
+          return;
+        }
+
+        try {
+          final decrypted = await signer.nip44Decrypt(stack.content, pubkey);
+          final ids = (jsonDecode(decrypted) as List).cast<String>().toSet();
+          decryptedAppIds.value = ids;
+        } catch (e) {
+          decryptError.value = 'Failed to decrypt stack';
+        }
+      }
+
+      decrypt();
+      return null;
+    }, [stack.content]);
+
+    // Handle decrypt error
+    if (decryptError.value != null) {
+      return _AppStackContent(
+        stack: stack,
+        apps: const [],
+        errorMessage: decryptError.value,
+      );
+    }
+
+    // For encrypted stacks, wait for decryption
+    if (isEncrypted && decryptedAppIds.value == null) {
+      return Scaffold(
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: _AppStackSkeleton(),
+        ),
+      );
+    }
+
+    // Get app addressable IDs from either tags (public) or decrypted content (private)
+    final appAddressableIds = isEncrypted
+        ? decryptedAppIds.value!
+        : stack.event
+            .getTagSetValues('a')
+            .where((id) => id.startsWith('32267:'))
+            .toSet();
 
     if (appAddressableIds.isEmpty) {
       return _AppStackContent(stack: stack, apps: const []);
@@ -139,12 +200,58 @@ class _ErrorScaffold extends StatelessWidget {
   }
 }
 
+class _NotFoundScaffold extends StatelessWidget {
+  final String stackId;
+  const _NotFoundScaffold({required this.stackId});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('App Stack')),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.apps_outlined,
+                size: 64,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Stack not found',
+                style: Theme.of(context).textTheme.titleLarge,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'This stack may have been deleted or is not available',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Internal widget that displays stack details
 class _AppStackContent extends HookConsumerWidget {
   final AppStack stack;
   final List<App> apps;
+  final String? errorMessage;
 
-  const _AppStackContent({required this.stack, required this.apps});
+  const _AppStackContent({
+    required this.stack,
+    required this.apps,
+    this.errorMessage,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -211,11 +318,12 @@ class _AppStackContent extends HookConsumerWidget {
                     ...sortedApps.map(
                       (app) => AppCard(app: app, showUpdateArrow: app.hasUpdate),
                     ),
-                  // Comments section
-                  Padding(
-                    padding: const EdgeInsets.only(top: 24),
-                    child: StackCommentsSection(stack: stack),
-                  ),
+                  // Comments section - hidden for private/encrypted stacks
+                  if (stack.content.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 24),
+                      child: StackCommentsSection(stack: stack),
+                    ),
                 ],
               ),
             ),
@@ -261,15 +369,36 @@ class _StackHeader extends StatelessWidget {
   final Profile? author;
   final bool isAuthorLoading;
 
+  bool get _isEncrypted => stack.content.isNotEmpty;
+
   @override
   Widget build(BuildContext context) {
+    final subtitleColor = Theme.of(context).colorScheme.onSurfaceVariant;
+    final subtitleStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: subtitleColor,
+        );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Stack name
-        Text(
-          stack.name ?? stack.identifier,
-          style: context.textTheme.headlineMedium,
+        // Stack name with padlock for private stacks
+        Row(
+          children: [
+            Flexible(
+              child: Text(
+                stack.name ?? stack.identifier,
+                style: context.textTheme.headlineMedium,
+              ),
+            ),
+            if (_isEncrypted) ...[
+              const SizedBox(width: 8),
+              Icon(
+                Icons.lock,
+                size: 20,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+            ],
+          ],
         ),
         const SizedBox(height: 8),
         // Published by author - always show, with fallback to npub
@@ -283,27 +412,34 @@ class _StackHeader extends StatelessWidget {
           onTap: () => pushUser(context, stack.pubkey),
         ),
         const SizedBox(height: 4),
-        // Last updated timestamp
+        // Metadata row: updated timestamp + private indicator
         Row(
           children: [
-            Icon(
-              Icons.update,
-              size: 14,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
+            Icon(Icons.update, size: 14, color: subtitleColor),
             const SizedBox(width: 4),
-            Text(
-              'Updated ',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-            ),
-            TimeAgoText(
-              stack.event.createdAt,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-            ),
+            Text('Updated ', style: subtitleStyle),
+            TimeAgoText(stack.event.createdAt, style: subtitleStyle),
+            if (_isEncrypted) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: subtitleColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.lock_outline, size: 12, color: subtitleColor),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Private',
+                      style: subtitleStyle?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
         if (stack.description case final description?) ...[

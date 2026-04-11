@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:zapstore/services/notification_service.dart';
-import 'package:zapstore/services/secure_storage_service.dart';
+import 'package:zapstore/services/settings_service.dart';
 import 'package:zapstore/theme.dart';
 import 'package:zapstore/utils/extensions.dart';
 
@@ -13,8 +13,8 @@ class NWCConnectionCard extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final hasNwc = ref.watch(hasNwcStringProvider);
-    final connected = hasNwc.maybeWhen(data: (v) => v, orElse: () => false);
+    final settingsAsync = ref.watch(localSettingsProvider);
+    final connected = settingsAsync.valueOrNull?.hasNwcString ?? false;
 
     return Card(
       child: Padding(
@@ -42,7 +42,7 @@ class NWCConnectionCard extends HookConsumerWidget {
             const SizedBox(height: 12),
 
             // Connection Status
-            hasNwc.when(
+            settingsAsync.when(
               loading: () => Row(
                 children: [
                   SizedBox(
@@ -59,7 +59,7 @@ class NWCConnectionCard extends HookConsumerWidget {
                   const Text('Checking wallet connection...'),
                 ],
               ),
-              data: (value) => value
+              data: (settings) => settings.hasNwcString
                   ? Row(
                       children: [
                         Icon(
@@ -159,7 +159,7 @@ class NWCConnectionCard extends HookConsumerWidget {
       builder: (context) => NWCConnectionDialog(ref: ref),
     );
     if (connected == true) {
-      ref.invalidate(hasNwcStringProvider);
+      ref.invalidate(localSettingsProvider);
     }
   }
 
@@ -195,9 +195,10 @@ class NWCConnectionCard extends HookConsumerWidget {
 
     if (confirmed == true) {
       try {
-        final secureStorage = ref.read(secureStorageServiceProvider);
-        await secureStorage.clearNWCString();
-        ref.invalidate(hasNwcStringProvider);
+        await ref
+            .read(settingsServiceProvider)
+            .update((s) => s.copyWith(clearNwc: true));
+        ref.invalidate(localSettingsProvider);
         if (context.mounted) {
           context.showInfo(
             'Wallet disconnected',
@@ -325,8 +326,9 @@ class NWCConnectionDialog extends HookWidget {
     isLoading.value = true;
 
     try {
-      final secureStorage = ref.read(secureStorageServiceProvider);
-      await secureStorage.setNWCString(nwcString.trim());
+      await ref
+          .read(settingsServiceProvider)
+          .update((s) => s.copyWith(nwcConnectionString: nwcString.trim()));
 
       if (context.mounted) {
         Navigator.pop(context, true);

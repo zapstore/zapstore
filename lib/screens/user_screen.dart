@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
+import 'package:zapstore/widgets/common/stack_link_card.dart';
 import 'package:zapstore/utils/extensions.dart';
-import 'package:zapstore/utils/nostr_route.dart';
 import '../theme.dart';
 import '../widgets/common/note_parser.dart';
 import '../widgets/common/profile_identity_row.dart';
@@ -132,7 +132,10 @@ class UserScreen extends HookConsumerWidget {
             SliverList(
               delegate: SliverChildBuilderDelegate((context, index) {
                 final stack = stacks[index];
-                return _StackLinkCard(stack: stack, pubkey: pubkey);
+                return Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: StackLinkCard(stack: stack),
+                );
               }, childCount: stacks.length),
             ),
           ],
@@ -254,65 +257,6 @@ class _UserZapsList extends HookConsumerWidget {
       child: ZappersHorizontalList(
         zaps: allZaps.toList(),
         profilesMap: profilesMap,
-      ),
-    );
-  }
-}
-
-class _StackLinkCard extends StatelessWidget {
-  const _StackLinkCard({required this.stack, required this.pubkey});
-
-  final AppStack stack;
-  final String pubkey;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      child: InkWell(
-        onTap: () => pushStack(
-          context,
-          stack.identifier,
-          author: pubkey,
-          kind: stack.event.kind,
-        ),
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: Theme.of(
-                context,
-              ).colorScheme.outline.withValues(alpha: 0.2),
-            ),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      stack.name ?? stack.identifier,
-                      style: context.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              Icon(
-                Icons.chevron_right,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

@@ -8,7 +8,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/router.dart';
 import 'package:zapstore/services/notification_service.dart';
-import 'package:zapstore/services/secure_storage_service.dart';
+import 'package:zapstore/services/settings_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/auth_widgets.dart';
 import 'package:zapstore/widgets/common/base_dialog.dart';
@@ -242,9 +242,7 @@ class ZapAmountDialog extends HookConsumerWidget {
       ],
     );
     final pubkey = ref.watch(Signer.activePubkeyProvider);
-    final secureStorage = ref.watch(secureStorageServiceProvider);
-    final hasNwc = ref.watch(hasNwcStringProvider);
-    final knownHasNwc = hasNwc.valueOrNull;
+    final settingsService = ref.watch(settingsServiceProvider);
 
     return BaseDialog(
       titleIcon: const Text('⚡️'),
@@ -428,10 +426,9 @@ class ZapAmountDialog extends HookConsumerWidget {
                           await signer.signIn(registerSigner: false);
                         }
 
-                        // Read NWC from secure storage
-                        final nwcString = (knownHasNwc == false)
-                            ? null
-                            : await secureStorage.getNWCString();
+                        // Read NWC from settings
+                        final settings = await settingsService.load();
+                        final nwcString = settings.nwcConnectionString;
 
                         // Build zap request
                         final latestMetadata = app.installable;
@@ -621,7 +618,7 @@ class NWCZapDialog extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final controller = useTextEditingController();
-    final secureStorage = ref.watch(secureStorageServiceProvider);
+    final settingsService = ref.watch(settingsServiceProvider);
 
     return BaseDialog(
       titleIcon: const Text('⚡️'),
@@ -697,8 +694,9 @@ class NWCZapDialog extends HookConsumerWidget {
 
             unawaited(() async {
               try {
-                await secureStorage.setNWCString(nwcString.trim());
-                refAsRef.invalidate(hasNwcStringProvider);
+                await settingsService.update(
+                    (s) => s.copyWith(nwcConnectionString: nwcString.trim()));
+                refAsRef.invalidate(localSettingsProvider);
                 await _executeZapPayment(signedZapRequest, nwcString, refAsRef);
                 if (toastContext != null && toastContext.mounted) {
                   toastContext.showInfo('⚡ Zap sent! $amount sats');

@@ -14,13 +14,12 @@ import 'package:zapstore/services/app_restart_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/main.dart';
-import 'package:zapstore/services/bookmarks_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
-import 'package:zapstore/services/secure_storage_service.dart';
+import 'package:zapstore/services/settings_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/nostr_route.dart';
 import 'package:zapstore/widgets/common/profile_identity_row.dart';
-import 'package:zapstore/widgets/app_card.dart';
+import 'package:zapstore/widgets/common/stack_link_card.dart';
 import 'package:zapstore/theme.dart';
 import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/widgets/common/note_parser.dart';
@@ -42,13 +41,8 @@ class ProfileScreen extends ConsumerWidget {
 
           const SizedBox(height: 24),
 
-          // Saved Apps Heading
-          const _SavedAppsHeading(),
-
-          const SizedBox(height: 16),
-
-          // Saved Apps Section
-          const _SavedAppsSection(),
+          // User Stacks Section (Saved Apps + Installed Apps)
+          const _UserStacksSection(),
 
           const SizedBox(height: 24),
 
@@ -1404,8 +1398,8 @@ class _InstalledAppsBackupToggle extends ConsumerWidget {
     final pubkey = ref.watch(Signer.activePubkeyProvider);
     if (pubkey == null) return const SizedBox.shrink();
 
-    final backupAsync = ref.watch(installedAppsBackupEnabledProvider);
-    final enabled = backupAsync.valueOrNull ?? false;
+    final settingsAsync = ref.watch(localSettingsProvider);
+    final enabled = settingsAsync.valueOrNull?.installedAppsBackupEnabled ?? false;
 
     return SwitchListTile(
       secondary: CircleAvatar(
@@ -1419,9 +1413,9 @@ class _InstalledAppsBackupToggle extends ConsumerWidget {
       contentPadding: EdgeInsets.zero,
       onChanged: (value) async {
         await ref
-            .read(secureStorageServiceProvider)
-            .setInstalledAppsBackupEnabled(value);
-        ref.invalidate(installedAppsBackupEnabledProvider);
+            .read(settingsServiceProvider)
+            .update((s) => s.copyWith(installedAppsBackupEnabled: value));
+        ref.invalidate(localSettingsProvider);
       },
     );
   }
@@ -1551,149 +1545,64 @@ class _DataManagementSection extends ConsumerWidget {
   }
 }
 
-class _SavedAppsHeading extends ConsumerWidget {
-  const _SavedAppsHeading();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
-
-    if (signedInPubkey == null) {
-      return const SizedBox.shrink();
-    }
-
-    // Always show heading when signed in
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-      child: Text('Saved Apps', style: context.textTheme.headlineSmall),
-    );
-  }
-}
-
-class _SavedAppsSection extends ConsumerWidget {
-  const _SavedAppsSection();
+class _UserStacksSection extends ConsumerWidget {
+  const _UserStacksSection();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
     if (signedInPubkey == null) return const SizedBox.shrink();
 
-    final savedAppsAsync = ref.watch(bookmarksProvider);
-
-    // Keep previous value during refresh, if available.
-    final addressableIds = savedAppsAsync.valueOrNull;
-
-    // Show loading only on first load (when no value exists yet).
-    if (addressableIds == null) {
-      return _savedAppsLoadingCard(context);
-    }
-
-    final identifiers = _toIdentifiers(addressableIds);
-    return _SavedAppsList(identifiers: identifiers);
-  }
-
-  Set<String> _toIdentifiers(Set<String> addressableIds) {
-    return addressableIds
-        .map((id) => id.split(':'))
-        .where((parts) => parts.length >= 3)
-        .map((parts) => parts[2])
-        .toSet();
-  }
-
-  Widget _savedAppsLoadingCard(BuildContext context) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Center(
-        child: CircularProgressIndicator(
-          color: Theme.of(context).colorScheme.primary,
-        ),
-      ),
-    ),
-  );
-}
-
-class _SavedAppsList extends ConsumerWidget {
-  const _SavedAppsList({required this.identifiers});
-
-  final Set<String> identifiers;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // No bookmarks saved - show empty state without querying
-    if (identifiers.isEmpty) {
-      return _emptyState(context);
-    }
-
-    final savedAppsState = ref.watch(
-      query<App>(
-        tags: {'#d': identifiers},
-        and: (app) => {
-          app.latestAsset.query(),
-          app.latestRelease.query(
-            and: (release) => {release.latestMetadata.query()},
-          ),
-        },
+    // Query for ALL user's stacks (we'll filter to encrypted ones)
+    final stacksState = ref.watch(
+      query<AppStack>(
+        authors: {signedInPubkey},
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
-        subscriptionPrefix: 'app-profile-saved-apps',
+        subscriptionPrefix: 'app-profile-user-stacks',
       ),
     );
 
-    final isLoading = savedAppsState is StorageLoading;
+    // Filter to only encrypted (private) stacks
+    final privateStacks = stacksState.models
+        .where((s) => s.content.isNotEmpty)
+        .toList();
 
-    final savedApps = savedAppsState.models.toList()
-      ..sort(
-        (a, b) => (a.name ?? a.identifier).toLowerCase().compareTo(
-          (b.name ?? b.identifier).toLowerCase(),
-        ),
-      );
-
-    // Show spinner only when we truly have nothing to render yet
-    // If we're refreshing but still have models, keep showing the list
-    if (isLoading && savedApps.isEmpty) {
-      return _loadingCard(context);
+    // Don't show section if no private stacks exist
+    if (privateStacks.isEmpty) {
+      return const SizedBox.shrink();
     }
 
-    if (savedApps.isEmpty) {
-      return _emptyState(context);
-    }
+    // Sort: Saved Apps first, then Installed Apps, then others alphabetically
+    privateStacks.sort((a, b) {
+      if (a.identifier == kAppBookmarksIdentifier) return -1;
+      if (b.identifier == kAppBookmarksIdentifier) return 1;
+      if (a.identifier == kInstalledAppsBackupIdentifier) return -1;
+      if (b.identifier == kInstalledAppsBackupIdentifier) return 1;
+      return (a.name ?? a.identifier).compareTo(b.name ?? b.identifier);
+    });
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            for (final app in savedApps)
-              AppCard(app: app, showUpdateArrow: false, showDescription: false),
-          ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          child: Text('Your Private Stacks', style: context.textTheme.headlineSmall),
         ),
-      ),
-    );
-  }
-
-  Widget _loadingCard(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Center(
-          child: CircularProgressIndicator(
-            color: Theme.of(context).colorScheme.primary,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _emptyState(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Text(
-        'No saved apps yet',
-        style: theme.textTheme.bodyMedium?.copyWith(
-          color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
-        ),
-      ),
+        const SizedBox(height: 16),
+        ...privateStacks.asMap().entries.map((entry) {
+          final index = entry.key;
+          final stack = entry.value;
+          final displayName = stack.identifier == kAppBookmarksIdentifier
+              ? 'Saved Apps'
+              : stack.identifier == kInstalledAppsBackupIdentifier
+                  ? 'Installed Apps'
+                  : null;
+          return Padding(
+            padding: EdgeInsets.only(top: index > 0 ? 8 : 0),
+            child: StackLinkCard(stack: stack, displayName: displayName),
+          );
+        }),
+      ],
     );
   }
 }

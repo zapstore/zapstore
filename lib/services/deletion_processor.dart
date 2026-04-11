@@ -1,7 +1,7 @@
 import 'package:models/models.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/constants/app_constants.dart';
-import 'package:zapstore/services/secure_storage_service.dart';
+import 'package:zapstore/services/settings_service.dart';
 
 /// Fetches NIP-09 kind-5 deletion events from the AppCatalog relay since the
 /// last sync cursor, applies them to local storage, and advances the cursor.
@@ -15,14 +15,16 @@ import 'package:zapstore/services/secure_storage_service.dart';
 /// original author — those targets are deleted explicitly here.
 Future<void> processDeletions({
   required PurplebaseStorageNotifier storage,
-  required SecureStorageService secureStorage,
+  required SettingsService settingsService,
   required String subscriptionPrefix,
 }) async {
-  final lastSync = await secureStorage.getDeletionsSyncedUntil();
+  final settings = await settingsService.load();
+  final lastSync = settings.deletionSyncedUntil;
 
   // First run: no local data to delete, just seed the cursor.
   if (lastSync == null) {
-    await secureStorage.setDeletionsSyncedUntil(DateTime.now());
+    await settingsService.update(
+        (s) => s.copyWith(deletionSyncedUntil: DateTime.now()));
     return;
   }
 
@@ -35,7 +37,8 @@ Future<void> processDeletions({
     subscriptionPrefix: subscriptionPrefix,
   );
 
-  await secureStorage.setDeletionsSyncedUntil(DateTime.now());
+  await settingsService.update(
+      (s) => s.copyWith(deletionSyncedUntil: DateTime.now()));
 
   if (deletionRequests.isEmpty) return;
 

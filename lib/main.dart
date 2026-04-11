@@ -14,7 +14,7 @@ import 'package:amber_signer/amber_signer.dart';
 import 'package:zapstore/services/app_restart_service.dart';
 import 'package:zapstore/services/background_update_service.dart';
 import 'package:zapstore/services/notification_service.dart';
-import 'package:zapstore/services/secure_storage_service.dart';
+import 'package:zapstore/services/settings_service.dart';
 import 'package:zapstore/router.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/theme.dart';
@@ -242,9 +242,8 @@ final appInitializationProvider = FutureProvider<void>((ref) async {
 
   // Load local relay config BEFORE storage init
   // This ensures custom relays work even when signed out
-  final secureStorage = ref.read(secureStorageServiceProvider);
-  final localRelays = await secureStorage.getAppCatalogRelays();
-  final appCatalogRelays = localRelays ?? {_kDefaultAppCatalogRelay};
+  final settings = await ref.read(settingsServiceProvider).load();
+  final appCatalogRelays = settings.appCatalogRelays ?? {_kDefaultAppCatalogRelay};
 
   // Initialize storage with local relay config
   await ref.read(
@@ -275,7 +274,9 @@ final appInitializationProvider = FutureProvider<void>((ref) async {
   await DeviceCapabilitiesCache.initialize();
 
   // Record app open time for background notification throttling
-  await secureStorage.setLastAppOpenedTime(DateTime.now());
+  await ref.read(settingsServiceProvider).update(
+        (s) => s.copyWith(lastAppOpened: DateTime.now()),
+      );
 
   // Ensure installed packages are available before anything categorizes
   final packageManager = ref.read(packageManagerProvider.notifier);
@@ -303,10 +304,10 @@ Future<void> _maybeCopySeedDatabase(String dbPath) async {
   final dbFile = File(dbPath);
   if (dbFile.existsSync()) return;
 
-  final customRelays = await SecureStorageService().getAppCatalogRelays();
-  final isDefault = customRelays == null ||
-      (customRelays.length == 1 &&
-          customRelays.contains(_kDefaultAppCatalogRelay));
+  final settings = await SettingsService().load();
+  final isDefault = settings.appCatalogRelays == null ||
+      (settings.appCatalogRelays!.length == 1 &&
+          settings.appCatalogRelays!.contains(_kDefaultAppCatalogRelay));
   if (!isDefault) return;
 
   try {
@@ -402,7 +403,6 @@ class _AppLifecycleObserver with WidgetsBindingObserver {
   /// Record that the user opened the app.
   /// This is used to check inactivity for background notifications.
   Future<void> _recordAppOpened() async {
-    final secureStorage = SecureStorageService();
-    await secureStorage.setLastAppOpenedTime(DateTime.now());
+    await SettingsService().update((s) => s.copyWith(lastAppOpened: DateTime.now()));
   }
 }

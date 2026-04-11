@@ -8,7 +8,7 @@ import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/services/catalog_fetcher.dart';
 import 'package:zapstore/services/deletion_processor.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
-import 'package:zapstore/services/secure_storage_service.dart';
+import 'package:zapstore/services/settings_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 
 /// How often to poll for updates from remote relays
@@ -160,7 +160,7 @@ class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
       ),
       processDeletions(
         storage: storage,
-        secureStorage: ref.read(secureStorageServiceProvider),
+        settingsService: ref.read(settingsServiceProvider),
         subscriptionPrefix: 'app-deletions-poll',
       ),
     ]);
@@ -195,10 +195,8 @@ class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
     final pubkey = ref.read(Signer.activePubkeyProvider);
     if (pubkey == null) return;
 
-    final enabled = await ref
-        .read(secureStorageServiceProvider)
-        .isInstalledAppsBackupEnabled();
-    if (!enabled) return;
+    final settings = await ref.read(settingsServiceProvider).load();
+    if (!settings.installedAppsBackupEnabled) return;
 
     final signer = ref.read(Signer.activeSignerProvider)!;
     final pmNotifier = ref.read(packageManagerProvider.notifier);

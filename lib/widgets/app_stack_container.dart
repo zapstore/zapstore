@@ -25,17 +25,17 @@ Set<String> getRawAppTagValues(AppStack stack) {
 /// Helper to compute preview app addressable IDs for a stack (3 apps max).
 /// Returns full addressable IDs (e.g. '32267:pubkey:identifier').
 List<String> getPreviewAddressableIds(AppStack stack) {
-  final rawTags = getRawAppTagValues(stack)
-      .where((id) => id.startsWith('32267:'))
-      .toList()
-    ..shuffle(Random(stack.id.hashCode));
+  final rawTags =
+      getRawAppTagValues(stack).where((id) => id.startsWith('32267:')).toList()
+        ..shuffle(Random(stack.id.hashCode));
   return rawTags.take(3).toList();
 }
 
 /// Decompose addressable IDs (e.g. '32267:pubkey:identifier') into
 /// the sets of authors and identifiers needed for a query filter.
 ({Set<String> authors, Set<String> identifiers}) decomposeAddressableIds(
-    Iterable<String> addressableIds) {
+  Iterable<String> addressableIds,
+) {
   final authors = <String>{};
   final identifiers = <String>{};
   for (final id in addressableIds) {
@@ -85,7 +85,7 @@ class AppStackContainer extends HookConsumerWidget {
         tags: {
           '#f': {platform},
         },
-        source: const LocalAndRemoteSource(relays: 'AppCatalog'),
+        source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
         subscriptionPrefix: 'app-stack',
         schemaFilter: appStackEventFilter,
       ),
@@ -133,8 +133,7 @@ class AppStackContainer extends HookConsumerWidget {
         : null;
 
     final appsMap = {
-      for (final app in previewAppsState?.models ?? <App>[])
-        app.id: app,
+      for (final app in previewAppsState?.models ?? <App>[]) app.id: app,
     };
 
     // Infinite horizontal scroll: load more when near end
@@ -393,23 +392,26 @@ class StackCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Builder(builder: (context) {
-              final titleStyle = context.textTheme.titleMedium?.copyWith(
-                fontFamily: 'Inter',
-                fontSize:
-                    (context.textTheme.titleMedium?.fontSize ?? 16) * 0.9,
-              );
-              final lineHeight = (titleStyle?.fontSize ?? 14.4) *
-                  (titleStyle?.height ?? 1.2);
-              return SizedBox(
-                height: lineHeight * 2,
-                child: _FadingText(
-                  stack.name ?? stack.identifier,
-                  style: titleStyle,
-                  maxLines: 2,
-                ),
-              );
-            }),
+            Builder(
+              builder: (context) {
+                final titleStyle = context.textTheme.titleMedium?.copyWith(
+                  fontFamily: 'Inter',
+                  fontSize:
+                      (context.textTheme.titleMedium?.fontSize ?? 16) * 0.9,
+                );
+                final lineHeight =
+                    (titleStyle?.fontSize ?? 14.4) *
+                    (titleStyle?.height ?? 1.2);
+                return SizedBox(
+                  height: lineHeight * 2,
+                  child: _FadingText(
+                    stack.name ?? stack.identifier,
+                    style: titleStyle,
+                    maxLines: 2,
+                  ),
+                );
+              },
+            ),
             if (showAuthor) ...[
               const SizedBox(height: 6),
               Row(

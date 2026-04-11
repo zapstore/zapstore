@@ -18,7 +18,7 @@ import 'package:zapstore/services/package_manager/background_package_manager.dar
 import 'package:zapstore/services/package_manager/dummy_package_manager.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/services/catalog_fetcher.dart';
-import 'package:zapstore/services/secure_storage_service.dart';
+import 'package:zapstore/services/settings_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 
 /// Unique task name for background update checking
@@ -234,17 +234,17 @@ Future<void> _showUpdateNotificationIfNeeded(
   List<App> updates,
   Map<String, Installable> installables,
 ) async {
-  final secureStorage = SecureStorageService();
+  final settingsService = SettingsService();
+  final settings = await settingsService.load();
 
   // Skip if user recently opened the app
-  final lastOpened = await secureStorage.getLastAppOpenedTime();
-  if (lastOpened != null &&
-      DateTime.now().difference(lastOpened) < _inactivityThreshold) {
+  if (settings.lastAppOpened != null &&
+      DateTime.now().difference(settings.lastAppOpened!) < _inactivityThreshold) {
     return;
   }
 
   // Get the "seen until" timestamp - updates with createdAt > this are new
-  final seenUntil = await secureStorage.getSeenUntil();
+  final seenUntil = settings.seenUntil;
 
   // Filter to only updates that are genuinely new:
   // - installable.createdAt > seenUntil (not already notified via background)
@@ -261,7 +261,7 @@ Future<void> _showUpdateNotificationIfNeeded(
     }
 
     // Must be newer than last app open (if any) - user may have seen it in UI
-    if (lastOpened != null && !releaseTime.isAfter(lastOpened)) {
+    if (settings.lastAppOpened != null && !releaseTime.isAfter(settings.lastAppOpened!)) {
       return false;
     }
 
@@ -307,7 +307,7 @@ Future<void> _showUpdateNotificationIfNeeded(
   );
 
   // Update seenUntil to now - future checks will only notify about releases after this
-  await secureStorage.setSeenUntil(DateTime.now());
+  await settingsService.update((s) => s.copyWith(seenUntil: DateTime.now()));
 }
 
 /// Service for managing background update checks
