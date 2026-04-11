@@ -77,8 +77,8 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
     _sub?.close();
     _sub = ref.listen(
       query<Release>(
-        tags: {'#f': {'android-arm64-v8a'}},
         limit: _kPageSize,
+        where: (r) => r.event.getTagSetValues('f').contains('android-arm64-v8a'),
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: true),
         subscriptionPrefix: 'app-latest-releases',
       ),
@@ -122,25 +122,25 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
     try {
       final storage = ref.read(storageNotifierProvider.notifier);
       final releases = await storage.query(
-        RequestFilter<Release>(
-          tags: {'#f': {'android-arm64-v8a'}},
-          until: oldest,
-          limit: _kPageSize,
-        ).toRequest(),
+        RequestFilter<Release>(until: oldest, limit: _kPageSize).toRequest(),
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
         subscriptionPrefix: 'app-latest-releases-older',
       );
 
-      if (releases.isEmpty) {
+      final filtered = releases
+          .where((r) => r.event.getTagSetValues('f').contains('android-arm64-v8a'))
+          .toList();
+
+      if (filtered.isEmpty) {
         state = state.copyWith(isLoadingMore: false, hasMore: false);
         return;
       }
 
-      final apps = await _resolveRelated(releases);
+      final apps = await _resolveRelated(filtered);
 
       final existingIds = all.map((r) => r.id).toSet();
       final unique =
-          releases.where((r) => !existingIds.contains(r.id)).toList();
+          filtered.where((r) => !existingIds.contains(r.id)).toList();
       state = state.copyWith(
         olderPages: [...state.olderPages, ...unique],
         appsByIdentifier: {...state.appsByIdentifier, ...apps},
