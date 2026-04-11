@@ -31,12 +31,12 @@ class LatestReleasesState {
   });
 
   factory LatestReleasesState.loading() => const LatestReleasesState(
-        firstPage: [],
-        olderPages: [],
-        appsByIdentifier: {},
-        isLoadingMore: false,
-        hasMore: true,
-      );
+    firstPage: [],
+    olderPages: [],
+    appsByIdentifier: {},
+    isLoadingMore: false,
+    hasMore: true,
+  );
 
   bool get isLoading =>
       firstPage.isEmpty && olderPages.isEmpty && error == null;
@@ -50,15 +50,14 @@ class LatestReleasesState {
     bool? isLoadingMore,
     bool? hasMore,
     Object? error,
-  }) =>
-      LatestReleasesState(
-        firstPage: firstPage ?? this.firstPage,
-        olderPages: olderPages ?? this.olderPages,
-        appsByIdentifier: appsByIdentifier ?? this.appsByIdentifier,
-        isLoadingMore: isLoadingMore ?? this.isLoadingMore,
-        hasMore: hasMore ?? this.hasMore,
-        error: error,
-      );
+  }) => LatestReleasesState(
+    firstPage: firstPage ?? this.firstPage,
+    olderPages: olderPages ?? this.olderPages,
+    appsByIdentifier: appsByIdentifier ?? this.appsByIdentifier,
+    isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+    hasMore: hasMore ?? this.hasMore,
+    error: error,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -78,18 +77,19 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
     _sub = ref.listen(
       query<Release>(
         limit: _kPageSize,
-        where: (r) => r.event.getTagSetValues('f').contains('android-arm64-v8a'),
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: true),
         subscriptionPrefix: 'app-latest-releases',
       ),
       (_, next) async {
         if (next is StorageData<Release>) {
           final liveIds = next.models.map((r) => r.id).toSet();
-          final filteredOlder =
-              state.olderPages.where((r) => !liveIds.contains(r.id)).toList();
+          final filteredOlder = state.olderPages
+              .where((r) => !liveIds.contains(r.id))
+              .toList();
           final unresolved = next.models
-              .where((r) =>
-                  !state.appsByIdentifier.containsKey(r.appIdentifier))
+              .where(
+                (r) => !state.appsByIdentifier.containsKey(r.appIdentifier),
+              )
               .toList();
           final apps = await _resolveRelated(unresolved);
           if (mounted) {
@@ -127,20 +127,17 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
         subscriptionPrefix: 'app-latest-releases-older',
       );
 
-      final filtered = releases
-          .where((r) => r.event.getTagSetValues('f').contains('android-arm64-v8a'))
-          .toList();
-
-      if (filtered.isEmpty) {
+      if (releases.isEmpty) {
         state = state.copyWith(isLoadingMore: false, hasMore: false);
         return;
       }
 
-      final apps = await _resolveRelated(filtered);
+      final apps = await _resolveRelated(releases);
 
       final existingIds = all.map((r) => r.id).toSet();
-      final unique =
-          filtered.where((r) => !existingIds.contains(r.id)).toList();
+      final unique = releases
+          .where((r) => !existingIds.contains(r.id))
+          .toList();
       state = state.copyWith(
         olderPages: [...state.olderPages, ...unique],
         appsByIdentifier: {...state.appsByIdentifier, ...apps},
@@ -158,8 +155,9 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
     if (releases.isEmpty) return const {};
     final storage = ref.read(storageNotifierProvider.notifier);
 
-    final assetIds =
-        releases.expand((r) => r.event.getTagSetValues('e')).toSet();
+    final assetIds = releases
+        .expand((r) => r.event.getTagSetValues('e'))
+        .toSet();
     final appIds = releases
         .map((r) => r.appIdentifier)
         .where((id) => id.isNotEmpty)
@@ -170,7 +168,9 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
         storage.query(
           RequestFilter<SoftwareAsset>(
             ids: assetIds,
-            tags: {'#f': {'android-arm64-v8a'}},
+            tags: {
+              '#f': {'android-arm64-v8a'},
+            },
           ).toRequest(),
           source: const LocalAndRemoteSource(
             relays: 'AppCatalog',
@@ -180,9 +180,7 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
         ),
       if (appIds.isNotEmpty)
         storage.query(
-          RequestFilter<App>(
-            tags: {'#d': appIds, '#f': {'android-arm64-v8a'}},
-          ).toRequest(),
+          RequestFilter<App>(tags: {'#d': appIds}).toRequest(),
           source: const LocalAndRemoteSource(
             relays: 'AppCatalog',
             stream: false,
@@ -194,11 +192,19 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
     if (appIds.isEmpty) return const {};
 
     final apps = appIds
-        .expand((id) => storage.querySync(
-              RequestFilter<App>(tags: {'#d': {id}}, limit: 1).toRequest(),
-            ))
+        .expand(
+          (id) => storage.querySync(
+            RequestFilter<App>(
+              tags: {
+                '#d': {id},
+              },
+              limit: 1,
+            ).toRequest(),
+          ),
+        )
         .cast<App>()
         .toList();
+    '${apps.map((a) => a.identifier).toList()}';
     await loadAuthors(storage, apps, 'app-latest-releases-authors');
 
     return {for (final app in apps) app.identifier: app};
@@ -213,8 +219,8 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
 
 final latestReleasesProvider =
     StateNotifierProvider<LatestReleasesNotifier, LatestReleasesState>((ref) {
-  return LatestReleasesNotifier(ref);
-});
+      return LatestReleasesNotifier(ref);
+    });
 
 // ---------------------------------------------------------------------------
 // Widget
@@ -264,6 +270,7 @@ class LatestReleasesContainer extends HookConsumerWidget {
           ref.read(latestReleasesProvider.notifier).loadMore();
         }
       }
+
       scrollController.addListener(onScroll);
       return () => scrollController.removeListener(onScroll);
     }, [scrollController, state]);
@@ -288,7 +295,13 @@ class LatestReleasesContainer extends HookConsumerWidget {
           if (state.isLoadingMore)
             const Padding(
               padding: EdgeInsets.all(16.0),
-              child: Center(child: CircularProgressIndicator()),
+              child: Center(
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 5),
+                ),
+              ),
             ),
         ],
         const SizedBox(height: 24),
@@ -313,10 +326,9 @@ class LatestReleasesContainer extends HookConsumerWidget {
             child: Text(
               'LATEST RELEASES',
               style: context.textTheme.labelLarge?.copyWith(
-                color: Theme.of(context)
-                    .colorScheme
-                    .onSurface
-                    .withValues(alpha: 0.85),
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.85),
                 letterSpacing: 1.5,
                 fontWeight: FontWeight.bold,
               ),
