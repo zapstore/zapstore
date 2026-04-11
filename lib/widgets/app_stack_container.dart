@@ -392,25 +392,13 @@ class StackCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Builder(
-              builder: (context) {
-                final titleStyle = context.textTheme.titleMedium?.copyWith(
-                  fontFamily: 'Inter',
-                  fontSize:
-                      (context.textTheme.titleMedium?.fontSize ?? 16) * 0.9,
-                );
-                final lineHeight =
-                    (titleStyle?.fontSize ?? 14.4) *
-                    (titleStyle?.height ?? 1.2);
-                return SizedBox(
-                  height: lineHeight * 2,
-                  child: _FadingText(
-                    stack.name ?? stack.identifier,
-                    style: titleStyle,
-                    maxLines: 2,
-                  ),
-                );
-              },
+            _FadingText(
+              stack.name ?? stack.identifier,
+              style: context.textTheme.titleMedium?.copyWith(
+                fontFamily: 'Inter',
+                fontSize: (context.textTheme.titleMedium?.fontSize ?? 16) * 0.9,
+              ),
+              maxLines: 2,
             ),
             if (showAuthor) ...[
               const SizedBox(height: 6),

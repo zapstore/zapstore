@@ -271,6 +271,18 @@ class LatestReleasesContainer extends HookConsumerWidget {
         }
       }
 
+      void checkInitialLoad() {
+        if (!scrollController.hasClients) return;
+        final position = scrollController.position;
+        final s = ref.read(latestReleasesProvider);
+        if (s.isLoadingMore || !s.hasMore) return;
+        if (position.maxScrollExtent <= position.viewportDimension) {
+          ref.read(latestReleasesProvider.notifier).loadMore();
+        }
+      }
+
+      WidgetsBinding.instance.addPostFrameCallback((_) => checkInitialLoad());
+
       scrollController.addListener(onScroll);
       return () => scrollController.removeListener(onScroll);
     }, [scrollController, state]);
