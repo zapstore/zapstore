@@ -3,6 +3,60 @@ import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/constants/app_constants.dart';
 import 'package:zapstore/services/settings_service.dart';
 
+/// Deletes events by their coordinates (a tags: kind:pubkey:d-tag).
+///
+/// For authority deletions, ignores the pubkey in the coordinate and deletes
+/// ANY event matching the kind and d-tag, regardless of author.
+/// Queries for events matching the coordinates and deletes them by ID.
+Future<void> _deleteByCoordinates(
+  PurplebaseStorageNotifier storage,
+  Set<String> coordinates,
+) async {
+  if (coordinates.isEmpty) return;
+
+  // Parse coordinates and build filters
+  final filters = <RequestFilter<Model>>[];
+  for (final coord in coordinates) {
+    final parts = coord.split(':');
+    if (parts.length < 2) continue;
+
+    final kind = int.tryParse(parts[0]);
+    if (kind == null) continue;
+
+    // For authority deletions, we ignore the pubkey in the coordinate
+    // and delete ANY event with matching kind and d-tag
+
+    if (parts.length >= 3 && parts[2].isNotEmpty) {
+      // Parameterized replaceable event with d-tag
+      // NOTE: No authors filter - delete regardless of who published it
+      filters.add(RequestFilter<Model>(
+        kinds: {kind},
+        tags: {'#d': {parts[2]}},
+      ));
+    } else {
+      // Replaceable event without d-tag
+      // NOTE: No authors filter - delete regardless of who published it
+      filters.add(RequestFilter<Model>(
+        kinds: {kind},
+      ));
+    }
+  }
+
+  if (filters.isEmpty) return;
+
+  // Query for matching events
+  final events = await storage.query(
+    Request(filters),
+    source: const LocalSource(),
+  );
+
+  // Delete by event IDs
+  final eventIds = events.map((e) => e.id).toSet();
+  if (eventIds.isNotEmpty) {
+    await storage.delete(eventIds);
+  }
+}
+
 /// Fetches NIP-09 kind-5 deletion events from the AppCatalog relay since the
 /// last sync cursor, applies them to local storage, and advances the cursor.
 ///
@@ -43,15 +97,25 @@ Future<void> processDeletions({
   if (deletionRequests.isEmpty) return;
 
   const trustedAuthorities = {kZapstorePubkey, kZapstoreCommunityPubkey};
-  final authorityTargetIds = deletionRequests
+  final authorityDeletions = deletionRequests
       .where((dr) => trustedAuthorities.contains(dr.event.pubkey))
+      .toList();
+
+  final authorityTargetIds = authorityDeletions
       .expand((dr) => dr.deletedEventIds)
+      .toSet();
+
+  final authorityTargetCoordinates = authorityDeletions
+      .expand((dr) => dr.event.getTagSetValues('a'))
       .toSet();
 
   try {
     await storage.delete(deletionRequests.map((d) => d.id).toSet());
     if (authorityTargetIds.isNotEmpty) {
       await storage.delete(authorityTargetIds);
+    }
+    if (authorityTargetCoordinates.isNotEmpty) {
+      await _deleteByCoordinates(storage, authorityTargetCoordinates);
     }
   } catch (_) {
     // Orphaned kind-5 rows are harmless; referenced events are
