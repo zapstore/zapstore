@@ -1404,11 +1404,16 @@ class _InstalledAppsBackupToggle extends ConsumerWidget {
     return SwitchListTile(
       secondary: CircleAvatar(
         radius: 18,
-        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-        child: Icon(Icons.backup, color: Theme.of(context).colorScheme.primary),
+        backgroundColor: Theme.of(
+          context,
+        ).colorScheme.primary.withValues(alpha: 0.12),
+        child: Icon(
+          Icons.cloud_upload,
+          color: Theme.of(context).colorScheme.primary,
+          size: 20,
+        ),
       ),
       title: const Text('Back up installed apps'),
-      subtitle: const Text('Encrypted backup to Nostr relays'),
       value: enabled,
       contentPadding: EdgeInsets.zero,
       onChanged: (value) async {
