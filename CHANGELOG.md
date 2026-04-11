@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.5] - 2026-04-11
+
+### Changed
+
+- Certificate verification errors now include Android version/API level and clearer expected vs actual hash details for troubleshooting
+- Profile: refreshed icon and styling for the "Back up installed apps" setting
+
+### Fixed
+
+- APK signing certificate verification reads the current signer in a way that matches publisher-declared hashes across more Android versions and OEM builds
+- Catalog authority deletions (NIP-09): kind-5 events that reference replaceable coordinates via `a` tags now remove matching local events, not only explicit event IDs
+- Stack cards: title area no longer reserves fixed two-line height when the name is shorter
+- Latest releases: load the next page when the first page does not fill the viewport (short list / search context)
+
 ## [1.0.4] - 2026-04-10
 
 ### Added
