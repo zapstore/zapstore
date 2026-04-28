@@ -29,7 +29,7 @@ dependencies:
   easy_image_viewer: ^1.5.1
   models: ^0.3.0
   purplebase: ^0.3.0
-  amber_signer: ^0.1.0
+  amber_signer: ^0.4.0
   hooks_riverpod: ^2.6.1
   path: ^1.9.1
   any_link_preview: ^3.0.3
@@ -72,7 +72,7 @@ dependency_overrides:
     # path: ../../purplebase/amber_signer
     git:
       url: https://github.com/purplebase/amber_signer
-      ref: fada4bc3be275fcef4f078af0e71abafb4a9cad0
+      ref: 4bfc41d612d6d847c3be8f899fb2b2a1c09282a6
 
 dev_dependencies:
   flutter_test:
