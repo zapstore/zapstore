@@ -726,6 +726,10 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
           '${appId}_${DateTime.now().millisecondsSinceEpoch}_${UniqueKey()}',
       url: downloadUrl,
       filename: fileName,
+      headers: {
+        'X-Zapstore-Client': 'app',
+        'X-Zapstore-Download-Type': hasUpdate(appId, target) ? 'update' : 'install',
+      },
       updates: Updates.statusAndProgress,
       requiresWiFi: false,
       retries: 10,
