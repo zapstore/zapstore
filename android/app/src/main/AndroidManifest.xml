@@ -44,15 +44,42 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
 
-            <!-- App Links for https://zapstore.dev/apps/... -->
+            <!-- App Links for https://zapstore.dev/{apps,stacks}/...
+                 Scoped narrowly so unrelated paths (e.g. /about, /blog,
+                 /applications) are NOT claimed and stay in the browser.
+                 NOTE: Android intent filters cannot match query strings;
+                 anything matching these paths is delivered to the app
+                 regardless of `?…`, and resolved at runtime by
+                 `resolveDeepLinkPath`. -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
+                <!-- /apps  (exact, for /apps?q=… search deep links) -->
                 <data
                     android:scheme="https"
                     android:host="zapstore.dev"
-                    android:pathPrefix="/apps" />
+                    android:path="/apps" />
+                <!-- /apps/<id>  (trailing slash avoids the /applications footgun) -->
+                <data
+                    android:scheme="https"
+                    android:host="zapstore.dev"
+                    android:pathPrefix="/apps/" />
+                <!-- /stacks  (exact, browse all stacks) -->
+                <data
+                    android:scheme="https"
+                    android:host="zapstore.dev"
+                    android:path="/stacks" />
+                <!-- /stacks/<id> -->
+                <data
+                    android:scheme="https"
+                    android:host="zapstore.dev"
+                    android:pathPrefix="/stacks/" />
+                <!-- /profile/<npub>  (user profile pages) -->
+                <data
+                    android:scheme="https"
+                    android:host="zapstore.dev"
+                    android:pathPrefix="/profile/" />
             </intent-filter>
 
             <!-- Handle market:// URIs (e.g., market://details?id=com.example.app) -->

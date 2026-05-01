@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
+import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/utils/nostr_route.dart';
@@ -21,6 +22,22 @@ class SearchScreen extends HookConsumerWidget {
     final scrollController = useScrollController();
     final searchFocusNode = useFocusNode();
     final searchQuery = useState<String>('');
+
+    // Seed search from `/search?q=...` deep links. Re-runs whenever the
+    // route's `q` parameter changes; in-screen edits don't change the URL,
+    // so they are not clobbered by this effect.
+    final routeQuery =
+        GoRouterState.of(context).uri.queryParameters['q']?.trim() ?? '';
+    useEffect(() {
+      if (routeQuery.isNotEmpty) {
+        searchController.text = routeQuery;
+        searchController.selection = TextSelection.collapsed(
+          offset: routeQuery.length,
+        );
+        searchQuery.value = routeQuery;
+      }
+      return null;
+    }, [routeQuery]);
 
     // Skeleton unlocks as soon as local storage is usable. Gating on
     // `appInitializationProvider` would wait on the full init chain
