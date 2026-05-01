@@ -55,6 +55,7 @@ class UpdatePollerState {
     this.lastCheckTime,
     this.lastError,
     this.catalogedIds = const {},
+    this.hasHydrated = false,
   });
 
   final bool isChecking;
@@ -65,18 +66,26 @@ class UpdatePollerState {
   /// to know which installed apps to query (with relationships) from local DB.
   final Set<String> catalogedIds;
 
+  /// True once the local DB has been scanned at least once (via
+  /// [UpdatePollerNotifier.refreshFromLocal] or a successful remote check).
+  /// UI gates its skeleton on this — NOT on [lastCheckTime] — so the list
+  /// renders from local data without waiting on the network.
+  final bool hasHydrated;
+
   UpdatePollerState copyWith({
     bool? isChecking,
     DateTime? lastCheckTime,
     String? lastError,
     bool clearError = false,
     Set<String>? catalogedIds,
+    bool? hasHydrated,
   }) {
     return UpdatePollerState(
       isChecking: isChecking ?? this.isChecking,
       lastCheckTime: lastCheckTime ?? this.lastCheckTime,
       lastError: clearError ? null : (lastError ?? this.lastError),
       catalogedIds: catalogedIds ?? this.catalogedIds,
+      hasHydrated: hasHydrated ?? this.hasHydrated,
     );
   }
 }
@@ -95,17 +104,43 @@ class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
   List<String> _lastBackedUpIds = [];
 
   void _init() {
-    ref.listen<AsyncValue<void>>(appInitializationProvider, (prev, next) {
+    // Hydrate from local storage as soon as SQLite is ready — no network.
+    // This populates `catalogedIds` and flips `hasHydrated`, unblocking the
+    // Updates screen UI without waiting on any remote poll.
+    ref.listen<AsyncValue<void>>(storageReadyProvider, (prev, next) {
       if (prev is! AsyncData && next is AsyncData) {
-        _startPolling();
+        unawaited(_hydrateAndStartPolling());
       }
     }, fireImmediately: true);
+  }
+
+  Future<void> _hydrateAndStartPolling() async {
+    // Ensure we know what's installed before categorizing. `syncInstalledPackages`
+    // is a local native call — safe offline.
+    try {
+      await ref.read(packageManagerProvider.notifier).syncInstalledPackages();
+    } catch (e, st) {
+      LogService.I.debug(
+        'initial package sync failed',
+        tag: 'updates',
+        err: e,
+        stack: st,
+      );
+    }
+
+    // Local-only hydration. Sets `hasHydrated: true` so the UI renders.
+    await refreshFromLocal();
+
+    _startPolling();
   }
 
   void _startPolling() {
     _pollTimer?.cancel();
     _pollTimer = Timer.periodic(_pollInterval, (_) => checkNow());
-    checkNow();
+    // Fire-and-forget: a remote check blocks for tens of seconds offline,
+    // but must not delay the local-first UI render that [refreshFromLocal]
+    // already produced.
+    unawaited(checkNow());
   }
 
   /// Trigger an update check. Called by timer and pull-to-refresh.
@@ -126,6 +161,7 @@ class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
         isChecking: false,
         lastCheckTime: DateTime.now(),
         clearError: true,
+        hasHydrated: true,
       );
       unawaited(_backupInstalledApps());
     } catch (e, st) {
@@ -175,22 +211,43 @@ class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
   }
 
   /// Re-derive catalog IDs from local DB without hitting relays.
-  /// Call when returning to the updates screen so that data written by
-  /// other code paths (detail screen, background service) is picked up
-  /// without waiting for the next poll cycle.
+  /// Called on startup (offline-safe) and when returning to the updates
+  /// screen so that data written by other code paths (detail screen,
+  /// background service) is picked up without waiting for a poll cycle.
+  ///
+  /// Always sets `hasHydrated: true` — even when the installed set is empty
+  /// — so the UI can exit its skeleton state.
   Future<void> refreshFromLocal() async {
     final pmState = ref.read(packageManagerProvider);
-    if (pmState.installed.isEmpty) return;
 
-    final result = await fetchCatalog(
-      storage: ref.read(storageNotifierProvider.notifier),
-      installedIds: pmState.installed.keys.toSet(),
-      platform: ref.read(packageManagerProvider.notifier).platform,
-      subscriptionPrefix: 'app-updates-local',
-      localOnly: true,
-    );
+    if (pmState.installed.isEmpty) {
+      state = state.copyWith(hasHydrated: true);
+      return;
+    }
 
-    state = state.copyWith(catalogedIds: result.catalogedIds);
+    try {
+      final result = await fetchCatalog(
+        storage: ref.read(storageNotifierProvider.notifier),
+        installedIds: pmState.installed.keys.toSet(),
+        platform: ref.read(packageManagerProvider.notifier).platform,
+        subscriptionPrefix: 'app-updates-local',
+        localOnly: true,
+      );
+      state = state.copyWith(
+        catalogedIds: result.catalogedIds,
+        hasHydrated: true,
+      );
+    } catch (e, st) {
+      LogService.I.warn(
+        'local refresh failed',
+        tag: 'updates',
+        err: e,
+        stack: st,
+      );
+      // Still flip hasHydrated so the UI doesn't stay on skeleton forever;
+      // categorization falls through to "uncataloged".
+      state = state.copyWith(hasHydrated: true);
+    }
   }
 
   /// Best-effort backup of installed apps as an encrypted private stack.
@@ -283,7 +340,7 @@ final categorizedUpdatesProvider = Provider<CategorizedUpdates>((ref) {
     packageManagerProvider.select((s) => s.installed),
   );
 
-  if (pollerState.lastCheckTime == null) {
+  if (!pollerState.hasHydrated) {
     return CategorizedUpdates.empty;
   }
 

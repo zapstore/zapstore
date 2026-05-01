@@ -22,8 +22,6 @@ class DiagnosticsScreen extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final selectedLevel = useState<LogLevel?>(null);
-    final filterText = useState<String>('');
     final tickRefresh = useState(0);
 
     // Re-read disk tail every time the screen is opened so the user
@@ -36,49 +34,29 @@ class DiagnosticsScreen extends HookConsumerWidget {
     final ringEntries = LogService.I.ringSnapshot();
 
     final entries = _mergeEntries(ringEntries, tailSnapshot.data ?? const []);
-    final filtered = _filterEntries(
-      entries,
-      level: selectedLevel.value,
-      query: filterText.value,
-    );
+    final settingsAsync = ref.watch(localSettingsProvider);
+    final currentLevel = settingsAsync.valueOrNull?.logLevel ?? LogLevel.info;
+    final filtered = _filterEntries(entries, level: currentLevel);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Diagnostics')),
       body: Column(
         children: [
-          _LogLevelControl(),
-          const Divider(height: 1),
-          _ToolbarRow(
+          _Toolbar(
+            level: currentLevel,
+            onLevelChanged: (level) async {
+              await ref.read(settingsServiceProvider).update(
+                    (s) => s.copyWith(logLevel: level),
+                  );
+              LogService.I.level = level;
+              ref.invalidate(localSettingsProvider);
+            },
+            onRefresh: () => tickRefresh.value++,
             onExport: () => _exportLogs(context),
             onClear: () => _confirmAndClear(context, () {
               tickRefresh.value++;
             }),
-            onRefresh: () => tickRefresh.value++,
             entryCount: filtered.length,
-          ),
-          const Divider(height: 1),
-          Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    onChanged: (v) => filterText.value = v,
-                    decoration: const InputDecoration(
-                      hintText: 'Filter…',
-                      prefixIcon: Icon(Icons.search),
-                      isDense: true,
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          _LevelChips(
-            selected: selectedLevel.value,
-            onSelected: (l) => selectedLevel.value = l,
           ),
           const Divider(height: 1),
           Expanded(
@@ -114,18 +92,11 @@ class DiagnosticsScreen extends HookConsumerWidget {
 
   static List<LogEntry> _filterEntries(
     List<LogEntry> entries, {
-    LogLevel? level,
-    String? query,
+    required LogLevel level,
   }) {
-    final q = (query ?? '').trim().toLowerCase();
-    return entries.where((e) {
-      if (level != null && e.level.index < level.index) return false;
-      if (q.isEmpty) return true;
-      return e.msg.toLowerCase().contains(q) ||
-          e.tag.toLowerCase().contains(q) ||
-          (e.err?.toLowerCase().contains(q) ?? false) ||
-          (e.fields?.toString().toLowerCase().contains(q) ?? false);
-    }).toList(growable: false);
+    return entries
+        .where((e) => e.level.index >= level.index)
+        .toList(growable: false);
   }
 
   Future<void> _exportLogs(BuildContext context) async {
@@ -224,61 +195,22 @@ class DiagnosticsScreen extends HookConsumerWidget {
 // Sub-widgets
 // =============================================================================
 
-class _LogLevelControl extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final settingsAsync = ref.watch(localSettingsProvider);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        children: [
-          const Icon(Icons.tune, size: 18),
-          const SizedBox(width: 8),
-          const Text('Log level'),
-          const Spacer(),
-          settingsAsync.when(
-            data: (settings) => DropdownButton<LogLevel>(
-              value: settings.logLevel,
-              underline: const SizedBox.shrink(),
-              items: const [
-                DropdownMenuItem(
-                    value: LogLevel.debug, child: Text('Debug (verbose)')),
-                DropdownMenuItem(value: LogLevel.info, child: Text('Info')),
-                DropdownMenuItem(value: LogLevel.warn, child: Text('Warn')),
-              ],
-              onChanged: (level) async {
-                if (level == null) return;
-                await ref.read(settingsServiceProvider).update(
-                      (s) => s.copyWith(logLevel: level),
-                    );
-                LogService.I.level = level;
-                ref.invalidate(localSettingsProvider);
-              },
-            ),
-            loading: () => const SizedBox(
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-            error: (_, __) => const Text('—'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ToolbarRow extends StatelessWidget {
-  const _ToolbarRow({
+/// Single compact row containing level filter + actions + entry count.
+class _Toolbar extends StatelessWidget {
+  const _Toolbar({
+    required this.level,
+    required this.onLevelChanged,
+    required this.onRefresh,
     required this.onExport,
     required this.onClear,
-    required this.onRefresh,
     required this.entryCount,
   });
 
+  final LogLevel level;
+  final ValueChanged<LogLevel> onLevelChanged;
+  final VoidCallback onRefresh;
   final VoidCallback onExport;
   final VoidCallback onClear;
-  final VoidCallback onRefresh;
   final int entryCount;
 
   @override
@@ -287,61 +219,63 @@ class _ToolbarRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: Row(
         children: [
+          DropdownButtonHideUnderline(
+            child: DropdownButton<LogLevel>(
+              value: level,
+              isDense: true,
+              items: const [
+                DropdownMenuItem(
+                  value: LogLevel.debug,
+                  child: Text('Debug'),
+                ),
+                DropdownMenuItem(
+                  value: LogLevel.info,
+                  child: Text('Info'),
+                ),
+                DropdownMenuItem(
+                  value: LogLevel.warn,
+                  child: Text('Warn'),
+                ),
+              ],
+              onChanged: (v) {
+                if (v != null) onLevelChanged(v);
+              },
+            ),
+          ),
+          const Spacer(),
+          Text(
+            '$entryCount',
+            style: Theme.of(context).textTheme.labelSmall,
+          ),
           IconButton(
             tooltip: 'Refresh',
             onPressed: onRefresh,
+            iconSize: 18,
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.all(6),
+            constraints: const BoxConstraints(),
             icon: const Icon(Icons.refresh),
           ),
+          const SizedBox(width: 4),
           IconButton(
             tooltip: 'Export logs',
             onPressed: onExport,
+            iconSize: 18,
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.all(6),
+            constraints: const BoxConstraints(),
             icon: const Icon(Icons.ios_share),
           ),
+          const SizedBox(width: 4),
           IconButton(
             tooltip: 'Clear logs',
             onPressed: onClear,
+            iconSize: 18,
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.all(6),
+            constraints: const BoxConstraints(),
             icon: const Icon(Icons.delete_outline),
           ),
-          const Spacer(),
-          Text('$entryCount entries',
-              style: Theme.of(context).textTheme.labelSmall),
-          const SizedBox(width: 8),
-        ],
-      ),
-    );
-  }
-}
-
-class _LevelChips extends StatelessWidget {
-  const _LevelChips({required this.selected, required this.onSelected});
-
-  final LogLevel? selected;
-  final ValueChanged<LogLevel?> onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    Widget chip(String label, LogLevel? value) {
-      final isSelected = selected == value;
-      return Padding(
-        padding: const EdgeInsets.only(right: 6),
-        child: FilterChip(
-          label: Text(label),
-          selected: isSelected,
-          onSelected: (_) => onSelected(value),
-        ),
-      );
-    }
-
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: Row(
-        children: [
-          chip('All', null),
-          chip('Debug+', LogLevel.debug),
-          chip('Info+', LogLevel.info),
-          chip('Warn+', LogLevel.warn),
-          chip('Error+', LogLevel.error),
         ],
       ),
     );

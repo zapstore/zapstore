@@ -1,9 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/services/updates_service.dart';
-import 'package:zapstore/utils/app_query.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'app_card.dart';
 
@@ -64,6 +65,25 @@ class LatestReleasesState {
 // Notifier
 // ---------------------------------------------------------------------------
 
+/// Local-first, reactive notifier for the "Latest Releases" home section.
+///
+/// Design:
+/// - The outer `query<Release>(...)` subscription carries an `and:` chain that
+///   loads `release.app` (+ nested `app.author`) and `release.softwareAssets`
+///   in the background via `NestedQueryManager`. Relationship queries are
+///   fire-and-forget; they NEVER block the state update.
+/// - The listener reacts to every emission — `StorageLoading(localReleases)`
+///   during `awaitingRemote` and `StorageData` once EOSE lands. Local Releases
+///   are displayed within one frame regardless of network state.
+/// - `appsByIdentifier` is computed synchronously from local storage
+///   (`storage.querySync`) on every emission. As the `and:` relationship
+///   queries populate storage in the background, subsequent emissions pick
+///   up the newly-available Apps.
+///
+/// INVARIANTS (see spec/guidelines/INVARIANTS.md):
+/// - Local data renders immediately; no await on any network path.
+/// - Remote failures degrade gracefully; rows without a resolved App are
+///   simply skipped by the consumer widget.
 class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
   LatestReleasesNotifier(this.ref) : super(LatestReleasesState.loading()) {
     _subscribe();
@@ -79,32 +99,59 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
         limit: _kPageSize,
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: true),
         subscriptionPrefix: 'app-latest-releases',
+        and: (release) => {
+          release.app.query(
+            source: const LocalAndRemoteSource(
+              relays: 'AppCatalog',
+              stream: false,
+            ),
+            and: (app) => {
+              app.author.query(
+                source: const LocalAndRemoteSource(
+                  relays: {'vertex', 'social'},
+                  cachedFor: Duration(hours: 2),
+                ),
+              ),
+            },
+          ),
+          release.softwareAssets.query(
+            source: const LocalAndRemoteSource(
+              relays: 'AppCatalog',
+              stream: false,
+            ),
+          ),
+        },
       ),
-      (_, next) async {
-        if (next is StorageData<Release>) {
-          final liveIds = next.models.map((r) => r.id).toSet();
-          final filteredOlder = state.olderPages
-              .where((r) => !liveIds.contains(r.id))
-              .toList();
-          final unresolved = next.models
-              .where(
-                (r) => !state.appsByIdentifier.containsKey(r.appIdentifier),
-              )
-              .toList();
-          final apps = await _resolveRelated(unresolved);
-          if (mounted) {
-            state = state.copyWith(
-              firstPage: next.models,
-              olderPages: filteredOlder,
-              appsByIdentifier: {...state.appsByIdentifier, ...apps},
-              error: null,
-            );
-          }
-        } else if (next is StorageError<Release>) {
+      (_, next) {
+        if (next is StorageError<Release>) {
           state = state.copyWith(error: next.exception);
+          return;
         }
+        _applyFirstPage(next.models);
       },
       fireImmediately: true,
+    );
+  }
+
+  void _applyFirstPage(List<Release> releases) {
+    final storage = ref.read(storageNotifierProvider.notifier);
+    final liveIds = releases.map((r) => r.id).toSet();
+    final filteredOlder = state.olderPages
+        .where((r) => !liveIds.contains(r.id))
+        .toList();
+
+    final keepIds = {
+      ...releases.map((r) => r.appIdentifier),
+      ...filteredOlder.map((r) => r.appIdentifier),
+    }..removeWhere((id) => id.isEmpty);
+
+    final appsByIdentifier = _resolveAppsFromLocal(storage, keepIds);
+
+    state = state.copyWith(
+      firstPage: releases,
+      olderPages: filteredOlder,
+      appsByIdentifier: appsByIdentifier,
+      error: null,
     );
   }
 
@@ -121,26 +168,73 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
 
     try {
       final storage = ref.read(storageNotifierProvider.notifier);
-      final releases = await storage.query(
-        RequestFilter<Release>(until: oldest, limit: _kPageSize).toRequest(),
-        source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
-        subscriptionPrefix: 'app-latest-releases-older',
-      );
+      final req =
+          RequestFilter<Release>(until: oldest, limit: _kPageSize).toRequest();
+
+      // Local-first: read whatever is already cached, so offline scroll
+      // shows older items immediately without waiting on the relay.
+      final localReleases = storage.querySync(req);
+
+      List<Release> releases;
+      if (localReleases.isNotEmpty) {
+        releases = localReleases;
+        // Background hydrate: bring in any older items the relay has that
+        // aren't cached yet. Results land via the live subscription's
+        // general storage-update path; next scroll picks them up.
+        unawaited(
+          storage
+              .query(
+                req,
+                source: const LocalAndRemoteSource(
+                  relays: 'AppCatalog',
+                  stream: false,
+                ),
+                subscriptionPrefix: 'app-latest-releases-older',
+              )
+              .catchError((_) => const <Release>[]),
+        );
+      } else {
+        // Nothing local. Try remote with a short timeout; fall back to empty.
+        releases = await storage
+            .query(
+              req,
+              source: const LocalAndRemoteSource(
+                relays: 'AppCatalog',
+                stream: false,
+              ),
+              subscriptionPrefix: 'app-latest-releases-older',
+            )
+            .timeout(
+              const Duration(seconds: 5),
+              onTimeout: () => const <Release>[],
+            )
+            .catchError((_) => const <Release>[]);
+      }
 
       if (releases.isEmpty) {
         state = state.copyWith(isLoadingMore: false, hasMore: false);
         return;
       }
 
-      final apps = await _resolveRelated(releases);
-
       final existingIds = all.map((r) => r.id).toSet();
       final unique = releases
           .where((r) => !existingIds.contains(r.id))
           .toList();
+
+      // Fire relationship queries for the older page in the background.
+      // The first-page subscription's general-update path will refresh
+      // `appsByIdentifier` as apps/authors/assets land in storage.
+      _hydrateOlderPageRelationships(unique);
+
+      final keepIds = {
+        ...state.firstPage.map((r) => r.appIdentifier),
+        ...state.olderPages.map((r) => r.appIdentifier),
+        ...unique.map((r) => r.appIdentifier),
+      }..removeWhere((id) => id.isEmpty);
+
       state = state.copyWith(
         olderPages: [...state.olderPages, ...unique],
-        appsByIdentifier: {...state.appsByIdentifier, ...apps},
+        appsByIdentifier: _resolveAppsFromLocal(storage, keepIds),
         isLoadingMore: false,
         hasMore: releases.length >= _kPageSize,
       );
@@ -149,65 +243,68 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
     }
   }
 
-  /// Parallel fetch: assets by e-tag IDs + apps by i-tag identifiers.
-  /// Returns resolved apps keyed by identifier.
-  Future<Map<String, App>> _resolveRelated(List<Release> releases) async {
-    if (releases.isEmpty) return const {};
+  /// Synchronously map app identifiers → App using local storage only.
+  /// Never awaits network; returns an empty entry for ids not yet in cache.
+  Map<String, App> _resolveAppsFromLocal(
+    StorageNotifier storage,
+    Set<String> appIds,
+  ) {
+    final result = <String, App>{};
+    for (final id in appIds) {
+      final matches = storage.querySync(
+        RequestFilter<App>(
+          tags: {
+            '#d': {id},
+          },
+          limit: 1,
+        ).toRequest(),
+      );
+      if (matches.isNotEmpty) {
+        result[id] = matches.first;
+      }
+    }
+    return result;
+  }
+
+  /// Fire-and-forget relationship hydration for older-page Releases.
+  /// Results land in local storage and trigger a refresh via the outer
+  /// subscription's `handleStorageUpdate`.
+  void _hydrateOlderPageRelationships(List<Release> releases) {
+    if (releases.isEmpty) return;
     final storage = ref.read(storageNotifierProvider.notifier);
 
-    final assetIds = releases
-        .expand((r) => r.event.getTagSetValues('e'))
-        .toSet();
     final appIds = releases
         .map((r) => r.appIdentifier)
         .where((id) => id.isNotEmpty)
         .toSet();
+    final assetIds = releases
+        .expand((r) => r.event.getTagSetValues('e'))
+        .toSet();
 
-    await Future.wait([
-      if (assetIds.isNotEmpty)
-        storage.query(
-          RequestFilter<SoftwareAsset>(
-            ids: assetIds,
-            tags: {
-              '#f': {'android-arm64-v8a'},
-            },
-          ).toRequest(),
-          source: const LocalAndRemoteSource(
-            relays: 'AppCatalog',
-            stream: false,
-          ),
-          subscriptionPrefix: 'app-latest-releases-assets',
-        ),
-      if (appIds.isNotEmpty)
+    if (appIds.isNotEmpty) {
+      unawaited(
         storage.query(
           RequestFilter<App>(tags: {'#d': appIds}).toRequest(),
           source: const LocalAndRemoteSource(
             relays: 'AppCatalog',
             stream: false,
           ),
-          subscriptionPrefix: 'app-latest-releases-apps',
+          subscriptionPrefix: 'app-latest-releases-older-apps',
         ),
-    ]);
-
-    if (appIds.isEmpty) return const {};
-
-    final apps = appIds
-        .expand(
-          (id) => storage.querySync(
-            RequestFilter<App>(
-              tags: {
-                '#d': {id},
-              },
-              limit: 1,
-            ).toRequest(),
+      );
+    }
+    if (assetIds.isNotEmpty) {
+      unawaited(
+        storage.query(
+          RequestFilter<SoftwareAsset>(ids: assetIds).toRequest(),
+          source: const LocalAndRemoteSource(
+            relays: 'AppCatalog',
+            stream: false,
           ),
-        )
-        .cast<App>()
-        .toList();
-    '${apps.map((a) => a.identifier).toList()}';
-    await loadAuthors(storage, apps, 'app-latest-releases-authors');
-
-    return {for (final app in apps) app.identifier: app};
+          subscriptionPrefix: 'app-latest-releases-older-assets',
+        ),
+      );
+    }
   }
 
   @override

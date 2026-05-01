@@ -319,7 +319,13 @@ class ZapstoreHome extends StatelessWidget {
 
 const _kDefaultAppCatalogRelay = 'wss://relay.zapstore.dev';
 
-final appInitializationProvider = FutureProvider<void>((ref) async {
+/// Ready as soon as local storage is usable.
+///
+/// UI skeleton gates MUST depend on this provider — NOT on
+/// [appInitializationProvider] — because this phase does not touch the
+/// network. See spec/guidelines/INVARIANTS.md → "Local data must be
+/// sufficient to render meaningful UI state".
+final storageReadyProvider = FutureProvider<void>((ref) async {
   final dir = await getApplicationSupportDirectory();
   final dbPath = path.join(dir.path, 'zapstore.db');
 
@@ -332,12 +338,16 @@ final appInitializationProvider = FutureProvider<void>((ref) async {
   // Load local relay config BEFORE storage init
   // This ensures custom relays work even when signed out
   final settings = await ref.read(settingsServiceProvider).load();
-  final appCatalogRelays = settings.appCatalogRelays ?? {_kDefaultAppCatalogRelay};
+  final appCatalogRelays =
+      settings.appCatalogRelays ?? {_kDefaultAppCatalogRelay};
 
   // Apply persisted log level (default is `debug`).
   LogService.I.level = settings.logLevel;
 
-  // Initialize storage with local relay config
+  // Initialize storage with local relay config.
+  // NOTE: `initializationProvider` opens SQLite and starts the worker
+  // isolate. It does NOT establish relay connections — those happen
+  // lazily on first query or via notifier.connect().
   await ref.read(
     initializationProvider(
       StorageConfiguration(
@@ -361,6 +371,14 @@ final appInitializationProvider = FutureProvider<void>((ref) async {
       ),
     ).future,
   );
+});
+
+/// Full app initialization — runs everything non-UI-critical after
+/// [storageReadyProvider] resolves. Includes auto-sign-in (which may
+/// trigger cache warm-up queries), so this provider is NOT safe to use
+/// as a skeleton gate offline.
+final appInitializationProvider = FutureProvider<void>((ref) async {
+  await ref.read(storageReadyProvider.future);
 
   // Initialize device capabilities (used for dynamic download concurrency)
   await DeviceCapabilitiesCache.initialize();
@@ -426,7 +444,7 @@ Future<void> _maybeCopySeedDatabase(String dbPath) async {
 Future<void> _attemptAutoSignIn(Ref ref) async {
   try {
     await ref.read(amberSignerProvider).attemptAutoSignIn();
-    await onSignInSuccess(ref);
+    onSignInSuccess(ref);
   } catch (e, st) {
     // Auto sign-in fails on first install — that's fine, just continue.
     // Logged at debug because this is expected for new users.
@@ -439,19 +457,34 @@ Future<void> _attemptAutoSignIn(Ref ref) async {
   }
 }
 
-/// Query ContactList after successful sign-in
-Future<void> onSignInSuccess(Ref ref) async {
+/// Warm the contact-list cache after successful sign-in.
+///
+/// This is a best-effort remote fetch used for stack sorting. It MUST NOT
+/// block the init chain — consumers of the contact list are reactive and
+/// will re-render when data lands locally. Blocking here gates the UI
+/// skeleton on a network round-trip, violating local-first guarantees.
+void onSignInSuccess(Ref ref) {
   final pubkey = ref.read(Signer.activePubkeyProvider);
   if (pubkey == null) return;
 
   final storage =
       ref.read(storageNotifierProvider.notifier) as PurplebaseStorageNotifier;
 
-  // Fetch contact list for stack sorting (await to ensure it's cached)
-  await storage.query(
-    RequestFilter<ContactList>(authors: {pubkey}).toRequest(),
-    source: const RemoteSource(relays: 'social', stream: false),
-    subscriptionPrefix: 'app-contact-list',
+  unawaited(
+    storage
+        .query(
+          RequestFilter<ContactList>(authors: {pubkey}).toRequest(),
+          source: const RemoteSource(relays: 'social', stream: false),
+          subscriptionPrefix: 'app-contact-list',
+        )
+        .catchError((error, stack) {
+          LogService.I.debug(
+            'contact list warm-up failed',
+            tag: 'signin',
+            err: error,
+          );
+          return const <ContactList>[];
+        }),
   );
 }
 

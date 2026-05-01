@@ -22,8 +22,10 @@ class SearchScreen extends HookConsumerWidget {
     final searchFocusNode = useFocusNode();
     final searchQuery = useState<String>('');
 
-    // Check if storage is initialized
-    final initState = ref.watch(appInitializationProvider);
+    // Skeleton unlocks as soon as local storage is usable. Gating on
+    // `appInitializationProvider` would wait on the full init chain
+    // (including network warm-ups), which violates local-first.
+    final storageState = ref.watch(storageReadyProvider);
 
     // Get platform from package manager
     final platform = ref.read(packageManagerProvider.notifier).platform;
@@ -121,13 +123,15 @@ class SearchScreen extends HookConsumerWidget {
                   Padding(
                     padding: const EdgeInsets.only(bottom: 14),
                     child: AppStackContainer(
-                      showSkeleton: !(initState.hasValue || initState.hasError),
+                      showSkeleton:
+                          !(storageState.hasValue || storageState.hasError),
                     ),
                   ),
 
                   // Latest Releases Container
                   LatestReleasesContainer(
-                    showSkeleton: !(initState.hasValue || initState.hasError),
+                    showSkeleton:
+                        !(storageState.hasValue || storageState.hasError),
                     scrollController: scrollController,
                   ),
 

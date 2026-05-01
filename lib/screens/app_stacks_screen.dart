@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -49,15 +51,46 @@ class StacksNotifier extends PagedSubscriptionNotifier<AppStack> {
     DateTime until,
   ) async {
     final storage = ref.read(storageNotifierProvider.notifier);
-    final items = await storage.query(
-      RequestFilter<AppStack>(
-        tags: _tags,
-        until: until,
-        limit: pageSize,
-      ).toRequest(),
-      source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
-      subscriptionPrefix: 'app-stacks-older',
-    );
+    final req = RequestFilter<AppStack>(
+      tags: _tags,
+      until: until,
+      limit: pageSize,
+    ).toRequest();
+
+    // Local-first: show cached older stacks immediately. Offline, this is
+    // the only path that yields results; online, a background hydrate warms
+    // the cache for the next scroll.
+    final local = storage.querySync(req);
+    if (local.isNotEmpty) {
+      unawaited(
+        storage
+            .query(
+              req,
+              source: const LocalAndRemoteSource(
+                relays: 'AppCatalog',
+                stream: false,
+              ),
+              subscriptionPrefix: 'app-stacks-older',
+            )
+            .catchError((_) => const <AppStack>[]),
+      );
+      return (items: local, count: local.length);
+    }
+
+    // Cold cache: try remote with a short timeout so we don't hang the
+    // scroll spinner indefinitely.
+    final items = await storage
+        .query(
+          req,
+          source:
+              const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
+          subscriptionPrefix: 'app-stacks-older',
+        )
+        .timeout(
+          const Duration(seconds: 5),
+          onTimeout: () => const <AppStack>[],
+        )
+        .catchError((_) => const <AppStack>[]);
     return (items: items, count: items.length);
   }
 

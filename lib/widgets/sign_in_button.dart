@@ -40,7 +40,7 @@ class SignInButton extends ConsumerWidget {
         } else {
           try {
             await ref.read(amberSignerProvider).signIn();
-            await onSignInSuccess(ref.read(refProvider));
+            onSignInSuccess(ref.read(refProvider));
           } catch (e) {
             if (context.mounted) {
               context.showError('Sign-in failed', technicalDetails: '$e');
