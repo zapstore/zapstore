@@ -56,6 +56,7 @@ dependencies:
   workmanager: ^0.9.0+3
   flutter_local_notifications: ^19.5.0
   device_info_plus: ^12.0.0
+  archive: ^4.0.7
 
 dependency_overrides:
   models:
@@ -67,7 +68,7 @@ dependency_overrides:
     # path: ../../purplebase/purplebase
     git:
       url: https://github.com/purplebase/purplebase
-      ref: f3243d2b5d64f3a5210e14929ea2b3ca2c20eab3
+      ref: 82cd7e8
   amber_signer:
     # path: ../../purplebase/amber_signer
     git:

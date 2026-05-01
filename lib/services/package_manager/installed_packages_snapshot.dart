@@ -1,9 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
+import 'package:zapstore/services/log_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 
 class InstalledPackagesSnapshot {
@@ -40,11 +40,14 @@ class InstalledPackagesSnapshot {
         await file.delete();
       }
       await tmp.rename(file.path);
-    } catch (e) {
+    } catch (e, st) {
       // Best-effort snapshot only.
-      if (kDebugMode) {
-        debugPrint('[InstalledPackagesSnapshot] Save failed: $e');
-      }
+      LogService.I.warn(
+        'installed packages snapshot save failed',
+        tag: 'package_manager',
+        err: e,
+        stack: st,
+      );
     }
   }
 
@@ -57,8 +60,12 @@ class InstalledPackagesSnapshot {
       final decoded = jsonDecode(raw);
       if (decoded is! Map) return {};
       final version = decoded['v'];
-      if (version != null && version is! int && kDebugMode) {
-        debugPrint('[InstalledPackagesSnapshot] Unknown schema: $version');
+      if (version != null && version is! int) {
+        LogService.I.warn(
+          'installed packages snapshot: unknown schema',
+          tag: 'package_manager',
+          fields: {'version': version.toString()},
+        );
       }
       final installed = decoded['installed'];
       if (installed is! List) return {};
@@ -84,10 +91,13 @@ class InstalledPackagesSnapshot {
         );
       }
       return result;
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint('[InstalledPackagesSnapshot] Load failed: $e');
-      }
+    } catch (e, st) {
+      LogService.I.warn(
+        'installed packages snapshot load failed',
+        tag: 'package_manager',
+        err: e,
+        stack: st,
+      );
       return {};
     }
   }

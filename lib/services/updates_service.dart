@@ -1,11 +1,11 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/main.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/services/catalog_fetcher.dart';
+import 'package:zapstore/services/log_service.dart';
 import 'package:zapstore/services/deletion_processor.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/services/settings_service.dart';
@@ -128,8 +128,13 @@ class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
         clearError: true,
       );
       unawaited(_backupInstalledApps());
-    } catch (e) {
-      debugPrint('[UpdatePoller] Check failed: $e');
+    } catch (e, st) {
+      LogService.I.warn(
+        'update check failed',
+        tag: 'updates',
+        err: e,
+        stack: st,
+      );
       state = state.copyWith(
         isChecking: false,
         lastCheckTime: DateTime.now(),
@@ -235,8 +240,13 @@ class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
       await storage.save({signed});
       await storage.publish({signed}, relays: {'AppCatalog', 'social'});
       _lastBackedUpIds = appIds;
-    } catch (e) {
-      debugPrint('[InstalledAppsBackup] Backup failed: $e');
+    } catch (e, st) {
+      LogService.I.warn(
+        'installed apps backup failed',
+        tag: 'updates',
+        err: e,
+        stack: st,
+      );
     }
   }
 

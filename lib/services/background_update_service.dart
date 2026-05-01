@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:io' show Directory, File, Platform;
+import 'dart:isolate';
 import 'dart:ui' as ui;
+import 'dart:ui' show PlatformDispatcher;
 
 import 'package:background_downloader/background_downloader.dart' hide Request;
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart' show FlutterError, kDebugMode;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/widgets.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -14,6 +17,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:workmanager/workmanager.dart';
 import 'package:zapstore/router.dart';
+import 'package:zapstore/services/log_service.dart';
 import 'package:zapstore/services/package_manager/background_package_manager.dart';
 import 'package:zapstore/services/package_manager/dummy_package_manager.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
@@ -51,24 +55,106 @@ const _kNotificationPayload = 'updates';
 /// Input data key for AppCatalog relay URLs
 const kAppCatalogRelaysKey = 'appCatalogRelays';
 
+/// Holds the isolate error port for the workmanager background
+/// isolate. Top-level so the GC cannot collect the port while the
+/// task is running.
+// ignore: unused_element
+RawReceivePort? _workmanagerErrorPort;
+
 /// The entry point for WorkManager background tasks.
 /// This MUST be a top-level function (not a class method).
 @pragma('vm:entry-point')
 void callbackDispatcher() {
   WidgetsFlutterBinding.ensureInitialized();
   ui.DartPluginRegistrant.ensureInitialized();
-  Workmanager().executeTask((task, inputData) async {
-    switch (task) {
-      case kBackgroundUpdateTaskName:
-        final relayUrls = (inputData?[kAppCatalogRelaysKey] as List<dynamic>?)
-            ?.cast<String>()
-            .toSet();
-        return await _checkForUpdatesInBackground(relayUrls);
-      case kWeeklyCleanupTaskName:
-        return await _performWeeklyCleanup();
-      default:
-        return Future.value(false);
+
+  // Wire all four error sinks for this background isolate.
+  // LogService.init is fire-and-forget — pre-init writes go to the
+  // ring buffer and are flushed once disk is ready.
+  unawaited(LogService.I.init(isolateName: 'workmanager'));
+
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    LogService.I.fatal(
+      'uncaught error',
+      tag: 'crash',
+      fields: const {'source': 'flutter'},
+      err: details.exception,
+      stack: details.stack,
+    );
+    LogService.I.flushSync();
+  };
+
+  PlatformDispatcher.instance.onError = (error, stack) {
+    LogService.I.fatal(
+      'uncaught error',
+      tag: 'crash',
+      fields: const {'source': 'platform_dispatcher'},
+      err: error,
+      stack: stack,
+    );
+    LogService.I.flushSync();
+    return true;
+  };
+
+  final port = RawReceivePort((dynamic pair) {
+    if (pair is List && pair.length == 2) {
+      final err = pair[0]?.toString() ?? 'unknown';
+      final stack = pair[1] == null
+          ? null
+          : StackTrace.fromString(pair[1].toString());
+      LogService.I.fatal(
+        'uncaught error',
+        tag: 'crash',
+        fields: const {'source': 'isolate'},
+        err: err,
+        stack: stack,
+      );
+      LogService.I.flushSync();
     }
+  });
+  Isolate.current.addErrorListener(port.sendPort);
+  _workmanagerErrorPort = port;
+
+  runZonedGuarded(() {
+    Workmanager().executeTask((task, inputData) async {
+      try {
+        switch (task) {
+          case kBackgroundUpdateTaskName:
+            final relayUrls =
+                (inputData?[kAppCatalogRelaysKey] as List<dynamic>?)
+                    ?.cast<String>()
+                    .toSet();
+            return await _checkForUpdatesInBackground(relayUrls);
+          case kWeeklyCleanupTaskName:
+            return await _performWeeklyCleanup();
+          default:
+            return false;
+        }
+      } catch (e, st) {
+        LogService.I.error(
+          'background task failed',
+          tag: 'workmanager',
+          fields: {'task': task},
+          err: e,
+          stack: st,
+        );
+        return false;
+      } finally {
+        // Ensure entries from this task hit disk before the isolate
+        // tears down.
+        await LogService.I.flush();
+      }
+    });
+  }, (error, stack) {
+    LogService.I.fatal(
+      'uncaught error',
+      tag: 'crash',
+      fields: const {'source': 'zone'},
+      err: error,
+      stack: stack,
+    );
+    LogService.I.flushSync();
   });
 }
 

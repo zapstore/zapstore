@@ -58,3 +58,5 @@ reference/*
 .fvm/
 
 bugs/
+
+.cursor/skills

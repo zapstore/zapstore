@@ -6,6 +6,7 @@ import 'package:equatable/equatable.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
+import 'package:zapstore/services/log_service.dart';
 import 'package:zapstore/services/package_manager/device_capabilities.dart';
 import 'package:zapstore/services/package_manager/dummy_package_manager.dart';
 import 'package:zapstore/services/package_manager/install_operation.dart';
@@ -173,8 +174,13 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
         ],
         androidConfig: [(Config.useCacheDir, false)],
       );
-    } catch (e) {
-      debugPrint('FileDownloader configure failed: $e');
+    } catch (e, st) {
+      LogService.I.warn(
+        'FileDownloader configure failed',
+        tag: 'package_manager',
+        err: e,
+        stack: st,
+      );
     }
 
     // Note: We don't call configureNotificationForGroup because we handle
@@ -185,8 +191,13 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
         taskStatusCallback: _handleDownloadUpdate,
         taskProgressCallback: _handleDownloadUpdate,
       );
-    } catch (e) {
-      debugPrint('FileDownloader registerCallbacks failed: $e');
+    } catch (e, st) {
+      LogService.I.warn(
+        'FileDownloader registerCallbacks failed',
+        tag: 'package_manager',
+        err: e,
+        stack: st,
+      );
     }
 
     await _restoreOperations();
@@ -232,8 +243,10 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
       final lastProgress = op.lastProgressAt;
       if (now.difference(lastProgress) <= watchdogTimeout) continue;
 
-      debugPrint(
-        '[PackageManager] Watchdog: $appId download stalled, transitioning to error',
+      LogService.I.warn(
+        'watchdog: download stalled, transitioning to error',
+        tag: 'package_manager',
+        fields: {'appId': appId},
       );
 
       activeDownloads.remove(appId);
@@ -437,8 +450,10 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
         final paused = await _downloader.pause(task);
         if (!paused) {
           // Pause failed - task may be stuck, transition to failed state
-          debugPrint(
-            '[PackageManager] Pause returned false for $appId, marking as failed',
+          LogService.I.warn(
+            'pause returned false, marking as failed',
+            tag: 'package_manager',
+            fields: {'appId': appId},
           );
           activeDownloads.remove(appId);
           setOperation(
@@ -457,8 +472,10 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
         }
       } else {
         // Task not found - download is in zombie state
-        debugPrint(
-          '[PackageManager] Task not found for $appId, marking as failed',
+        LogService.I.warn(
+          'task not found, marking as failed',
+          tag: 'package_manager',
+          fields: {'appId': appId},
         );
         activeDownloads.remove(appId);
         setOperation(
@@ -471,8 +488,14 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
         );
         scheduleProcessQueue();
       }
-    } catch (e) {
-      debugPrint('[PackageManager] Failed to pause download for $appId: $e');
+    } catch (e, st) {
+      LogService.I.warn(
+        'failed to pause download',
+        tag: 'package_manager',
+        fields: {'appId': appId},
+        err: e,
+        stack: st,
+      );
       activeDownloads.remove(appId);
       setOperation(
         appId,
@@ -506,7 +529,11 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
         );
       } else {
         // Task not found - transition to error
-        debugPrint('[PackageManager] Resume failed: task not found for $appId');
+        LogService.I.warn(
+          'resume failed: task not found',
+          tag: 'package_manager',
+          fields: {'appId': appId},
+        );
         setOperation(
           appId,
           OperationFailed(
@@ -516,8 +543,14 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
           ),
         );
       }
-    } catch (e) {
-      debugPrint('[PackageManager] Failed to resume download for $appId: $e');
+    } catch (e, st) {
+      LogService.I.warn(
+        'failed to resume download',
+        tag: 'package_manager',
+        fields: {'appId': appId},
+        err: e,
+        stack: st,
+      );
       setOperation(
         appId,
         OperationFailed(
@@ -1163,8 +1196,13 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
 
         await _restoreOperation(appId, record, task, fileMetadata);
       }
-    } catch (e) {
-      debugPrint('Failed to restore operations: $e');
+    } catch (e, st) {
+      LogService.I.warn(
+        'failed to restore operations',
+        tag: 'package_manager',
+        err: e,
+        stack: st,
+      );
     }
   }
 

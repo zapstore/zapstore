@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:zapstore/services/log_service.dart';
 
 /// Device capability information for adaptive behavior.
 /// Cached at startup since these values don't change during session.
@@ -51,10 +52,22 @@ class DeviceCapabilitiesCache {
         maxConcurrentDownloads: maxDownloads,
       );
 
-      debugPrint('[DeviceCapabilities] Initialized: $_cached');
+      LogService.I.debug(
+        'device capabilities initialised',
+        tag: 'device',
+        fields: {
+          'totalRamMB': totalRamMB,
+          'maxConcurrentDownloads': maxDownloads,
+        },
+      );
       return _cached!;
-    } catch (e) {
-      debugPrint('[DeviceCapabilities] Failed to detect: $e, using fallback');
+    } catch (e, st) {
+      LogService.I.warn(
+        'device capabilities detection failed, using fallback',
+        tag: 'device',
+        err: e,
+        stack: st,
+      );
       _cached = DeviceCapabilities.fallback;
       return _cached!;
     }

@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:models/models.dart';
+import 'package:zapstore/services/log_service.dart';
 import 'package:zapstore/services/package_manager/installed_packages_snapshot.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/utils/extensions.dart';
@@ -100,11 +100,18 @@ final class AndroidPackageManager extends PackageManager {
     _eventSubscription = _eventChannel.receiveBroadcastStream().listen(
       _handleInstallEvent,
       onError: (e) {
-        debugPrint('[PackageManager] EventChannel error: $e');
+        LogService.I.warn(
+          'EventChannel error',
+          tag: 'package_manager',
+          err: e,
+        );
         _attemptEventStreamReconnect();
       },
       onDone: () {
-        debugPrint('[PackageManager] EventChannel closed unexpectedly');
+        LogService.I.warn(
+          'EventChannel closed unexpectedly',
+          tag: 'package_manager',
+        );
         _attemptEventStreamReconnect();
       },
     );
@@ -120,7 +127,10 @@ final class AndroidPackageManager extends PackageManager {
     Future.delayed(const Duration(seconds: 2), () {
       _isReconnecting = false;
       if (mounted) {
-        debugPrint('[PackageManager] Attempting EventChannel reconnect');
+        LogService.I.debug(
+          'attempting EventChannel reconnect',
+          tag: 'package_manager',
+        );
         _setupEventStream();
       }
     });
@@ -130,7 +140,11 @@ final class AndroidPackageManager extends PackageManager {
   /// Events arrive sequentially (Dart is single-threaded), no lock needed.
   void _handleInstallEvent(dynamic event) {
     if (event is! Map) {
-      debugPrint('[PackageManager] Ignoring non-map event: $event');
+      LogService.I.debug(
+        'ignoring non-map event',
+        tag: 'package_manager',
+        fields: {'event': event.toString()},
+      );
       return;
     }
 
@@ -143,13 +157,18 @@ final class AndroidPackageManager extends PackageManager {
     final status = InstallStatusX.tryParse(statusRaw);
 
     if (appId == null || statusRaw == null) {
-      debugPrint('[PackageManager] Ignoring event with null appId or status');
+      LogService.I.debug(
+        'ignoring event with null appId or status',
+        tag: 'package_manager',
+      );
       return;
     }
 
     if (status == null) {
-      debugPrint(
-        '[PackageManager] Ignoring event with unknown status: $statusRaw',
+      LogService.I.debug(
+        'ignoring event with unknown status',
+        tag: 'package_manager',
+        fields: {'status': statusRaw},
       );
       return;
     }
@@ -162,8 +181,10 @@ final class AndroidPackageManager extends PackageManager {
       // Abort the native session to clean up and allow user to retry from clean state.
       // Only attempt abort once per appId to prevent spam when native keeps sending events.
       if (_abortedOrphans.add(appId)) {
-        debugPrint(
-          '[PackageManager] No tracked operation for appId=$appId, aborting orphaned native session',
+        LogService.I.warn(
+          'no tracked operation, aborting orphaned native session',
+          tag: 'package_manager',
+          fields: {'appId': appId},
         );
         // Release the install slot in case this app was the active install
         // (e.g., sync cleared the operation before the native event arrived).
@@ -589,12 +610,20 @@ final class AndroidPackageManager extends PackageManager {
       final wasCommitted = resultMap['wasCommitted'] as bool? ?? false;
 
       if (wasCommitted) {
-        debugPrint(
-          '[PackageManager] abortInstall: Session was committed, Android may still complete install for $appId',
+        LogService.I.info(
+          'abortInstall: session was committed, Android may still complete install',
+          tag: 'package_manager',
+          fields: {'appId': appId},
         );
       }
-    } catch (e) {
-      debugPrint('[PackageManager] abortInstall failed for $appId: $e');
+    } catch (e, st) {
+      LogService.I.warn(
+        'abortInstall failed',
+        tag: 'package_manager',
+        fields: {'appId': appId},
+        err: e,
+        stack: st,
+      );
     }
 
     // Clear operation on Dart side regardless of native result
@@ -765,9 +794,14 @@ final class AndroidPackageManager extends PackageManager {
         // Transition to Completed (not clearOperation) so the op stays until
         // clearCompletedOperations runs (auto-clear timer or navigation away).
         if (completed) {
-          debugPrint(
-            '[PackageManager] Sync: completing operation for $appId '
-            '(installedVc=$installedVc, targetVc=$targetVc)',
+          LogService.I.debug(
+            'sync: completing operation',
+            tag: 'package_manager',
+            fields: {
+              'appId': appId,
+              'installedVc': installedVc,
+              'targetVc': targetVc,
+            },
           );
           // Sync fallback: state.installed was already overwritten with native
           // data above (line 723), so we must NOT call _updateInstalledPackage
@@ -777,9 +811,14 @@ final class AndroidPackageManager extends PackageManager {
           setOperation(appId, Completed(target: op.target, isUpdate: true));
           clearInstallSlot(appId);
         } else {
-          debugPrint(
-            '[PackageManager] Sync: keeping operation for $appId '
-            '(installedVc=$installedVc, targetVc=$targetVc)',
+          LogService.I.debug(
+            'sync: keeping operation',
+            tag: 'package_manager',
+            fields: {
+              'appId': appId,
+              'installedVc': installedVc,
+              'targetVc': targetVc,
+            },
           );
         }
       }

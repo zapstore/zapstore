@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
+import 'package:zapstore/screens/diagnostics_screen.dart';
 import 'package:zapstore/screens/main_scaffold.dart';
 import 'package:zapstore/screens/app_detail_screen.dart';
 import 'package:zapstore/screens/app_stacks_screen.dart';
@@ -175,6 +176,13 @@ final routerProvider = Provider<GoRouter>((ref) {
                   _stackDetailRoute(),
                   _allStacksRoute(),
                   _userRoute(),
+                  GoRoute(
+                    path: 'diagnostics',
+                    pageBuilder: (context, state) => _noTransitionPage(
+                      state: state,
+                      child: const DiagnosticsScreen(),
+                    ),
+                  ),
                 ],
               ),
             ],

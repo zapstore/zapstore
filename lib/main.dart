@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:io' show File, Platform;
+import 'dart:isolate';
+import 'dart:ui' show PlatformDispatcher;
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
@@ -13,6 +15,7 @@ import 'package:purplebase/purplebase.dart';
 import 'package:amber_signer/amber_signer.dart';
 import 'package:zapstore/services/app_restart_service.dart';
 import 'package:zapstore/services/background_update_service.dart';
+import 'package:zapstore/services/log_service.dart';
 import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/services/settings_service.dart';
 import 'package:zapstore/router.dart';
@@ -24,47 +27,128 @@ import 'package:zapstore/services/deep_link_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/breathing_logo.dart';
 
-/// Global provider container for error reporting (accessible outside widget tree)
+/// Global provider container so handlers outside the widget tree can
+/// reach Riverpod state.
 late final ProviderContainer _providerContainer;
 
-void main() {
-  // Create provider container with overrides
-  _providerContainer = ProviderContainer(
-    overrides: [
-      storageNotifierProvider.overrideWith(PurplebaseStorageNotifier.new),
-      packageManagerProvider.overrideWith(
-        (ref) => Platform.isAndroid
-            ? AndroidPackageManager(ref)
-            : DummyPackageManager(ref),
-      ),
-    ],
-  );
+/// Receives uncaught isolate errors from the main isolate. Held at
+/// top level so it survives for the lifetime of the app — without
+/// this reference the port could be garbage-collected and the
+/// isolate listener would silently stop firing.
+// ignore: unused_element
+RawReceivePort? _isolateErrorPort;
 
+void main() {
+  // Everything that touches the Flutter binding or schedules async work
+  // for the app MUST run inside the same zone as `runApp`. Otherwise the
+  // engine throws a "Zone mismatch" assertion because zone-specific
+  // configuration (error handlers, microtask hooks) would be split
+  // between the root zone and the guarded zone.
   runZonedGuarded(() {
+    WidgetsFlutterBinding.ensureInitialized();
+
+    // Install all four error sinks BEFORE runApp.
+    // LogService.I works pre-init (writes go to the ring buffer until
+    // disk is ready); init() is awaited just below to enable disk.
+    _installErrorHandlers();
+
+    // Bring up disk logging. Not awaited — if path_provider fails the
+    // LogService falls back to ring-buffer-only and we continue.
+    unawaited(LogService.I.init(isolateName: 'main').then((_) {
+      LogService.I.info(
+        'app starting',
+        tag: 'app',
+        fields: {
+          'platform': Platform.operatingSystem,
+          'version': Platform.operatingSystemVersion,
+        },
+      );
+    }));
+
+    _providerContainer = ProviderContainer(
+      overrides: [
+        storageNotifierProvider.overrideWith(PurplebaseStorageNotifier.new),
+        packageManagerProvider.overrideWith(
+          (ref) => Platform.isAndroid
+              ? AndroidPackageManager(ref)
+              : DummyPackageManager(ref),
+        ),
+      ],
+      observers: const [LoggingProviderObserver()],
+    );
+
     runApp(
       UncontrolledProviderScope(
         container: _providerContainer,
         child: const ZapstoreApp(),
       ),
     );
-  }, _errorHandler);
-
-  FlutterError.onError = (details) {
-    // Prevents debugger stopping multiple times
-    FlutterError.dumpErrorToConsole(details);
-    _errorHandler(details.exception, details.stack);
-  };
+  }, (error, stack) => _logUncaught(error, stack, source: 'zone'));
 }
 
-/// Global error handler that reports errors via NIP-44 encrypted DMs
-void _errorHandler(Object exception, StackTrace? stack) {
-  // Report error asynchronously (fire and forget)
-  // TODO: Disabled until careful review
-  // unawaited(
-  //   _providerContainer
-  //       .read(errorReportingServiceProvider)
-  //       .reportError(exception, stack),
-  // );
+/// Wires the four error sinks documented in FEAT-005:
+///   * `FlutterError.onError`              — sync framework errors
+///   * `PlatformDispatcher.instance.onError` — engine / uncaught Dart
+///   * `runZonedGuarded`                   — async errors in the root zone
+///   * `Isolate.current.addErrorListener`  — main-isolate errors that
+///                                            bypass zones
+///
+/// In debug builds errors continue to be dumped to the console via
+/// `FlutterError.presentError` so `flutter run` still shows them.
+void _installErrorHandlers() {
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    _logUncaught(details.exception, details.stack,
+        source: 'flutter', library: details.library);
+  };
+
+  PlatformDispatcher.instance.onError = (error, stack) {
+    _logUncaught(error, stack, source: 'platform_dispatcher');
+    // Returning true tells the engine the error is handled (we logged
+    // it). Returning false would cause the engine to terminate the
+    // isolate on some platforms.
+    return true;
+  };
+
+  // Errors that escape to the isolate level (e.g. unhandled errors in
+  // a Future created in a foreign zone) come back via this port.
+  final port = RawReceivePort((dynamic pair) {
+    // Isolate sends a [errorString, stackString] list.
+    if (pair is List && pair.length == 2) {
+      final err = pair[0]?.toString() ?? 'unknown';
+      final stack = pair[1] == null
+          ? null
+          : StackTrace.fromString(pair[1].toString());
+      _logUncaught(err, stack, source: 'isolate');
+    }
+  });
+  Isolate.current.addErrorListener(port.sendPort);
+  _isolateErrorPort = port;
+}
+
+/// Common entry point for all four sinks. Always non-blocking. On a
+/// fatal sink (Flutter / PlatformDispatcher) we also flush the log
+/// synchronously so the entry survives an immediate crash.
+void _logUncaught(
+  Object error,
+  StackTrace? stack, {
+  required String source,
+  String? library,
+}) {
+  LogService.I.fatal(
+    'uncaught error',
+    tag: 'crash',
+    fields: {
+      'source': source,
+      if (library != null) 'library': library,
+    },
+    err: error,
+    stack: stack,
+  );
+  // Best-effort durable flush. Swallows its own errors.
+  try {
+    LogService.I.flushSync();
+  } catch (_) {}
 }
 
 class ZapstoreApp extends HookConsumerWidget {
@@ -122,8 +206,13 @@ class ZapstoreApp extends HookConsumerWidget {
             if (toastContext != null && toastContext.mounted) {
               toastContext.showInfo('Amber was removed, you were signed out');
             }
-          } catch (error) {
-            debugPrint('Auto sign-out after Amber uninstall failed: $error');
+          } catch (error, stack) {
+            LogService.I.warn(
+              'auto sign-out after Amber uninstall failed',
+              tag: 'amber',
+              err: error,
+              stack: stack,
+            );
           }
         }());
       },
@@ -245,6 +334,9 @@ final appInitializationProvider = FutureProvider<void>((ref) async {
   final settings = await ref.read(settingsServiceProvider).load();
   final appCatalogRelays = settings.appCatalogRelays ?? {_kDefaultAppCatalogRelay};
 
+  // Apply persisted log level (default is `debug`).
+  LogService.I.level = settings.logLevel;
+
   // Initialize storage with local relay config
   await ref.read(
     initializationProvider(
@@ -320,8 +412,14 @@ Future<void> _maybeCopySeedDatabase(String dbPath) async {
       ),
       flush: true,
     );
-  } catch (_) {
-    // Non-fatal: the app works fine without the seed — just a cold start
+  } catch (e, st) {
+    // Non-fatal: the app works fine without the seed — just a cold start.
+    LogService.I.warn(
+      'seed database copy failed',
+      tag: 'init',
+      err: e,
+      stack: st,
+    );
   }
 }
 
@@ -329,8 +427,15 @@ Future<void> _attemptAutoSignIn(Ref ref) async {
   try {
     await ref.read(amberSignerProvider).attemptAutoSignIn();
     await onSignInSuccess(ref);
-  } catch (e) {
-    // Auto sign-in fails on first install — that's fine, just continue
+  } catch (e, st) {
+    // Auto sign-in fails on first install — that's fine, just continue.
+    // Logged at debug because this is expected for new users.
+    LogService.I.debug(
+      'auto sign-in attempt failed',
+      tag: 'amber',
+      err: e,
+      stack: st,
+    );
   }
 }
 
@@ -397,6 +502,12 @@ class _AppLifecycleObserver with WidgetsBindingObserver {
       notifier.connect();
     } else if (state == AppLifecycleState.paused) {
       notifier.disconnect();
+      // Flush any pending log entries to disk before the OS may freeze
+      // or kill us, so diagnostics survive backgrounding.
+      unawaited(LogService.I.flush());
+    } else if (state == AppLifecycleState.detached) {
+      // Last chance before the engine tears down — sync flush.
+      LogService.I.flushSync();
     }
   }
 

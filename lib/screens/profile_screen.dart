@@ -1449,6 +1449,30 @@ class _DataManagementSection extends ConsumerWidget {
                 radius: 18,
                 backgroundColor: Theme.of(
                   context,
+                ).colorScheme.primary.withValues(alpha: 0.12),
+                child: Icon(
+                  Icons.bug_report_outlined,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+              title: const AutoSizeText(
+                'Diagnostics',
+                style: TextStyle(fontWeight: FontWeight.w600),
+                maxLines: 1,
+                minFontSize: 12,
+              ),
+              subtitle: const Text(
+                'View and export local diagnostic logs',
+              ),
+              contentPadding: EdgeInsets.zero,
+              onTap: () => context.push('/profile/diagnostics'),
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              leading: CircleAvatar(
+                radius: 18,
+                backgroundColor: Theme.of(
+                  context,
                 ).colorScheme.error.withValues(alpha: 0.12),
                 child: Icon(
                   Icons.delete_sweep,

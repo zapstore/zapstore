@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import 'package:zapstore/services/log_service.dart';
 
 /// Converts a deep link URI into a router path string, or returns null if
 /// the URI is not a recognized deep link.
@@ -38,12 +38,20 @@ String? resolveDeepLinkPath(Uri uri) {
     if (uri.host == 'search' || uri.path == '/search') {
       final query = uri.queryParameters['q'];
       if (query != null && query.isNotEmpty) {
-        debugPrint('Market intent: search query = $query');
+        LogService.I.debug(
+          'market intent: search query',
+          tag: 'deep_link',
+          fields: {'query': query},
+        );
         return '/search/app/$query';
       }
     }
 
-    debugPrint('Market intent: unhandled URI = $uri');
+    LogService.I.debug(
+      'market intent: unhandled URI',
+      tag: 'deep_link',
+      fields: {'uri': uri.toString()},
+    );
   }
 
   return null;

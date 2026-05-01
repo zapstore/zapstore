@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:amber_signer/amber_signer.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:zapstore/services/log_service.dart';
 
 const _storage = FlutterSecureStorage(
   aOptions: AndroidOptions(encryptedSharedPreferences: true),
@@ -17,6 +18,7 @@ class LocalSettings {
   final DateTime? seenUntil;
   final DateTime? deletionSyncedUntil;
   final bool installedAppsBackupEnabled;
+  final LogLevel logLevel;
 
   const LocalSettings({
     this.nwcConnectionString,
@@ -25,6 +27,7 @@ class LocalSettings {
     this.seenUntil,
     this.deletionSyncedUntil,
     this.installedAppsBackupEnabled = false,
+    this.logLevel = LogLevel.debug,
   });
 
   bool get hasNwcString => nwcConnectionString?.isNotEmpty == true;
@@ -37,6 +40,7 @@ class LocalSettings {
       seenUntil: _parseDateTime(json['seenUntil']),
       deletionSyncedUntil: _parseDateTime(json['deletionSyncedUntil']),
       installedAppsBackupEnabled: json['backupEnabled'] as bool? ?? false,
+      logLevel: LogLevel.parse(json['logLevel'] as String?) ?? LogLevel.debug,
     );
   }
 
@@ -49,6 +53,8 @@ class LocalSettings {
         if (deletionSyncedUntil != null)
           'deletionSyncedUntil': deletionSyncedUntil!.millisecondsSinceEpoch,
         if (installedAppsBackupEnabled) 'backupEnabled': true,
+        // Only persist non-default value to keep blob small.
+        if (logLevel != LogLevel.debug) 'logLevel': logLevel.name,
       };
 
   LocalSettings copyWith({
@@ -58,6 +64,7 @@ class LocalSettings {
     DateTime? seenUntil,
     DateTime? deletionSyncedUntil,
     bool? installedAppsBackupEnabled,
+    LogLevel? logLevel,
     bool clearNwc = false,
   }) {
     return LocalSettings(
@@ -69,6 +76,7 @@ class LocalSettings {
       deletionSyncedUntil: deletionSyncedUntil ?? this.deletionSyncedUntil,
       installedAppsBackupEnabled:
           installedAppsBackupEnabled ?? this.installedAppsBackupEnabled,
+      logLevel: logLevel ?? this.logLevel,
     );
   }
 
