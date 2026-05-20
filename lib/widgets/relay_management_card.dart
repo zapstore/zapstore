@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/services/app_restart_service.dart';
+import 'package:zapstore/services/namecoin/namecoin_relay_service.dart';
 import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/services/settings_service.dart';
 
@@ -96,6 +99,19 @@ class RelayManagementCard extends HookConsumerWidget {
 
       pendingRelays.value = [...currentRelays, normalizedUrl]..sort();
       relayUrlController.clear();
+
+      // Namecoin `.bit` preview — if the URL is a Namecoin name, resolve
+      // it in the background and surface the on-chain endpoint so the
+      // user can confirm what they actually added. Activation of the
+      // resolved endpoint at connect time is owned by purplebase
+      // (per ARCHITECTURE.md) and is out of scope for this card.
+      if (NamecoinRelayService.isApplicable(normalizedUrl)) {
+        unawaited(_previewNamecoinResolution(
+          context: context,
+          ref: ref,
+          relayUrl: normalizedUrl,
+        ));
+      }
     }
 
     void removeRelay(String relayUrl) {
@@ -451,6 +467,47 @@ class RelayManagementCard extends HookConsumerWidget {
   /// Uses wss:// unless ws:// is explicitly specified.
   /// If no protocol is provided, wss:// is assumed.
   /// Normalizes default ports (443 for wss, 80 for ws) by omitting them.
+  Future<void> _previewNamecoinResolution({
+    required BuildContext context,
+    required WidgetRef ref,
+    required String relayUrl,
+  }) async {
+    final service = ref.read(namecoinRelayServiceProvider);
+    final state = await service.resolve(relayUrl);
+    if (!context.mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    final colors = Theme.of(context).colorScheme;
+    switch (state) {
+      case NamecoinRelayNotApplicable():
+        return;
+      case NamecoinRelayResolved(:final resolvedUrl, :final onionEndpoints):
+        final extra = onionEndpoints.isNotEmpty
+            ? ' (· ${onionEndpoints.length} Tor)'
+            : '';
+        messenger.showSnackBar(SnackBar(
+          content: Text(
+            'Namecoin resolved $relayUrl → $resolvedUrl$extra',
+          ),
+          duration: const Duration(seconds: 6),
+        ));
+      case NamecoinRelayUnresolved(:final reason):
+        messenger.showSnackBar(SnackBar(
+          backgroundColor: colors.tertiaryContainer,
+          content: Text('Namecoin: $reason'),
+          duration: const Duration(seconds: 6),
+        ));
+      case NamecoinRelayUnreachable():
+        messenger.showSnackBar(SnackBar(
+          backgroundColor: colors.errorContainer,
+          content: const Text(
+            'Could not reach Namecoin to resolve `.bit` relay',
+          ),
+          duration: const Duration(seconds: 6),
+        ));
+    }
+  }
+
   static String? _validateAndNormalizeRelayUrl(String input) {
     var url = input.trim();
 
