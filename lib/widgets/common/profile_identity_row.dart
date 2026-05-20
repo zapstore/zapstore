@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:models/models.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'namecoin_nip05_badge.dart';
 import 'profile_avatar.dart';
 import 'profile_name_widget.dart';
 
@@ -53,28 +54,13 @@ class ProfileIdentityRow extends StatelessWidget {
                 abbreviatedNpub: abbreviatedNpub,
                 onCopied: onCopiedNpub,
               ),
-              // NIP-05
+              // NIP-05 — verified against the Namecoin chain for `.bit`
+              // identifiers; rendered plain for DNS identifiers.
               if (profile?.nip05 != null) ...[
                 const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Icon(
-                      Icons.verified,
-                      size: 16,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        profile!.nip05!,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
+                NamecoinNip05Badge(
+                  identifier: profile!.nip05!,
+                  claimedPubkey: pubkey,
                 ),
               ],
             ],
