@@ -4,13 +4,15 @@
 [![License: MIT](https://img.shields.io/github/license/zapstore/zapstore)](LICENSE.md)
 [![Flutter](https://img.shields.io/badge/Flutter-3.38.6-02569B?logo=flutter)](https://flutter.dev)
 
-**Open Android app store: discover, install, and update apps published directly by developers.**
+**Zapstore is an open Android app store where apps can be published directly by developers and curated by communities.**
+
+It combines app discovery, publisher identity, direct APK distribution, and social trust signals into a different model for Android app distribution.
 
 This repo is the [Flutter](https://flutter.dev) mobile app for [Zapstore](https://zapstore.dev). Listings and publisher identity sync from Nostr relays; APKs are verified (file hash and signing certificate) before install.
 
 ## Get the app
 
-[GitHub Releases](https://github.com/zapstore/zapstore/releases) (APK) · [zapstore.dev](https://zapstore.dev) · install from Zapstore (badge below)
+[GitHub Releases](https://github.com/zapstore/zapstore/releases) (APK) · Install from Zapstore (badge below)
 
 <p align="center">
   <a href="https://zapstore.dev/apps/naddr1qvzqqqr7pvpzq7xwd748yfjrsu5yuerm56fcn9tntmyv04w95etn0e23xrczvvraqqgxgetk9eaxzurnw3hhyefwv9c8qakg5jt">
