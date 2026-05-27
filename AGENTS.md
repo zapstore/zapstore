@@ -15,8 +15,11 @@ All behavioral authority lives in `spec/guidelines/`. If this file conflicts, gu
 | Feature specs | `spec/features/` |
 | Active work | `spec/work/` |
 | Decisions & learnings | `spec/knowledge/` |
+| ADR-equivalent decisions | `spec/knowledge/DEC-XXX-*.md` |
 
 Guidelines are symlinked into `.cursor/rules/` and auto-load.
+
+If a skill references `docs/adr/`, read `spec/knowledge/` instead. If a skill references an issue tracker, this repo doesn't have one configured — work is tracked in `spec/work/` and `spec/features/`.
 
 ## File Ownership
 
