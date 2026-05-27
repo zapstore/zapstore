@@ -10,6 +10,10 @@ It combines app discovery, publisher identity, direct APK distribution, and soci
 
 This repo is the [Flutter](https://flutter.dev) mobile app for [Zapstore](https://zapstore.dev). Listings and publisher identity sync from Nostr relays; APKs are verified (file hash and signing certificate) before install.
 
+<p align="center">
+  <img src="./assets/images/readme-screenshot.png" alt="Zapstore app screenshot" width="720">
+</p>
+
 ## Get the app
 
 [GitHub Releases](https://github.com/zapstore/zapstore/releases) (APK) · Install from Zapstore (badge below)
@@ -18,10 +22,6 @@ This repo is the [Flutter](https://flutter.dev) mobile app for [Zapstore](https:
   <a href="https://zapstore.dev/apps/naddr1qvzqqqr7pvpzq7xwd748yfjrsu5yuerm56fcn9tntmyv04w95etn0e23xrczvvraqqgxgetk9eaxzurnw3hhyefwv9c8qakg5jt">
     <img src="./assets/images/badge.png" alt="Get it on Zapstore" width="200">
   </a>
-</p>
-
-<p align="center">
-  <img src="./fastlane/metadata/android/images/zapstore_screenshots/zapstore_screenshot.png" alt="Zapstore app screenshot" width="280">
 </p>
 
 ## Build from source
