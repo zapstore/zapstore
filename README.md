@@ -48,8 +48,6 @@ flutter analyze && flutter test
 
 Minor fixes: PRs welcome. For larger changes, please reach out first while the project is in beta.
 
-Tested with [BrowserStack](https://www.browserstack.com/).
-
 ## License
 
 [MIT](LICENSE.md)
