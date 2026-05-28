@@ -1,17 +1,16 @@
-import 'dart:convert';
-
 import 'package:async_button_builder/async_button_builder.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
+import 'package:zapstore/services/device_key_service.dart';
 import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/auth_widgets.dart';
 import 'package:zapstore/widgets/common/base_dialog.dart';
 
-/// Dialog for saving an app privately (encrypted)
+/// Dialog for saving an app privately (encrypted with device key)
 class SaveAppDialog extends HookConsumerWidget {
   const SaveAppDialog({
     super.key,
@@ -24,8 +23,6 @@ class SaveAppDialog extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isSignedIn = ref.watch(Signer.activePubkeyProvider) != null;
-
     return BaseDialog(
       titleIcon: const Icon(Icons.bookmark),
       title: Text(
@@ -43,10 +40,6 @@ class SaveAppDialog extends HookConsumerWidget {
               ).colorScheme.onSurface.withValues(alpha: 0.7),
             ),
           ),
-          if (!isSignedIn) ...[
-            const SizedBox(height: 16),
-            const SignInPrompt(message: 'Sign in to save apps privately.'),
-          ],
         ],
       ),
       actions: [
@@ -59,12 +52,10 @@ class SaveAppDialog extends HookConsumerWidget {
               _togglePrivateSave(context, ref, app, isPrivatelySaved),
           builder: (context, child, callback, buttonState) {
             return FilledButton.icon(
-              onPressed: !isSignedIn
-                  ? null
-                  : buttonState.maybeWhen(
-                      loading: () => null,
-                      orElse: () => callback,
-                    ),
+              onPressed: buttonState.maybeWhen(
+                loading: () => null,
+                orElse: () => callback,
+              ),
               icon: buttonState.maybeWhen(
                 loading: () => const SizedBox(
                   width: 16,
@@ -92,54 +83,27 @@ class SaveAppDialog extends HookConsumerWidget {
     bool isCurrentlySaved,
   ) async {
     try {
-      final signer = ref.read(Signer.activeSignerProvider);
-      final signedInPubkey = ref.read(Signer.activePubkeyProvider);
+      final devicePubkey = ref.read(devicePubkeyProvider);
+      if (devicePubkey == null) return;
 
-      if (signer == null || signedInPubkey == null) {
-        if (context.mounted) {
-          context.showError(
-            'Sign in required',
-            description: 'You need to sign in to save apps privately.',
-          );
-        }
-        return;
-      }
+      final signer = ref.read(Signer.signerProvider(devicePubkey));
+      if (signer == null) return;
 
-      // Query for existing stack
-      final existingStackState = await ref.storage.query(
+      final existingStacks = await ref.storage.query(
         RequestFilter<AppStack>(
-          authors: {signedInPubkey},
+          authors: {devicePubkey},
           tags: {
             '#d': {kAppBookmarksIdentifier},
           },
         ).toRequest(),
         source: const LocalSource(),
       );
-      final existingStack = existingStackState.firstOrNull;
+      final existingStack = existingStacks.firstOrNull;
 
-      // Get existing app IDs by decrypting if stack exists
-      List<String> existingAppIds = [];
-      if (existingStack != null) {
-        try {
-          final decryptedContent = await signer.nip44Decrypt(
-            existingStack.content,
-            signedInPubkey,
-          );
-          existingAppIds = (jsonDecode(decryptedContent) as List)
-              .cast<String>();
-        } catch (e) {
-          if (context.mounted) {
-            context.showError(
-              'Could not read existing saved apps',
-              description:
-                  'Your previous saved apps could not be decrypted. Starting fresh.',
-              technicalDetails: '$e',
-            );
-          }
-        }
-      }
+      final existingAppIds = List<String>.from(
+        existingStack?.privateAppIds ?? [],
+      );
 
-      // Modify the list
       final appAddressableId =
           '${app.event.kind}:${app.pubkey}:${app.identifier}';
 
@@ -151,7 +115,6 @@ class SaveAppDialog extends HookConsumerWidget {
         }
       }
 
-      // Create new partial stack with updated list
       final platform = ref.read(packageManagerProvider.notifier).platform;
       final partialStack = PartialAppStack.withEncryptedApps(
         name: 'Saved Apps',
@@ -160,12 +123,9 @@ class SaveAppDialog extends HookConsumerWidget {
         platform: platform,
       );
 
-      // Sign (encrypts the content)
       final signedStack = await partialStack.signWith(signer);
-
-      // Save to local storage and publish to relays
       await ref.storage.save({signedStack});
-      await ref.storage.publish({signedStack}, relays: 'AppCatalog');
+      ref.storage.publish({signedStack}, relays: 'AppCatalog');
 
       if (context.mounted) {
         Navigator.pop(context);
@@ -283,25 +243,12 @@ class _AddToStackDialogSignedIn extends HookConsumerWidget {
     final publicStacksState = ref.watch(
       query<AppStack>(
         authors: {signedInPubkey},
+        tags: {
+          '#h': {kZapstoreCommunityPubkey},
+        },
         and: (stack) => {stack.apps.query(source: const LocalSource())},
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
         subscriptionPrefix: 'app-user-stacks-dialog',
-        // Filter at query level: exclude saved-apps stack and stacks with no app references
-        schemaFilter: (event) {
-          final tags = event['tags'] as List?;
-          if (tags == null) return false;
-          // Check d tag is not the bookmarks identifier
-          final dTag = tags.firstWhere(
-            (t) => t is List && t.isNotEmpty && t[0] == 'd',
-            orElse: () => null,
-          );
-          if (dTag != null && dTag[1] == kAppBookmarksIdentifier) return false;
-          // Check has at least one 'a' tag (app reference)
-          final hasAppRef = tags.any(
-            (t) => t is List && t.isNotEmpty && t[0] == 'a',
-          );
-          return hasAppRef;
-        },
       ),
     );
 

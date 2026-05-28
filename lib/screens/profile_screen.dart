@@ -14,6 +14,7 @@ import 'package:zapstore/services/app_restart_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/main.dart';
+import 'package:zapstore/services/device_key_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/services/settings_service.dart';
 import 'package:zapstore/utils/extensions.dart';
@@ -1392,14 +1393,136 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
+class _DeviceKeyCard extends HookConsumerWidget {
+  const _DeviceKeyCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final devicePubkey = ref.watch(devicePubkeyProvider);
+    if (devicePubkey == null) return const SizedBox.shrink();
+
+    final npub = bech32Encode('npub', devicePubkey);
+    final shortened =
+        '${npub.substring(0, 12)}...${npub.substring(npub.length - 8)}';
+    final isCopying = useState(false);
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        color: Theme.of(
+          context,
+        ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.16),
+        ),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 18,
+            backgroundColor: Theme.of(
+              context,
+            ).colorScheme.primary.withValues(alpha: 0.12),
+            child: Icon(
+              Icons.key,
+              color: Theme.of(context).colorScheme.primary,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Device key',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  shortened,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.6),
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          TextButton.icon(
+            onPressed: isCopying.value
+                ? null
+                : () async {
+                    final shouldCopy = await showDialog<bool>(
+                      context: context,
+                      builder: (dialogContext) => AlertDialog(
+                        title: const Text('Copy device private key?'),
+                        content: const Text(
+                          'This nsec controls your private Zapstore data, including saved apps '
+                          'and unmanaged apps. Anyone with it can read and modify that data.',
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () =>
+                                Navigator.pop(dialogContext, false),
+                            child: const Text('Cancel'),
+                          ),
+                          FilledButton(
+                            onPressed: () => Navigator.pop(dialogContext, true),
+                            child: const Text('Copy nsec'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (shouldCopy != true) return;
+
+                    isCopying.value = true;
+                    try {
+                      final nsec = await ref
+                          .read(deviceKeyServiceProvider)
+                          .getNsec();
+                      await Clipboard.setData(ClipboardData(text: nsec));
+                      if (context.mounted) {
+                        context.showInfo('Device nsec copied');
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        context.showError(
+                          'Could not copy device key',
+                          technicalDetails: e.toString(),
+                        );
+                      }
+                    } finally {
+                      isCopying.value = false;
+                    }
+                  },
+            icon: isCopying.value
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.copy, size: 18),
+            label: const Text('Copy nsec'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _InstalledAppsBackupToggle extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final pubkey = ref.watch(Signer.activePubkeyProvider);
-    if (pubkey == null) return const SizedBox.shrink();
+    final devicePubkey = ref.watch(devicePubkeyProvider);
+    if (devicePubkey == null) return const SizedBox.shrink();
 
     final settingsAsync = ref.watch(localSettingsProvider);
-    final enabled = settingsAsync.valueOrNull?.installedAppsBackupEnabled ?? false;
+    final enabled =
+        settingsAsync.valueOrNull?.installedAppsBackupEnabled ?? false;
 
     return SwitchListTile(
       secondary: CircleAvatar(
@@ -1442,6 +1565,8 @@ class _DataManagementSection extends ConsumerWidget {
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 16),
+            const _DeviceKeyCard(),
+            const SizedBox(height: 8),
             _InstalledAppsBackupToggle(),
             const SizedBox(height: 8),
             ListTile(
@@ -1461,9 +1586,7 @@ class _DataManagementSection extends ConsumerWidget {
                 maxLines: 1,
                 minFontSize: 12,
               ),
-              subtitle: const Text(
-                'View and export local diagnostic logs',
-              ),
+              subtitle: const Text('View and export local diagnostic logs'),
               contentPadding: EdgeInsets.zero,
               onTap: () => context.push('/profile/diagnostics'),
             ),
@@ -1579,13 +1702,13 @@ class _UserStacksSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
-    if (signedInPubkey == null) return const SizedBox.shrink();
+    final devicePubkey = ref.watch(devicePubkeyProvider);
+    if (devicePubkey == null) return const SizedBox.shrink();
 
-    // Query for ALL user's stacks (we'll filter to encrypted ones)
+    // Query for device-owned private stacks.
     final stacksState = ref.watch(
       query<AppStack>(
-        authors: {signedInPubkey},
+        authors: {devicePubkey},
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
         subscriptionPrefix: 'app-profile-user-stacks',
       ),
@@ -1605,8 +1728,10 @@ class _UserStacksSection extends ConsumerWidget {
     privateStacks.sort((a, b) {
       if (a.identifier == kAppBookmarksIdentifier) return -1;
       if (b.identifier == kAppBookmarksIdentifier) return 1;
-      if (a.identifier == kInstalledAppsBackupIdentifier) return -1;
-      if (b.identifier == kInstalledAppsBackupIdentifier) return 1;
+      if (a.identifier == kInstalledAppsIdentifier) return -1;
+      if (b.identifier == kInstalledAppsIdentifier) return 1;
+      if (a.identifier == kUnmanagedAppsIdentifier) return -1;
+      if (b.identifier == kUnmanagedAppsIdentifier) return 1;
       return (a.name ?? a.identifier).compareTo(b.name ?? b.identifier);
     });
 
@@ -1615,7 +1740,10 @@ class _UserStacksSection extends ConsumerWidget {
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0),
-          child: Text('Your Private Stacks', style: context.textTheme.headlineSmall),
+          child: Text(
+            'Your Private Stacks',
+            style: context.textTheme.headlineSmall,
+          ),
         ),
         const SizedBox(height: 16),
         ...privateStacks.asMap().entries.map((entry) {
@@ -1623,9 +1751,11 @@ class _UserStacksSection extends ConsumerWidget {
           final stack = entry.value;
           final displayName = stack.identifier == kAppBookmarksIdentifier
               ? 'Saved Apps'
-              : stack.identifier == kInstalledAppsBackupIdentifier
-                  ? 'Installed Apps'
-                  : null;
+              : stack.identifier == kInstalledAppsIdentifier
+              ? 'Installed Apps'
+              : stack.identifier == kUnmanagedAppsIdentifier
+              ? 'Unmanaged Apps'
+              : null;
           return Padding(
             padding: EdgeInsets.only(top: index > 0 ? 8 : 0),
             child: StackLinkCard(stack: stack, displayName: displayName),

@@ -7,7 +7,9 @@ import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/services/catalog_fetcher.dart';
 import 'package:zapstore/services/log_service.dart';
 import 'package:zapstore/services/deletion_processor.dart';
+import 'package:zapstore/services/device_key_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
+import 'package:zapstore/services/ignored_apps_service.dart';
 import 'package:zapstore/services/settings_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 
@@ -27,6 +29,7 @@ class CategorizedUpdates {
     required this.manualUpdates,
     required this.upToDateApps,
     required this.uncatalogedApps,
+    this.unmanagedApps = const [],
     this.showSkeleton = false,
   });
 
@@ -34,6 +37,8 @@ class CategorizedUpdates {
   final List<App> manualUpdates;
   final List<App> upToDateApps;
   final List<PackageInfo> uncatalogedApps;
+  /// Apps the user has explicitly marked unmanaged (excluded from all other lists).
+  final List<PackageInfo> unmanagedApps;
   final bool showSkeleton;
 
   static const empty = CategorizedUpdates(
@@ -41,6 +46,7 @@ class CategorizedUpdates {
     manualUpdates: [],
     upToDateApps: [],
     uncatalogedApps: [],
+    unmanagedApps: [],
     showSkeleton: true,
   );
 }
@@ -112,6 +118,12 @@ class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
         unawaited(_hydrateAndStartPolling());
       }
     }, fireImmediately: true);
+
+    // When the unmanaged set changes, refresh immediately so the UI and
+    // the next relay fetch both use the updated set.
+    ref.listen<Set<String>>(unmanagedAppsProvider, (prev, next) {
+      if (prev != next) unawaited(refreshFromLocal());
+    });
   }
 
   Future<void> _hydrateAndStartPolling() async {
@@ -189,13 +201,23 @@ class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
       return;
     }
 
+    final unmanagedIds = ref.read(unmanagedAppsProvider);
+    final installedIds = pmState.installed.keys
+        .where((id) => !unmanagedIds.contains(id))
+        .toSet();
+
+    if (installedIds.isEmpty) {
+      state = state.copyWith(catalogedIds: const {});
+      return;
+    }
+
     final storage =
         ref.read(storageNotifierProvider.notifier) as PurplebaseStorageNotifier;
 
     final results = await Future.wait([
       fetchCatalog(
         storage: storage,
-        installedIds: pmState.installed.keys.toSet(),
+        installedIds: installedIds,
         platform: ref.read(packageManagerProvider.notifier).platform,
         subscriptionPrefix: 'app-updates-poll',
       ),
@@ -225,10 +247,20 @@ class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
       return;
     }
 
+    final unmanagedIds = ref.read(unmanagedAppsProvider);
+    final installedIds = pmState.installed.keys
+        .where((id) => !unmanagedIds.contains(id))
+        .toSet();
+
+    if (installedIds.isEmpty) {
+      state = state.copyWith(hasHydrated: true);
+      return;
+    }
+
     try {
       final result = await fetchCatalog(
         storage: ref.read(storageNotifierProvider.notifier),
-        installedIds: pmState.installed.keys.toSet(),
+        installedIds: installedIds,
         platform: ref.read(packageManagerProvider.notifier).platform,
         subscriptionPrefix: 'app-updates-local',
         localOnly: true,
@@ -254,13 +286,15 @@ class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
   /// Runs after each successful update check. Only publishes when the set
   /// of cataloged installed apps has changed since the last backup.
   Future<void> _backupInstalledApps() async {
-    final pubkey = ref.read(Signer.activePubkeyProvider);
-    if (pubkey == null) return;
+    final devicePubkey = ref.read(devicePubkeyProvider);
+    if (devicePubkey == null) return;
 
     final settings = await ref.read(settingsServiceProvider).load();
     if (!settings.installedAppsBackupEnabled) return;
 
-    final signer = ref.read(Signer.activeSignerProvider)!;
+    final signer = ref.read(Signer.signerProvider(devicePubkey));
+    if (signer == null) return;
+
     final pmNotifier = ref.read(packageManagerProvider.notifier);
     final installed = ref.read(packageManagerProvider).installed;
     final platform = pmNotifier.platform;
@@ -288,14 +322,14 @@ class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
 
       final partialStack = PartialAppStack.withEncryptedApps(
         name: 'Installed Apps',
-        identifier: kInstalledAppsBackupIdentifier,
+        identifier: kInstalledAppsIdentifier,
         apps: appIds,
         platform: platform,
       );
 
       final signed = await partialStack.signWith(signer);
       await storage.save({signed});
-      await storage.publish({signed}, relays: {'AppCatalog', 'social'});
+      await storage.publish({signed}, relays: 'AppCatalog');
       _lastBackedUpIds = appIds;
     } catch (e, st) {
       LogService.I.warn(
@@ -353,22 +387,41 @@ final categorizedUpdatesProvider = Provider<CategorizedUpdates>((ref) {
     );
   }
 
+  final unmanagedIds = ref.watch(unmanagedAppsProvider);
+
   final catalogedIds = pollerState.catalogedIds;
   final catalogedInstalledIds = installed.keys
       .where(catalogedIds.contains)
+      .where((id) => !unmanagedIds.contains(id))
       .toSet();
 
   if (catalogedInstalledIds.isEmpty) {
+    final unmanagedAppsEarly =
+        installed.values
+            .where((pkg) => unmanagedIds.contains(pkg.appId))
+            .toList()
+          ..sort(
+            (a, b) => (a.name ?? a.appId).toLowerCase().compareTo(
+              (b.name ?? b.appId).toLowerCase(),
+            ),
+          );
     return CategorizedUpdates(
       automaticUpdates: const [],
       manualUpdates: const [],
       upToDateApps: const [],
-      uncatalogedApps: installed.values.toList()
+      uncatalogedApps: installed.values
+          .where(
+            (pkg) =>
+                !catalogedIds.contains(pkg.appId) &&
+                !unmanagedIds.contains(pkg.appId),
+          )
+          .toList()
         ..sort(
           (a, b) => (a.name ?? a.appId).toLowerCase().compareTo(
             (b.name ?? b.appId).toLowerCase(),
           ),
         ),
+      unmanagedApps: unmanagedAppsEarly,
     );
   }
 
@@ -429,6 +482,17 @@ final categorizedUpdatesProvider = Provider<CategorizedUpdates>((ref) {
   final uncatalogedApps =
       installed.values
           .where((pkg) => !catalogedIds.contains(pkg.appId))
+          .where((pkg) => !unmanagedIds.contains(pkg.appId))
+          .toList()
+        ..sort(
+          (a, b) => (a.name ?? a.appId).toLowerCase().compareTo(
+            (b.name ?? b.appId).toLowerCase(),
+          ),
+        );
+
+  final unmanagedApps =
+      installed.values
+          .where((pkg) => unmanagedIds.contains(pkg.appId))
           .toList()
         ..sort(
           (a, b) => (a.name ?? a.appId).toLowerCase().compareTo(
@@ -441,6 +505,7 @@ final categorizedUpdatesProvider = Provider<CategorizedUpdates>((ref) {
     manualUpdates: manualUpdates,
     upToDateApps: upToDateApps,
     uncatalogedApps: uncatalogedApps,
+    unmanagedApps: unmanagedApps,
   );
 });
 

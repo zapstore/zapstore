@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:async_button_builder/async_button_builder.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
@@ -8,6 +6,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 import 'package:zapstore/services/bookmarks_service.dart';
+import 'package:zapstore/services/device_key_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/theme.dart';
@@ -93,16 +92,7 @@ class SocialActionsRow extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
-    final isSignedIn = signedInPubkey != null;
-
-    // Watch saved apps from centralized provider (handles decryption)
-    final savedAppsAsync = ref.watch(bookmarksProvider);
-    final savedAppIds = savedAppsAsync.when(
-      data: (ids) => ids,
-      loading: () => <String>{},
-      error: (_, __) => <String>{},
-    );
+    final savedAppIds = ref.watch(bookmarksProvider);
 
     // Check if this app is saved
     final appAddressableId =
@@ -132,18 +122,17 @@ class SocialActionsRow extends HookConsumerWidget {
                     ref,
                     app,
                     isPrivatelySaved,
-                    isSignedIn,
                   ),
                   style: FilledButton.styleFrom(
                     padding: EdgeInsets.zero,
-                    backgroundColor: isPrivatelySaved && isSignedIn
+                    backgroundColor: isPrivatelySaved
                         ? (Theme.of(context).brightness == Brightness.dark
-                              ? const Color(0xFF9B4F5E) // Red wine/burgundy
-                              : const Color(0xFF7D3C4D)) // Deep burgundy
+                              ? const Color(0xFF9B4F5E)
+                              : const Color(0xFF7D3C4D))
                         : (Theme.of(context).brightness == Brightness.dark
-                              ? const Color(0xFF3A3A3F) // Dark neutral
-                              : const Color(0xFFE8E3E8)), // Light neutral
-                    foregroundColor: isPrivatelySaved && isSignedIn
+                              ? const Color(0xFF3A3A3F)
+                              : const Color(0xFFE8E3E8)),
+                    foregroundColor: isPrivatelySaved
                         ? Colors.white
                         : Theme.of(
                             context,
@@ -153,7 +142,7 @@ class SocialActionsRow extends HookConsumerWidget {
                     ),
                   ),
                   child: Icon(
-                    isPrivatelySaved && isSignedIn
+                    isPrivatelySaved
                         ? Icons.bookmark
                         : Icons.bookmark_border,
                     size: 20,
@@ -189,58 +178,34 @@ class SocialActionsRow extends HookConsumerWidget {
       ],
     );
   }
-
   Future<void> _handleSaveApp(
     BuildContext context,
     WidgetRef ref,
     App app,
     bool isPrivatelySaved,
-    bool isSignedIn,
   ) async {
-    // If not signed in, show dialog to prompt sign in
-    if (!isSignedIn) {
-      await showBaseDialog(
-        context: context,
-        dialog: SaveAppDialog(app: app, isPrivatelySaved: isPrivatelySaved),
-      );
-      return;
-    }
-
-    // If signed in, save directly without dialog
     try {
-      final signer = ref.read(Signer.activeSignerProvider);
-      final signedInPubkey = ref.read(Signer.activePubkeyProvider);
+      final devicePubkey = ref.read(devicePubkeyProvider);
+      if (devicePubkey == null) return;
 
-      if (signer == null || signedInPubkey == null) return;
+      final signer = ref.read(Signer.signerProvider(devicePubkey));
+      if (signer == null) return;
 
-      // Query for existing stack
-      final existingStackState = await ref.storage.query(
+      final existingStacks = await ref.storage.query(
         RequestFilter<AppStack>(
-          authors: {signedInPubkey},
+          authors: {devicePubkey},
           tags: {
             '#d': {kAppBookmarksIdentifier},
           },
         ).toRequest(),
         source: const LocalSource(),
       );
-      final existingStack = existingStackState.firstOrNull;
+      final existingStack = existingStacks.firstOrNull;
 
-      // Get existing app IDs by decrypting if stack exists
-      List<String> existingAppIds = [];
-      if (existingStack != null) {
-        try {
-          final decryptedContent = await signer.nip44Decrypt(
-            existingStack.content,
-            signedInPubkey,
-          );
-          existingAppIds = (jsonDecode(decryptedContent) as List)
-              .cast<String>();
-        } catch (_) {
-          // Silently start fresh if decryption fails
-        }
-      }
+      final existingAppIds = List<String>.from(
+        existingStack?.privateAppIds ?? [],
+      );
 
-      // Modify the list
       final appAddressableId =
           '${app.event.kind}:${app.pubkey}:${app.identifier}';
 
@@ -252,7 +217,6 @@ class SocialActionsRow extends HookConsumerWidget {
         }
       }
 
-      // Create new partial stack with updated list
       final platform = ref.read(packageManagerProvider.notifier).platform;
       final partialStack = PartialAppStack.withEncryptedApps(
         name: 'Saved Apps',
@@ -261,10 +225,7 @@ class SocialActionsRow extends HookConsumerWidget {
         platform: platform,
       );
 
-      // Sign (encrypts the content)
       final signedStack = await partialStack.signWith(signer);
-
-      // Save to local storage and publish to relays
       await ref.storage.save({signedStack});
       ref.storage.publish({signedStack}, relays: 'AppCatalog');
 
@@ -279,6 +240,8 @@ class SocialActionsRow extends HookConsumerWidget {
       }
     }
   }
+
+
 
   Future<void> _showAddToStackDialog(BuildContext context, App app) async {
     await showBaseDialog(

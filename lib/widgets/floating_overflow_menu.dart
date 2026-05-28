@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -6,6 +5,7 @@ import 'package:models/models.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:zapstore/services/bookmarks_service.dart';
+import 'package:zapstore/services/device_key_service.dart';
 import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/utils/extensions.dart';
@@ -30,8 +30,7 @@ class FloatingOverflowMenu extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
-    final isSignedIn = signedInPubkey != null;
+    final hasDeviceKey = ref.watch(devicePubkeyProvider) != null;
 
     final isInstalled =
         app != null &&
@@ -57,7 +56,7 @@ class FloatingOverflowMenu extends HookConsumerWidget {
           itemBuilder: (_) => [
             _menuItem('share', Icons.share, 'Share'),
             _menuItem('copy_link', Icons.link, 'Copy link'),
-            if (app != null && isSignedIn)
+            if (app != null && hasDeviceKey)
               PopupMenuItem<String>(
                 value: 'save_app',
                 child: Row(
@@ -81,12 +80,7 @@ class FloatingOverflowMenu extends HookConsumerWidget {
   }
 
   bool _watchIsSaved(WidgetRef ref) {
-    final savedAppsAsync = ref.watch(bookmarksProvider);
-    final savedAppIds = savedAppsAsync.when(
-      data: (ids) => ids,
-      loading: () => <String>{},
-      error: (_, __) => <String>{},
-    );
+    final savedAppIds = ref.watch(bookmarksProvider);
     final appAddressableId =
         '${app!.event.kind}:${app!.pubkey}:${app!.identifier}';
     return savedAppIds.contains(appAddressableId);
@@ -183,50 +177,26 @@ class FloatingOverflowMenu extends HookConsumerWidget {
     if (a == null) return;
 
     try {
-      final signer = ref.read(Signer.activeSignerProvider);
-      final signedInPubkey = ref.read(Signer.activePubkeyProvider);
+      final devicePubkey = ref.read(devicePubkeyProvider);
+      if (devicePubkey == null) return;
 
-      if (signer == null || signedInPubkey == null) {
-        if (context.mounted) {
-          context.showError(
-            'Sign in required',
-            description: 'You need to sign in to save apps.',
-          );
-        }
-        return;
-      }
+      final signer = ref.read(Signer.signerProvider(devicePubkey));
+      if (signer == null) return;
 
-      final existingStackState = await ref.storage.query(
+      final existingStacks = await ref.storage.query(
         RequestFilter<AppStack>(
-          authors: {signedInPubkey},
+          authors: {devicePubkey},
           tags: {
             '#d': {kAppBookmarksIdentifier},
           },
         ).toRequest(),
         source: const LocalSource(),
       );
-      final existingStack = existingStackState.firstOrNull;
+      final existingStack = existingStacks.firstOrNull;
 
-      List<String> existingAppIds = [];
-      if (existingStack != null) {
-        try {
-          final decryptedContent = await signer.nip44Decrypt(
-            existingStack.content,
-            signedInPubkey,
-          );
-          existingAppIds = (jsonDecode(decryptedContent) as List)
-              .cast<String>();
-        } catch (e) {
-          if (context.mounted) {
-            context.showError(
-              'Could not read existing saved apps',
-              description:
-                  'Your previous saved apps could not be decrypted. Starting fresh.',
-              technicalDetails: '$e',
-            );
-          }
-        }
-      }
+      final existingAppIds = List<String>.from(
+        existingStack?.privateAppIds ?? [],
+      );
 
       final appAddressableId = '${a.event.kind}:${a.pubkey}:${a.identifier}';
 
@@ -247,7 +217,6 @@ class FloatingOverflowMenu extends HookConsumerWidget {
       );
 
       final signedStack = await partialStack.signWith(signer);
-
       await ref.storage.save({signedStack});
       ref.storage.publish({signedStack}, relays: 'AppCatalog');
 

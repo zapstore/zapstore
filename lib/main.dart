@@ -24,6 +24,8 @@ import 'package:zapstore/theme.dart';
 import 'package:zapstore/services/package_manager/android_package_manager.dart';
 import 'package:zapstore/services/package_manager/dummy_package_manager.dart';
 import 'package:zapstore/services/deep_link_service.dart';
+import 'package:zapstore/services/device_backup_service.dart';
+import 'package:zapstore/services/device_key_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/breathing_logo.dart';
 
@@ -371,6 +373,13 @@ final storageReadyProvider = FutureProvider<void>((ref) async {
       ),
     ).future,
   );
+
+  // Initialize device key signer — must be registered before any encrypted
+  // queries fire, so EncryptableModel.prepareAfterLoading can find it.
+  final deviceKey = await ref.read(deviceKeyServiceProvider).getOrCreatePrivateKey();
+  final deviceSigner = Bip340PrivateKeySigner(deviceKey, ref);
+  await deviceSigner.signIn(setAsActive: false);
+  ref.read(devicePubkeyProvider.notifier).state = deviceSigner.pubkey;
 });
 
 /// Full app initialization — runs everything non-UI-critical after
@@ -486,6 +495,12 @@ void onSignInSuccess(Ref ref) {
           return const <ContactList>[];
         }),
   );
+
+  // Offer device key backup/restore on first sign-in for this pubkey.
+  // Deferred to next frame so the navigator overlay is available.
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    unawaited(maybeOfferDeviceBackup(ref));
+  });
 }
 
 /// Observes app lifecycle events and manages package/storage state

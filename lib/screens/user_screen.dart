@@ -62,6 +62,9 @@ class UserScreen extends HookConsumerWidget {
     final appStacksState = ref.watch(
       query<AppStack>(
         authors: {pubkey},
+        tags: {
+          '#h': {kZapstoreCommunityPubkey},
+        },
         limit: 20,
         and: (pack) => {
           pack.apps.query(
@@ -71,7 +74,6 @@ class UserScreen extends HookConsumerWidget {
         },
         source: LocalAndRemoteSource(stream: false, relays: 'AppCatalog'),
         subscriptionPrefix: 'app-user-stacks',
-        schemaFilter: appStackEventFilter,
       ),
     );
     final stacks = appStacksState.models.toList()
