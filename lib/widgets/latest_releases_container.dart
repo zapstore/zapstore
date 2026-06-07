@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
+import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/services/updates_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'app_card.dart';
@@ -15,9 +16,9 @@ const _kPageSize = 5;
 // ---------------------------------------------------------------------------
 
 class LatestReleasesState {
-  final List<Release> firstPage;
-  final List<Release> olderPages;
-  final Map<String, App> appsByIdentifier;
+  final List<SoftwareAsset> firstPage;
+  final List<SoftwareAsset> olderPages;
+  final Map<String, App> appsByAssetId;
   final bool isLoadingMore;
   final bool hasMore;
   final Object? error;
@@ -25,7 +26,7 @@ class LatestReleasesState {
   const LatestReleasesState({
     required this.firstPage,
     required this.olderPages,
-    required this.appsByIdentifier,
+    required this.appsByAssetId,
     required this.isLoadingMore,
     required this.hasMore,
     this.error,
@@ -34,7 +35,7 @@ class LatestReleasesState {
   factory LatestReleasesState.loading() => const LatestReleasesState(
     firstPage: [],
     olderPages: [],
-    appsByIdentifier: {},
+    appsByAssetId: {},
     isLoadingMore: false,
     hasMore: true,
   );
@@ -42,19 +43,19 @@ class LatestReleasesState {
   bool get isLoading =>
       firstPage.isEmpty && olderPages.isEmpty && error == null;
 
-  List<Release> get allReleases => [...firstPage, ...olderPages];
+  List<SoftwareAsset> get allAssets => [...firstPage, ...olderPages];
 
   LatestReleasesState copyWith({
-    List<Release>? firstPage,
-    List<Release>? olderPages,
-    Map<String, App>? appsByIdentifier,
+    List<SoftwareAsset>? firstPage,
+    List<SoftwareAsset>? olderPages,
+    Map<String, App>? appsByAssetId,
     bool? isLoadingMore,
     bool? hasMore,
     Object? error,
   }) => LatestReleasesState(
     firstPage: firstPage ?? this.firstPage,
     olderPages: olderPages ?? this.olderPages,
-    appsByIdentifier: appsByIdentifier ?? this.appsByIdentifier,
+    appsByAssetId: appsByAssetId ?? this.appsByAssetId,
     isLoadingMore: isLoadingMore ?? this.isLoadingMore,
     hasMore: hasMore ?? this.hasMore,
     error: error,
@@ -68,14 +69,14 @@ class LatestReleasesState {
 /// Local-first, reactive notifier for the "Latest Releases" home section.
 ///
 /// Design:
-/// - The outer `query<Release>(...)` subscription carries an `and:` chain that
-///   loads `release.app` (+ nested `app.author`) and `release.softwareAssets`
+/// - The outer `query<SoftwareAsset>(...)` subscription carries an `and:` chain
+///   that loads `asset.app`
 ///   in the background via `NestedQueryManager`. Relationship queries are
 ///   fire-and-forget; they NEVER block the state update.
-/// - The listener reacts to every emission — `StorageLoading(localReleases)`
-///   during `awaitingRemote` and `StorageData` once EOSE lands. Local Releases
+/// - The listener reacts to every emission — `StorageLoading(localAssets)`
+///   during `awaitingRemote` and `StorageData` once EOSE lands. Local assets
 ///   are displayed within one frame regardless of network state.
-/// - `appsByIdentifier` is computed synchronously from local storage
+/// - `appsByAssetId` is computed synchronously from local storage
 ///   (`storage.querySync`) on every emission. As the `and:` relationship
 ///   queries populate storage in the background, subsequent emissions pick
 ///   up the newly-available Apps.
@@ -85,36 +86,27 @@ class LatestReleasesState {
 /// - Remote failures degrade gracefully; rows without a resolved App are
 ///   simply skipped by the consumer widget.
 class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
-  LatestReleasesNotifier(this.ref) : super(LatestReleasesState.loading()) {
+  LatestReleasesNotifier(this.ref, {required this.platform})
+    : super(LatestReleasesState.loading()) {
     _subscribe();
   }
 
   final Ref ref;
-  ProviderSubscription<StorageState<Release>>? _sub;
+  final String platform;
+  ProviderSubscription<StorageState<SoftwareAsset>>? _sub;
 
   void _subscribe() {
     _sub?.close();
     _sub = ref.listen(
-      query<Release>(
+      query<SoftwareAsset>(
+        tags: {
+          '#f': {platform},
+        },
         limit: _kPageSize,
         source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: true),
         subscriptionPrefix: 'app-latest-releases',
-        and: (release) => {
-          release.app.query(
-            source: const LocalAndRemoteSource(
-              relays: 'AppCatalog',
-              stream: false,
-            ),
-            and: (app) => {
-              app.author.query(
-                source: const LocalAndRemoteSource(
-                  relays: {'vertex', 'social'},
-                  cachedFor: Duration(hours: 2),
-                ),
-              ),
-            },
-          ),
-          release.softwareAssets.query(
+        and: (asset) => {
+          asset.app.query(
             source: const LocalAndRemoteSource(
               relays: 'AppCatalog',
               stream: false,
@@ -123,7 +115,7 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
         },
       ),
       (_, next) {
-        if (next is StorageError<Release>) {
+        if (next is StorageError<SoftwareAsset>) {
           state = state.copyWith(error: next.exception);
           return;
         }
@@ -133,34 +125,31 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
     );
   }
 
-  void _applyFirstPage(List<Release> releases) {
+  void _applyFirstPage(List<SoftwareAsset> assets) {
     final storage = ref.read(storageNotifierProvider.notifier);
-    final liveIds = releases.map((r) => r.id).toSet();
+    final liveIds = assets.map((asset) => asset.id).toSet();
     final filteredOlder = state.olderPages
-        .where((r) => !liveIds.contains(r.id))
+        .where((asset) => !liveIds.contains(asset.id))
         .toList();
 
-    final keepIds = {
-      ...releases.map((r) => r.appIdentifier),
-      ...filteredOlder.map((r) => r.appIdentifier),
-    }..removeWhere((id) => id.isEmpty);
+    final keepAssets = [...assets, ...filteredOlder];
 
-    final appsByIdentifier = _resolveAppsFromLocal(storage, keepIds);
+    final appsByAssetId = _resolveAppsFromLocal(storage, keepAssets);
 
     state = state.copyWith(
-      firstPage: releases,
+      firstPage: assets,
       olderPages: filteredOlder,
-      appsByIdentifier: appsByIdentifier,
+      appsByAssetId: appsByAssetId,
       error: null,
     );
   }
 
   Future<void> loadMore() async {
-    final all = state.allReleases;
+    final all = state.allAssets;
     if (state.isLoadingMore || !state.hasMore || all.isEmpty) return;
 
     final oldest = all
-        .map((r) => r.event.createdAt)
+        .map((asset) => asset.event.createdAt)
         .reduce((a, b) => a.isBefore(b) ? a : b)
         .subtract(const Duration(milliseconds: 1));
 
@@ -168,16 +157,21 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
 
     try {
       final storage = ref.read(storageNotifierProvider.notifier);
-      final req =
-          RequestFilter<Release>(until: oldest, limit: _kPageSize).toRequest();
+      final req = RequestFilter<SoftwareAsset>(
+        tags: {
+          '#f': {platform},
+        },
+        until: oldest,
+        limit: _kPageSize,
+      ).toRequest();
 
       // Local-first: read whatever is already cached, so offline scroll
       // shows older items immediately without waiting on the relay.
-      final localReleases = storage.querySync(req);
+      final localAssets = storage.querySync(req);
 
-      List<Release> releases;
-      if (localReleases.isNotEmpty) {
-        releases = localReleases;
+      List<SoftwareAsset> assets;
+      if (localAssets.isNotEmpty) {
+        assets = localAssets;
         // Background hydrate: bring in any older items the relay has that
         // aren't cached yet. Results land via the live subscription's
         // general storage-update path; next scroll picks them up.
@@ -191,11 +185,11 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
                 ),
                 subscriptionPrefix: 'app-latest-releases-older',
               )
-              .catchError((_) => const <Release>[]),
+              .catchError((_) => const <SoftwareAsset>[]),
         );
       } else {
         // Nothing local. Try remote with a short timeout; fall back to empty.
-        releases = await storage
+        assets = await storage
             .query(
               req,
               source: const LocalAndRemoteSource(
@@ -206,102 +200,89 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
             )
             .timeout(
               const Duration(seconds: 5),
-              onTimeout: () => const <Release>[],
+              onTimeout: () => const <SoftwareAsset>[],
             )
-            .catchError((_) => const <Release>[]);
+            .catchError((_) => const <SoftwareAsset>[]);
       }
 
-      if (releases.isEmpty) {
+      if (assets.isEmpty) {
         state = state.copyWith(isLoadingMore: false, hasMore: false);
         return;
       }
 
-      final existingIds = all.map((r) => r.id).toSet();
-      final unique = releases
-          .where((r) => !existingIds.contains(r.id))
+      final existingIds = all.map((asset) => asset.id).toSet();
+      final unique = assets
+          .where((asset) => !existingIds.contains(asset.id))
           .toList();
 
       // Fire relationship queries for the older page in the background.
       // The first-page subscription's general-update path will refresh
-      // `appsByIdentifier` as apps/authors/assets land in storage.
+      // `appsByAssetId` as apps land in storage.
       _hydrateOlderPageRelationships(unique);
 
-      final keepIds = {
-        ...state.firstPage.map((r) => r.appIdentifier),
-        ...state.olderPages.map((r) => r.appIdentifier),
-        ...unique.map((r) => r.appIdentifier),
-      }..removeWhere((id) => id.isEmpty);
+      final keepAssets = [...state.firstPage, ...state.olderPages, ...unique];
 
       state = state.copyWith(
         olderPages: [...state.olderPages, ...unique],
-        appsByIdentifier: _resolveAppsFromLocal(storage, keepIds),
+        appsByAssetId: _resolveAppsFromLocal(storage, keepAssets),
         isLoadingMore: false,
-        hasMore: releases.length >= _kPageSize,
+        hasMore: assets.length >= _kPageSize,
       );
     } catch (_) {
       state = state.copyWith(isLoadingMore: false);
     }
   }
 
-  /// Synchronously map app identifiers → App using local storage only.
+  /// Synchronously map asset IDs -> parent App using local storage only.
   /// Never awaits network; returns an empty entry for ids not yet in cache.
   Map<String, App> _resolveAppsFromLocal(
     StorageNotifier storage,
-    Set<String> appIds,
+    List<SoftwareAsset> assets,
   ) {
     final result = <String, App>{};
-    for (final id in appIds) {
+    for (final asset in assets) {
+      if (asset.appIdentifier.isEmpty) continue;
       final matches = storage.querySync(
         RequestFilter<App>(
+          authors: {asset.event.pubkey},
           tags: {
-            '#d': {id},
+            '#d': {asset.appIdentifier},
+            '#f': {platform},
           },
           limit: 1,
         ).toRequest(),
       );
       if (matches.isNotEmpty) {
-        result[id] = matches.first;
+        result[asset.id] = matches.first;
       }
     }
     return result;
   }
 
-  /// Fire-and-forget relationship hydration for older-page Releases.
+  /// Fire-and-forget relationship hydration for older-page SoftwareAssets.
   /// Results land in local storage and trigger a refresh via the outer
   /// subscription's `handleStorageUpdate`.
-  void _hydrateOlderPageRelationships(List<Release> releases) {
-    if (releases.isEmpty) return;
+  void _hydrateOlderPageRelationships(List<SoftwareAsset> assets) {
+    if (assets.isEmpty) return;
     final storage = ref.read(storageNotifierProvider.notifier);
 
-    final appIds = releases
-        .map((r) => r.appIdentifier)
-        .where((id) => id.isNotEmpty)
-        .toSet();
-    final assetIds = releases
-        .expand((r) => r.event.getTagSetValues('e'))
-        .toSet();
+    final appFilters = <RequestFilter<App>>[];
+    for (final asset in assets) {
+      final filters = asset.app.req?.filters;
+      if (filters != null && filters.isNotEmpty) {
+        appFilters.add(filters.first);
+      }
+    }
 
-    if (appIds.isNotEmpty) {
+    if (appFilters.isNotEmpty) {
       unawaited(
         storage.query(
-          RequestFilter<App>(tags: {'#d': appIds}).toRequest(),
+          Request<App>(appFilters),
           source: const LocalAndRemoteSource(
             relays: 'AppCatalog',
             stream: false,
           ),
           subscriptionPrefix: 'app-latest-releases-older-apps',
-        ),
-      );
-    }
-    if (assetIds.isNotEmpty) {
-      unawaited(
-        storage.query(
-          RequestFilter<SoftwareAsset>(ids: assetIds).toRequest(),
-          source: const LocalAndRemoteSource(
-            relays: 'AppCatalog',
-            stream: false,
-          ),
-          subscriptionPrefix: 'app-latest-releases-older-assets',
         ),
       );
     }
@@ -316,7 +297,8 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
 
 final latestReleasesProvider =
     StateNotifierProvider<LatestReleasesNotifier, LatestReleasesState>((ref) {
-      return LatestReleasesNotifier(ref);
+      final platform = ref.read(packageManagerProvider.notifier).platform;
+      return LatestReleasesNotifier(ref, platform: platform);
     });
 
 // ---------------------------------------------------------------------------
@@ -336,8 +318,8 @@ class LatestReleasesContainer extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = showSkeleton ? null : ref.watch(latestReleasesProvider);
-    final releases = state?.allReleases ?? [];
-    final appsById = state?.appsByIdentifier ?? const {};
+    final assets = state?.allAssets ?? [];
+    final appsByAssetId = state?.appsByAssetId ?? const {};
 
     final categorized = ref.watch(categorizedUpdatesProvider);
     final pinnedApps = [
@@ -348,8 +330,8 @@ class LatestReleasesContainer extends HookConsumerWidget {
 
     final seenAppIds = <String>{...pinnedIds};
     final dedupedApps = <App>[];
-    for (final release in releases) {
-      final app = appsById[release.appIdentifier];
+    for (final asset in assets) {
+      final app = appsByAssetId[asset.id];
       if (app != null && seenAppIds.add(app.identifier)) {
         dedupedApps.add(app);
       }
@@ -360,6 +342,7 @@ class LatestReleasesContainer extends HookConsumerWidget {
     useEffect(() {
       if (state == null) return null;
       void onScroll() {
+        if (!scrollController.hasClients) return;
         final s = ref.read(latestReleasesProvider);
         if (s.isLoadingMore || !s.hasMore) return;
         if (scrollController.position.pixels >=
@@ -368,21 +351,27 @@ class LatestReleasesContainer extends HookConsumerWidget {
         }
       }
 
-      void checkInitialLoad() {
+      void checkContentExtent() {
         if (!scrollController.hasClients) return;
         final position = scrollController.position;
         final s = ref.read(latestReleasesProvider);
         if (s.isLoadingMore || !s.hasMore) return;
-        if (position.maxScrollExtent <= position.viewportDimension) {
+        if (position.maxScrollExtent <= 0 ||
+            position.pixels >= position.maxScrollExtent - 300) {
           ref.read(latestReleasesProvider.notifier).loadMore();
         }
       }
 
-      WidgetsBinding.instance.addPostFrameCallback((_) => checkInitialLoad());
+      WidgetsBinding.instance.addPostFrameCallback((_) => checkContentExtent());
 
       scrollController.addListener(onScroll);
       return () => scrollController.removeListener(onScroll);
-    }, [scrollController, state]);
+    }, [
+      scrollController,
+      combinedApps.length,
+      state?.isLoadingMore,
+      state?.hasMore,
+    ]);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
