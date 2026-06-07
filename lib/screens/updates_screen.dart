@@ -2,8 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
+import 'package:zapstore/services/device_key_service.dart';
+import 'package:zapstore/services/ignored_apps_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/services/updates_service.dart';
 import 'package:zapstore/theme.dart';
@@ -174,6 +177,7 @@ class _UpdatesList extends ConsumerWidget {
     final manualUpdates = categorized.manualUpdates;
     final upToDateApps = categorized.upToDateApps;
     final uncatalogedApps = categorized.uncatalogedApps;
+    final unmanagedApps = categorized.unmanagedApps;
 
     // Resolve installing apps (active operations not already in update lists)
     final operations = ref.watch(
@@ -210,12 +214,13 @@ class _UpdatesList extends ConsumerWidget {
           .toList();
     }
 
-    // Empty state
+    // Empty state: only show if there are truly no apps at all (unmanaged ones don't count)
     if (automaticUpdates.isEmpty &&
         manualUpdates.isEmpty &&
         installingApps.isEmpty &&
         upToDateApps.isEmpty &&
-        uncatalogedApps.isEmpty) {
+        uncatalogedApps.isEmpty &&
+        unmanagedApps.isEmpty) {
       final theme = Theme.of(context);
       return Center(
         child: Column(
@@ -229,7 +234,7 @@ class _UpdatesList extends ConsumerWidget {
                 0.2126, 0.7152, 0.0722, 0, 0,
                 0, 0, 0, 1, 0,
               ]),
-              child: const Text('🎉', style: TextStyle(fontSize: 48)),
+              child: const Text('\u{1F389}', style: TextStyle(fontSize: 48)),
             ),
             const SizedBox(height: 12),
             Text(
@@ -307,15 +312,52 @@ class _UpdatesList extends ConsumerWidget {
                 title: 'Other installed',
                 count: uncatalogedApps.length,
                 iconColor: AppColors.darkOnSurfaceSecondary,
+                hint: 'Swipe left to stop managing these apps',
               ),
             ),
             SliverList(
               delegate: SliverChildBuilderDelegate(
-                (context, index) => _UncatalogedAppCard(
+                (context, index) => _SlidablePackageCard(
                   key: ValueKey('uncataloged_${uncatalogedApps[index].appId}'),
                   packageInfo: uncatalogedApps[index],
+                  actionLabel: 'Unmanage',
+                  actionIcon: Icons.do_not_disturb_on_outlined,
+                  actionColor: Colors.orange.shade800,
+                  onAction: (ref) => toggleUnmanagedApp(
+                    ref,
+                    uncatalogedApps[index].appId,
+                    unmanage: true,
+                  ),
                 ),
                 childCount: uncatalogedApps.length,
+              ),
+            ),
+          ],
+          if (unmanagedApps.isNotEmpty) ...[
+            SliverToBoxAdapter(
+              child: _SectionHeader(
+                icon: Icons.visibility_off,
+                title: 'Unmanaged Apps',
+                count: unmanagedApps.length,
+                iconColor: AppColors.darkOnSurfaceSecondary,
+                hint: 'Swipe left to manage again',
+              ),
+            ),
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) => _SlidablePackageCard(
+                  key: ValueKey('unmanaged_${unmanagedApps[index].appId}'),
+                  packageInfo: unmanagedApps[index],
+                  actionLabel: 'Manage',
+                  actionIcon: Icons.visibility_outlined,
+                  actionColor: AppColors.darkActionPrimary,
+                  onAction: (ref) => toggleUnmanagedApp(
+                    ref,
+                    unmanagedApps[index].appId,
+                    unmanage: false,
+                  ),
+                ),
+                childCount: unmanagedApps.length,
               ),
             ),
           ],
@@ -325,8 +367,8 @@ class _UpdatesList extends ConsumerWidget {
   }
 }
 
-/// A section: header + list of AppCards, rendered as a single sliver.
-class _AppSection extends StatelessWidget {
+/// A section: header + list of AppCards with swipe-to-ignore, rendered as a single sliver.
+class _AppSection extends ConsumerWidget {
   const _AppSection({
     required this.icon,
     required this.title,
@@ -348,7 +390,9 @@ class _AppSection extends StatelessWidget {
   final Widget? headerTrailing;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final hasDeviceKey = ref.watch(devicePubkeyProvider) != null;
+
     return SliverList(
       delegate: SliverChildBuilderDelegate(
         (context, index) {
@@ -361,13 +405,38 @@ class _AppSection extends StatelessWidget {
             );
           }
           final app = apps[index - 1];
-          return AppCard(
+          final card = AppCard(
             key: ValueKey('${keyPrefix}_${app.identifier}'),
             app: app,
             showUpdateArrow: showUpdateArrow,
             showUpdateButton: showUpdateButton,
             showZapEncouragement: showZapEncouragement,
             showDescription: false,
+          );
+
+          if (!hasDeviceKey) return card;
+
+          return Slidable(
+            key: ValueKey('slidable_${keyPrefix}_${app.identifier}'),
+            endActionPane: ActionPane(
+              motion: const BehindMotion(),
+              extentRatio: 0.22,
+              children: [
+                SlidableAction(
+                  onPressed: (_) => toggleUnmanagedApp(
+                    ref,
+                    app.identifier,
+                    unmanage: true,
+                  ),
+                  backgroundColor: Colors.orange.shade800,
+                  foregroundColor: Colors.white,
+                  icon: Icons.do_not_disturb_on_outlined,
+                  label: 'Unmanage',
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ],
+            ),
+            child: card,
           );
         },
         childCount: apps.length + 1,
@@ -383,6 +452,7 @@ class _SectionHeader extends StatelessWidget {
     required this.count,
     this.iconColor,
     this.trailing,
+    this.hint,
   });
 
   final IconData icon;
@@ -390,21 +460,44 @@ class _SectionHeader extends StatelessWidget {
   final int count;
   final Color? iconColor;
   final Widget? trailing;
+  final String? hint;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Row(
+      padding: EdgeInsets.fromLTRB(16, 16, 16, hint != null ? 4 : 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 20, color: iconColor ?? AppColors.darkActionPrimary),
-          const SizedBox(width: 8),
-          Text(title, style: context.textTheme.titleMedium),
-          const SizedBox(width: 8),
-          CountBadge(count: count, color: AppColors.darkPillBackground),
-          if (trailing != null) ...[
-            const SizedBox(width: 4),
-            trailing!,
+          Row(
+            children: [
+              Icon(
+                icon,
+                size: 20,
+                color: iconColor ?? AppColors.darkActionPrimary,
+              ),
+              const SizedBox(width: 8),
+              Text(title, style: context.textTheme.titleMedium),
+              const SizedBox(width: 8),
+              CountBadge(count: count, color: AppColors.darkPillBackground),
+              if (trailing != null) ...[
+                const SizedBox(width: 4),
+                trailing!,
+              ],
+            ],
+          ),
+          if (hint != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              hint!,
+              style: context.textTheme.bodySmall?.copyWith(
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.45),
+                fontStyle: FontStyle.italic,
+              ),
+            ),
           ],
         ],
       ),
@@ -441,8 +534,55 @@ class _ManualUpdatesHelpIcon extends StatelessWidget {
   }
 }
 
-class _UncatalogedAppCard extends StatelessWidget {
-  const _UncatalogedAppCard({super.key, required this.packageInfo});
+/// A package card (uncataloged or unmanaged) with a swipe-left action pane.
+///
+/// When the device key is not ready, no swipe action is shown.
+class _SlidablePackageCard extends ConsumerWidget {
+  const _SlidablePackageCard({
+    super.key,
+    required this.packageInfo,
+    required this.actionLabel,
+    required this.actionIcon,
+    required this.actionColor,
+    required this.onAction,
+  });
+
+  final PackageInfo packageInfo;
+  final String actionLabel;
+  final IconData actionIcon;
+  final Color actionColor;
+  final Future<void> Function(WidgetRef ref) onAction;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final hasDeviceKey = ref.watch(devicePubkeyProvider) != null;
+    final card = _PackageCard(packageInfo: packageInfo);
+
+    if (!hasDeviceKey) return card;
+
+    return Slidable(
+      key: ValueKey('slidable_pkg_${packageInfo.appId}'),
+      endActionPane: ActionPane(
+        motion: const BehindMotion(),
+        extentRatio: 0.22,
+        children: [
+          SlidableAction(
+            onPressed: (_) => onAction(ref),
+            backgroundColor: actionColor,
+            foregroundColor: Colors.white,
+            icon: actionIcon,
+            label: actionLabel,
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ],
+      ),
+      child: card,
+    );
+  }
+}
+
+class _PackageCard extends StatelessWidget {
+  const _PackageCard({required this.packageInfo});
 
   final PackageInfo packageInfo;
 
