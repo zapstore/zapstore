@@ -140,6 +140,10 @@ class AndroidPackageManagerPlugin :
 
         private var appContext: Context? = null
 
+        /** Blocking install results for background auto-updates */
+        private val awaitLatches = ConcurrentHashMap<String, CountDownLatch>()
+        private val awaitResults = ConcurrentHashMap<String, Map<String, Any?>>()
+
         /**
          * Weak reference to the current Activity. Used by launchConfirmDialog to start
          * the PackageInstaller confirmation dialog in the same task as the app, which
@@ -172,6 +176,12 @@ class AndroidPackageManagerPlugin :
             // Handle pending user action - store intent for potential re-launch
             if (status == InstallStatus.PENDING_USER_ACTION && confirmIntent != null) {
                 pendingUserActionIntents[pkg] = confirmIntent
+                resolveAwait(
+                        pkg,
+                        status,
+                        message ?: "User confirmation pending",
+                        errorCode
+                )
 
                 // Track this session as pending user action so SessionCallback can detect
                 // acceptance
@@ -191,6 +201,7 @@ class AndroidPackageManagerPlugin :
                                     InstallStatus.CANCELLED
                             )
             ) {
+                resolveAwait(pkg, status, message, errorCode)
                 sessionToPackage.remove(sessionId)
                 pendingUserActionIntents.remove(pkg)
                 instance?.sessionsPendingUserAction?.remove(sessionId)
@@ -285,6 +296,25 @@ class AndroidPackageManagerPlugin :
         }
 
         fun isAppInForeground(): Boolean = isAppInForeground
+
+        private fun resolveAwait(
+                packageName: String,
+                status: String,
+                message: String?,
+                errorCode: String?
+        ) {
+            val latch = awaitLatches.remove(packageName) ?: return
+            val result =
+                    mutableMapOf<String, Any?>(
+                            "success" to (status == InstallStatus.SUCCESS),
+                            "cancelled" to (status == InstallStatus.CANCELLED),
+                            "needsUserAction" to (status == InstallStatus.PENDING_USER_ACTION),
+                    )
+            if (message != null) result["error"] = message
+            if (errorCode != null) result["errorCode"] = errorCode
+            awaitResults[packageName] = result
+            latch.countDown()
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════
@@ -663,6 +693,38 @@ class AndroidPackageManagerPlugin :
                 }
                 abortInstall(packageName, result)
             }
+            "verifyApk" -> {
+                val filePath = call.argument<String>("filePath")
+                val expectedHash = call.argument<String>("expectedHash")
+                val expectedCertHashes =
+                        call.argument<List<String>>("expectedCertHashes") ?: emptyList()
+                if (filePath == null || expectedHash == null) {
+                    result.error("MISSING_ARGUMENT", "filePath and expectedHash required", null)
+                    return
+                }
+                verifyApkOnly(filePath, expectedHash, expectedCertHashes, result)
+            }
+            "installAndAwait" -> {
+                val filePath = call.argument<String>("filePath")
+                val packageName = call.argument<String>("packageName")
+                val expectedHash = call.argument<String>("expectedHash")
+                val expectedSize = call.argument<Number>("expectedSize")?.toLong()
+                val expectedCertHashes =
+                        call.argument<List<String>>("expectedCertHashes") ?: emptyList()
+
+                if (filePath == null || packageName == null) {
+                    result.error("MISSING_ARGUMENT", "filePath and packageName required", null)
+                    return
+                }
+                installApkAndAwait(
+                        filePath,
+                        packageName,
+                        expectedHash,
+                        expectedSize,
+                        expectedCertHashes,
+                        result
+                )
+            }
             else -> result.notImplemented()
         }
     }
@@ -670,6 +732,138 @@ class AndroidPackageManagerPlugin :
     // ═══════════════════════════════════════════════════════════════════════════════
     // INSTALLATION
     // ═══════════════════════════════════════════════════════════════════════════════
+
+    private fun verifyApkOnly(
+            filePath: String,
+            expectedHash: String,
+            expectedCertHashes: List<String>,
+            result: Result
+    ) {
+        Thread {
+                    val file = File(filePath)
+                    if (!file.exists()) {
+                        mainHandler.post {
+                            result.success(mapOf("valid" to false, "error" to "APK file not found"))
+                        }
+                        return@Thread
+                    }
+                    if (!isValidApkFormat(file)) {
+                        mainHandler.post {
+                            result.success(mapOf("valid" to false, "error" to "Invalid APK file"))
+                        }
+                        return@Thread
+                    }
+                    if (expectedCertHashes.isNotEmpty()) {
+                        val actualCertHashes = extractApkCertHashes(file.absolutePath)
+                        if (actualCertHashes == null) {
+                            mainHandler.post {
+                                result.success(
+                                        mapOf(
+                                                "valid" to false,
+                                                "error" to "Could not verify APK certificate"
+                                        )
+                                )
+                            }
+                            return@Thread
+                        }
+                        val matched =
+                                actualCertHashes.any { actual ->
+                                    expectedCertHashes.any { expected ->
+                                        actual.equals(expected, ignoreCase = true)
+                                    }
+                                }
+                        if (!matched) {
+                            mainHandler.post {
+                                result.success(
+                                        mapOf(
+                                                "valid" to false,
+                                                "error" to "Certificate mismatch"
+                                        )
+                                )
+                            }
+                            return@Thread
+                        }
+                    }
+                    val digest = MessageDigest.getInstance("SHA-256")
+                    FileInputStream(file).use { fis ->
+                        val buffer = ByteArray(COPY_BUFFER_SIZE)
+                        var bytesRead: Int
+                        while (fis.read(buffer).also { bytesRead = it } != -1) {
+                            digest.update(buffer, 0, bytesRead)
+                        }
+                    }
+                    val actualHash = digest.digest().joinToString("") { "%02x".format(it) }
+                    val valid = actualHash.equals(expectedHash, ignoreCase = true)
+                    mainHandler.post {
+                        val response = mutableMapOf<String, Any?>("valid" to valid)
+                        if (!valid) response["error"] = "Hash verification failed"
+                        result.success(response)
+                    }
+                }
+                .start()
+    }
+
+    private fun installApkAndAwait(
+            filePath: String,
+            packageName: String,
+            expectedHash: String?,
+            expectedSize: Long?,
+            expectedCertHashes: List<String>,
+            result: Result
+    ) {
+        val latch = CountDownLatch(1)
+        awaitLatches[packageName] = latch
+
+        installApk(filePath, packageName, expectedHash, expectedSize, expectedCertHashes, object : Result {
+            override fun success(response: Any?) {
+                val responseMap =
+                        (response as? Map<*, *>)?.entries?.associate {
+                            it.key.toString() to it.value
+                        }
+                if (responseMap?.get("started") != true) {
+                    awaitLatches.remove(packageName)
+                    awaitResults[packageName] =
+                            responseMap
+                                    ?: mapOf(
+                                            "success" to false,
+                                            "error" to "Failed to start install"
+                                    )
+                    latch.countDown()
+                }
+            }
+
+            override fun error(errorCode: String, errorMessage: String?, errorDetails: Any?) {
+                awaitLatches.remove(packageName)
+                awaitResults[packageName] =
+                        mapOf(
+                                "success" to false,
+                                "error" to (errorMessage ?: errorCode)
+                        )
+                latch.countDown()
+            }
+
+            override fun notImplemented() {
+                awaitLatches.remove(packageName)
+                awaitResults[packageName] =
+                        mapOf("success" to false, "error" to "not implemented")
+                latch.countDown()
+            }
+        })
+
+        Thread {
+                    val completed = latch.await(10, TimeUnit.MINUTES)
+                    val awaitResult =
+                            if (completed) {
+                                awaitResults.remove(packageName)
+                                        ?: mapOf("success" to false, "error" to "No result")
+                            } else {
+                                awaitLatches.remove(packageName)
+                                mapOf("success" to false, "error" to "Install timed out")
+                            }
+                    mainHandler.post { result.success(awaitResult) }
+                }
+                .start()
+    }
 
     private fun installApk(
             filePath: String,

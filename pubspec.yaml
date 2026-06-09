@@ -17,6 +17,8 @@ dependencies:
   flutter:
     sdk: flutter
 
+  installed_apps_plugin:
+    path: plugins/installed_apps_plugin
   flutter_riverpod: ^2.6.1
   flutter_hooks: ^0.21.2
   path_provider: ^2.1.5

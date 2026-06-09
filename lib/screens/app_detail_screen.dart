@@ -1,4 +1,5 @@
 import 'package:collection/collection.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
@@ -146,7 +147,7 @@ class _AppDetailContent extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
 
     final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
-    final showDebugSections = isDebugMode(signedInPubkey);
+    final showDebugSections = kDebugMode || isDebugMode(signedInPubkey);
 
     // Query author profile from social relays
     final authorState = ref.watch(

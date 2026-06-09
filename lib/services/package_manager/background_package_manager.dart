@@ -1,10 +1,14 @@
 import 'package:models/models.dart';
+import 'package:flutter/services.dart';
 import 'package:zapstore/services/package_manager/installed_packages_snapshot.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
+import 'package:zapstore/services/log_service.dart';
 
 /// Background-safe PackageManager that avoids EventChannel usage.
 final class BackgroundPackageManager extends PackageManager {
   BackgroundPackageManager(super.ref);
+
+  static const _methodChannel = MethodChannel('android_package_manager');
 
   // Zapstore currently targets arm64 APKs for background checks.
   @override
@@ -47,7 +51,47 @@ final class BackgroundPackageManager extends PackageManager {
 
   @override
   Future<void> syncInstalledPackages() async {
-    final installed = await InstalledPackagesSnapshot.load();
-    state = state.copyWith(installed: installed);
+    try {
+      final installedApps =
+          await _methodChannel
+              .invokeMethod<List<Object?>>('getInstalledApps', {
+                'includeSystemApps': false,
+              })
+              .timeout(const Duration(seconds: 10)) ??
+          [];
+
+      final packages = <String, PackageInfo>{};
+      for (final appObj in installedApps) {
+        final app = Map<String, dynamic>.from(appObj as Map<Object?, Object?>);
+        final appId =
+            app['bundleId'] as String? ?? app['packageName'] as String? ?? '';
+        if (appId.isEmpty) continue;
+
+        final rawHashes = app['signatureHashes'];
+        packages[appId] = PackageInfo(
+          appId: appId,
+          name: app['name'] as String?,
+          version: app['versionName'] as String? ?? '0.0.0',
+          versionCode: app['versionCode'] as int?,
+          signatureHashes: rawHashes is List
+              ? rawHashes.cast<String>().toList()
+              : const [],
+          installTime: null,
+          canInstallSilently: app['canInstallSilently'] as bool? ?? false,
+        );
+      }
+
+      state = state.copyWith(installed: packages);
+      await InstalledPackagesSnapshot.save(packages);
+    } catch (e, st) {
+      LogService.I.warn(
+        'native background package scan failed; using snapshot',
+        tag: 'background_updates',
+        err: e,
+        stack: st,
+      );
+      final installed = await InstalledPackagesSnapshot.load();
+      state = state.copyWith(installed: installed);
+    }
   }
 }

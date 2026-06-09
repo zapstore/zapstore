@@ -577,6 +577,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.7.2"
+  installed_apps_plugin:
+    dependency: "direct main"
+    description:
+      path: "plugins/installed_apps_plugin"
+      relative: true
+    source: path
+    version: "0.0.1"
   intl:
     dependency: "direct main"
     description:

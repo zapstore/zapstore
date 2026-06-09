@@ -18,6 +18,7 @@ class LocalSettings {
   final DateTime? seenUntil;
   final DateTime? deletionSyncedUntil;
   final bool installedAppsBackupEnabled;
+  final bool backgroundAutoUpdatesEnabled;
   final LogLevel logLevel;
 
   const LocalSettings({
@@ -27,6 +28,7 @@ class LocalSettings {
     this.seenUntil,
     this.deletionSyncedUntil,
     this.installedAppsBackupEnabled = false,
+    this.backgroundAutoUpdatesEnabled = false,
     this.logLevel = LogLevel.debug,
   });
 
@@ -40,6 +42,8 @@ class LocalSettings {
       seenUntil: _parseDateTime(json['seenUntil']),
       deletionSyncedUntil: _parseDateTime(json['deletionSyncedUntil']),
       installedAppsBackupEnabled: json['backupEnabled'] as bool? ?? false,
+      backgroundAutoUpdatesEnabled:
+          json['backgroundAutoUpdates'] as bool? ?? false,
       logLevel: LogLevel.parse(json['logLevel'] as String?) ?? LogLevel.debug,
     );
   }
@@ -53,6 +57,7 @@ class LocalSettings {
         if (deletionSyncedUntil != null)
           'deletionSyncedUntil': deletionSyncedUntil!.millisecondsSinceEpoch,
         if (installedAppsBackupEnabled) 'backupEnabled': true,
+        if (backgroundAutoUpdatesEnabled) 'backgroundAutoUpdates': true,
         // Only persist non-default value to keep blob small.
         if (logLevel != LogLevel.debug) 'logLevel': logLevel.name,
       };
@@ -64,6 +69,7 @@ class LocalSettings {
     DateTime? seenUntil,
     DateTime? deletionSyncedUntil,
     bool? installedAppsBackupEnabled,
+    bool? backgroundAutoUpdatesEnabled,
     LogLevel? logLevel,
     bool clearNwc = false,
   }) {
@@ -76,6 +82,8 @@ class LocalSettings {
       deletionSyncedUntil: deletionSyncedUntil ?? this.deletionSyncedUntil,
       installedAppsBackupEnabled:
           installedAppsBackupEnabled ?? this.installedAppsBackupEnabled,
+      backgroundAutoUpdatesEnabled:
+          backgroundAutoUpdatesEnabled ?? this.backgroundAutoUpdatesEnabled,
       logLevel: logLevel ?? this.logLevel,
     );
   }

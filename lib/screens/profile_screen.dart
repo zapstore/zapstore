@@ -1514,6 +1514,44 @@ class _DeviceKeyCard extends HookConsumerWidget {
   }
 }
 
+class _BackgroundAutoUpdatesToggle extends ConsumerWidget {
+  const _BackgroundAutoUpdatesToggle();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settingsAsync = ref.watch(localSettingsProvider);
+    final enabled =
+        settingsAsync.valueOrNull?.backgroundAutoUpdatesEnabled ?? false;
+
+    return SwitchListTile(
+      secondary: CircleAvatar(
+        radius: 18,
+        backgroundColor: Theme.of(
+          context,
+        ).colorScheme.primary.withValues(alpha: 0.12),
+        child: Icon(
+          Icons.system_update_alt,
+          color: Theme.of(context).colorScheme.primary,
+          size: 20,
+        ),
+      ),
+      title: const Text('Background auto-updates'),
+      subtitle: const Text(
+        'When on, periodic background checks download and apply updates. '
+        'Manual updates are downloaded and shown as ready to install.',
+      ),
+      value: enabled,
+      contentPadding: EdgeInsets.zero,
+      onChanged: (value) async {
+        await ref
+            .read(settingsServiceProvider)
+            .update((s) => s.copyWith(backgroundAutoUpdatesEnabled: value));
+        ref.invalidate(localSettingsProvider);
+      },
+    );
+  }
+}
+
 class _InstalledAppsBackupToggle extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1568,6 +1606,8 @@ class _DataManagementSection extends ConsumerWidget {
             const _DeviceKeyCard(),
             const SizedBox(height: 8),
             _InstalledAppsBackupToggle(),
+            const SizedBox(height: 8),
+            const _BackgroundAutoUpdatesToggle(),
             const SizedBox(height: 8),
             ListTile(
               leading: CircleAvatar(
