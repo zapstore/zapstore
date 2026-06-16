@@ -14,10 +14,14 @@ Show users their installed apps with available updates, allow manual refresh, an
 
 ### Updates Screen
 
-- Shows categorized lists: Installing, Updates (automatic), Manual Updates, Up to Date, Other Installed
+- Shows categorized lists: Installing, Updates (automatic), Manual Updates, Up to Date, Other Installed, Unmanaged Apps
 - "Update All" button at top updates all apps with automatic update capability
 - "Last checked" timestamp shows when updates were last fetched
 - Pull-to-refresh triggers immediate update check (with throttling)
+- Apps marked unmanaged are excluded from update counts and "Update All"
+- Cataloged unmanaged apps keep Zapstore metadata such as icon, publisher, description, and version data; uncataloged unmanaged apps fall back to installed package metadata
+- Apps installed by another app store may default to unmanaged; apps installed manually, through browser/file-manager/package-installer flows, or by Zapstore stay managed by default
+- Users can override either default with explicit Unmanage/Manage actions, and explicit choices persist across restarts
 
 ### Cold Start Behavior
 
@@ -50,6 +54,8 @@ Show users their installed apps with available updates, allow manual refresh, an
 - Network offline during poll → fails silently, retries on next interval
 - App backgrounded → polling pauses, resumes when app returns to foreground
 - Rapid pull-to-refresh → throttled to prevent server spam
+- Installer source unavailable or ambiguous → app remains managed by default
+- Explicit Manage must not be undone by automatic installer-source detection on the next package scan
 
 ## Acceptance Criteria
 
@@ -60,3 +66,8 @@ Show users their installed apps with available updates, allow manual refresh, an
 - [ ] "Last checked" timestamp displays relative time (e.g., "2 minutes ago")
 - [ ] Skeleton shown only on cold start until first installed app matches
 - [ ] Subsequent refreshes show spinner, not skeleton
+- [ ] Unmanaged apps excluded from update count and "Update All"
+- [ ] Cataloged unmanaged apps retain Zapstore metadata in the Unmanaged Apps section
+- [ ] Other-store installs default unmanaged when installer source is known
+- [ ] Browser/manual/package-installer installs default managed
+- [ ] Explicit Manage/Unmanage choices override installer-source defaults and persist

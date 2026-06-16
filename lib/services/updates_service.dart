@@ -9,7 +9,7 @@ import 'package:zapstore/services/log_service.dart';
 import 'package:zapstore/services/deletion_processor.dart';
 import 'package:zapstore/services/device_key_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
-import 'package:zapstore/services/ignored_apps_service.dart';
+import 'package:zapstore/services/unmanaged_apps_service.dart';
 import 'package:zapstore/services/settings_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 

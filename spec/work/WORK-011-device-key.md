@@ -21,8 +21,8 @@
   - Changed from FutureProvider to synchronous Provider
   - No manual nip44Decrypt calls (EncryptableModel auto-decrypts)
   - No sign-in gate; always available
-- [x] 5. Rewrite ignored apps to use device key
-  - Files: `lib/services/ignored_apps_service.dart`, `lib/services/updates_service.dart`
+- [x] 5. Rewrite unmanaged apps to use device key
+  - Files: `lib/services/unmanaged_apps_service.dart`, `lib/services/updates_service.dart`
   - Changed from FutureProvider to synchronous Provider
   - No sign-in gate
 - [x] 6. Remove sign-in gate from SaveAppDialog
@@ -37,7 +37,7 @@
   - Offers restore before migration so the final device key is chosen first
   - Queries Amber-authored encrypted AppStacks after Amber connection
   - Merges them into device-authored encrypted stacks using the device signer
-  - Normalizes legacy installed/ignored d-tags to current identifiers
+  - Normalizes legacy installed/unmanaged d-tags to current identifiers
   - Marks migration complete per Amber pubkey + device pubkey; empty results retry
 - [x] 9. Store device key backups in encrypted settings
   - Files: `lib/services/device_backup_service.dart`
@@ -52,9 +52,9 @@
 
 **Context:** Users may have bookmarks encrypted to their Amber key.
 **Decision:** On Amber connection, migrate encrypted AppStacks authored by the Amber pubkey to equivalent device-key stacks.
-**Rationale:** Private data should follow the new device-key ownership model without losing existing saved apps, installed-app backups, or ignored/unmanaged app state.
+**Rationale:** Private data should follow the new device-key ownership model without losing existing saved apps, installed-app backups, or unmanaged app state.
 
-### 2026-05-07 - Synchronous providers for bookmarks/ignored
+### 2026-05-07 - Synchronous providers for bookmarks/unmanaged apps
 
 **Context:** Previously FutureProvider because of manual decrypt. Now EncryptableModel auto-decrypts.
 **Decision:** Changed to synchronous Provider<Set<String>>.
@@ -74,7 +74,7 @@
 
 ## Spec Issues
 
-- `spec/features/FEAT-006-device-key.md` still lists migration as a non-goal and uses legacy d-tags for installed/ignored apps. Implementation now follows the product direction from this work session: migrate private stacks to the device pubkey on Amber connection.
+- `spec/features/FEAT-006-device-key.md` still lists migration as a non-goal and uses legacy d-tags for installed/unmanaged apps. Implementation now follows the product direction from this work session: migrate private stacks to the device pubkey on Amber connection.
 
 ## Progress Notes
 

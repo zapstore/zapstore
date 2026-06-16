@@ -6,7 +6,7 @@ import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/services/device_key_service.dart';
-import 'package:zapstore/services/ignored_apps_service.dart';
+import 'package:zapstore/services/unmanaged_apps_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/services/updates_service.dart';
 import 'package:zapstore/theme.dart';
@@ -367,7 +367,7 @@ class _UpdatesList extends ConsumerWidget {
   }
 }
 
-/// A section: header + list of AppCards with swipe-to-ignore, rendered as a single sliver.
+/// A section: header + list of AppCards with swipe-to-unmanage, rendered as a single sliver.
 class _AppSection extends ConsumerWidget {
   const _AppSection({
     required this.icon,

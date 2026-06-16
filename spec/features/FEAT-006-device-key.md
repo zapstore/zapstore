@@ -2,7 +2,7 @@
 
 ## Goal
 
-Decouple private data (bookmarks, ignored apps, installed backup, settings) from
+Decouple private data (bookmarks, unmanaged apps, installed backup, settings) from
 Amber sign-in by generating a local device key (nsec) that owns all private
 encrypted events. Amber becomes purely the identity layer for public actions
 (sharing stacks, zaps, web of trust).
@@ -17,7 +17,7 @@ encrypted events. Amber becomes purely the identity layer for public actions
 ## User-Visible Behavior
 
 - On first launch, a device key is silently generated and stored in secure storage
-- Bookmarks, ignored apps, and settings work immediately without sign-in
+- Bookmarks, unmanaged apps, and settings work immediately without sign-in
 - Profile screen shows device key section with ability to copy nsec
 - On first Amber sign-in, a dialog offers to:
   - Back up this device (stores device nsec inside encrypted `zapstore-settings`)
@@ -29,7 +29,7 @@ encrypted events. Amber becomes purely the identity layer for public actions
 - Device nsec: secure storage only (key: device_nsec)
 - NWC string: secure storage only (existing key)
 - Bookmarks: encrypted AppStack (30267), d=zapstore-bookmarks, signed by device key
-- Ignored apps: encrypted AppStack (30267), d=zapstore-ignored-apps, signed by device key
+- Unmanaged apps: encrypted AppStack (30267), d=zapstore-unmanaged-apps, signed by device key
 - Installed backup: encrypted AppStack (30267), d=zapstore-installed-backup, signed by device key
 - App settings: encrypted CustomData (30078), d=zapstore-settings
 - Device backup: entries inside encrypted `zapstore-settings`, signed by Amber key
@@ -60,7 +60,7 @@ encrypted events. Amber becomes purely the identity layer for public actions
 - [ ] Device key generated on first launch and persisted in secure storage
 - [ ] Device key survives SQLite clear / app restart
 - [ ] Bookmarks work without Amber sign-in
-- [ ] Ignored apps work without Amber sign-in
+- [ ] Unmanaged apps work without Amber sign-in
 - [ ] User can copy device nsec from profile screen
 - [ ] First Amber sign-in triggers backup/restore dialog
 - [ ] Backup encrypts device nsec inside `zapstore-settings` to Amber key
@@ -71,6 +71,6 @@ encrypted events. Amber becomes purely the identity layer for public actions
 ## Phases
 
 - A: Device key generation + service + registration at boot + copy nsec UI
-- B: Migrate bookmarks/ignored/backup to device key (drop Amber requirement)
+- B: Migrate bookmarks/unmanaged/backup to device key (drop Amber requirement)
 - C: Amber backup/restore dialog + CustomData events
 - D: Remove appStackEventFilter, clean up sign-in gating in UI

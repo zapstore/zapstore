@@ -15,7 +15,7 @@ import 'package:zapstore/widgets/device_backup_dialog.dart';
 const kSettingsIdentifier = 'zapstore-settings';
 const _kDeviceBackupsKey = 'deviceBackups';
 const _kLegacyInstalledAppsBackupIdentifier = 'zapstore-installed-backup';
-const _kLegacyIgnoredAppsIdentifier = 'zapstore-ignored-apps';
+const _kLegacyUnmanagedAppsIdentifier = 'zapstore-ignored-apps';
 
 /// Manages device key backup/restore via the Amber-signed settings event.
 ///
@@ -236,7 +236,7 @@ final deviceBackupServiceProvider = Provider<DeviceBackupService>(
 String _deviceIdentifierFor(String identifier) {
   return switch (identifier) {
     _kLegacyInstalledAppsBackupIdentifier => kInstalledAppsIdentifier,
-    _kLegacyIgnoredAppsIdentifier => kUnmanagedAppsIdentifier,
+    _kLegacyUnmanagedAppsIdentifier => kUnmanagedAppsIdentifier,
     _ => identifier,
   };
 }
