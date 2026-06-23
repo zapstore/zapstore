@@ -191,8 +191,11 @@ class Completed extends InstallOperation {
   /// Whether this was an update (app was already installed) or a new install.
   final bool isUpdate;
 
-  Completed({required super.target, DateTime? completedAt, this.isUpdate = false})
-    : completedAt = completedAt ?? DateTime.now();
+  Completed({
+    required super.target,
+    DateTime? completedAt,
+    this.isUpdate = false,
+  }) : completedAt = completedAt ?? DateTime.now();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -213,7 +216,6 @@ class OperationFailed extends InstallOperation {
     this.description,
     this.filePath,
   });
-
 }
 
 /// Types of failures that can occur during install operations
@@ -235,6 +237,9 @@ enum FailureType {
 
   /// APK signing certificate does not match what the publisher declared in Nostr metadata
   certMetadataMismatch,
+
+  /// NIP-C1 proof did not verify against the downloaded APK signing certificate
+  c1ProofMismatch,
 
   /// User doesn't have install permission
   permissionDenied,

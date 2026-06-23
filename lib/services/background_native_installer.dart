@@ -10,16 +10,16 @@ class BackgroundNativeInstaller {
     required String filePath,
     required String expectedHash,
     required List<String> expectedCertHashes,
+    Map<String, Object>? c1Proof,
   }) async {
     try {
-      final result = await _channel.invokeMethod<Map<Object?, Object?>>(
-        'verifyApk',
-        {
-          'filePath': filePath,
-          'expectedHash': expectedHash,
-          'expectedCertHashes': expectedCertHashes,
-        },
-      );
+      final result = await _channel
+          .invokeMethod<Map<Object?, Object?>>('verifyApk', {
+            'filePath': filePath,
+            'expectedHash': expectedHash,
+            'expectedCertHashes': expectedCertHashes,
+            'c1Proof': c1Proof,
+          });
       final map = Map<String, dynamic>.from(result ?? {});
       return map['valid'] == true;
     } catch (e, st) {
@@ -41,18 +41,18 @@ class BackgroundNativeInstaller {
     required String expectedHash,
     required int expectedSize,
     required List<String> expectedCertHashes,
+    Map<String, Object>? c1Proof,
   }) async {
     try {
-      final result = await _channel.invokeMethod<Map<Object?, Object?>>(
-        'installAndAwait',
-        {
-          'filePath': filePath,
-          'packageName': appId,
-          'expectedHash': expectedHash,
-          'expectedSize': expectedSize,
-          'expectedCertHashes': expectedCertHashes,
-        },
-      );
+      final result = await _channel
+          .invokeMethod<Map<Object?, Object?>>('installAndAwait', {
+            'filePath': filePath,
+            'packageName': appId,
+            'expectedHash': expectedHash,
+            'expectedSize': expectedSize,
+            'expectedCertHashes': expectedCertHashes,
+            'c1Proof': c1Proof,
+          });
       final map = Map<String, dynamic>.from(result ?? {});
       return BackgroundInstallResult(
         success: map['success'] == true,
@@ -79,18 +79,18 @@ class BackgroundNativeInstaller {
     required String expectedHash,
     required int expectedSize,
     required List<String> expectedCertHashes,
+    Map<String, Object>? c1Proof,
   }) async {
     try {
-      final result = await _channel.invokeMethod<Map<Object?, Object?>>(
-        'install',
-        {
-          'filePath': filePath,
-          'packageName': appId,
-          'expectedHash': expectedHash,
-          'expectedSize': expectedSize,
-          'expectedCertHashes': expectedCertHashes,
-        },
-      );
+      final result = await _channel
+          .invokeMethod<Map<Object?, Object?>>('install', {
+            'filePath': filePath,
+            'packageName': appId,
+            'expectedHash': expectedHash,
+            'expectedSize': expectedSize,
+            'expectedCertHashes': expectedCertHashes,
+            'c1Proof': c1Proof,
+          });
       final map = Map<String, dynamic>.from(result ?? {});
       return map['started'] == true || map['alreadyInProgress'] == true;
     } catch (e, st) {

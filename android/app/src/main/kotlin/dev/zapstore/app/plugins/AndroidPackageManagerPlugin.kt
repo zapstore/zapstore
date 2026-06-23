@@ -12,6 +12,7 @@ import android.os.Looper
 import android.os.UserManager
 import android.provider.Settings
 import android.system.Os
+import android.util.Base64
 import android.util.Log
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
@@ -24,9 +25,11 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileInputStream
 import java.security.MessageDigest
+import java.security.cert.CertificateFactory
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -72,6 +75,7 @@ object ErrorCode {
     const val INSTALL_FAILED = "installFailed"
     const val CERT_MISMATCH = "certMismatch"
     const val CERT_METADATA_MISMATCH = "certMetadataMismatch"
+    const val C1_PROOF_MISMATCH = "c1ProofMismatch"
     const val PERMISSION_DENIED = "permissionDenied"
     const val INSUFFICIENT_STORAGE = "insufficientStorage"
     const val INCOMPATIBLE = "incompatible"
@@ -79,6 +83,14 @@ object ErrorCode {
     const val ALREADY_IN_PROGRESS = "alreadyInProgress"
     const val INSTALL_TIMEOUT = "installTimeout"
 }
+
+private data class C1Proof(
+        val pubkey: String,
+        val certificateHash: String,
+        val signature: String,
+        val createdAt: Long,
+        val expiry: Long
+)
 
 /**
  * AndroidPackageManagerPlugin - Event-driven architecture for clean state management.
@@ -652,12 +664,13 @@ class AndroidPackageManagerPlugin :
                 val expectedSize = call.argument<Number>("expectedSize")?.toLong()
                 val expectedCertHashes =
                         call.argument<List<String>>("expectedCertHashes") ?: emptyList()
+                val c1Proof = parseC1Proof(call.argument<Map<*, *>>("c1Proof"))
 
                 if (filePath == null || packageName == null) {
                     result.error("MISSING_ARGUMENT", "filePath and packageName required", null)
                     return
                 }
-                installApk(filePath, packageName, expectedHash, expectedSize, expectedCertHashes, result)
+                installApk(filePath, packageName, expectedHash, expectedSize, expectedCertHashes, c1Proof, result)
             }
             "canInstallSilently" -> {
                 val packageName = call.argument<String>("packageName")
@@ -698,11 +711,12 @@ class AndroidPackageManagerPlugin :
                 val expectedHash = call.argument<String>("expectedHash")
                 val expectedCertHashes =
                         call.argument<List<String>>("expectedCertHashes") ?: emptyList()
+                val c1Proof = parseC1Proof(call.argument<Map<*, *>>("c1Proof"))
                 if (filePath == null || expectedHash == null) {
                     result.error("MISSING_ARGUMENT", "filePath and expectedHash required", null)
                     return
                 }
-                verifyApkOnly(filePath, expectedHash, expectedCertHashes, result)
+                verifyApkOnly(filePath, expectedHash, expectedCertHashes, c1Proof, result)
             }
             "installAndAwait" -> {
                 val filePath = call.argument<String>("filePath")
@@ -711,6 +725,7 @@ class AndroidPackageManagerPlugin :
                 val expectedSize = call.argument<Number>("expectedSize")?.toLong()
                 val expectedCertHashes =
                         call.argument<List<String>>("expectedCertHashes") ?: emptyList()
+                val c1Proof = parseC1Proof(call.argument<Map<*, *>>("c1Proof"))
 
                 if (filePath == null || packageName == null) {
                     result.error("MISSING_ARGUMENT", "filePath and packageName required", null)
@@ -722,6 +737,7 @@ class AndroidPackageManagerPlugin :
                         expectedHash,
                         expectedSize,
                         expectedCertHashes,
+                        c1Proof,
                         result
                 )
             }
@@ -737,6 +753,7 @@ class AndroidPackageManagerPlugin :
             filePath: String,
             expectedHash: String,
             expectedCertHashes: List<String>,
+            c1Proof: C1Proof?,
             result: Result
     ) {
         Thread {
@@ -784,6 +801,21 @@ class AndroidPackageManagerPlugin :
                             return@Thread
                         }
                     }
+                    if (c1Proof != null) {
+                        val proofError = verifyC1Proof(file.absolutePath, c1Proof)
+                        if (proofError != null) {
+                            mainHandler.post {
+                                result.success(
+                                        mapOf(
+                                                "valid" to false,
+                                                "error" to proofError,
+                                                "errorCode" to ErrorCode.C1_PROOF_MISMATCH
+                                        )
+                                )
+                            }
+                            return@Thread
+                        }
+                    }
                     val digest = MessageDigest.getInstance("SHA-256")
                     FileInputStream(file).use { fis ->
                         val buffer = ByteArray(COPY_BUFFER_SIZE)
@@ -809,12 +841,13 @@ class AndroidPackageManagerPlugin :
             expectedHash: String?,
             expectedSize: Long?,
             expectedCertHashes: List<String>,
+            c1Proof: C1Proof?,
             result: Result
     ) {
         val latch = CountDownLatch(1)
         awaitLatches[packageName] = latch
 
-        installApk(filePath, packageName, expectedHash, expectedSize, expectedCertHashes, object : Result {
+        installApk(filePath, packageName, expectedHash, expectedSize, expectedCertHashes, c1Proof, object : Result {
             override fun success(response: Any?) {
                 val responseMap =
                         (response as? Map<*, *>)?.entries?.associate {
@@ -871,6 +904,7 @@ class AndroidPackageManagerPlugin :
             expectedHash: String?,
             expectedSize: Long?,
             expectedCertHashes: List<String>,
+            c1Proof: C1Proof?,
             result: Result
     ) {
         val file = File(filePath)
@@ -942,7 +976,7 @@ class AndroidPackageManagerPlugin :
 
         // All heavy I/O work runs on background thread to prevent ANRs
         val t = Thread {
-            verifyAndInstall(file, packageName, expectedHash, expectedSize, expectedCertHashes)
+            verifyAndInstall(file, packageName, expectedHash, expectedSize, expectedCertHashes, c1Proof)
             verificationThreads.remove(packageName)
         }
         verificationThreads[packageName] = t
@@ -970,7 +1004,8 @@ class AndroidPackageManagerPlugin :
             packageName: String,
             expectedHash: String?,
             expectedSize: Long?,
-            expectedCertHashes: List<String>
+            expectedCertHashes: List<String>,
+            c1Proof: C1Proof?
     ) {
         // Step 1: Validate APK format before doing any heavy work
         if (!isValidApkFormat(apkFile)) {
@@ -1037,6 +1072,23 @@ class AndroidPackageManagerPlugin :
                         }
                         return
                     }
+                }
+            }
+
+            if (c1Proof != null) {
+                val proofError = verifyC1Proof(apkFile.absolutePath, c1Proof)
+                if (proofError != null) {
+                    Log.e(TAG, "C1 proof verification failed for $packageName: $proofError")
+                    mainHandler.post {
+                        emitInstallStatus(
+                                packageName,
+                                InstallStatus.FAILED,
+                                "Cryptographic identity proof failed",
+                                ErrorCode.C1_PROOF_MISMATCH,
+                                proofError
+                        )
+                    }
+                    return
                 }
             }
 
@@ -1248,6 +1300,103 @@ class AndroidPackageManagerPlugin :
                 .joinToString("") { "%02x".format(it) }
     }
 
+    private fun android.content.pm.Signature.publicKey(): java.security.PublicKey {
+        val certificate =
+                CertificateFactory.getInstance("X.509")
+                        .generateCertificate(ByteArrayInputStream(toByteArray()))
+        return certificate.publicKey
+    }
+
+    private fun parseC1Proof(raw: Map<*, *>?): C1Proof? {
+        if (raw == null) return null
+        val pubkey = raw["pubkey"] as? String ?: return null
+        val certificateHash = raw["certificateHash"] as? String ?: return null
+        val signature = raw["signature"] as? String ?: return null
+        val createdAt = (raw["createdAt"] as? Number)?.toLong() ?: return null
+        val expiry = (raw["expiry"] as? Number)?.toLong() ?: return null
+        return C1Proof(pubkey, certificateHash, signature, createdAt, expiry)
+    }
+
+    private fun verifyC1Proof(apkPath: String, proof: C1Proof): String? {
+        if (proof.expiry <= proof.createdAt) {
+            return "C1 proof expiry is not after creation time."
+        }
+        val now = System.currentTimeMillis() / 1000
+        if (now >= proof.expiry) {
+            return "C1 proof is expired."
+        }
+
+        val signers = extractApkSigners(apkPath)
+                ?: return "Could not read APK signing certificate for C1 proof verification."
+        val matchingSigner =
+                signers.firstOrNull { it.sha256Hex().equals(proof.certificateHash, ignoreCase = true) }
+                        ?: return "Downloaded APK certificate does not match the C1 proof certificate hash."
+
+        val publicKey = try {
+            matchingSigner.publicKey()
+        } catch (e: Exception) {
+            return "Could not extract public key from APK signing certificate: ${e.message}"
+        }
+
+        val algorithm =
+                when (publicKey.algorithm.uppercase()) {
+                    "RSA" -> "SHA256withRSA"
+                    "EC", "ECDSA" -> "SHA256withECDSA"
+                    else -> return "Unsupported APK signing certificate key type: ${publicKey.algorithm}"
+                }
+
+        val signatureBytes = try {
+            Base64.decode(proof.signature, Base64.DEFAULT)
+        } catch (e: Exception) {
+            return "C1 proof signature is not valid base64."
+        }
+
+        val message =
+                "Verifying at ${proof.createdAt} until ${proof.expiry} that I control the following Nostr public key: ${proof.pubkey}"
+        return try {
+            val verifier = java.security.Signature.getInstance(algorithm)
+            verifier.initVerify(publicKey)
+            verifier.update(message.toByteArray(Charsets.UTF_8))
+            if (verifier.verify(signatureBytes)) null else "C1 proof signature does not verify."
+        } catch (e: Exception) {
+            "C1 proof verification failed: ${e.message}"
+        }
+    }
+
+    private fun extractApkSigners(apkPath: String): Array<android.content.pm.Signature>? {
+        return try {
+            val packageInfo =
+                    context.packageManager.getPackageArchiveInfo(
+                            apkPath,
+                            PackageManager.GET_SIGNING_CERTIFICATES
+                    )
+            if (packageInfo == null) {
+                Log.w(TAG, "extractApkSigners: getPackageArchiveInfo returned null for $apkPath")
+                return null
+            }
+
+            val signingInfo = packageInfo.signingInfo
+            if (signingInfo == null) {
+                Log.w(TAG, "extractApkSigners: signingInfo is null for $apkPath")
+                return null
+            }
+
+            val signers = signingInfo.currentSigners()
+            if (signers.isEmpty()) {
+                Log.w(TAG, "extractApkSigners: currentSigners() is empty for $apkPath " +
+                        "(hasMultipleSigners=${signingInfo.hasMultipleSigners()}, " +
+                        "apkContentsSigners=${signingInfo.apkContentsSigners?.size ?: "null"}, " +
+                        "historySize=${signingInfo.signingCertificateHistory?.size ?: "null"})")
+                return null
+            }
+
+            signers
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to extract APK signers from $apkPath: ${e.message}")
+            null
+        }
+    }
+
     /**
      * Extracts signing certificate hashes from an APK file.
      *
@@ -1260,37 +1409,7 @@ class AndroidPackageManagerPlugin :
      * Returns null if extraction fails (treat as verification error, not skip).
      */
     private fun extractApkCertHashes(apkPath: String): List<String>? {
-        return try {
-            val packageInfo =
-                    context.packageManager.getPackageArchiveInfo(
-                            apkPath,
-                            PackageManager.GET_SIGNING_CERTIFICATES
-                    )
-            if (packageInfo == null) {
-                Log.w(TAG, "extractApkCertHashes: getPackageArchiveInfo returned null for $apkPath")
-                return null
-            }
-
-            val signingInfo = packageInfo.signingInfo
-            if (signingInfo == null) {
-                Log.w(TAG, "extractApkCertHashes: signingInfo is null for $apkPath")
-                return null
-            }
-
-            val signers = signingInfo.currentSigners()
-            if (signers.isEmpty()) {
-                Log.w(TAG, "extractApkCertHashes: currentSigners() is empty for $apkPath " +
-                        "(hasMultipleSigners=${signingInfo.hasMultipleSigners()}, " +
-                        "apkContentsSigners=${signingInfo.apkContentsSigners?.size ?: "null"}, " +
-                        "historySize=${signingInfo.signingCertificateHistory?.size ?: "null"})")
-                return null
-            }
-
-            signers.map { it.sha256Hex() }
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to extract APK cert hashes from $apkPath: ${e.message}")
-            null
-        }
+        return extractApkSigners(apkPath)?.map { it.sha256Hex() }
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════

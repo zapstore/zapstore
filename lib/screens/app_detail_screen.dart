@@ -145,14 +145,38 @@ class _AppDetailContent extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-
     final signedInPubkey = ref.watch(Signer.activePubkeyProvider);
     final showDebugSections = kDebugMode || isDebugMode(signedInPubkey);
+    final latestRelease = app.latestRelease.value;
+    final latestMetadata = app.installable;
+    final certificateHashes =
+        latestMetadata?.certificateHashes ?? const <String>{};
+
+    final identityProofState = certificateHashes.isEmpty
+        ? null
+        : ref.watch(
+            query<CryptographicIdentityProof>(
+              tags: {'#d': certificateHashes},
+              limit: 10,
+              source: const LocalAndRemoteSource(
+                relays: 'AppCatalog',
+                stream: false,
+              ),
+              subscriptionPrefix: 'app-detail-c1-${app.identifier}',
+            ),
+          );
+    final identityProof = identityProofState?.models
+        .where((proof) => proof.isActive)
+        .sortedBy((proof) => proof.createdAt)
+        .lastOrNull;
+    final publisherPubkey = app.isRelaySigned && identityProof != null
+        ? identityProof.pubkey
+        : app.pubkey;
 
     // Query author profile from social relays
     final authorState = ref.watch(
       query<Profile>(
-        authors: {app.pubkey},
+        authors: {app.pubkey, if (identityProof != null) identityProof.pubkey},
         source: const LocalAndRemoteSource(
           relays: {'social', 'vertex'},
           cachedFor: Duration(hours: 2),
@@ -160,10 +184,11 @@ class _AppDetailContent extends HookConsumerWidget {
         subscriptionPrefix: 'app-detail-profile',
       ),
     );
-    final author = authorState.models.firstOrNull;
-
-    final latestRelease = app.latestRelease.value;
-    final latestMetadata = app.installable;
+    final author = authorState.models.firstWhereOrNull(
+      (profile) => profile.pubkey == publisherPubkey,
+    );
+    final isAuthorLoading =
+        authorState is StorageLoading<Profile> && author == null;
 
     return Scaffold(
       body: SafeArea(
@@ -190,25 +215,31 @@ class _AppDetailContent extends HookConsumerWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (app.isRelaySigned && latestMetadata != null)
+                        if (app.isRelaySigned &&
+                            identityProof == null &&
+                            latestMetadata != null)
                           Padding(
                             padding: const EdgeInsets.all(4),
                             child: DownloadTextContainer(
                               url: latestMetadata.urls.first,
                               size: 14,
                               onTap: app.repository != null
-                                  ? () => launchUrl(
-                                      Uri.parse(app.repository!))
+                                  ? () => launchUrl(Uri.parse(app.repository!))
                                   : null,
                             ),
                           )
-                        else if (author != null)
+                        else if (!app.isRelaySigned || identityProof != null)
                           AuthorContainer(
                             profile: author,
-                            beforeText: 'Published by',
+                            pubkey: publisherPubkey,
+                            beforeText:
+                                !app.isRelaySigned || identityProof == null
+                                ? 'Published by'
+                                : 'Claimed by',
                             oneLine: true,
                             size: 14,
-                            app: app,
+                            app: identityProof == null ? app : null,
+                            isLoading: isAuthorLoading,
                             onTap: () {
                               final segments = GoRouterState.of(
                                 context,
@@ -216,9 +247,7 @@ class _AppDetailContent extends HookConsumerWidget {
                               final first = segments.isNotEmpty
                                   ? segments.first
                                   : 'search';
-                              context.push(
-                                '/$first/user/${author.pubkey}',
-                              );
+                              context.push('/$first/user/$publisherPubkey');
                             },
                           )
                         else
@@ -325,9 +354,8 @@ class _AppDetailContent extends HookConsumerWidget {
                                   vertical: 8,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurface.withValues(alpha: 0.05),
+                                  color: Theme.of(context).colorScheme.onSurface
+                                      .withValues(alpha: 0.05),
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Row(
@@ -341,17 +369,20 @@ class _AppDetailContent extends HookConsumerWidget {
                                     Text(
                                       latestMetadata.version,
                                       style: context.textTheme.bodyMedium
-                                          ?.copyWith(fontWeight: FontWeight.bold),
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.bold,
+                                          ),
                                     ),
                                     Gap(4),
                                     Text(
                                       '(${formatDate(latestMetadata.createdAt)})',
-                                      style: context.textTheme.bodyMedium?.copyWith(
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .onSurface
-                                            .withValues(alpha: 0.6),
-                                      ),
+                                      style: context.textTheme.bodyMedium
+                                          ?.copyWith(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurface
+                                                .withValues(alpha: 0.6),
+                                          ),
                                     ),
                                   ],
                                 ),
@@ -376,7 +407,13 @@ class _AppDetailContent extends HookConsumerWidget {
 
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: AppInfoTable(app: app, fileMetadata: latestMetadata),
+                    child: AppInfoTable(
+                      app: app,
+                      fileMetadata: latestMetadata,
+                      identityProof: identityProof,
+                      identityProfile: author,
+                      isIdentityProfileLoading: isAuthorLoading,
+                    ),
                   ),
 
                   if (latestMetadata != null)
@@ -400,14 +437,12 @@ class _AppDetailContent extends HookConsumerWidget {
             // Floating three-dot menu
             FloatingOverflowMenu(
               shareUrl: getAppShareUrl(app),
-              publisherPubkey: app.pubkey,
+              publisherPubkey: publisherPubkey,
               app: app,
             ),
-
           ],
         ),
       ),
     );
   }
-
 }

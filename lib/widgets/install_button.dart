@@ -659,6 +659,7 @@ class InstallButton extends ConsumerWidget {
     // Show toast for errors with technical details or specific types
     if (operation.description != null ||
         operation.type == FailureType.certMismatch ||
+        operation.type == FailureType.c1ProofMismatch ||
         operation.type == FailureType.incompatible) {
       _showErrorDetails(context, operation);
     }
@@ -692,7 +693,8 @@ class InstallButton extends ConsumerWidget {
     Installable fileMetadata,
   ) async {
     final currentVersion = installedPkg?.version ?? 'Unknown';
-    final currentCertHash = installedPkg?.signatureHashes.firstOrNull ?? 'Unknown';
+    final currentCertHash =
+        installedPkg?.signatureHashes.firstOrNull ?? 'Unknown';
     final updateCertHash = fileMetadata.certificateHash ?? 'Unknown';
     final updateVersion = fileMetadata.version;
     final author = app.author.value;

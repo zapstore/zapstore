@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:models/models.dart';
+import 'package:zapstore/services/c1_proof_verification.dart';
 import 'package:zapstore/services/log_service.dart';
 import 'package:zapstore/services/package_manager/installed_packages_snapshot.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
@@ -51,6 +52,7 @@ class NativeErrorCode {
   static const installFailed = 'installFailed';
   static const certMismatch = 'certMismatch';
   static const certMetadataMismatch = 'certMetadataMismatch';
+  static const c1ProofMismatch = 'c1ProofMismatch';
   static const permissionDenied = 'permissionDenied';
   static const insufficientStorage = 'insufficientStorage';
   static const incompatible = 'incompatible';
@@ -100,11 +102,7 @@ final class AndroidPackageManager extends PackageManager {
     _eventSubscription = _eventChannel.receiveBroadcastStream().listen(
       _handleInstallEvent,
       onError: (e) {
-        LogService.I.warn(
-          'EventChannel error',
-          tag: 'package_manager',
-          err: e,
-        );
+        LogService.I.warn('EventChannel error', tag: 'package_manager', err: e);
         _attemptEventStreamReconnect();
       },
       onDone: () {
@@ -201,8 +199,7 @@ final class AndroidPackageManager extends PackageManager {
     if (existingOp is Completed) {
       return;
     }
-    if (existingOp is OperationFailed &&
-        status != InstallStatus.success) {
+    if (existingOp is OperationFailed && status != InstallStatus.success) {
       return;
     }
 
@@ -285,8 +282,9 @@ final class AndroidPackageManager extends PackageManager {
         // CRITICAL: When transitioning from Installing, preserve the original
         // startedAt so the Dart watchdog doesn't reset its countdown.
         if (filePath != null && existingOp is! SystemProcessing) {
-          final preservedStart =
-              existingOp is Installing ? existingOp.startedAt : null;
+          final preservedStart = existingOp is Installing
+              ? existingOp.startedAt
+              : null;
           setOperation(
             appId,
             SystemProcessing(
@@ -395,7 +393,9 @@ final class AndroidPackageManager extends PackageManager {
         NativeErrorCode.invalidFile => FailureType.invalidFile,
         NativeErrorCode.installFailed => FailureType.installFailed,
         NativeErrorCode.certMismatch => FailureType.certMismatch,
-        NativeErrorCode.certMetadataMismatch => FailureType.certMetadataMismatch,
+        NativeErrorCode.certMetadataMismatch =>
+          FailureType.certMetadataMismatch,
+        NativeErrorCode.c1ProofMismatch => FailureType.c1ProofMismatch,
         NativeErrorCode.permissionDenied => FailureType.permissionDenied,
         NativeErrorCode.insufficientStorage => FailureType.insufficientStorage,
         NativeErrorCode.incompatible => FailureType.incompatible,
@@ -447,6 +447,8 @@ final class AndroidPackageManager extends PackageManager {
         'Update signed by different developer. Uninstall current version to update.',
       FailureType.certMetadataMismatch =>
         'APK signing certificate does not match what the publisher declared. This file may have been tampered with.',
+      FailureType.c1ProofMismatch =>
+        'Cryptographic identity proof failed. This file may not be from the claimed developer.',
       FailureType.permissionDenied =>
         'Permission required. Please grant install permission and try again.',
       FailureType.insufficientStorage =>
@@ -511,6 +513,7 @@ final class AndroidPackageManager extends PackageManager {
     // VERIFYING/STARTED/PENDING_USER_ACTION/SUCCESS/FAILED/CANCELLED events.
 
     try {
+      final c1Proof = await c1ProofPayloadForInstallable(target);
       final result = await _methodChannel
           .invokeMethod<Map<Object?, Object?>>('install', {
             'filePath': filePath,
@@ -518,6 +521,7 @@ final class AndroidPackageManager extends PackageManager {
             'expectedHash': expectedHash,
             'expectedSize': expectedSize,
             'expectedCertHashes': target.certificateHashes.toList(),
+            'c1Proof': c1Proof?.toMap(),
           })
           .timeout(const Duration(seconds: 30), onTimeout: () => null);
 
@@ -786,9 +790,7 @@ final class AndroidPackageManager extends PackageManager {
         // Only use versionCode comparison — version string matching could
         // give false positives when the same string maps to different builds.
         final completed =
-            targetVc != null &&
-            installedVc != null &&
-            installedVc >= targetVc;
+            targetVc != null && installedVc != null && installedVc >= targetVc;
 
         // Only clear if we can establish completion reliably.
         // Transition to Completed (not clearOperation) so the op stays until

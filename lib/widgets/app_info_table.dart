@@ -7,14 +7,25 @@ import 'package:models/models.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/app_detail_widgets.dart';
+import 'package:zapstore/widgets/author_container.dart';
 import 'package:zapstore/widgets/download_text_container.dart';
 import 'package:zapstore/theme.dart';
 
 class AppInfoTable extends HookConsumerWidget {
-  const AppInfoTable({super.key, required this.app, this.fileMetadata});
+  const AppInfoTable({
+    super.key,
+    required this.app,
+    this.fileMetadata,
+    this.identityProof,
+    this.identityProfile,
+    this.isIdentityProfileLoading = false,
+  });
 
   final App app;
   final Installable? fileMetadata;
+  final CryptographicIdentityProof? identityProof;
+  final Profile? identityProfile;
+  final bool isIdentityProfileLoading;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -75,6 +86,32 @@ class AppInfoTable extends HookConsumerWidget {
 
     rows.add(_InfoRow(label: 'App ID', value: app.identifier));
 
+    if (identityProof != null) {
+      final npub = Utils.encodeShareableFromString(
+        identityProof!.pubkey,
+        type: 'npub',
+      );
+      rows.add(
+        _InfoRow(
+          label: 'Linked identity',
+          value: npub.abbreviateNpub(),
+          copyValue: npub,
+          valueWidget: Flexible(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: AuthorContainer(
+                profile: identityProfile,
+                pubkey: identityProof!.pubkey,
+                oneLine: true,
+                size: context.textTheme.bodyMedium?.fontSize,
+                isLoading: isIdentityProfileLoading,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     if (!app.isRelaySigned) {
       // Author npub
       final npub = Utils.encodeShareableFromString(app.pubkey, type: 'npub');
@@ -91,7 +128,11 @@ class AppInfoTable extends HookConsumerWidget {
       if (fileMetadata!.hash.isNotEmpty) {
         final full = fileMetadata!.hash;
         rows.add(
-          _InfoRow(label: 'File hash', value: full.abbreviate(), copyValue: full),
+          _InfoRow(
+            label: 'File hash',
+            value: full.abbreviate(),
+            copyValue: full,
+          ),
         );
       }
 

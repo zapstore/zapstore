@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:models/models.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
+import 'package:zapstore/services/c1_proof_verification.dart';
 import 'package:zapstore/services/background_native_installer.dart';
 import 'package:zapstore/services/background_pending_install_store.dart';
 import 'package:zapstore/services/log_service.dart';
@@ -69,6 +70,7 @@ class BackgroundAutoUpdateExecutor {
           filePath: filePath,
           expectedHash: target.hash,
           expectedCertHashes: target.certificateHashes.toList(),
+          c1Proof: (await c1ProofPayloadForInstallable(target))?.toMap(),
         );
         if (!verified) {
           await _deleteFile(filePath);
@@ -83,6 +85,7 @@ class BackgroundAutoUpdateExecutor {
             expectedHash: target.hash,
             expectedSize: target.size ?? 0,
             expectedCertHashes: target.certificateHashes.toList(),
+            c1Proof: (await c1ProofPayloadForInstallable(target))?.toMap(),
           );
           if (result.success) {
             updatedAppIds.add(appId);
