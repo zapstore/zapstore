@@ -26,6 +26,7 @@ import 'package:zapstore/services/package_manager/dummy_package_manager.dart';
 import 'package:zapstore/services/deep_link_service.dart';
 import 'package:zapstore/services/device_backup_service.dart';
 import 'package:zapstore/services/device_key_service.dart';
+import 'package:zapstore/services/app_catalog_relay_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/breathing_logo.dart';
 
@@ -56,16 +57,18 @@ void main() {
 
     // Bring up disk logging. Not awaited — if path_provider fails the
     // LogService falls back to ring-buffer-only and we continue.
-    unawaited(LogService.I.init(isolateName: 'main').then((_) {
-      LogService.I.info(
-        'app starting',
-        tag: 'app',
-        fields: {
-          'platform': Platform.operatingSystem,
-          'version': Platform.operatingSystemVersion,
-        },
-      );
-    }));
+    unawaited(
+      LogService.I.init(isolateName: 'main').then((_) {
+        LogService.I.info(
+          'app starting',
+          tag: 'app',
+          fields: {
+            'platform': Platform.operatingSystem,
+            'version': Platform.operatingSystemVersion,
+          },
+        );
+      }),
+    );
 
     _providerContainer = ProviderContainer(
       overrides: [
@@ -100,8 +103,12 @@ void main() {
 void _installErrorHandlers() {
   FlutterError.onError = (details) {
     FlutterError.presentError(details);
-    _logUncaught(details.exception, details.stack,
-        source: 'flutter', library: details.library);
+    _logUncaught(
+      details.exception,
+      details.stack,
+      source: 'flutter',
+      library: details.library,
+    );
   };
 
   PlatformDispatcher.instance.onError = (error, stack) {
@@ -140,10 +147,7 @@ void _logUncaught(
   LogService.I.fatal(
     'uncaught error',
     tag: 'crash',
-    fields: {
-      'source': source,
-      if (library != null) 'library': library,
-    },
+    fields: {'source': source, if (library != null) 'library': library},
     err: error,
     stack: stack,
   );
@@ -180,11 +184,15 @@ class ZapstoreApp extends HookConsumerWidget {
       // Check initial connectivity state
       connectivity.checkConnectivity().then((results) {
         notifier.connect();
+        unawaited(ref.read(appCatalogRelayServiceProvider).checkForUpdates());
       });
 
       // Listen to connectivity changes
       subscription = connectivity.onConnectivityChanged.listen((results) {
         notifier.connect();
+        if (results.any((result) => result != ConnectivityResult.none)) {
+          unawaited(ref.read(appCatalogRelayServiceProvider).checkForUpdates());
+        }
       });
 
       return () => subscription?.cancel();
@@ -319,8 +327,6 @@ class ZapstoreHome extends StatelessWidget {
   }
 }
 
-const _kDefaultAppCatalogRelay = 'wss://relay.zapstore.dev';
-
 /// Ready as soon as local storage is usable.
 ///
 /// UI skeleton gates MUST depend on this provider — NOT on
@@ -330,18 +336,16 @@ const _kDefaultAppCatalogRelay = 'wss://relay.zapstore.dev';
 final storageReadyProvider = FutureProvider<void>((ref) async {
   final dir = await getApplicationSupportDirectory();
   final dbPath = path.join(dir.path, 'zapstore.db');
+  final relayService = ref.read(appCatalogRelayServiceProvider);
+  final hasRelayHandoff = await relayService.hasRestartHandoff();
 
   // Clear storage if requested from a clear all operation
   await maybeClearStorage(dbPath);
 
   // Seed database on first launch so new users see content immediately
-  await _maybeCopySeedDatabase(dbPath);
+  await _maybeCopySeedDatabase(dbPath, skip: hasRelayHandoff);
 
-  // Load local relay config BEFORE storage init
-  // This ensures custom relays work even when signed out
   final settings = await ref.read(settingsServiceProvider).load();
-  final appCatalogRelays =
-      settings.appCatalogRelays ?? {_kDefaultAppCatalogRelay};
 
   // Apply persisted log level (default is `debug`).
   LogService.I.level = settings.logLevel;
@@ -354,14 +358,17 @@ final storageReadyProvider = FutureProvider<void>((ref) async {
     initializationProvider(
       StorageConfiguration(
         databasePath: dbPath,
+        // Accepted kind 10067 events must remain publishable and restorable
+        // after a remote preview, so their verified signatures are retained.
+        keepSignatures: true,
         defaultQuerySource: LocalAndRemoteSource(
           relays: 'AppCatalog',
           stream: false,
         ),
         defaultRelays: {
-          'default': {_kDefaultAppCatalogRelay},
-          'bootstrap': {_kDefaultAppCatalogRelay},
-          'AppCatalog': appCatalogRelays,
+          'default': {kDefaultRelay},
+          'bootstrap': {kDefaultRelay},
+          'AppCatalog': {kDefaultRelay},
           'social': {
             'wss://relay.damus.io',
             'wss://relay.primal.net',
@@ -376,10 +383,16 @@ final storageReadyProvider = FutureProvider<void>((ref) async {
 
   // Initialize device key signer — must be registered before any encrypted
   // queries fire, so EncryptableModel.prepareAfterLoading can find it.
-  final deviceKey = await ref.read(deviceKeyServiceProvider).getOrCreatePrivateKey();
+  final deviceKey = await ref
+      .read(deviceKeyServiceProvider)
+      .getOrCreatePrivateKey();
   final deviceSigner = Bip340PrivateKeySigner(deviceKey, ref);
   await deviceSigner.signIn(setAsActive: false);
   ref.read(devicePubkeyProvider.notifier).state = deviceSigner.pubkey;
+
+  // Resolve the accepted device-authored relay list from local storage. A
+  // restart handoff is restored into the fresh database here, then erased.
+  await relayService.initializeAcceptedRelays();
 });
 
 /// Full app initialization — runs everything non-UI-critical after
@@ -393,9 +406,9 @@ final appInitializationProvider = FutureProvider<void>((ref) async {
   await DeviceCapabilitiesCache.initialize();
 
   // Record app open time for background notification throttling
-  await ref.read(settingsServiceProvider).update(
-        (s) => s.copyWith(lastAppOpened: DateTime.now()),
-      );
+  await ref
+      .read(settingsServiceProvider)
+      .update((s) => s.copyWith(lastAppOpened: DateTime.now()));
 
   // Ensure installed packages are available before anything categorizes
   final packageManager = ref.read(packageManagerProvider.notifier);
@@ -407,6 +420,10 @@ final appInitializationProvider = FutureProvider<void>((ref) async {
   await ref.read(deepLinkServiceProvider).initialize();
 
   await _attemptAutoSignIn(ref);
+
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    unawaited(ref.read(appCatalogRelayServiceProvider).checkForUpdates());
+  });
 });
 
 // AmberSigner provider for Nostr authentication
@@ -417,17 +434,11 @@ final amberSignerProvider = Provider<AmberSigner>(
 
 /// Copy the bundled seed database on first launch so the UI has content
 /// before relay data arrives. No-op if the database already exists.
-/// Skipped when the user has configured a non-default relay, since the
-/// seed was built from [_kDefaultAppCatalogRelay] and would be wrong.
-Future<void> _maybeCopySeedDatabase(String dbPath) async {
+/// Skipped during a relay-event restart handoff because the seed was built
+/// from [kDefaultRelay] and would be wrong for the accepted custom list.
+Future<void> _maybeCopySeedDatabase(String dbPath, {bool skip = false}) async {
   final dbFile = File(dbPath);
-  if (dbFile.existsSync()) return;
-
-  final settings = await SettingsService().load();
-  final isDefault = settings.appCatalogRelays == null ||
-      (settings.appCatalogRelays!.length == 1 &&
-          settings.appCatalogRelays!.contains(_kDefaultAppCatalogRelay));
-  if (!isDefault) return;
+  if (skip || dbFile.existsSync()) return;
 
   try {
     final seedData = await rootBundle.load('assets/seed.db');
@@ -548,7 +559,9 @@ class _AppLifecycleObserver with WidgetsBindingObserver {
 
       // Reconnect storage/relay connections
       notifier.connect();
+      unawaited(_ref.read(appCatalogRelayServiceProvider).checkForUpdates());
     } else if (state == AppLifecycleState.paused) {
+      _ref.read(appCatalogRelayServiceProvider).cancelCurrentCheck();
       notifier.disconnect();
       // Flush any pending log entries to disk before the OS may freeze
       // or kill us, so diagnostics survive backgrounding.
@@ -562,6 +575,8 @@ class _AppLifecycleObserver with WidgetsBindingObserver {
   /// Record that the user opened the app.
   /// This is used to check inactivity for background notifications.
   Future<void> _recordAppOpened() async {
-    await SettingsService().update((s) => s.copyWith(lastAppOpened: DateTime.now()));
+    await SettingsService().update(
+      (s) => s.copyWith(lastAppOpened: DateTime.now()),
+    );
   }
 }

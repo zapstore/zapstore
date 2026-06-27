@@ -19,5 +19,15 @@ void main() {
       final updated = settings.copyWith(backgroundAutoUpdatesEnabled: true);
       expect(updated.backgroundAutoUpdatesEnabled, isTrue);
     });
+
+    test('discards legacy relay settings', () {
+      final restored = LocalSettings.fromJson({
+        'relays': ['wss://legacy.example'],
+        'logLevel': 'info',
+      });
+
+      expect(restored.toJson(), isNot(contains('relays')));
+      expect(restored.toJson()['logLevel'], 'info');
+    });
   });
 }

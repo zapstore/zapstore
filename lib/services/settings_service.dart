@@ -13,7 +13,6 @@ const _storage = FlutterSecureStorage(
 /// All local settings stored as a single JSON blob in secure storage.
 class LocalSettings {
   final String? nwcConnectionString;
-  final Set<String>? appCatalogRelays;
   final DateTime? lastAppOpened;
   final DateTime? seenUntil;
   final DateTime? deletionSyncedUntil;
@@ -23,7 +22,6 @@ class LocalSettings {
 
   const LocalSettings({
     this.nwcConnectionString,
-    this.appCatalogRelays,
     this.lastAppOpened,
     this.seenUntil,
     this.deletionSyncedUntil,
@@ -37,7 +35,6 @@ class LocalSettings {
   factory LocalSettings.fromJson(Map<String, dynamic> json) {
     return LocalSettings(
       nwcConnectionString: json['nwc'] as String?,
-      appCatalogRelays: (json['relays'] as List?)?.cast<String>().toSet(),
       lastAppOpened: _parseDateTime(json['lastAppOpened']),
       seenUntil: _parseDateTime(json['seenUntil']),
       deletionSyncedUntil: _parseDateTime(json['deletionSyncedUntil']),
@@ -49,22 +46,20 @@ class LocalSettings {
   }
 
   Map<String, dynamic> toJson() => {
-        if (nwcConnectionString != null) 'nwc': nwcConnectionString,
-        if (appCatalogRelays != null) 'relays': appCatalogRelays!.toList(),
-        if (lastAppOpened != null)
-          'lastAppOpened': lastAppOpened!.millisecondsSinceEpoch,
-        if (seenUntil != null) 'seenUntil': seenUntil!.millisecondsSinceEpoch,
-        if (deletionSyncedUntil != null)
-          'deletionSyncedUntil': deletionSyncedUntil!.millisecondsSinceEpoch,
-        if (installedAppsBackupEnabled) 'backupEnabled': true,
-        if (backgroundAutoUpdatesEnabled) 'backgroundAutoUpdates': true,
-        // Only persist non-default value to keep blob small.
-        if (logLevel != LogLevel.debug) 'logLevel': logLevel.name,
-      };
+    if (nwcConnectionString != null) 'nwc': nwcConnectionString,
+    if (lastAppOpened != null)
+      'lastAppOpened': lastAppOpened!.millisecondsSinceEpoch,
+    if (seenUntil != null) 'seenUntil': seenUntil!.millisecondsSinceEpoch,
+    if (deletionSyncedUntil != null)
+      'deletionSyncedUntil': deletionSyncedUntil!.millisecondsSinceEpoch,
+    if (installedAppsBackupEnabled) 'backupEnabled': true,
+    if (backgroundAutoUpdatesEnabled) 'backgroundAutoUpdates': true,
+    // Only persist non-default value to keep blob small.
+    if (logLevel != LogLevel.debug) 'logLevel': logLevel.name,
+  };
 
   LocalSettings copyWith({
     String? nwcConnectionString,
-    Set<String>? appCatalogRelays,
     DateTime? lastAppOpened,
     DateTime? seenUntil,
     DateTime? deletionSyncedUntil,
@@ -74,9 +69,9 @@ class LocalSettings {
     bool clearNwc = false,
   }) {
     return LocalSettings(
-      nwcConnectionString:
-          clearNwc ? null : (nwcConnectionString ?? this.nwcConnectionString),
-      appCatalogRelays: appCatalogRelays ?? this.appCatalogRelays,
+      nwcConnectionString: clearNwc
+          ? null
+          : (nwcConnectionString ?? this.nwcConnectionString),
       lastAppOpened: lastAppOpened ?? this.lastAppOpened,
       seenUntil: seenUntil ?? this.seenUntil,
       deletionSyncedUntil: deletionSyncedUntil ?? this.deletionSyncedUntil,
@@ -95,10 +90,10 @@ class LocalSettings {
 /// Service for reading and writing local settings.
 class SettingsService {
   static const _key = 'settings';
+  static const _discardedLegacyRelaysKey = 'app_catalog_relays';
 
   // Legacy keys for migration
   static const _legacyNwcKey = 'nwc_connection_string';
-  static const _legacyRelaysKey = 'app_catalog_relays';
   static const _legacyLastAppOpenedKey = 'last_app_opened';
   static const _legacySeenUntilKey = 'seen_until';
   static const _legacyDeletionSyncedUntilKey = 'deletion_synced_until';
@@ -108,7 +103,22 @@ class SettingsService {
     final json = await _storage.read(key: _key);
     if (json != null && json.isNotEmpty) {
       try {
-        return LocalSettings.fromJson(jsonDecode(json) as Map<String, dynamic>);
+        final decoded = jsonDecode(json) as Map<String, dynamic>;
+        final settings = LocalSettings.fromJson(decoded);
+        try {
+          if (decoded.containsKey('relays')) {
+            await save(settings);
+          }
+          await _storage.delete(key: _discardedLegacyRelaysKey);
+        } catch (error, stack) {
+          LogService.I.warn(
+            'legacy relay settings cleanup failed',
+            tag: 'settings',
+            err: error,
+            stack: stack,
+          );
+        }
+        return settings;
       } catch (_) {
         return const LocalSettings();
       }
@@ -120,29 +130,26 @@ class SettingsService {
 
   Future<LocalSettings> _migrateFromLegacy() async {
     final nwc = await _storage.read(key: _legacyNwcKey);
-    final relaysJson = await _storage.read(key: _legacyRelaysKey);
     final lastAppOpened = await _storage.read(key: _legacyLastAppOpenedKey);
     final seenUntil = await _storage.read(key: _legacySeenUntilKey);
-    final deletionSynced = await _storage.read(key: _legacyDeletionSyncedUntilKey);
+    final deletionSynced = await _storage.read(
+      key: _legacyDeletionSyncedUntilKey,
+    );
     final backupEnabled = await _storage.read(key: _legacyBackupKey);
 
     // No legacy data found
-    if ([nwc, relaysJson, lastAppOpened, seenUntil, deletionSynced, backupEnabled]
-        .every((v) => v == null || v.isEmpty)) {
+    if ([
+      nwc,
+      lastAppOpened,
+      seenUntil,
+      deletionSynced,
+      backupEnabled,
+    ].every((v) => v == null || v.isEmpty)) {
       return const LocalSettings();
-    }
-
-    // Parse legacy values
-    Set<String>? relays;
-    if (relaysJson != null && relaysJson.isNotEmpty) {
-      try {
-        relays = Set<String>.from((jsonDecode(relaysJson) as List).cast<String>());
-      } catch (_) {}
     }
 
     final settings = LocalSettings(
       nwcConnectionString: (nwc?.isNotEmpty == true) ? nwc : null,
-      appCatalogRelays: relays,
       lastAppOpened: _parseLegacyDateTime(lastAppOpened),
       seenUntil: _parseLegacyDateTime(seenUntil),
       deletionSyncedUntil: _parseLegacyDateTime(deletionSynced),
@@ -153,7 +160,6 @@ class SettingsService {
     await save(settings);
     await Future.wait([
       _storage.delete(key: _legacyNwcKey),
-      _storage.delete(key: _legacyRelaysKey),
       _storage.delete(key: _legacyLastAppOpenedKey),
       _storage.delete(key: _legacySeenUntilKey),
       _storage.delete(key: _legacyDeletionSyncedUntilKey),
@@ -174,7 +180,8 @@ class SettingsService {
   }
 
   Future<LocalSettings> update(
-      LocalSettings Function(LocalSettings) updater) async {
+    LocalSettings Function(LocalSettings) updater,
+  ) async {
     final current = await load();
     final updated = updater(current);
     await save(updated);

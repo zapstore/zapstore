@@ -3,20 +3,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:purplebase/purplebase.dart';
-import 'package:zapstore/services/app_restart_service.dart';
+import 'package:zapstore/services/app_catalog_relay_service.dart';
 import 'package:zapstore/services/notification_service.dart';
-import 'package:zapstore/services/settings_service.dart';
 
 /// App Catalog Relay Management Card - manages app catalog relays.
 /// These are relays for discovering apps, NOT social relays like Damus/Primal.
 ///
-/// Relay configuration is stored locally in secure storage.
-/// Changes are accumulated in memory and applied with "Apply Changes" which
-/// saves the relay list and restarts the app with a fresh database.
+/// Relay configuration is a device-signed kind 10067 event.
 class RelayManagementCard extends HookConsumerWidget {
   const RelayManagementCard({super.key});
-
-  static const _kDefaultRelay = 'wss://relay.zapstore.dev';
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -26,33 +21,19 @@ class RelayManagementCard extends HookConsumerWidget {
 
     // Watch pool state for relay connection status
     final poolState = ref.watch(poolStateProvider);
-
-    // Load local relays once - they only change on app restart
-    final localRelaysFuture = useMemoized(
-      () async => (await ref.read(settingsServiceProvider).load()).appCatalogRelays,
-    );
-    final localRelaysSnapshot = useFuture(localRelaysFuture);
-    final localRelays = localRelaysSnapshot.data?.toList()?..sort();
-
-    // Use local relays if set, otherwise default
-    final effectiveSavedRelays = (localRelays != null && localRelays.isNotEmpty)
-        ? localRelays
-        : [_kDefaultRelay];
+    final relayState = ref.watch(appCatalogRelayStateProvider);
+    final effectiveSavedRelays = relayState.relays.toList()..sort();
 
     // Local pending state - initialized from effective saved relays
     final pendingRelays = useState<List<String>?>(null);
 
-    // Determine if data is still loading
-    final isLoading =
-        localRelaysSnapshot.connectionState == ConnectionState.waiting;
-
     // Initialize pending from effective saved when first loaded
     useEffect(() {
-      if (pendingRelays.value == null && !isLoading) {
+      if (pendingRelays.value == null) {
         pendingRelays.value = effectiveSavedRelays;
       }
       return null;
-    }, [isLoading, effectiveSavedRelays]);
+    }, [effectiveSavedRelays]);
 
     // Current display relays (pending if modified, else effective saved)
     final displayRelays = pendingRelays.value ?? effectiveSavedRelays;
@@ -154,25 +135,9 @@ class RelayManagementCard extends HookConsumerWidget {
       isApplying.value = true;
 
       try {
-        final settingsService = ref.read(settingsServiceProvider);
-        final relaysToSave = displayRelays.toSet();
-
-        // Save to local settings
-        final updated = await settingsService.update(
-            (s) => s.copyWith(appCatalogRelays: relaysToSave));
-
-        // Verify write succeeded
-        if (updated.appCatalogRelays == null ||
-            !updated.appCatalogRelays!.containsAll(relaysToSave)) {
-          throw StateError('Failed to persist relay configuration');
-        }
-
-        // Delay to ensure the platform-side write is fully committed
-        // before the native restart kills the process
-        await Future<void>.delayed(const Duration(milliseconds: 800));
-
-        // Restart app with database clear
-        await restartApp();
+        await ref
+            .read(appCatalogRelayServiceProvider)
+            .createAndRestart(displayRelays.toSet());
       } catch (e) {
         isApplying.value = false;
         if (context.mounted) {
@@ -205,6 +170,34 @@ class RelayManagementCard extends HookConsumerWidget {
               ],
             ),
             const SizedBox(height: 8),
+            if (relayState.isChecking) ...[
+              const LinearProgressIndicator(),
+              const SizedBox(height: 8),
+            ],
+            if (relayState.error != null) ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Could not check relay settings. Current relays remain active.',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: relayState.isChecking
+                        ? null
+                        : () => ref
+                              .read(appCatalogRelayServiceProvider)
+                              .checkForUpdates(),
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+            ],
 
             // Info text
             Container(
