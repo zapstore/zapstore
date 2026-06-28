@@ -10,6 +10,7 @@ import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/nostr_route.dart';
+import 'package:zapstore/widgets/app_report_sheet.dart';
 
 /// Floating three-dot overflow menu reusable across detail screens.
 ///
@@ -69,6 +70,8 @@ class FloatingOverflowMenu extends HookConsumerWidget {
               ),
             _menuItem('view_publisher', Icons.person, 'View publisher'),
             _menuItem('open_browser', Icons.open_in_browser, 'Open in browser'),
+            if (app != null && canReportApp(app!))
+              _menuItem('report_app', Icons.flag_outlined, 'Report app'),
             if (app != null && isInstalled) ...[
               _menuItem('open', Icons.open_in_new, 'Open'),
               _menuItem('delete', Icons.delete_outline, 'Delete'),
@@ -120,6 +123,8 @@ class FloatingOverflowMenu extends HookConsumerWidget {
         _openApp(context, ref);
       case 'delete':
         _uninstallApp(context, ref);
+      case 'report_app':
+        showAppReportSheet(context, app!);
     }
   }
 
