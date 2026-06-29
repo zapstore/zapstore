@@ -152,11 +152,11 @@ class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
     // Fire-and-forget: a remote check blocks for tens of seconds offline,
     // but must not delay the local-first UI render that [refreshFromLocal]
     // already produced.
-    unawaited(checkNow());
+    unawaited(checkNow(refreshInstalledPackages: false));
   }
 
   /// Trigger an update check. Called by timer and pull-to-refresh.
-  Future<void> checkNow() async {
+  Future<void> checkNow({bool refreshInstalledPackages = true}) async {
     if (state.isChecking) return;
 
     if (state.lastCheckTime != null) {
@@ -167,7 +167,9 @@ class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
     state = state.copyWith(isChecking: true);
 
     try {
-      await ref.read(packageManagerProvider.notifier).syncInstalledPackages();
+      if (refreshInstalledPackages) {
+        await ref.read(packageManagerProvider.notifier).syncInstalledPackages();
+      }
       await _fetchCatalog();
       state = state.copyWith(
         isChecking: false,

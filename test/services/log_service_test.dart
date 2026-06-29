@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
@@ -17,6 +18,18 @@ Future<({LogService log, Directory dir})> _newService(
 }
 
 File _activeFile(Directory dir) => File(p.join(dir.path, 'zapstore.log'));
+
+/// Isolate entry for the flushSync-race regression test. Reports 'ok'
+/// once flush() returns; if flush() spins forever the parent times out.
+Future<void> _flushAfterFlushSyncRace(SendPort report) async {
+  final dir = await Directory.systemTemp.createTemp('log_service_race_');
+  final svc = LogService.forTesting(directory: dir, isolate: 'race');
+  svc.info('entry'); // schedules the flush microtask
+  svc.flushSync(); // drains _pending before the microtask runs
+  await Future<void>.delayed(Duration.zero); // let the microtask fire
+  await svc.flush(); // must terminate
+  report.send('ok');
+}
 
 void main() {
   group('LogService basics', () {
@@ -288,6 +301,37 @@ void main() {
   });
 
   group('Concurrency', () {
+    // Regression: log() schedules a flush microtask; if flushSync() (the
+    // uncaught-error path) drains _pending before that microtask runs,
+    // the microtask used to leave a stale, already-completed
+    // _flushFuture behind. The next flush() — called on every app
+    // pause — then spun `await`ing that completed future forever,
+    // starving the UI event loop with microtasks (app frozen on
+    // resume, kill required).
+    //
+    // A regression cannot be caught by a plain `await flush()` here:
+    // the spin never yields to the event loop, so even a timeout timer
+    // would never fire in this isolate. Run the scenario in a separate
+    // isolate and time out from the outside.
+    test('flush completes after flushSync races a scheduled flush',
+        () async {
+      final done = ReceivePort();
+      final isolate = await Isolate.spawn(
+        _flushAfterFlushSyncRace,
+        done.sendPort,
+      );
+      try {
+        final result = await done.first.timeout(
+          const Duration(seconds: 10),
+          onTimeout: () => 'flush() never completed — microtask spin',
+        );
+        expect(result, 'ok');
+      } finally {
+        isolate.kill(priority: Isolate.immediate);
+        done.close();
+      }
+    });
+
     test('many overlapping flushes never corrupt a line', () async {
       final (:log, :dir) = await _newService();
 

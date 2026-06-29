@@ -375,11 +375,9 @@ class LogService {
         await f;
         continue;
       }
-      if (_pending.isEmpty) return;
-      // No flush in flight but entries pending — kick one off and
-      // record it as the active future so concurrent callers join.
-      _flushFuture = _runFlush();
-      await _flushFuture;
+      if (_pending.isEmpty || _diskDisabled) return;
+      // No flush in flight but entries pending — kick one off.
+      await _startFlush();
     }
   }
 
@@ -449,21 +447,47 @@ class LogService {
       _flushScheduled = false;
       // Another caller (e.g. `flush()`) may have started the flush
       // already; if so, do nothing — entries added after that will
-      // re-schedule in the `_runFlush` finally block.
+      // re-schedule when the in-flight flush completes.
       if (_flushFuture != null) return;
-      _flushFuture = _runFlush();
+      _startFlush();
     });
   }
 
+  /// Sole owner of [_flushFuture]: assigned exactly once here and cleared
+  /// exactly once on completion. `_runFlush` must never touch it — it used
+  /// to null it synchronously on an early return, after which the caller's
+  /// `_flushFuture = _runFlush()` assignment resurrected the already
+  /// completed future. That stale non-null future made `flush()` spin its
+  /// `await`-loop on the microtask queue forever, permanently starving the
+  /// UI event loop (app frozen on resume, kill required).
+  ///
+  /// `whenComplete` on an async function's future always fires in a later
+  /// microtask, so the clear below is guaranteed to run after the
+  /// assignment — even when `_runFlush` returns without suspending.
+  Future<void> _startFlush() {
+    late final Future<void> future;
+    future = _runFlush().whenComplete(() {
+      if (identical(_flushFuture, future)) {
+        _flushFuture = null;
+      }
+      // If new entries arrived while we were flushing, schedule again.
+      if (_pending.isNotEmpty && !_diskDisabled) _scheduleFlush();
+    });
+    _flushFuture = future;
+    return future;
+  }
+
   Future<void> _runFlush() async {
-    if (_pending.isEmpty || _diskDisabled) {
-      _flushFuture = null;
+    if (_diskDisabled) {
+      // Entries can never reach disk this session; drop them so callers
+      // of flush() terminate. The ring buffer still holds them.
+      _pending.clear();
       return;
     }
+    if (_pending.isEmpty) return;
     final file = _activeFile;
     if (file == null) {
       _pending.clear();
-      _flushFuture = null;
       return;
     }
     final batch = List<LogEntry>.from(_pending);
@@ -475,10 +499,6 @@ class LogService {
       _onDiskWriteFailure(e);
     } catch (_) {
       // Swallow — logging must never crash the app.
-    } finally {
-      _flushFuture = null;
-      // If new entries arrived while we were flushing, schedule again.
-      if (_pending.isNotEmpty) _scheduleFlush();
     }
   }
 

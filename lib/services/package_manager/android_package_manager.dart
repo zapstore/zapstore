@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/services/c1_proof_verification.dart';
@@ -75,6 +76,7 @@ final class AndroidPackageManager extends PackageManager {
   static const _eventChannel = EventChannel('android_package_manager/events');
   bool _supportsSilentInstall = false;
   int _syncGeneration = 0;
+  Future<void>? _syncInFlight;
   StreamSubscription<dynamic>? _eventSubscription;
 
   /// Tracks appIds where we've already attempted to abort orphaned sessions.
@@ -713,7 +715,21 @@ final class AndroidPackageManager extends PackageManager {
   // ═══════════════════════════════════════════════════════════════════════════
 
   @override
-  Future<void> syncInstalledPackages() async {
+  Future<void> syncInstalledPackages() {
+    final inFlight = _syncInFlight;
+    if (inFlight != null) return inFlight;
+
+    late final Future<void> operation;
+    operation = _performInstalledPackagesSync().whenComplete(() {
+      if (identical(_syncInFlight, operation)) {
+        _syncInFlight = null;
+      }
+    });
+    _syncInFlight = operation;
+    return operation;
+  }
+
+  Future<void> _performInstalledPackagesSync() async {
     final syncGen = ++_syncGeneration;
     state = state.copyWith(isScanning: true);
     try {
@@ -729,7 +745,7 @@ final class AndroidPackageManager extends PackageManager {
               ) ??
           [];
 
-      if (syncGen != _syncGeneration) return;
+      if (!mounted || syncGen != _syncGeneration) return;
 
       final packages = <String, PackageInfo>{};
       var anyCanInstallSilently = false;
@@ -762,7 +778,7 @@ final class AndroidPackageManager extends PackageManager {
         }
       }
 
-      if (syncGen != _syncGeneration) return;
+      if (!mounted || syncGen != _syncGeneration) return;
 
       // Derive general silent install capability from per-app data
       _supportsSilentInstall = anyCanInstallSilently;
@@ -770,8 +786,10 @@ final class AndroidPackageManager extends PackageManager {
       // Trust the native source as the single source of truth.
       // Android's SUCCESS broadcast only fires after the package is committed,
       // so there's no race condition with queryable state.
-      state = state.copyWith(installed: packages);
-      await InstalledPackagesSnapshot.save(state.installed);
+      if (!mapEquals(state.installed, packages)) {
+        state = state.copyWith(installed: packages);
+        await InstalledPackagesSnapshot.save(packages);
+      }
 
       // Clear operations for apps where the installed version matches the target version
       // This catches installs that succeeded but we missed the event
@@ -827,7 +845,9 @@ final class AndroidPackageManager extends PackageManager {
     } catch (_) {
       // Don't clobber state on transient errors
     } finally {
-      state = state.copyWith(isScanning: false);
+      if (mounted) {
+        state = state.copyWith(isScanning: false);
+      }
     }
   }
 }

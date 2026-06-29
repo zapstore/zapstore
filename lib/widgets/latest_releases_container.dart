@@ -134,7 +134,11 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
 
     final keepAssets = [...assets, ...filteredOlder];
 
-    final appsByAssetId = _resolveAppsFromLocal(storage, keepAssets);
+    final appsByAssetId = _resolveAppsFromLocal(
+      storage,
+      keepAssets,
+      existing: state.appsByAssetId,
+    );
 
     state = state.copyWith(
       firstPage: assets,
@@ -224,9 +228,17 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
 
       state = state.copyWith(
         olderPages: [...state.olderPages, ...unique],
-        appsByAssetId: _resolveAppsFromLocal(storage, keepAssets),
+        appsByAssetId: _resolveAppsFromLocal(
+          storage,
+          keepAssets,
+          existing: state.appsByAssetId,
+        ),
         isLoadingMore: false,
-        hasMore: assets.length >= _kPageSize,
+        // A page that yields no NEW assets is end-of-list. Mirrors the
+        // shared PagedSubscriptionNotifier contract — without the
+        // `unique.isNotEmpty` half, a page of all-duplicates keeps
+        // `hasMore` true and spins the viewport auto-fill loop.
+        hasMore: unique.isNotEmpty && assets.length >= _kPageSize,
       );
     } catch (_) {
       state = state.copyWith(isLoadingMore: false);
@@ -235,13 +247,30 @@ class LatestReleasesNotifier extends StateNotifier<LatestReleasesState> {
 
   /// Synchronously map asset IDs -> parent App using local storage only.
   /// Never awaits network; returns an empty entry for ids not yet in cache.
+  ///
+  /// INCREMENTAL: reuses already-resolved entries from [existing] and only
+  /// runs a `querySync` for assets not yet resolved. This is critical for
+  /// UI responsiveness — this method runs on the UI isolate on EVERY
+  /// subscription emission, and emissions arrive in bursts on resume
+  /// (relay reconnect re-streams the catalog). Re-resolving the entire
+  /// accumulated asset list on every emission is O(loaded assets) of
+  /// synchronous DB work per emission, which pegs the isolate and freezes
+  /// the app. Resolving only new assets keeps steady-state emissions ~O(0).
   Map<String, App> _resolveAppsFromLocal(
     StorageNotifier storage,
-    List<SoftwareAsset> assets,
-  ) {
-    final result = <String, App>{};
+    List<SoftwareAsset> assets, {
+    Map<String, App> existing = const {},
+  }) {
+    final assetIds = assets.map((asset) => asset.id).toSet();
+    // Carry over previously resolved entries whose asset is still present;
+    // drop entries for assets no longer in the list.
+    final result = <String, App>{
+      for (final entry in existing.entries)
+        if (assetIds.contains(entry.key)) entry.key: entry.value,
+    };
     for (final asset in assets) {
       if (asset.appIdentifier.isEmpty) continue;
+      if (result.containsKey(asset.id)) continue; // already resolved
       final matches = storage.querySync(
         RequestFilter<App>(
           authors: {asset.event.pubkey},
@@ -339,6 +368,13 @@ class LatestReleasesContainer extends HookConsumerWidget {
 
     final combinedApps = [...pinnedApps, ...dedupedApps];
 
+    // Tracks the visible (deduped) app count the last time we auto-filled an
+    // underfilled viewport. Guards against an unbounded loop: when many
+    // SoftwareAssets collapse to few app cards, `maxScrollExtent` stays <= 0
+    // and the post-frame check would otherwise call `loadMore` every frame,
+    // walking the entire local asset history synchronously on the UI isolate.
+    final lastAutoFillLength = useRef<int?>(null);
+
     useEffect(() {
       if (state == null) return null;
       void onScroll() {
@@ -356,8 +392,22 @@ class LatestReleasesContainer extends HookConsumerWidget {
         final position = scrollController.position;
         final s = ref.read(latestReleasesProvider);
         if (s.isLoadingMore || !s.hasMore) return;
-        if (position.maxScrollExtent <= 0 ||
+
+        // User scrolled near the bottom of a scrollable list — normal
+        // infinite scroll. Only possible once content overflows the viewport.
+        if (position.maxScrollExtent > 0 &&
             position.pixels >= position.maxScrollExtent - 300) {
+          ref.read(latestReleasesProvider.notifier).loadMore();
+          return;
+        }
+
+        // Viewport not filled yet — auto-fill so infinite scroll can engage.
+        // Only attempt again once the visible app count has actually grown;
+        // otherwise a page of assets that maps only to already-shown apps
+        // would keep this firing forever.
+        if (position.maxScrollExtent <= 0) {
+          if (lastAutoFillLength.value == combinedApps.length) return;
+          lastAutoFillLength.value = combinedApps.length;
           ref.read(latestReleasesProvider.notifier).loadMore();
         }
       }

@@ -32,6 +32,8 @@ import java.security.MessageDigest
 import java.security.cert.CertificateFactory
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 private const val TAG = "AndroidPackageManager"
@@ -110,6 +112,8 @@ class AndroidPackageManagerPlugin :
     private lateinit var eventChannel: EventChannel
     private lateinit var context: Context
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var packageQueryExecutor: ExecutorService? = null
+    @Volatile private var isEngineAttached = false
 
     /** Per-app watchdog generation counters (cancels old scheduled callbacks) */
     private val watchdogGen = mutableMapOf<String, Int>()
@@ -337,6 +341,8 @@ class AndroidPackageManagerPlugin :
         context = binding.applicationContext
         appContext = context
         instance = this
+        isEngineAttached = true
+        packageQueryExecutor = Executors.newSingleThreadExecutor()
 
         methodChannel = MethodChannel(binding.binaryMessenger, "android_package_manager")
         methodChannel.setMethodCallHandler(this)
@@ -355,6 +361,9 @@ class AndroidPackageManagerPlugin :
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
+        isEngineAttached = false
+        packageQueryExecutor?.shutdownNow()
+        packageQueryExecutor = null
         mainHandler.post { ProcessLifecycleOwner.get().lifecycle.removeObserver(this) }
         unregisterSessionCallback()
         methodChannel.setMethodCallHandler(null)
@@ -680,7 +689,31 @@ class AndroidPackageManagerPlugin :
             "requestInstallPermission" -> requestInstallPermission(result)
             "getInstalledApps" -> {
                 val includeSystem = call.argument<Boolean>("includeSystemApps") ?: false
-                result.success(getInstalledApps(includeSystem))
+                val executor = packageQueryExecutor
+                if (executor == null) {
+                    result.error("PLUGIN_DETACHED", "Package manager is unavailable", null)
+                    return
+                }
+                executor.execute {
+                    try {
+                        val installedApps = getInstalledApps(includeSystem)
+                        mainHandler.post {
+                            if (isEngineAttached) {
+                                result.success(installedApps)
+                            }
+                        }
+                    } catch (error: Throwable) {
+                        mainHandler.post {
+                            if (isEngineAttached) {
+                                result.error(
+                                        "PACKAGE_QUERY_FAILED",
+                                        error.message ?: "Could not query installed apps",
+                                        null
+                                )
+                            }
+                        }
+                    }
+                }
             }
             "uninstall" -> {
                 val packageName = call.argument<String>("packageName")

@@ -200,20 +200,11 @@ final routerProvider = Provider<GoRouter>((ref) {
     previousPath = currentPath;
 
     Future.microtask(() {
-      // Sync installed packages on every navigation to catch sideloads,
-      // external installs/uninstalls, and self-updating apps.
-      // This is a local-only platform channel call (~100-500ms, no network).
-      unawaited(
-        ref.read(packageManagerProvider.notifier).syncInstalledPackages(),
-      );
-
       // Re-derive catalog from local DB when arriving at updates tab so
       // data written by other screens or the background service is visible
       // without waiting for the next poll cycle.
       if (isUpdatesRoute && !wasUpdatesRoute) {
-        unawaited(
-          ref.read(updatePollerProvider.notifier).refreshFromLocal(),
-        );
+        unawaited(ref.read(updatePollerProvider.notifier).refreshFromLocal());
       }
 
       // Clear completed operations when navigating away from updates
