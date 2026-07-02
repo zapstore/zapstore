@@ -20,6 +20,15 @@ cross-device sync.
 - [x] Add unmanagedApps: List<PackageInfo> to CategorizedUpdates
 - [x] Wrap app cards in Slidable on updates screen (swipe-left -> Unmanage)
 - [x] Add "Unmanaged Apps" section at bottom with swipe-left -> "Manage" action
+- [x] Serialize optimistic writes so each replacement includes prior actions
+- [x] Keep one Updates scroll controller while cards change sections
+- [x] Close the slide action before reclassifying its card
+- [x] Coalesce installed-package scans and suppress unchanged map emissions
+- [x] Run native installed-package enumeration off Android's main thread
+- [x] Cover overlapping installed-package scan coalescing
+- [x] Include the platform tag and require explicit relay acceptance
+- [x] Surface local-save and relay-publish failures to the user
+- [x] Cover accumulation, overlapping writes, timestamps, tags, and failures
 - [ ] Preserve catalog metadata for cataloged unmanaged apps in the Unmanaged Apps section
 - [ ] Extend native package scan with Android installer-source metadata
 - [ ] Default apps installed by known third-party app stores to unmanaged
@@ -37,6 +46,17 @@ cross-device sync.
 - Third-party app stores should default unmanaged; Zapstore, package installer, file manager, browser, shell, and unknown/manual flows should default managed
 - Automatic defaults need a persistent "user has overridden this package/install" signal; otherwise tapping Manage would be undone by the next package scan
 - Cataloged unmanaged apps should render from App metadata when local catalog data exists, and fall back to PackageInfo only when uncataloged
+- Imperative storage queries return encrypted stacks before post-load decryption,
+  so writes must use notifier-owned decrypted state rather than re-reading
+  `privateAppIds` from that path.
+- Parameterized replacement writes use strictly increasing whole-second
+  timestamps to avoid same-second replacement collisions.
+- An unmanaged-app action succeeds remotely only when an AppCatalog relay
+  explicitly accepts the signed device-key event.
+- Installed-package scans are single-flight and do not emit a fresh installed
+  map when Android reports no changes.
+- Android package enumeration runs on a lifecycle-owned worker so package,
+  signature, and installer-source reads cannot block rendering.
 
 ## Implementation Notes
 - Android can expose source through `PackageManager.getInstallSourceInfo(packageName)` on API 30+ and `getInstallerPackageName(packageName)` on older APIs.

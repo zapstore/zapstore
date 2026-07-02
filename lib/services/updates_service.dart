@@ -37,6 +37,7 @@ class CategorizedUpdates {
   final List<App> manualUpdates;
   final List<App> upToDateApps;
   final List<PackageInfo> uncatalogedApps;
+
   /// Apps the user has explicitly marked unmanaged (excluded from all other lists).
   final List<PackageInfo> unmanagedApps;
   final bool showSkeleton;
@@ -118,12 +119,6 @@ class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
         unawaited(_hydrateAndStartPolling());
       }
     }, fireImmediately: true);
-
-    // When the unmanaged set changes, refresh immediately so the UI and
-    // the next relay fetch both use the updated set.
-    ref.listen<Set<String>>(unmanagedAppsProvider, (prev, next) {
-      if (prev != next) unawaited(refreshFromLocal());
-    });
   }
 
   Future<void> _hydrateAndStartPolling() async {
@@ -411,18 +406,19 @@ final categorizedUpdatesProvider = Provider<CategorizedUpdates>((ref) {
       automaticUpdates: const [],
       manualUpdates: const [],
       upToDateApps: const [],
-      uncatalogedApps: installed.values
-          .where(
-            (pkg) =>
-                !catalogedIds.contains(pkg.appId) &&
-                !unmanagedIds.contains(pkg.appId),
-          )
-          .toList()
-        ..sort(
-          (a, b) => (a.name ?? a.appId).toLowerCase().compareTo(
-            (b.name ?? b.appId).toLowerCase(),
-          ),
-        ),
+      uncatalogedApps:
+          installed.values
+              .where(
+                (pkg) =>
+                    !catalogedIds.contains(pkg.appId) &&
+                    !unmanagedIds.contains(pkg.appId),
+              )
+              .toList()
+            ..sort(
+              (a, b) => (a.name ?? a.appId).toLowerCase().compareTo(
+                (b.name ?? b.appId).toLowerCase(),
+              ),
+            ),
       unmanagedApps: unmanagedAppsEarly,
     );
   }
@@ -493,9 +489,7 @@ final categorizedUpdatesProvider = Provider<CategorizedUpdates>((ref) {
         );
 
   final unmanagedApps =
-      installed.values
-          .where((pkg) => unmanagedIds.contains(pkg.appId))
-          .toList()
+      installed.values.where((pkg) => unmanagedIds.contains(pkg.appId)).toList()
         ..sort(
           (a, b) => (a.name ?? a.appId).toLowerCase().compareTo(
             (b.name ?? b.appId).toLowerCase(),

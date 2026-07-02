@@ -5,7 +5,9 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
+import 'package:zapstore/router.dart';
 import 'package:zapstore/services/device_key_service.dart';
+import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/services/unmanaged_apps_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/services/updates_service.dart';
@@ -15,11 +17,12 @@ import 'package:zapstore/widgets/batch_progress_banner.dart';
 import 'package:zapstore/widgets/common/badges.dart';
 import 'package:zapstore/widgets/app_card.dart';
 
-class UpdatesScreen extends ConsumerWidget {
+class UpdatesScreen extends HookConsumerWidget {
   const UpdatesScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final scrollController = useScrollController();
     final categorized = ref.watch(categorizedUpdatesProvider);
 
     if (categorized.showSkeleton) {
@@ -34,7 +37,10 @@ class UpdatesScreen extends ConsumerWidget {
     return Scaffold(
       body: Padding(
         padding: const EdgeInsets.only(top: 16),
-        child: _UpdatesList(categorized: categorized),
+        child: _UpdatesList(
+          categorized: categorized,
+          scrollController: scrollController,
+        ),
       ),
     );
   }
@@ -100,8 +106,9 @@ class _LastCheckedIndicator extends HookConsumerWidget {
         ? 'Checking for updates...'
         : 'Last checked: ${_formatRelativeTime(lastCheckTime)}';
 
-    final mutedColor =
-        Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5);
+    final mutedColor = Theme.of(
+      context,
+    ).colorScheme.onSurface.withValues(alpha: 0.5);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -167,9 +174,13 @@ class _LastCheckedIndicator extends HookConsumerWidget {
 }
 
 class _UpdatesList extends ConsumerWidget {
-  const _UpdatesList({required this.categorized});
+  const _UpdatesList({
+    required this.categorized,
+    required this.scrollController,
+  });
 
   final CategorizedUpdates categorized;
+  final ScrollController scrollController;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -229,10 +240,26 @@ class _UpdatesList extends ConsumerWidget {
           children: [
             ColorFiltered(
               colorFilter: const ColorFilter.matrix(<double>[
-                0.2126, 0.7152, 0.0722, 0, 0,
-                0.2126, 0.7152, 0.0722, 0, 0,
-                0.2126, 0.7152, 0.0722, 0, 0,
-                0, 0, 0, 1, 0,
+                0.2126,
+                0.7152,
+                0.0722,
+                0,
+                0,
+                0.2126,
+                0.7152,
+                0.0722,
+                0,
+                0,
+                0.2126,
+                0.7152,
+                0.0722,
+                0,
+                0,
+                0,
+                0,
+                0,
+                1,
+                0,
               ]),
               child: const Text('\u{1F389}', style: TextStyle(fontSize: 48)),
             ),
@@ -264,6 +291,8 @@ class _UpdatesList extends ConsumerWidget {
       strokeWidth: 0,
       onRefresh: () => ref.read(updatePollerProvider.notifier).checkNow(),
       child: CustomScrollView(
+        key: const PageStorageKey<String>('updates-list'),
+        controller: scrollController,
         slivers: [
           if (allUpdates.length > 1)
             SliverToBoxAdapter(child: UpdateAllRow(allUpdates: allUpdates)),
@@ -394,53 +423,51 @@ class _AppSection extends ConsumerWidget {
     final hasDeviceKey = ref.watch(devicePubkeyProvider) != null;
 
     return SliverList(
-      delegate: SliverChildBuilderDelegate(
-        (context, index) {
-          if (index == 0) {
-            return _SectionHeader(
-              icon: icon,
-              title: title,
-              count: apps.length,
-              trailing: headerTrailing,
-            );
-          }
-          final app = apps[index - 1];
-          final card = AppCard(
-            key: ValueKey('${keyPrefix}_${app.identifier}'),
-            app: app,
-            showUpdateArrow: showUpdateArrow,
-            showUpdateButton: showUpdateButton,
-            showZapEncouragement: showZapEncouragement,
-            showDescription: false,
+      delegate: SliverChildBuilderDelegate((context, index) {
+        if (index == 0) {
+          return _SectionHeader(
+            icon: icon,
+            title: title,
+            count: apps.length,
+            trailing: headerTrailing,
           );
+        }
+        final app = apps[index - 1];
+        final card = AppCard(
+          key: ValueKey('${keyPrefix}_${app.identifier}'),
+          app: app,
+          showUpdateArrow: showUpdateArrow,
+          showUpdateButton: showUpdateButton,
+          showZapEncouragement: showZapEncouragement,
+          showDescription: false,
+        );
 
-          if (!hasDeviceKey) return card;
+        if (!hasDeviceKey) return card;
 
-          return Slidable(
-            key: ValueKey('slidable_${keyPrefix}_${app.identifier}'),
-            endActionPane: ActionPane(
-              motion: const BehindMotion(),
-              extentRatio: 0.22,
-              children: [
-                SlidableAction(
-                  onPressed: (_) => toggleUnmanagedApp(
-                    ref,
-                    app.identifier,
-                    unmanage: true,
-                  ),
-                  backgroundColor: Colors.orange.shade800,
-                  foregroundColor: Colors.white,
-                  icon: Icons.do_not_disturb_on_outlined,
-                  label: 'Unmanage',
-                  borderRadius: BorderRadius.circular(16),
+        return Slidable(
+          key: ValueKey('slidable_${keyPrefix}_${app.identifier}'),
+          endActionPane: ActionPane(
+            motion: const BehindMotion(),
+            extentRatio: 0.22,
+            children: [
+              SlidableAction(
+                autoClose: false,
+                onPressed: (actionContext) => _runUnmanagedAction(
+                  context,
+                  actionContext,
+                  () => toggleUnmanagedApp(ref, app.identifier, unmanage: true),
                 ),
-              ],
-            ),
-            child: card,
-          );
-        },
-        childCount: apps.length + 1,
-      ),
+                backgroundColor: Colors.orange.shade800,
+                foregroundColor: Colors.white,
+                icon: Icons.do_not_disturb_on_outlined,
+                label: 'Unmanage',
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ],
+          ),
+          child: card,
+        );
+      }, childCount: apps.length + 1),
     );
   }
 }
@@ -481,10 +508,7 @@ class _SectionHeader extends StatelessWidget {
               Text(title, style: context.textTheme.titleMedium),
               const SizedBox(width: 8),
               CountBadge(count: count, color: AppColors.darkPillBackground),
-              if (trailing != null) ...[
-                const SizedBox(width: 4),
-                trailing!,
-              ],
+              if (trailing != null) ...[const SizedBox(width: 4), trailing!],
             ],
           ),
           if (hint != null) ...[
@@ -567,7 +591,12 @@ class _SlidablePackageCard extends ConsumerWidget {
         extentRatio: 0.22,
         children: [
           SlidableAction(
-            onPressed: (_) => onAction(ref),
+            autoClose: false,
+            onPressed: (actionContext) => _runUnmanagedAction(
+              context,
+              actionContext,
+              () => onAction(ref),
+            ),
             backgroundColor: actionColor,
             foregroundColor: Colors.white,
             icon: actionIcon,
@@ -578,6 +607,24 @@ class _SlidablePackageCard extends ConsumerWidget {
       ),
       child: card,
     );
+  }
+}
+
+Future<void> _runUnmanagedAction(
+  BuildContext notificationContext,
+  BuildContext slidableContext,
+  Future<void> Function() action,
+) async {
+  try {
+    await Slidable.of(slidableContext)?.close();
+    await action();
+  } catch (error) {
+    final context = rootNavigatorKey.currentContext ?? notificationContext;
+    if (!context.mounted) return;
+    final message = error is UnmanagedAppsPublishException
+        ? 'Saved locally, but could not sync unmanaged apps'
+        : 'Could not update unmanaged apps';
+    context.showError(message, technicalDetails: error.toString());
   }
 }
 
