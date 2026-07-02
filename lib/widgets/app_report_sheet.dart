@@ -3,6 +3,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/services/notification_service.dart';
+import 'package:zapstore/utils/extensions.dart';
 
 const kMinimumReportDescriptionLength = 20;
 final _hexIdentifier = RegExp(r'^[0-9a-f]{64}$', caseSensitive: false);
@@ -15,6 +16,25 @@ bool canSubmitAppReport({
     !isPublishing &&
     violationType != null &&
     description.trim().length >= kMinimumReportDescriptionLength;
+
+bool wasAppReportAccepted(PublishResponse response, String reportEventId) =>
+    response.results[reportEventId]?.any((result) => result.accepted) ?? false;
+
+String appReportPublishFailure(PublishResponse response, String reportEventId) {
+  final results = response.results[reportEventId];
+  if (results == null || results.isEmpty) {
+    return 'No relay responded to the report. Check your connection and retry.';
+  }
+
+  final rejection = results.firstWhere((result) => !result.accepted);
+  final reason = rejection.message?.trim();
+  if (reason == null || reason.isEmpty) {
+    return 'Relay ${rejection.relayUrl} explicitly rejected the report without '
+        'providing a reason.';
+  }
+
+  return 'Relay ${rejection.relayUrl} rejected the report: $reason';
+}
 
 bool canReportApp(App app) =>
     reportableAppEventId(app) != null && _hexIdentifier.hasMatch(app.pubkey);
@@ -234,8 +254,14 @@ class AppReportSheet extends HookConsumerWidget {
         reason: description,
       ).signWith(signer);
 
-      await report.save();
-      await report.publish(relays: 'AppCatalog');
+      await ref.storage.save({report});
+      final response = await ref.storage.publish({
+        report,
+      }, relays: 'AppCatalog');
+      if (!wasAppReportAccepted(response, report.id)) {
+        submissionError.value = appReportPublishFailure(response, report.id);
+        return;
+      }
 
       if (context.mounted) {
         Navigator.pop(context);
