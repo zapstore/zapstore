@@ -19,6 +19,8 @@ apply updates, with a result notification instead of "updates available".
 - [x] Refresh installed package versions natively before each background run
 - [x] Reuse already-staged manual updates instead of downloading them again
 - [x] Register the native package manager in headless WorkManager engines
+- [x] Confirm opt-in before enabling and explain first-run timing and cadence
+- [x] Queue the first auto-update run immediately with an unmetered-network constraint
 - [x] Emulator UAT: schedule constraints, staging, notification, and install prompt
 - [ ] Manual UAT on device
 
@@ -36,3 +38,16 @@ apply updates, with a result notification instead of "updates available".
   declared; otherwise staging fails closed.
 - Use a generated plugin registrant bridge so activity and headless Flutter
   engines share the same app-owned Android package manager implementation.
+- The first opt-in run is a one-off WorkManager task constrained to an
+  unmetered network. It runs as soon as Wi-Fi is available and does not poll
+  while offline; the existing periodic auto-update task remains approximately
+  every 24 hours.
+
+## Test Coverage
+
+| Scenario | Expected | Status |
+|----------|----------|--------|
+| Enable and confirm | Setting is saved and first unmetered run is queued | [ ] |
+| Enable and cancel | Dialog closes and setting remains off | [ ] |
+| Enable without Wi-Fi | First run stays deferred until the network constraint is met | [ ] |
+| Disable | No new auto-update work is scheduled | [ ] |

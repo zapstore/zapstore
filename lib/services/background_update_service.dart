@@ -43,6 +43,9 @@ const kBackgroundUpdateTaskId = 'backgroundUpdateCheck';
 /// Unique task identifier for unmetered background auto-updates
 const kBackgroundAutoUpdateTaskId = 'backgroundAutoUpdate';
 
+/// Unique one-off task identifier for the first opt-in auto-update run
+const kBackgroundAutoUpdateImmediateTaskId = 'backgroundAutoUpdateImmediate';
+
 /// Unique task identifier for weekly cleanup
 const kWeeklyCleanupTaskId = 'weeklyCleanup';
 
@@ -147,6 +150,15 @@ void callbackDispatcher() {
                 autoUpdateWorker: false,
               );
             case kBackgroundAutoUpdateTaskName:
+              final relayUrls =
+                  (inputData?[kAppCatalogRelaysKey] as List<dynamic>?)
+                      ?.cast<String>()
+                      .toSet();
+              return await _checkForUpdatesInBackground(
+                relayUrls,
+                autoUpdateWorker: true,
+              );
+            case kBackgroundAutoUpdateImmediateTaskId:
               final relayUrls =
                   (inputData?[kAppCatalogRelaysKey] as List<dynamic>?)
                       ?.cast<String>()
@@ -547,9 +559,12 @@ class BackgroundUpdateService {
   BackgroundUpdateService(this.ref);
 
   final Ref ref;
+  Future<void>? _initializeFuture;
 
   /// Initialize WorkManager and register periodic task
-  Future<void> initialize() async {
+  Future<void> initialize() => _initializeFuture ??= _initialize();
+
+  Future<void> _initialize() async {
     if (!Platform.isAndroid) {
       // WorkManager only works on Android/iOS, skip on other platforms
       return;
@@ -584,20 +599,9 @@ class BackgroundUpdateService {
       inputData: {kAppCatalogRelaysKey: appCatalogRelays.toList()},
     );
 
-    // Auto-update downloads and installs must only run on an unmetered network.
-    // This worker exits immediately while the setting is disabled.
-    await Workmanager().registerPeriodicTask(
-      kBackgroundAutoUpdateTaskId,
-      kBackgroundAutoUpdateTaskName,
-      frequency: const Duration(hours: 24),
-      constraints: Constraints(
-        networkType: NetworkType.unmetered,
-        requiresBatteryNotLow: true,
-      ),
-      existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
-      backoffPolicy: BackoffPolicy.exponential,
+    await _registerAutoUpdatePeriodicTask(
+      appCatalogRelays,
       initialDelay: const Duration(hours: 1),
-      inputData: {kAppCatalogRelaysKey: appCatalogRelays.toList()},
     );
 
     // Register weekly cleanup task
@@ -612,6 +616,64 @@ class BackgroundUpdateService {
       existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
       backoffPolicy: BackoffPolicy.exponential,
       initialDelay: const Duration(hours: 24), // Start first cleanup after 24h
+    );
+  }
+
+  /// Queue the first opted-in auto-update run.
+  ///
+  /// WorkManager starts it immediately when its unmetered-network constraint
+  /// is met. If Wi-Fi is unavailable, it remains queued instead of polling or
+  /// waking the app on a timer.
+  Future<void> scheduleImmediateAutoUpdate() async {
+    if (!Platform.isAndroid) return;
+
+    final settings = await ref.read(settingsServiceProvider).load();
+    if (!settings.backgroundAutoUpdatesEnabled) return;
+
+    await initialize();
+
+    final appCatalogRelays = await ref
+        .read(storageNotifierProvider.notifier)
+        .resolveRelays('AppCatalog');
+
+    await Workmanager().registerOneOffTask(
+      kBackgroundAutoUpdateImmediateTaskId,
+      kBackgroundAutoUpdateImmediateTaskId,
+      constraints: Constraints(
+        networkType: NetworkType.unmetered,
+        requiresBatteryNotLow: true,
+      ),
+      existingWorkPolicy: ExistingWorkPolicy.replace,
+      backoffPolicy: BackoffPolicy.exponential,
+      inputData: {kAppCatalogRelaysKey: appCatalogRelays.toList()},
+    );
+
+    // Start the recurring 24-hour cadence after this first run instead of
+    // allowing the task registered during app startup to run a duplicate
+    // check shortly afterward.
+    await Workmanager().cancelByUniqueName(kBackgroundAutoUpdateTaskId);
+    await _registerAutoUpdatePeriodicTask(
+      appCatalogRelays,
+      initialDelay: const Duration(hours: 24),
+    );
+  }
+
+  Future<void> _registerAutoUpdatePeriodicTask(
+    Set<String> appCatalogRelays, {
+    required Duration initialDelay,
+  }) {
+    return Workmanager().registerPeriodicTask(
+      kBackgroundAutoUpdateTaskId,
+      kBackgroundAutoUpdateTaskName,
+      frequency: const Duration(hours: 24),
+      constraints: Constraints(
+        networkType: NetworkType.unmetered,
+        requiresBatteryNotLow: true,
+      ),
+      existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
+      backoffPolicy: BackoffPolicy.exponential,
+      initialDelay: initialDelay,
+      inputData: {kAppCatalogRelaysKey: appCatalogRelays.toList()},
     );
   }
 

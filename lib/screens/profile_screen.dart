@@ -11,10 +11,12 @@ import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/services/app_restart_service.dart';
+import 'package:zapstore/services/background_update_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/main.dart';
 import 'package:zapstore/services/device_key_service.dart';
+import 'package:zapstore/services/log_service.dart' as app_logs;
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/services/settings_service.dart';
 import 'package:zapstore/utils/extensions.dart';
@@ -1536,17 +1538,62 @@ class _BackgroundAutoUpdatesToggle extends ConsumerWidget {
         ),
       ),
       title: const Text('Background auto-updates'),
-      subtitle: const Text(
-        'When on, periodic background checks download and apply updates. '
-        'Manual updates are downloaded and shown as ready to install.',
-      ),
       value: enabled,
       contentPadding: EdgeInsets.zero,
       onChanged: (value) async {
+        if (value && !enabled) {
+          final confirmed = await showDialog<bool>(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+              title: const Text('Turn on background auto-updates?'),
+              content: const Text(
+                'Zapstore will check for updates and apply them in the '
+                'background. The first check will start immediately when '
+                'Wi-Fi is available. After that, checks run approximately '
+                'every 24 hours. You can turn this off at any time.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: const Text('Turn on'),
+                ),
+              ],
+            ),
+          );
+          if (confirmed != true || !context.mounted) return;
+        }
+
         await ref
             .read(settingsServiceProvider)
             .update((s) => s.copyWith(backgroundAutoUpdatesEnabled: value));
         ref.invalidate(localSettingsProvider);
+
+        if (value) {
+          unawaited(() async {
+            try {
+              await ref
+                  .read(backgroundUpdateServiceProvider)
+                  .scheduleImmediateAutoUpdate();
+            } catch (error, stack) {
+              app_logs.LogService.I.warn(
+                'initial background auto-update scheduling failed',
+                tag: 'background_updates',
+                err: error,
+                stack: stack,
+              );
+              if (context.mounted) {
+                context.showError(
+                  'Background auto-updates are enabled, but the first check '
+                  'could not be scheduled.',
+                );
+              }
+            }
+          }());
+        }
       },
     );
   }

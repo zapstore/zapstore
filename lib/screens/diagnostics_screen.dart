@@ -23,6 +23,7 @@ class DiagnosticsScreen extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tickRefresh = useState(0);
+    final scrollController = useScrollController();
 
     // Re-read disk tail every time the screen is opened so the user
     // sees recent entries that may have been flushed asynchronously.
@@ -37,17 +38,40 @@ class DiagnosticsScreen extends HookConsumerWidget {
     final settingsAsync = ref.watch(localSettingsProvider);
     final currentLevel = settingsAsync.valueOrNull?.logLevel ?? LogLevel.info;
     final filtered = _filterEntries(entries, level: currentLevel);
+    final newestEntryKey = filtered.isEmpty ? null : _entryKey(filtered.last);
+
+    // The newest log entry is rendered at offset zero. Keep that position
+    // sticky when a refresh adds entries, but never pull someone reading
+    // older entries back to the top.
+    useEffect(() {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (scrollController.hasClients &&
+            scrollController.offset <= _kStickyTopThreshold) {
+          scrollController.jumpTo(0);
+        }
+      });
+      return null;
+    }, [newestEntryKey, scrollController]);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Diagnostics')),
+      appBar: AppBar(
+        title: const Text('Diagnostics'),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Divider(
+            height: 1,
+            color: Theme.of(context).colorScheme.outlineVariant,
+          ),
+        ),
+      ),
       body: Column(
         children: [
           _Toolbar(
             level: currentLevel,
             onLevelChanged: (level) async {
-              await ref.read(settingsServiceProvider).update(
-                    (s) => s.copyWith(logLevel: level),
-                  );
+              await ref
+                  .read(settingsServiceProvider)
+                  .update((s) => s.copyWith(logLevel: level));
               LogService.I.level = level;
               ref.invalidate(localSettingsProvider);
             },
@@ -58,11 +82,10 @@ class DiagnosticsScreen extends HookConsumerWidget {
             }),
             entryCount: filtered.length,
           ),
-          const Divider(height: 1),
           Expanded(
             child: filtered.isEmpty
                 ? const _EmptyState()
-                : _LogList(entries: filtered),
+                : _LogList(entries: filtered, controller: scrollController),
           ),
         ],
       ),
@@ -99,6 +122,12 @@ class DiagnosticsScreen extends HookConsumerWidget {
         .toList(growable: false);
   }
 
+  static const _kStickyTopThreshold = 24.0;
+
+  static String _entryKey(LogEntry entry) =>
+      '${entry.ts.microsecondsSinceEpoch}|${entry.isolate}|${entry.level}|'
+      '${entry.tag}|${entry.msg}';
+
   Future<void> _exportLogs(BuildContext context) async {
     final files = LogService.I.currentFiles();
     if (files.isEmpty) {
@@ -133,12 +162,13 @@ class DiagnosticsScreen extends HookConsumerWidget {
       // Surface size before sharing so the user can cancel a large transfer.
       context.showInfo('Exported ${_humanBytes(size)}');
 
-      await SharePlus.instance.share(ShareParams(
-        files: [XFile(zipPath, mimeType: 'application/zip')],
-        subject: 'Zapstore diagnostic logs',
-        text:
-            'Zapstore diagnostic logs (local export, no telemetry).',
-      ));
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(zipPath, mimeType: 'application/zip')],
+          subject: 'Zapstore diagnostic logs',
+          text: 'Zapstore diagnostic logs (local export, no telemetry).',
+        ),
+      );
     } catch (e, st) {
       LogService.I.error(
         'log export failed',
@@ -215,27 +245,23 @@ class _Toolbar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
       child: Row(
         children: [
+          Icon(Icons.terminal_rounded, size: 18, color: colors.primary),
+          const SizedBox(width: 8),
           DropdownButtonHideUnderline(
             child: DropdownButton<LogLevel>(
               value: level,
               isDense: true,
+              style: theme.textTheme.labelLarge,
               items: const [
-                DropdownMenuItem(
-                  value: LogLevel.debug,
-                  child: Text('Debug'),
-                ),
-                DropdownMenuItem(
-                  value: LogLevel.info,
-                  child: Text('Info'),
-                ),
-                DropdownMenuItem(
-                  value: LogLevel.warn,
-                  child: Text('Warn'),
-                ),
+                DropdownMenuItem(value: LogLevel.debug, child: Text('Debug')),
+                DropdownMenuItem(value: LogLevel.info, child: Text('Info')),
+                DropdownMenuItem(value: LogLevel.warn, child: Text('Warn')),
               ],
               onChanged: (v) {
                 if (v != null) onLevelChanged(v);
@@ -243,10 +269,18 @@ class _Toolbar extends StatelessWidget {
             ),
           ),
           const Spacer(),
-          Text(
-            '$entryCount',
-            style: Theme.of(context).textTheme.labelSmall,
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: colors.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              '$entryCount entries',
+              style: theme.textTheme.labelSmall,
+            ),
           ),
+          const SizedBox(width: 4),
           IconButton(
             tooltip: 'Refresh',
             onPressed: onRefresh,
@@ -283,19 +317,24 @@ class _Toolbar extends StatelessWidget {
 }
 
 class _LogList extends StatelessWidget {
-  const _LogList({required this.entries});
+  const _LogList({required this.entries, required this.controller});
 
   final List<LogEntry> entries;
+  final ScrollController controller;
 
   @override
   Widget build(BuildContext context) {
     return ListView.separated(
-      reverse: true,
+      controller: controller,
+      padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: entries.length,
-      separatorBuilder: (_, __) => const Divider(height: 1),
+      separatorBuilder: (_, __) => const SizedBox(height: 4),
       itemBuilder: (context, index) {
         final e = entries[entries.length - 1 - index];
-        return _LogTile(entry: e);
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: _LogTile(entry: e),
+        );
       },
     );
   }
@@ -324,53 +363,96 @@ class _LogTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     final time =
         '${entry.ts.toLocal().hour.toString().padLeft(2, '0')}:'
         '${entry.ts.toLocal().minute.toString().padLeft(2, '0')}:'
         '${entry.ts.toLocal().second.toString().padLeft(2, '0')}';
     final fields = entry.fields;
-    return ListTile(
-      dense: true,
-      onTap: () => _copyToClipboard(context),
-      title: Row(
-        children: [
-          Text(
-            entry.level.short,
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: _levelColor(context),
-              fontFamily: 'monospace',
-            ),
+    final levelColor = _levelColor(context);
+    return Material(
+      color: colors.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(10),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => _copyToClipboard(context),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 7,
+                    height: 7,
+                    decoration: BoxDecoration(
+                      color: levelColor,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    entry.level.short.toUpperCase(),
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: levelColor,
+                      fontFamily: 'monospace',
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    time,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      entry.tag,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: colors.secondary,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    Icons.copy_rounded,
+                    size: 14,
+                    color: colors.onSurfaceVariant,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(entry.msg, style: theme.textTheme.bodyMedium),
+              if (fields != null && fields.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  fields.toString(),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ],
+              if (entry.err != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  entry.err!,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colors.error,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ],
+            ],
           ),
-          const SizedBox(width: 8),
-          Text(time, style: const TextStyle(fontFamily: 'monospace')),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              entry.tag,
-              overflow: TextOverflow.ellipsis,
-              style:
-                  TextStyle(color: Theme.of(context).colorScheme.secondary),
-            ),
-          ),
-        ],
-      ),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(entry.msg),
-          if (fields != null && fields.isNotEmpty)
-            Text(
-              fields.toString(),
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
-            ),
-          if (entry.err != null)
-            Text(
-              entry.err!,
-              style:
-                  TextStyle(color: Theme.of(context).colorScheme.error),
-            ),
-        ],
+        ),
       ),
     );
   }
@@ -392,11 +474,25 @@ class _EmptyState extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.notes,
-              size: 48,
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4)),
+          Icon(
+            Icons.terminal_rounded,
+            size: 40,
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.4),
+          ),
           const SizedBox(height: 12),
-          const Text('No logs match the current filter'),
+          Text(
+            'No matching log entries',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Try a lower log level or refresh the log tail.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
         ],
       ),
     );
