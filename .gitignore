@@ -1,0 +1,33 @@
+# Project-specific
+reference/
+.android-sdk/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Gradle / Kotlin
+.gradle/
+.kotlin/
+**/build/
+local.properties
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Android build artifacts
+*.apk
+*.aab
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Profiling
+*.hprof
+
+# Signing
+*.jks
+*.keystore
