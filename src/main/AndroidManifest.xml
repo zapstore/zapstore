@@ -2,11 +2,10 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application
-        android:label="Zapstore"
+        android:name=".ZapstoreApplication"
+        android:icon="@drawable/ic_launcher"
+        android:label="@string/app_name"
         android:theme="@style/AppTheme">
-        <activity android:name=".StackDetailActivity" />
-        <activity android:name=".AppDetailActivity" />
-        <activity android:name=".SearchActivity" />
         <activity
             android:name=".MainActivity"
             android:exported="true">

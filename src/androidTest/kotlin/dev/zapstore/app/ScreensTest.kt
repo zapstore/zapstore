@@ -1,0 +1,107 @@
+package dev.zapstore.app
+
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performImeAction
+import com.vitorpamplona.quartz.nip01Core.core.Event
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Rule
+import org.junit.Test
+
+class ScreensTest {
+    @get:Rule
+    val composeRule = createComposeRule()
+
+    @Test
+    fun homeSearchAndStackCallbacksAreWired() {
+        var submitted = false
+        var cleared = false
+        var openedStack: String? = null
+        val stack = StackInfo(
+            event(
+                id = "stack-id",
+                kind = Catalog.appStackKind,
+                tags = arrayOf(arrayOf("name", "Privacy")),
+            ),
+        )
+
+        composeRule.setContent {
+            ZapstoreTheme {
+                HomeScreen(
+                    state = HomeUiState(
+                        searchQuery = "zap",
+                        stacks = listOf(stack),
+                        stacksLoading = false,
+                    ),
+                    onSearchQueryChanged = {},
+                    onSearchSubmitted = { submitted = true },
+                    onSearchCleared = { cleared = true },
+                    onStackClick = { openedStack = it },
+                    onAppClick = { _, _ -> },
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("searchField").performImeAction()
+        composeRule.onNodeWithText("×").performClick()
+        composeRule.onNodeWithTag("stack:stack-id").performClick()
+
+        assertTrue(submitted)
+        assertTrue(cleared)
+        assertEquals("stack-id", openedStack)
+    }
+
+    @Test
+    fun appDetailBackAndExternalLinkCallbacksAreWired() {
+        var backed = false
+        var openedUrl: String? = null
+        val app = AppInfo(
+            event(
+                kind = Catalog.appKind,
+                tags = arrayOf(
+                    arrayOf("d", "zap"),
+                    arrayOf("name", "Zap"),
+                    arrayOf("repository", "https://example.com/repo"),
+                ),
+            ),
+        )
+
+        composeRule.setContent {
+            ZapstoreTheme {
+                AppDetailScreen(
+                    state = AppDetailUiState(
+                        app = app,
+                        appLoading = false,
+                        releaseLoading = false,
+                    ),
+                    onBack = { backed = true },
+                    onOpenUrl = { openedUrl = it },
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("backButton").assertIsDisplayed().performClick()
+        composeRule.onNodeWithText("https://example.com/repo").performClick()
+
+        assertTrue(backed)
+        assertEquals("https://example.com/repo", openedUrl)
+    }
+}
+
+private fun event(
+    id: String = "a".repeat(64),
+    kind: Int,
+    tags: Array<Array<String>> = emptyArray(),
+): Event = Event(
+    id = id,
+    pubKey = "1".repeat(64),
+    createdAt = 1_750_000_000,
+    kind = kind,
+    tags = tags,
+    content = "",
+    sig = "2".repeat(128),
+)

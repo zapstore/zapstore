@@ -6,6 +6,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.normalizeRelayUrl
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.okhttp.BasicOkHttpWebSocket
 import dev.zapstore.purplequartz.PurpleQuartz
+import dev.zapstore.purplequartz.QueryState
 import dev.zapstore.purplequartz.QuerySource
 import dev.zapstore.purplequartz.RemoteMode
 import kotlinx.coroutines.CoroutineScope
@@ -20,39 +21,47 @@ object Catalog {
     const val appKind = 32_267
     const val appStackKind = 30_267
     const val communityPubkey = "acfeaea6e51420e8068fac446ca9d17d7a9ef6a5d20d93894e50fee3d4902a84"
+}
 
+interface CatalogRepository {
+    fun query(filter: Filter): Flow<QueryState>
+
+    fun queryRemote(filter: Filter): Flow<QueryState>
+
+    fun refreshConnections()
+}
+
+class PurpleQuartzCatalogRepository(context: Context) : CatalogRepository {
+    private val applicationContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var client: PurpleQuartz? = null
 
-    private fun client(context: Context): PurpleQuartz =
+    private fun client(): PurpleQuartz =
         client ?: PurpleQuartz.create(
-            context.applicationContext,
+            applicationContext,
             BasicOkHttpWebSocket.Builder { OkHttpClient() },
             scope,
         ).also { client = it }
 
-    fun query(context: Context, filter: Filter): Flow<dev.zapstore.purplequartz.QueryState> =
-        client(context).query(
+    override fun query(filter: Filter): Flow<QueryState> =
+        client().query(
             filter = filter,
             source = QuerySource.LocalAndRemote(
-                relays = setOf(relay.normalizeRelayUrl()),
+                relays = setOf(Catalog.relay.normalizeRelayUrl()),
                 mode = RemoteMode.Stream,
             ),
         )
 
-    fun queryLocal(context: Context, filter: Filter): Flow<dev.zapstore.purplequartz.QueryState> =
-        client(context).query(filter, QuerySource.Local)
-
-    fun queryRemote(context: Context, filter: Filter): Flow<dev.zapstore.purplequartz.QueryState> =
-        client(context).query(
+    override fun queryRemote(filter: Filter): Flow<QueryState> =
+        client().query(
             filter = filter,
             source = QuerySource.Remote(
-                relays = setOf(relay.normalizeRelayUrl()),
+                relays = setOf(Catalog.relay.normalizeRelayUrl()),
                 mode = RemoteMode.OneShot(),
             ),
         )
 
-    fun refreshConnections() {
+    override fun refreshConnections() {
         client?.refreshConnections()
     }
 }

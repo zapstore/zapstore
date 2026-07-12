@@ -1,0 +1,32 @@
+<resources>
+    <string name="app_name">Zapstore</string>
+    <string name="search_apps">Search apps</string>
+    <string name="clear_search">Clear search</string>
+    <string name="curated_stacks">Curated stacks</string>
+    <string name="latest_releases">Latest releases</string>
+    <string name="loading_stacks">Loading community stacks…</string>
+    <string name="no_stacks">No stacks found.</string>
+    <string name="loading_stack">Loading stack…</string>
+    <string name="stack_not_found">Stack not found.</string>
+    <string name="apps">Apps</string>
+    <plurals name="curated_apps">
+        <item quantity="one">%1$d curated app</item>
+        <item quantity="other">%1$d curated apps</item>
+    </plurals>
+    <string name="loading_stack_apps">Loading apps in this stack…</string>
+    <string name="no_stack_apps">No apps found in this stack.</string>
+    <string name="loading_app">Loading app…</string>
+    <string name="app_not_found">App not found.</string>
+    <string name="published_by">Published by · %1$s…</string>
+    <string name="latest_release">Latest release</string>
+    <string name="version">Version:</string>
+    <string name="source">Source</string>
+    <string name="license">License</string>
+    <string name="app_id">App ID</string>
+    <string name="author">Author</string>
+    <string name="release_date">Release date</string>
+    <string name="not_available">Not available</string>
+    <string name="back">Back</string>
+    <string name="app_icon_description">%1$s icon</string>
+    <string name="screenshot_description">%1$s screenshot</string>
+</resources>
