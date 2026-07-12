@@ -26,7 +26,7 @@ encrypted events. Amber becomes purely the identity layer for public actions
 
 ## Data Model
 
-- Device nsec: secure storage only (key: device_nsec)
+- Device nsec: secure storage only (`zapstore_secure_prefs` JSON blob, field `nsec`, hex)
 - NWC string: secure storage only (existing key)
 - Bookmarks: encrypted AppStack (30267), d=zapstore-bookmarks, signed by device key
 - Unmanaged apps: encrypted AppStack (30267), d=zapstore-unmanaged-apps, signed by device key
