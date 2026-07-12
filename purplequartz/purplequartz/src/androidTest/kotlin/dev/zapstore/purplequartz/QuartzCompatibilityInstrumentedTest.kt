@@ -14,7 +14,9 @@ import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerSync
 import com.vitorpamplona.quartz.nip01Core.store.ObservableEventStore
 import com.vitorpamplona.quartz.nip01Core.store.sqlite.EventStore
+import java.io.File
 import java.util.UUID
+import kotlin.time.Duration.Companion.hours
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -34,6 +36,36 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 @SdkSuppress(minSdkVersion = 29)
 class QuartzCompatibilityInstrumentedTest {
+    @Test
+    fun queryRefreshMetadataPersistsAndRotatesWithDatabaseIdentity() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val path = context.getDatabasePath("refresh-cache-${UUID.randomUUID()}.db").absolutePath
+        val fingerprint = "profile-query"
+        val refreshedAt = System.currentTimeMillis()
+        val database = File(path)
+        val replacement = File("$path.replacement")
+        database.parentFile?.mkdirs()
+        database.writeText("first database")
+
+        try {
+            val first = SharedPreferencesQueryRefreshCache.create(context, path, databaseExisted = false)
+            assertTrue(first.recordRefresh(fingerprint, refreshedAt))
+
+            val reopened = SharedPreferencesQueryRefreshCache.create(context, path, databaseExisted = true)
+            assertEquals(refreshedAt, reopened.lastRefresh(fingerprint))
+
+            replacement.writeText("replacement database")
+            assertTrue(database.delete())
+            assertTrue(replacement.renameTo(database))
+
+            val recreated = SharedPreferencesQueryRefreshCache.create(context, path, databaseExisted = true)
+            assertEquals(null, recreated.lastRefresh(fingerprint))
+        } finally {
+            database.delete()
+            replacement.delete()
+        }
+    }
+
     @Test
     fun publishedStoreEmitsAfterCommitAndSurvivesReopen() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -87,7 +119,7 @@ class QuartzCompatibilityInstrumentedTest {
                 QuerySync.Connecting,
                 purpleQuartz.query(
                     Filter(kinds = listOf(1)),
-                    QuerySource.LocalAndRemote(setOf(relay)),
+                    QuerySource.LocalAndRemote(setOf(relay), maxAge = 6.hours),
                 ).take(1).toList().single().sync,
             )
             assertEquals(

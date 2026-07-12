@@ -10,9 +10,13 @@ sealed interface QuerySource {
     data class LocalAndRemote(
         val relays: Set<NormalizedRelayUrl>,
         val mode: RemoteMode = RemoteMode.Stream,
+        val maxAge: Duration? = null,
     ) : QuerySource {
         init {
             require(relays.isNotEmpty()) { "At least one relay is required" }
+            require(maxAge == null || (maxAge.isFinite() && maxAge.isPositive())) {
+                "Cache max age must be finite and positive"
+            }
         }
     }
 
@@ -49,6 +53,7 @@ data class QueryState(
 
 sealed interface QuerySync {
     data object LocalOnly : QuerySync
+    data object Cached : QuerySync
     data object Connecting : QuerySync
     data object CatchingUp : QuerySync
     data object Live : QuerySync

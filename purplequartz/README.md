@@ -1,6 +1,6 @@
 # purplequartz
 
-`purplequartz` is an Android API 29+ query wrapper for Quartz 1.12.6. Local and local-and-remote queries expose events read from Quartz's persistent event store. Remote-only queries expose verified relay events directly and save persistent events in the background.
+`purplequartz` is an Android API 29+ query wrapper for Quartz 1.12.6. Local and local-and-remote queries expose events read from Quartz's persistent event store. Remote-only queries expose verified relay events directly and save persistent events in the background. Local-and-remote queries can use a persistent max-age policy to avoid unnecessary relay requests.
 
 ## Setup
 
@@ -67,11 +67,40 @@ purpleQuartz.query(
 
 Every network query requires an explicit, nonempty relay set. The library does not add outbox, fallback, discovery, or hinted relays.
 
+### Cached local-and-remote queries
+
+Set `maxAge` when data may be served from the local store without immediately opening a relay request. For example, this profile query refreshes at most once every six hours:
+
+```kotlin
+purpleQuartz.query(
+    filter = Filter(
+        authors = listOf(profilePubkey),
+        kinds = listOf(0),
+        limit = 1,
+    ),
+    source = QuerySource.LocalAndRemote(
+        relays = relays,
+        mode = RemoteMode.OneShot(),
+        maxAge = 6.hours,
+    ),
+).collect(::renderState)
+```
+
+Freshness is recorded only after every requested relay reaches EOSE and preceding events are committed. Empty successful responses are cached too. Timeouts, failures, partial responses, cancellation, and local-only changes do not refresh the timestamp.
+
+The cache key contains the complete filter set and exact normalized relay set; `maxAge` and remote mode are policy and are not part of the key. Only a SHA-256 fingerprint and refresh timestamp are persisted, not filter contents. Freshness survives process restarts and is reset when the Quartz database file is deleted or replaced. Out-of-band in-place mutation of the owned Quartz database is unsupported.
+
+- Fresh `OneShot` queries emit the local projection as `Complete` and open no request.
+- Fresh `Stream` queries report `Cached`, keep observing local commits, and defer their relay subscription until the max-age window expires. A successful concurrent refresh extends that delay.
+- `Remote` always opens its requested subscription and bypasses this local cache policy.
+- Omitting `maxAge` preserves the existing always-refresh behavior.
+
 ## State and failure handling
 
 `QueryState.items` survives connection failures and synchronization transitions. Inspect `sync` for query progress and `error` for the latest failure. PurpleQuartz observes Android's default network callback and requests an immediate retry when a network becomes available, without waiting for relay backoff. Hosts should also call `purpleQuartz.refreshConnections()` when their app returns to the foreground.
 
 - `LocalOnly`: the query reads and observes the local store.
+- `Cached`: a local-and-remote stream is observing the fresh local projection and has deferred its relay request.
 - `Connecting`: at least one relay has no active request.
 - `CatchingUp`: every relay is connected and at least one is waiting for EOSE.
 - `Live`: all relays reached EOSE and a streaming request remains active.

@@ -18,6 +18,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -26,11 +27,188 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.seconds
 
 class QueryInvariantTest {
     private val relay = "wss://relay.example".normalizeRelayUrl()
     private val eventSequence = AtomicInteger()
+
+    @Test
+    fun `successful empty one-shot is cached across facades and expires`() = runBlocking {
+        val cache = InMemoryQueryRefreshCache()
+        val clock = MutableEpochClock(1_000)
+        val filter = Filter(kinds = listOf(1))
+        val source = QuerySource.LocalAndRemote(
+            relays = setOf(relay),
+            mode = RemoteMode.OneShot(5.seconds),
+            maxAge = 6.hours,
+        )
+        val firstClient = ControlledClient()
+        val first = PurpleQuartz.createForTesting(
+            ControlledEventStore(),
+            firstClient,
+            this,
+            databasePath = "persistent-cache-test",
+            eventVerifier = { true },
+            refreshCache = cache,
+            clock = clock,
+        )
+        val firstStates = CopyOnWriteArrayList<QueryState>()
+        val firstCollection = launch { first.query(filter, source).collect(firstStates::add) }
+
+        firstClient.awaitSubscription()
+        firstClient.started(relay)
+        firstClient.eose(relay)
+        awaitState(firstStates) { it.sync == QuerySync.Complete }
+        withTimeout(2.seconds) { firstCollection.join() }
+        first.close()
+
+        val secondClient = ControlledClient()
+        val second = PurpleQuartz.createForTesting(
+            ControlledEventStore(),
+            secondClient,
+            this,
+            databasePath = "persistent-cache-test",
+            eventVerifier = { true },
+            refreshCache = cache,
+            clock = clock,
+        )
+        val cachedStates = second.query(filter, source).toList()
+
+        assertEquals(listOf(QuerySync.Complete), cachedStates.map(QueryState::sync))
+        assertTrue(cachedStates.single().relays.isEmpty())
+        assertTrue(secondClient.requests.isEmpty())
+
+        clock.advance(6.hours.inWholeMilliseconds)
+        val staleCollection = launch { second.query(filter, source).collect { } }
+        secondClient.awaitSubscription()
+        assertEquals(1, secondClient.requests.size)
+
+        staleCollection.cancel()
+        staleCollection.join()
+        second.close()
+    }
+
+    @Test
+    fun `fresh stream defers remote and observes an extended refresh window`() = runBlocking {
+        val cache = InMemoryQueryRefreshCache()
+        val filter = Filter(kinds = listOf(1))
+        val source = QuerySource.LocalAndRemote(
+            relays = setOf(relay),
+            mode = RemoteMode.Stream,
+            maxAge = 1.seconds,
+        )
+        val fingerprint = QueryFingerprint.create(listOf(filter), setOf(relay))
+        cache.recordRefresh(fingerprint, System.currentTimeMillis())
+        val client = ControlledClient()
+        val purpleQuartz = PurpleQuartz.createForTesting(
+            ControlledEventStore(),
+            client,
+            this,
+            eventVerifier = { true },
+            refreshCache = cache,
+        )
+        val states = CopyOnWriteArrayList<QueryState>()
+        val collection = collect(purpleQuartz, source, states)
+
+        val cached = awaitState(states) { it.sync == QuerySync.Cached }
+        assertTrue(cached.relays.isEmpty())
+        assertTrue(client.requests.isEmpty())
+
+        cache.recordRefresh(fingerprint, System.currentTimeMillis())
+        delay(700)
+        cache.recordRefresh(fingerprint, System.currentTimeMillis())
+        delay(500)
+        assertTrue(client.requests.isEmpty())
+
+        client.awaitSubscription()
+        assertEquals(1, client.requests.size)
+
+        collection.cancel()
+        collection.join()
+        purpleQuartz.close()
+    }
+
+    @Test
+    fun `timeout and persistence failure do not populate freshness`() = runBlocking {
+        val filter = Filter(kinds = listOf(1))
+        val source = QuerySource.LocalAndRemote(
+            relays = setOf(relay),
+            mode = RemoteMode.OneShot(50.milliseconds),
+            maxAge = 1.hours,
+        )
+        val fingerprint = QueryFingerprint.create(listOf(filter), setOf(relay))
+
+        val timeoutCache = InMemoryQueryRefreshCache()
+        val timeoutClient = ControlledClient()
+        val timeoutQuartz = PurpleQuartz.createForTesting(
+            ControlledEventStore(),
+            timeoutClient,
+            this,
+            config = PurpleQuartzConfig(oneShotTimeout = 50.milliseconds),
+            eventVerifier = { true },
+            refreshCache = timeoutCache,
+        )
+        val timeoutStates = CopyOnWriteArrayList<QueryState>()
+        val timeoutCollection = collect(timeoutQuartz, source, timeoutStates)
+        timeoutClient.awaitSubscription()
+        awaitState(timeoutStates) { it.sync == QuerySync.TimedOut }
+        withTimeout(2.seconds) { timeoutCollection.join() }
+        assertEquals(null, timeoutCache.lastRefresh(fingerprint))
+        timeoutQuartz.close()
+
+        val failureCache = InMemoryQueryRefreshCache()
+        val failureClient = ControlledClient()
+        val failureQuartz = PurpleQuartz.createForTesting(
+            ControlledEventStore(failInserts = true),
+            failureClient,
+            this,
+            eventVerifier = { true },
+            refreshCache = failureCache,
+        )
+        val failureStates = CopyOnWriteArrayList<QueryState>()
+        val failureCollection = collect(failureQuartz, source, failureStates)
+        failureClient.awaitSubscription()
+        failureClient.started(relay)
+        failureClient.event(relay, signedEvent(content = "failed-refresh"))
+        awaitState(failureStates) { it.sync == QuerySync.Failed }
+        withTimeout(2.seconds) { failureCollection.join() }
+        assertEquals(null, failureCache.lastRefresh(fingerprint))
+        failureQuartz.close()
+    }
+
+    @Test
+    fun `failed final local projection fails query without caching`() = runBlocking {
+        val cache = InMemoryQueryRefreshCache()
+        val client = ControlledClient()
+        val filter = Filter(kinds = listOf(1))
+        val source = QuerySource.LocalAndRemote(
+            relays = setOf(relay),
+            mode = RemoteMode.OneShot(5.seconds),
+            maxAge = 1.hours,
+        )
+        val fingerprint = QueryFingerprint.create(listOf(filter), setOf(relay))
+        val purpleQuartz = PurpleQuartz.createForTesting(
+            ControlledEventStore(failQueriesAfter = 1),
+            client,
+            this,
+            eventVerifier = { true },
+            refreshCache = cache,
+        )
+        val states = CopyOnWriteArrayList<QueryState>()
+        val collection = collect(purpleQuartz, source, states)
+
+        client.awaitSubscription()
+        client.started(relay)
+        client.eose(relay)
+
+        val failed = awaitState(states) { it.sync == QuerySync.Failed }
+        assertTrue(failed.error is QueryError.UnsupportedLocalProjection)
+        assertEquals(null, cache.lastRefresh(fingerprint))
+        withTimeout(2.seconds) { collection.join() }
+        purpleQuartz.close()
+    }
 
     @Test
     fun `reconnect advances generation and accepts replacement EOSE`() = runBlocking {
@@ -128,16 +306,19 @@ class QueryInvariantTest {
         client.started(relay)
         client.event(relay, event)
         withTimeout(2.seconds) { store.insertionStarted.await() }
+        client.eose(relay)
         withTimeout(2.seconds) {
             while (client.unsubscribeCount.get() == 0) delay(10)
         }
 
         assertFalse(states.any { it.sync == QuerySync.TimedOut })
+        assertFalse(states.any { it.sync == QuerySync.Complete })
         assertTrue(states.any { state -> state.items.any { it.id == event.id } })
 
         store.releaseInsert.complete(Unit)
         val timedOut = awaitState(states) { it.sync == QuerySync.TimedOut }
         assertTrue(timedOut.items.any { it.id == event.id })
+        assertFalse(states.any { it.sync == QuerySync.Complete })
         withTimeout(2.seconds) { collection.join() }
         purpleQuartz.close()
     }
@@ -298,26 +479,26 @@ private class ControlledClient(
         closeCount.incrementAndGet()
     }
 
-    suspend fun awaitSubscription() {
+    suspend fun awaitSubscription(expectedCount: Int = 1) {
         withTimeout(2.seconds) {
-            while (subscriptionListener == null) delay(10)
+            while (subscriptionListener == null || requests.size < expectedCount) delay(10)
         }
     }
 
     fun started(relay: NormalizedRelayUrl) {
-        subscriptionListener?.onSubscriptionStarted(relay.url, requests.single().getValue(relay))
+        subscriptionListener?.onSubscriptionStarted(relay.url, requests.last().getValue(relay))
     }
 
     fun event(relay: NormalizedRelayUrl, event: Event) {
-        subscriptionListener?.onEvent(event, false, relay, requests.single().getValue(relay))
+        subscriptionListener?.onEvent(event, false, relay, requests.last().getValue(relay))
     }
 
     fun eose(relay: NormalizedRelayUrl) {
-        subscriptionListener?.onEose(relay, requests.single().getValue(relay))
+        subscriptionListener?.onEose(relay, requests.last().getValue(relay))
     }
 
     fun closed(relay: NormalizedRelayUrl) {
-        subscriptionListener?.onClosed("controlled close", relay, requests.single().getValue(relay))
+        subscriptionListener?.onClosed("controlled close", relay, requests.last().getValue(relay))
     }
 
     fun connecting(relay: NormalizedRelayUrl) {
@@ -328,6 +509,16 @@ private class ControlledClient(
     fun disconnected(relay: NormalizedRelayUrl) {
         val client = TestRelayClient(relay)
         connectionListeners.forEach { it.onDisconnected(client) }
+    }
+}
+
+private class MutableEpochClock(
+    private var current: Long,
+) : EpochMillisClock {
+    override fun now(): Long = current
+
+    fun advance(milliseconds: Long) {
+        current += milliseconds
     }
 }
 
@@ -346,11 +537,13 @@ private class TestRelayClient(
 private class ControlledEventStore(
     private val blockInserts: Boolean = false,
     private val failInserts: Boolean = false,
+    private val failQueriesAfter: Int? = null,
 ) : IEventStore {
     override val relay: NormalizedRelayUrl? = null
     val insertionStarted = CompletableDeferred<Unit>()
     val releaseInsert = CompletableDeferred<Unit>()
     val closeCount = AtomicInteger()
+    private val queryCount = AtomicInteger()
     private val events = mutableListOf<Event>()
 
     override suspend fun insert(event: Event) {
@@ -373,14 +566,18 @@ private class ControlledEventStore(
     }
 
     @Suppress("UNCHECKED_CAST")
-    override suspend fun <T : Event> query(filter: Filter): List<T> =
-        synchronized(events) { events.filter(filter::match).map { it as T } }
+    override suspend fun <T : Event> query(filter: Filter): List<T> {
+        beforeQuery()
+        return synchronized(events) { events.filter(filter::match).map { it as T } }
+    }
 
     @Suppress("UNCHECKED_CAST")
-    override suspend fun <T : Event> query(filters: List<Filter>): List<T> =
-        synchronized(events) {
+    override suspend fun <T : Event> query(filters: List<Filter>): List<T> {
+        beforeQuery()
+        return synchronized(events) {
             events.filter { event -> filters.any { it.match(event) } }.map { it as T }
         }
+    }
 
     override suspend fun <T : Event> query(filter: Filter, onEach: (T) -> Unit) {
         query<T>(filter).forEach(onEach)
@@ -413,5 +610,12 @@ private class ControlledEventStore(
 
     override fun close() {
         closeCount.incrementAndGet()
+    }
+
+    private fun beforeQuery() {
+        val allowed = failQueriesAfter ?: return
+        if (queryCount.incrementAndGet() > allowed) {
+            throw IllegalStateException("controlled query failure")
+        }
     }
 }

@@ -2,7 +2,7 @@
 
 **Status:** Implementation-ready  
 **Created:** 2026-07-11  
-**Revised:** 2026-07-11  
+**Revised:** 2026-07-12  
 **Target:** Version 1  
 **Platform:** Android API 29+  
 **Library/module name:** `purplequartz`  
@@ -24,7 +24,8 @@ Local / LocalAndRemote:
 query
     -> install local observation
     -> emit the permitted local seed
-    -> optionally start relay REQ
+    -> consult optional max-age freshness
+    -> start relay REQ now, defer it, or complete from cache
     -> verify each relay event
     -> commit it to the local event store
     -> observe the committed store change
@@ -139,6 +140,12 @@ Kinds `20000..29999` have no persistent local projection:
 - `Remote` may emit them directly after validation when they are not already expired;
 - ephemeral events are never inserted into the canonical event store.
 
+### 3.6 Query freshness is synchronization metadata
+
+`LocalAndRemote.maxAge` controls when a local projection may suppress or defer a relay request. Freshness is not inferred from event `createdAt`: that timestamp is author-controlled and cannot represent when an empty or nonempty query last synchronized.
+
+Freshness metadata contains only a versioned SHA-256 query fingerprint and a successful-refresh timestamp. Quartz remains the sole persistent event source of truth. Deleting or replacing the Quartz database file changes its filesystem identity and rotates the metadata namespace so an old marker cannot suppress synchronization against a new store. Out-of-band in-place mutation of the façade-owned database file is unsupported.
+
 ## 4. Public API
 
 The declarations below are normative. Implementation imports the corresponding public types from the pinned Quartz artifact and `kotlinx.coroutines`.
@@ -175,7 +182,7 @@ Rules:
 - `query` is the primary v1 API.
 - The returned `Flow` is cold. Each collection owns one local observer and, when applicable, one remote request.
 - Collection cancellation closes that request and removes all listeners owned by the collection.
-- For `LocalAndRemote`, the local observer is active and the first local seed is sent to the collector before the remote request starts.
+- For `LocalAndRemote`, the local observer is active and the first local seed is sent before a remote request starts. A fresh max-age marker may suppress one-shot startup or defer stream startup.
 - Multiple filters produce one logical query state.
 - The façade does not expose `NostrClient`, `subscribeAsFlow`, relay event callbacks, the SQLite connection pool, or raw SQL.
 - `create` stores `context.applicationContext`, resolves `databaseName` with `Context.getDatabasePath`, creates `EventStore(dbName = absolutePath, relay = null)` with Quartz's default indexing strategy and published fixed reader count, wraps it in exactly one `ObservableEventStore`, and creates exactly one `NostrClient`.
@@ -198,8 +205,12 @@ sealed interface QuerySource {
     data class LocalAndRemote(
         val relays: Set<NormalizedRelayUrl>,
         val mode: RemoteMode = RemoteMode.Stream,
+        val maxAge: Duration? = null,
     ) : QuerySource {
-        init { require(relays.isNotEmpty()) }
+        init {
+            require(relays.isNotEmpty())
+            require(maxAge == null || (maxAge.isFinite() && maxAge.isPositive()))
+        }
     }
 
     data class Remote(
@@ -221,7 +232,7 @@ sealed interface RemoteMode {
 }
 ```
 
-`LocalAndRemote` and `Remote` reject an empty relay set. `OneShot.timeout == null` uses `PurpleQuartzConfig.oneShotTimeout`; an explicit timeout must be finite and greater than zero.
+`LocalAndRemote` and `Remote` reject an empty relay set. `OneShot.timeout == null` uses `PurpleQuartzConfig.oneShotTimeout`; an explicit timeout must be finite and greater than zero. A non-null `maxAge` must be finite and greater than zero; null preserves always-refresh behavior.
 
 At collection start, the implementation snapshots the relay set and deep-copies each filter's lists and tag maps. That immutable snapshot is used for both store queries and the Quartz subscription, so caller mutation after collection starts cannot change an active query.
 
@@ -235,7 +246,9 @@ At collection start, the implementation snapshots the relay set and deep-copies 
 #### `QuerySource.LocalAndRemote`
 
 - Emits the current local result set without waiting for the network.
-- Starts the remote REQ after local observation is installed.
+- With no fresh max-age marker, starts the remote REQ after local observation is installed.
+- A fresh one-shot emits the local projection as terminal `Complete` without opening a REQ.
+- A fresh stream reports `Cached`, keeps its local observer active, and starts its REQ when the marker expires. It rechecks before starting so another successful synchronization can extend the delay.
 - Re-runs the local projection after every observable store change and emits only changed results.
 - Includes all locally stored events matching the filters, regardless of which request inserted them.
 - Retains cached results through network errors and reconnects.
@@ -247,6 +260,17 @@ At collection start, the implementation snapshots the relay set and deep-copies 
 - Saves persistent incoming events to the local store without delaying direct emission.
 - Preserves relay arrival order within the query.
 - Does not promise durable result provenance.
+- Never consults or establishes local-and-remote freshness; it is the explicit cache-bypass source.
+
+#### Query freshness identity and success boundary
+
+- The cache identity is a canonical, versioned fingerprint of every snapshotted filter field and the exact normalized relay set.
+- Filter and relay ordering are canonicalized where query semantics are order-independent. Null and empty fields remain distinct.
+- `maxAge`, `RemoteMode`, timeout, subscription ID, and connection generation are excluded because they do not change query coverage.
+- Filter values are hashed before persistence; search text, tag values, authors, IDs, and relay URLs are not stored in plaintext metadata.
+- A marker advances only when all current relay generations reach EOSE after every preceding accepted EVENT reaches a terminal verification/persistence outcome. One-shot local-and-remote queries also complete their final local projection first.
+- Empty successful responses establish freshness. Timeout, failure, partial EOSE, cancellation, local mutation, and clock rollback do not.
+- Markers survive façade and process recreation. A missing or replaced Quartz database file rotates its metadata identity. Metadata corruption or storage failure causes an extra fetch rather than a stale cache hit.
 
 ### 4.3 Relay selection
 
@@ -271,6 +295,7 @@ data class QueryState(
 
 sealed interface QuerySync {
     data object LocalOnly : QuerySync
+    data object Cached : QuerySync
     data object Connecting : QuerySync
     data object CatchingUp : QuerySync
     data object Live : QuerySync
@@ -333,18 +358,20 @@ State rules:
 
 - For `Local` and `LocalAndRemote`, `items` comes from an event-store query or projection.
 - For `Remote`, `items` contains validated events emitted by that query's relay subscription.
+- `Cached` means a fresh local-and-remote stream is observing local data while its relay request is intentionally deferred.
 - `Connecting` means at least one requested relay has no active sent REQ for its current connection.
 - `CatchingUp` means every requested relay has an active generation and at least one has not reached EOSE.
 - `Live` means every currently routed relay reached EOSE and a streaming query remains subscribed.
 - `Complete` is terminal success for a one-shot remote query.
 - `TimedOut` and `Failed` stop the remote request but do not erase `items`.
-- Every requested relay is present in `relays` from the first network state. Generation `1` is allocated immediately before the initial `subscribe` call.
+- Every requested relay is present in `relays` from the first network state. Cached states have an empty relay map because no request generation exists yet. Generation `1` is allocated for the transition to `Connecting` before the initial `subscribe` call.
 - The first `onSubscriptionStarted` for that generation sets `connection = Connected`, resets `eose = false`, and clears transient `lastError`.
 - After a generation has started, a reconnect's `onConnecting` increments that relay's generation, sets `connection = Connecting`, and resets `eose`; `onSubscriptionStarted` then marks the replacement REQ active. Initial connection attempts before generation 1 starts do not increment it.
 - EOSE marks only the generation current when its callback entered the ordered ingestion boundary.
 - A source with zero matching events must still progress out of its initial loading/catching-up state.
 - `Local` emits exactly one initial `LocalOnly` state even when empty, then emits only when a relevant store change produces a different item list.
-- `LocalAndRemote` first emits its local seed with `Connecting`, starts the REQ, and then updates synchronization independently of data.
+- A stale or uncached `LocalAndRemote` first emits its local seed with `Connecting`, starts the REQ, and then updates synchronization independently of data.
+- A fresh `LocalAndRemote(OneShot)` emits one terminal `Complete`; a fresh `LocalAndRemote(Stream)` first emits `Cached` and transitions to `Connecting` only when freshness expires.
 - `Remote` first emits an empty `Connecting` state and never reads the store to seed `items`.
 - A one-shot flow emits exactly one terminal `Complete`, `TimedOut`, or `Failed` state and then completes. Before `LocalAndRemote` emits `Complete`, it performs a final local query so all preceding successful commits are represented.
 - `LocalAndRemote(Stream)` remains collected after `Live`; `LocalAndRemote(OneShot)` stops local observation after its terminal state.
@@ -397,6 +424,7 @@ Validation:
 - one Quartz client;
 - one SQLite event store;
 - one periodic expiration-sweep job;
+- one bounded, versioned SharedPreferences freshness namespace for its canonical database identity;
 - request and ingestion coordinators.
 
 Each remotely backed collection owns one bounded FIFO channel of `ingestionCapacity`, one ingestion worker, one Quartz subscription ID, one subscription listener, and one connection listener. Store access may run on the façade child scope, but collection cancellation remains linked to the collecting coroutine.
@@ -405,7 +433,7 @@ An internal lifecycle gate rejects new event-store operations after shutdown sta
 
 Every admitted store operation decrements the in-flight count from a `NonCancellable` `finally` block. Cancellation cannot strand the count above zero or make `close` wait forever.
 
-The event store must use Quartz's supported bundled SQLite driver and configuration. Production code must not access Quartz's connection pool, mutate Quartz's schema, or maintain a second canonical event store.
+The event store must use Quartz's supported bundled SQLite driver and configuration. Production code must not access Quartz's connection pool, mutate Quartz's schema, or maintain a second canonical event store. Query freshness metadata is not an event store: it is capped at 1,024 hashed timestamps per database generation and may be discarded without affecting correctness.
 
 While open, the façade calls `ObservableEventStore.deleteExpiredEvents()` once per `expirationSweepInterval`. The first sweep occurs after one full interval. Query-list distinctness suppresses no-op sweep emissions.
 
@@ -432,6 +460,8 @@ EOSE for that generation is not visible until A and B each reach a terminal inge
 An unexpected persistence failure fails the affected query. It must not be converted into successful EOSE.
 
 Streaming queries continue ingesting events after EOSE. A reconnect starts a new generation, resets EOSE, and resends the active filters.
+
+When all relays reach EOSE, a local-and-remote stream records freshness before reporting `Live`. A local-and-remote one-shot first performs and emits its final store projection, then records freshness and completes. Metadata-write failure does not convert a successful query into failure; absence of a durable marker causes a later collection to fetch again.
 
 The ingestion boundary is bounded. Saturation must fail and close the whole collected subscription; EVENT and EOSE messages must never be silently dropped.
 
@@ -504,8 +534,8 @@ Amethyst's outbox implementation combines application caches, relay hints, defau
 ### R4. Source semantics
 
 - **Current:** no source modes exist.
-- **Target:** all three modes implement the seed, membership, ordering, completion, and network behavior in section 4.
-- **Acceptance:** the source-mode verification cases in section 10 pass, including no local seed for `Remote` and background persistence of its persistent events.
+- **Target:** all three modes implement the seed, membership, ordering, completion, network, and max-age behavior in section 4.
+- **Acceptance:** the source-mode verification cases in section 10 pass, including no local seed for `Remote`, background persistence of its persistent events, and correct suppression/deferment of fresh local-and-remote requests.
 
 ### R5. Validation and persistence visibility
 
@@ -594,6 +624,19 @@ Amethyst's outbox implementation combines application caches, relay hints, defau
 - [ ] Collection after façade closure emits one `Lifecycle` failure and completes.
 - [ ] Mutating caller-owned relay/filter collections after collection starts does not alter the active local query or REQ.
 
+### Query freshness
+
+- [ ] Null `maxAge` preserves always-refresh local-and-remote behavior.
+- [ ] A successful all-relay EOSE caches empty and nonempty local-and-remote results.
+- [ ] A fresh one-shot emits `Complete` without subscribing.
+- [ ] A fresh stream emits `Cached`, keeps observing the store, and subscribes after expiry.
+- [ ] A concurrent successful refresh extends a deferred stream's wait.
+- [ ] Fingerprints are stable across order-equivalent filters/relays and isolate different filters or relay sets.
+- [ ] Timeout, failure, partial EOSE, cancellation, and local-only mutation do not advance freshness.
+- [ ] Freshness survives façade/process recreation and is invalidated when the Quartz database file is deleted or replaced.
+- [ ] Clock rollback, corrupt metadata, and metadata-write failure cause a remote fetch rather than a stale hit.
+- [ ] `Remote` bypasses local-and-remote freshness.
+
 ### Relay selection
 
 - [ ] REQs go only to the specified nonempty relay set.
@@ -633,6 +676,7 @@ Amethyst's outbox implementation combines application caches, relay hints, defau
 - Local NIP-50 FTS through Quartz filters.
 - Ordinary Nostr tag queries.
 - Deterministic compatibility, lifecycle, and invariant tests.
+- Persistent bounded max-age metadata for local-and-remote queries.
 
 ### Out of scope
 
@@ -690,6 +734,7 @@ Version 1 is complete only when:
 - Default source: local; every network query requires an explicit nonempty relay set.
 - Remote-only meaning: validated relay events emit directly and persistent events are also saved.
 - Database: Quartz event store is the sole canonical persistent source.
+- Query freshness: persistent hashed synchronization metadata, rotated with database recreation; event timestamps are never used as cache age.
 - Relays: exact caller-specified sets only.
 - NIP-65/outbox routing: deferred because it is Amethyst application policy, not a generic Quartz 1.12.6 query capability.
 - Dependency: published `com.vitorpamplona.quartz:quartz:1.12.6`; `reference/` remains research-only.

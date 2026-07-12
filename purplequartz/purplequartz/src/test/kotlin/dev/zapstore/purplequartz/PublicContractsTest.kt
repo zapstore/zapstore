@@ -12,7 +12,9 @@ import com.vitorpamplona.quartz.nip01Core.store.ObservableEventStore
 import com.vitorpamplona.quartz.nip01Core.store.sqlite.EventStore
 import com.vitorpamplona.quartz.nip40Expiration.isExpired
 import java.lang.reflect.Modifier
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.hours
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -32,8 +34,10 @@ class PublicContractsTest {
         assertFails { RemoteMode.OneShot(0.milliseconds) }
 
         val relay = "wss://relay.example".normalizeRelayUrl()
+        assertFails { QuerySource.LocalAndRemote(setOf(relay), maxAge = 0.milliseconds) }
+        assertFails { QuerySource.LocalAndRemote(setOf(relay), maxAge = Duration.INFINITE) }
         assertTrue(QuerySource.Remote(setOf(relay)).relays.contains(relay))
-        assertTrue(QuerySource.LocalAndRemote(setOf(relay)).relays.contains(relay))
+        assertTrue(QuerySource.LocalAndRemote(setOf(relay), maxAge = 6.hours).relays.contains(relay))
     }
 
     @Test
