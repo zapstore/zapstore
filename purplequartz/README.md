@@ -69,7 +69,7 @@ Every network query requires an explicit, nonempty relay set. The library does n
 
 ### Cached local-and-remote queries
 
-Set `maxAge` when data may be served from the local store without immediately opening a relay request. For example, this profile query refreshes at most once every six hours:
+Set `cachedFor` when data may be served from the local store without immediately opening a relay request. For example, this profile query refreshes at most once every six hours:
 
 ```kotlin
 purpleQuartz.query(
@@ -81,19 +81,19 @@ purpleQuartz.query(
     source = QuerySource.LocalAndRemote(
         relays = relays,
         mode = RemoteMode.OneShot(),
-        maxAge = 6.hours,
+        cachedFor = 6.hours,
     ),
 ).collect(::renderState)
 ```
 
 Freshness is recorded only after every requested relay reaches EOSE and preceding events are committed. Empty successful responses are cached too. Timeouts, failures, partial responses, cancellation, and local-only changes do not refresh the timestamp.
 
-The cache key contains the complete filter set and exact normalized relay set; `maxAge` and remote mode are policy and are not part of the key. Only a SHA-256 fingerprint and refresh timestamp are persisted, not filter contents. Freshness survives process restarts and is reset when the Quartz database file is deleted or replaced. Out-of-band in-place mutation of the owned Quartz database is unsupported.
+The cache key contains the complete filter set and exact normalized relay set; `cachedFor` and remote mode are policy and are not part of the key. Only a SHA-256 fingerprint and refresh timestamp are persisted, not filter contents. Freshness survives process restarts and is reset when the Quartz database file is deleted or replaced. Out-of-band in-place mutation of the owned Quartz database is unsupported.
 
 - Fresh `OneShot` queries emit the local projection as `Complete` and open no request.
 - Fresh `Stream` queries report `Cached`, keep observing local commits, and defer their relay subscription until the max-age window expires. A successful concurrent refresh extends that delay.
 - `Remote` always opens its requested subscription and bypasses this local cache policy.
-- Omitting `maxAge` preserves the existing always-refresh behavior.
+- Omitting `cachedFor` preserves the existing always-refresh behavior.
 
 ## State and failure handling
 

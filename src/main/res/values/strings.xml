@@ -28,4 +28,5 @@
     <string name="not_available">Not available</string>
     <string name="app_icon_description">%1$s icon</string>
     <string name="screenshot_description">%1$s screenshot</string>
+    <string name="profile_avatar_description">%1$s avatar</string>
 </resources>

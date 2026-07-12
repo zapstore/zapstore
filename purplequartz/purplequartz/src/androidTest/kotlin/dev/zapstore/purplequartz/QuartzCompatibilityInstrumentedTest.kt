@@ -119,7 +119,7 @@ class QuartzCompatibilityInstrumentedTest {
                 QuerySync.Connecting,
                 purpleQuartz.query(
                     Filter(kinds = listOf(1)),
-                    QuerySource.LocalAndRemote(setOf(relay), maxAge = 6.hours),
+                    QuerySource.LocalAndRemote(setOf(relay), cachedFor = 6.hours),
                 ).take(1).toList().single().sync,
             )
             assertEquals(

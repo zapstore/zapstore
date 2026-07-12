@@ -99,8 +99,9 @@ class HomeViewModel(
             )
         }
         searchJob = viewModelScope.launch {
-            repository.queryRemote(
+            repository.query(
                 Filter(kinds = listOf(Catalog.appKind), search = query, limit = 20),
+                type = QueryType.Remote,
             ).collect { state ->
                 val apps = state.items.map(::AppInfo).distinctBy(AppInfo::address)
                 _uiState.update {
@@ -127,6 +128,7 @@ class HomeViewModel(
                     kinds = listOf(Catalog.appStackKind),
                     limit = 20,
                 ),
+                type = QueryType.LocalAndRemote,
             ).collect { state ->
                 val stacks = state.items.map(::StackInfo).sortedByDescending { it.event.createdAt }
                 _uiState.update {
@@ -161,6 +163,7 @@ class HomeViewModel(
                     tags = mapOf("d" to coordinates.map(AppCoordinate::identifier).distinct()),
                     limit = coordinates.size * 2,
                 ),
+                type = QueryType.LocalAndRemote,
             ).collect { state ->
                 _uiState.update {
                     it.copy(stackApps = state.items.map(::AppInfo).associateBy(AppInfo::address))
@@ -173,6 +176,7 @@ class HomeViewModel(
         viewModelScope.launch {
             repository.query(
                 Filter(kinds = listOf(Catalog.releaseKind), limit = 20),
+                type = QueryType.LocalAndRemote,
             ).collect { state ->
                 val releases = state.items.map(::ReleaseInfo)
                     .sortedByDescending { it.event.createdAt }
@@ -207,6 +211,7 @@ class HomeViewModel(
                     tags = mapOf("d" to identifiers.toList()),
                     limit = identifiers.size * 3,
                 ),
+                type = QueryType.LocalAndRemote,
             ).collect { state ->
                 _uiState.update {
                     it.copy(releaseApps = state.items.map(::AppInfo).associateBy(AppInfo::identifier))
@@ -244,6 +249,7 @@ class StackDetailViewModel(
         viewModelScope.launch {
             repository.query(
                 Filter(ids = listOf(stackId), kinds = listOf(Catalog.appStackKind), limit = 1),
+                type = QueryType.LocalAndRemote,
             ).collect { state ->
                 val stack = state.items.firstOrNull()?.let(::StackInfo)
                 _uiState.update {
@@ -278,6 +284,7 @@ class StackDetailViewModel(
                     tags = mapOf("d" to coordinates.map(AppCoordinate::identifier).distinct()),
                     limit = coordinates.size * 2,
                 ),
+                type = QueryType.LocalAndRemote,
             ).collect { state ->
                 val apps = state.items.map(::AppInfo).associateBy(AppInfo::address)
                 _uiState.update {
@@ -323,6 +330,7 @@ class AppDetailViewModel(
                     tags = mapOf("d" to listOf(identifier)),
                     limit = 3,
                 ),
+                type = QueryType.LocalAndRemote,
             ).collect { state ->
                 val app = state.items.firstOrNull()?.let(::AppInfo)
                 _uiState.update {
@@ -344,6 +352,7 @@ class AppDetailViewModel(
                     tags = mapOf("i" to listOf(identifier)),
                     limit = 10,
                 ),
+                type = QueryType.LocalAndRemote,
             ).collect { state ->
                 val release = state.items.map(::ReleaseInfo).maxByOrNull { it.event.createdAt }
                 _uiState.update {

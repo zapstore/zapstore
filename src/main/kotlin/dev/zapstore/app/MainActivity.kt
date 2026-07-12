@@ -76,6 +76,7 @@ class MainActivity : ComponentActivity() {
                             val state by viewModel.uiState.collectAsStateWithLifecycle()
                             HomeScreen(
                                 state = state,
+                                repository = repository,
                                 onSearchQueryChanged = viewModel::onSearchQueryChanged,
                                 onSearchSubmitted = viewModel::submitSearch,
                                 onSearchCleared = viewModel::clearSearch,
@@ -100,6 +101,7 @@ class MainActivity : ComponentActivity() {
                             val state by viewModel.uiState.collectAsStateWithLifecycle()
                             StackDetailScreen(
                                 state = state,
+                                repository = repository,
                                 onAppClick = { identifier, author ->
                                     navController.navigate(appRoute(identifier, author))
                                 },
@@ -132,6 +134,7 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                 },
+                                repository = repository,
                             )
                         }
                     }

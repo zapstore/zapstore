@@ -26,7 +26,7 @@ internal data class QueryFreshness(
 
 internal fun QueryRefreshCache.freshness(
     fingerprint: String,
-    maxAge: Duration,
+    cachedFor: Duration,
     now: Long,
 ): QueryFreshness {
     val refreshedAt = lastRefresh(fingerprint)
@@ -35,9 +35,9 @@ internal fun QueryRefreshCache.freshness(
         return QueryFreshness(isFresh = false, remainingMillis = 0)
     }
 
-    val maxAgeMillis = maxOf(1, maxAge.inWholeMilliseconds)
+    val cachedForMillis = maxOf(1, cachedFor.inWholeMilliseconds)
     val age = now - refreshedAt
-    val remaining = maxAgeMillis - age
+    val remaining = cachedForMillis - age
     return QueryFreshness(
         isFresh = remaining > 0,
         remainingMillis = remaining.coerceAtLeast(0),

@@ -34,10 +34,10 @@ class PublicContractsTest {
         assertFails { RemoteMode.OneShot(0.milliseconds) }
 
         val relay = "wss://relay.example".normalizeRelayUrl()
-        assertFails { QuerySource.LocalAndRemote(setOf(relay), maxAge = 0.milliseconds) }
-        assertFails { QuerySource.LocalAndRemote(setOf(relay), maxAge = Duration.INFINITE) }
+        assertFails { QuerySource.LocalAndRemote(setOf(relay), cachedFor = 0.milliseconds) }
+        assertFails { QuerySource.LocalAndRemote(setOf(relay), cachedFor = Duration.INFINITE) }
         assertTrue(QuerySource.Remote(setOf(relay)).relays.contains(relay))
-        assertTrue(QuerySource.LocalAndRemote(setOf(relay), maxAge = 6.hours).relays.contains(relay))
+        assertTrue(QuerySource.LocalAndRemote(setOf(relay), cachedFor = 6.hours).relays.contains(relay))
     }
 
     @Test

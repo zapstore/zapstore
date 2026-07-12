@@ -49,6 +49,7 @@ import java.util.Date
 @Composable
 fun HomeScreen(
     state: HomeUiState,
+    repository: CatalogRepository? = null,
     onSearchQueryChanged: (String) -> Unit,
     onSearchSubmitted: () -> Unit,
     onSearchCleared: () -> Unit,
@@ -102,6 +103,7 @@ fun HomeScreen(
             AppCard(
                 app = app,
                 onClick = { onAppClick(app.identifier, app.event.pubKey) },
+                repository = repository,
                 modifier = Modifier.testTag("searchResult:${app.address}"),
             )
         }
@@ -149,6 +151,7 @@ fun HomeScreen(
                 app = app,
                 release = release,
                 onClick = { onAppClick(app.identifier, app.event.pubKey) },
+                repository = repository,
                 modifier = Modifier.testTag("release:${release.event.id}"),
             )
         }
@@ -158,6 +161,7 @@ fun HomeScreen(
 @Composable
 fun StackDetailScreen(
     state: StackDetailUiState,
+    repository: CatalogRepository? = null,
     onAppClick: (identifier: String, author: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -214,6 +218,7 @@ fun StackDetailScreen(
             AppCard(
                 app = app,
                 onClick = { onAppClick(app.identifier, app.event.pubKey) },
+                repository = repository,
                 modifier = Modifier.testTag("stackApp:${app.address}"),
             )
         }
@@ -236,6 +241,7 @@ fun StackDetailScreen(
 fun AppDetailScreen(
     state: AppDetailUiState,
     onOpenUrl: (String) -> Unit,
+    repository: CatalogRepository? = null,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -304,8 +310,9 @@ fun AppDetailScreen(
             }
         }
         item {
-            StatusText(
-                stringResource(R.string.published_by, app.event.pubKey.take(16)),
+            ProfileComponent(
+                pubkey = app.event.pubKey,
+                repository = repository,
             )
         }
 
@@ -382,6 +389,7 @@ fun AppDetailScreen(
                 app = app,
                 release = state.release,
                 onOpenUrl = onOpenUrl,
+                repository = repository,
                 modifier = Modifier.padding(top = 8.dp),
             )
         }
@@ -416,6 +424,7 @@ private fun AppInfoCard(
     app: AppInfo,
     release: ReleaseInfo?,
     onOpenUrl: (String) -> Unit,
+    repository: CatalogRepository?,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -435,11 +444,19 @@ private fun AppInfoCard(
             InfoRow(stringResource(R.string.license), it, onOpenUrl = onOpenUrl)
         }
         InfoRow(stringResource(R.string.app_id), app.identifier, onOpenUrl = onOpenUrl)
-        InfoRow(
-            stringResource(R.string.author),
-            "${app.event.pubKey.take(16)}…",
-            onOpenUrl = onOpenUrl,
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 10.dp),
+        ) {
+            StatusText(stringResource(R.string.author), Modifier.weight(1f))
+            ProfileComponent(
+                pubkey = app.event.pubKey,
+                repository = repository,
+                modifier = Modifier.weight(1f),
+            )
+        }
         release?.let {
             InfoRow(
                 stringResource(R.string.release_date),

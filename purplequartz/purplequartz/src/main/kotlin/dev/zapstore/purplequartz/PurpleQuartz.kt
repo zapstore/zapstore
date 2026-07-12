@@ -225,7 +225,7 @@ class PurpleQuartz private constructor(
             is QuerySource.Remote -> source.mode
             QuerySource.Local -> null
         }
-        private val maxAge = (source as? QuerySource.LocalAndRemote)?.maxAge
+        private val cachedFor = (source as? QuerySource.LocalAndRemote)?.cachedFor
         private val queryFingerprint = if (source is QuerySource.LocalAndRemote) {
             runCatching { QueryFingerprint.create(filters, relays) }.getOrNull()
         } else {
@@ -300,7 +300,7 @@ class PurpleQuartz private constructor(
         private fun startLocalAndRemote() {
             observerJob = startObserver(
                 initialSync = {
-                    val fresh = maxAge?.let(::freshness)?.isFresh == true
+                    val fresh = cachedFor?.let(::freshness)?.isFresh == true
                     remoteDeferred.set(fresh)
                     if (!fresh) prepareRemote()
                     when {
@@ -320,7 +320,7 @@ class PurpleQuartz private constructor(
         }
 
         private fun scheduleRemoteAfterCache() {
-            val cacheDuration = maxAge ?: return
+            val cacheDuration = cachedFor ?: return
             remoteDelayJob = scope.launch {
                 while (!stopped.get()) {
                     val status = freshness(cacheDuration)

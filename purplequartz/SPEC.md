@@ -1,4 +1,4 @@
-# purplequartz â€” v1 Specification
+# purplequartz âÿÿ v1 Specification
 
 **Status:** Implementation-ready  
 **Created:** 2026-07-11  
@@ -142,7 +142,7 @@ Kinds `20000..29999` have no persistent local projection:
 
 ### 3.6 Query freshness is synchronization metadata
 
-`LocalAndRemote.maxAge` controls when a local projection may suppress or defer a relay request. Freshness is not inferred from event `createdAt`: that timestamp is author-controlled and cannot represent when an empty or nonempty query last synchronized.
+`LocalAndRemote.cachedFor` controls when a local projection may suppress or defer a relay request. Freshness is not inferred from event `createdAt`: that timestamp is author-controlled and cannot represent when an empty or nonempty query last synchronized.
 
 Freshness metadata contains only a versioned SHA-256 query fingerprint and a successful-refresh timestamp. Quartz remains the sole persistent event source of truth. Deleting or replacing the Quartz database file changes its filesystem identity and rotates the metadata namespace so an old marker cannot suppress synchronization against a new store. Out-of-band in-place mutation of the faÃ§ade-owned database file is unsupported.
 
@@ -205,11 +205,11 @@ sealed interface QuerySource {
     data class LocalAndRemote(
         val relays: Set<NormalizedRelayUrl>,
         val mode: RemoteMode = RemoteMode.Stream,
-        val maxAge: Duration? = null,
+        val cachedFor: Duration? = null,
     ) : QuerySource {
         init {
             require(relays.isNotEmpty())
-            require(maxAge == null || (maxAge.isFinite() && maxAge.isPositive()))
+            require(cachedFor == null || (cachedFor.isFinite() && cachedFor.isPositive()))
         }
     }
 
@@ -232,7 +232,7 @@ sealed interface RemoteMode {
 }
 ```
 
-`LocalAndRemote` and `Remote` reject an empty relay set. `OneShot.timeout == null` uses `PurpleQuartzConfig.oneShotTimeout`; an explicit timeout must be finite and greater than zero. A non-null `maxAge` must be finite and greater than zero; null preserves always-refresh behavior.
+`LocalAndRemote` and `Remote` reject an empty relay set. `OneShot.timeout == null` uses `PurpleQuartzConfig.oneShotTimeout`; an explicit timeout must be finite and greater than zero. A non-null `cachedFor` must be finite and greater than zero; null preserves always-refresh behavior.
 
 At collection start, the implementation snapshots the relay set and deep-copies each filter's lists and tag maps. That immutable snapshot is used for both store queries and the Quartz subscription, so caller mutation after collection starts cannot change an active query.
 
@@ -266,7 +266,7 @@ At collection start, the implementation snapshots the relay set and deep-copies 
 
 - The cache identity is a canonical, versioned fingerprint of every snapshotted filter field and the exact normalized relay set.
 - Filter and relay ordering are canonicalized where query semantics are order-independent. Null and empty fields remain distinct.
-- `maxAge`, `RemoteMode`, timeout, subscription ID, and connection generation are excluded because they do not change query coverage.
+- `cachedFor`, `RemoteMode`, timeout, subscription ID, and connection generation are excluded because they do not change query coverage.
 - Filter values are hashed before persistence; search text, tag values, authors, IDs, and relay URLs are not stored in plaintext metadata.
 - A marker advances only when all current relay generations reach EOSE after every preceding accepted EVENT reaches a terminal verification/persistence outcome. One-shot local-and-remote queries also complete their final local projection first.
 - Empty successful responses establish freshness. Timeout, failure, partial EOSE, cancellation, local mutation, and clock rollback do not.
@@ -626,7 +626,7 @@ Amethyst's outbox implementation combines application caches, relay hints, defau
 
 ### Query freshness
 
-- [ ] Null `maxAge` preserves always-refresh local-and-remote behavior.
+- [ ] Null `cachedFor` preserves always-refresh local-and-remote behavior.
 - [ ] A successful all-relay EOSE caches empty and nonempty local-and-remote results.
 - [ ] A fresh one-shot emits `Complete` without subscribing.
 - [ ] A fresh stream emits `Cached`, keeps observing the store, and subscribes after expiry.
@@ -716,7 +716,7 @@ Expected implementation artifacts:
 
 Version 1 is complete only when:
 
-1. requirements R1â€“R10 are implemented;
+1. requirements R1âÿÿR10 are implemented;
 2. every verification checkbox passes;
 3. only `QuerySource.Remote` exposes a relay-to-consumer event path;
 4. Android tests and lint pass;

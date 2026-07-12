@@ -10,12 +10,12 @@ sealed interface QuerySource {
     data class LocalAndRemote(
         val relays: Set<NormalizedRelayUrl>,
         val mode: RemoteMode = RemoteMode.Stream,
-        val maxAge: Duration? = null,
+        val cachedFor: Duration? = null,
     ) : QuerySource {
         init {
             require(relays.isNotEmpty()) { "At least one relay is required" }
-            require(maxAge == null || (maxAge.isFinite() && maxAge.isPositive())) {
-                "Cache max age must be finite and positive"
+            require(cachedFor == null || (cachedFor.isFinite() && cachedFor.isPositive())) {
+                "Cache duration must be finite and positive"
             }
         }
     }

@@ -14,6 +14,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
+import kotlin.time.Duration
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ViewModelsTest {
@@ -105,9 +106,16 @@ private class FakeCatalogRepository(
     private val localQuery: (Filter) -> Flow<QueryState> = { emptyFlow() },
     private val remoteQuery: (Filter) -> Flow<QueryState> = { emptyFlow() },
 ) : CatalogRepository {
-    override fun query(filter: Filter): Flow<QueryState> = localQuery(filter)
-
-    override fun queryRemote(filter: Filter): Flow<QueryState> = remoteQuery(filter)
+    override fun query(
+        filter: Filter,
+        type: QueryType,
+        cachedFor: Duration?,
+    ): Flow<QueryState> = when (type) {
+        QueryType.Local,
+        QueryType.LocalAndRemote,
+        -> localQuery(filter)
+        QueryType.Remote -> remoteQuery(filter)
+    }
 
     override fun refreshConnections() = Unit
 }

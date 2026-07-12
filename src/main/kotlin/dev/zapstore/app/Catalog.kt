@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import okhttp3.OkHttpClient
+import kotlin.time.Duration
 
 object Catalog {
     const val relay = "wss://relay.zapstore.dev"
@@ -24,11 +25,19 @@ object Catalog {
 }
 
 interface CatalogRepository {
-    fun query(filter: Filter): Flow<QueryState>
-
-    fun queryRemote(filter: Filter): Flow<QueryState>
+    fun query(
+        filter: Filter,
+        type: QueryType,
+        cachedFor: Duration? = null,
+    ): Flow<QueryState>
 
     fun refreshConnections()
+}
+
+enum class QueryType {
+    Local,
+    LocalAndRemote,
+    Remote,
 }
 
 class PurpleQuartzCatalogRepository(context: Context) : CatalogRepository {
@@ -43,23 +52,30 @@ class PurpleQuartzCatalogRepository(context: Context) : CatalogRepository {
             scope,
         ).also { client = it }
 
-    override fun query(filter: Filter): Flow<QueryState> =
-        client().query(
-            filter = filter,
-            source = QuerySource.LocalAndRemote(
+    override fun query(
+        filter: Filter,
+        type: QueryType,
+        cachedFor: Duration?,
+    ): Flow<QueryState> {
+        require(type == QueryType.LocalAndRemote || cachedFor == null) {
+            "cachedFor is supported only for local-and-remote queries"
+        }
+
+        val source = when (type) {
+            QueryType.Local -> QuerySource.Local
+            QueryType.LocalAndRemote -> QuerySource.LocalAndRemote(
                 relays = setOf(Catalog.relay.normalizeRelayUrl()),
                 mode = RemoteMode.Stream,
-            ),
-        )
-
-    override fun queryRemote(filter: Filter): Flow<QueryState> =
-        client().query(
-            filter = filter,
-            source = QuerySource.Remote(
+                cachedFor = cachedFor,
+            )
+            QueryType.Remote -> QuerySource.Remote(
                 relays = setOf(Catalog.relay.normalizeRelayUrl()),
                 mode = RemoteMode.OneShot(),
-            ),
-        )
+            )
+        }
+
+        return client().query(filter = filter, source = source)
+    }
 
     override fun refreshConnections() {
         client?.refreshConnections()

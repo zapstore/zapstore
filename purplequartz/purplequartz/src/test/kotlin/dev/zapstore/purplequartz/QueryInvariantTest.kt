@@ -42,7 +42,7 @@ class QueryInvariantTest {
         val source = QuerySource.LocalAndRemote(
             relays = setOf(relay),
             mode = RemoteMode.OneShot(5.seconds),
-            maxAge = 6.hours,
+            cachedFor = 6.hours,
         )
         val firstClient = ControlledClient()
         val first = PurpleQuartz.createForTesting(
@@ -97,7 +97,7 @@ class QueryInvariantTest {
         val source = QuerySource.LocalAndRemote(
             relays = setOf(relay),
             mode = RemoteMode.Stream,
-            maxAge = 1.seconds,
+            cachedFor = 1.seconds,
         )
         val fingerprint = QueryFingerprint.create(listOf(filter), setOf(relay))
         cache.recordRefresh(fingerprint, System.currentTimeMillis())
@@ -136,7 +136,7 @@ class QueryInvariantTest {
         val source = QuerySource.LocalAndRemote(
             relays = setOf(relay),
             mode = RemoteMode.OneShot(50.milliseconds),
-            maxAge = 1.hours,
+            cachedFor = 1.hours,
         )
         val fingerprint = QueryFingerprint.create(listOf(filter), setOf(relay))
 
@@ -186,7 +186,7 @@ class QueryInvariantTest {
         val source = QuerySource.LocalAndRemote(
             relays = setOf(relay),
             mode = RemoteMode.OneShot(5.seconds),
-            maxAge = 1.hours,
+            cachedFor = 1.hours,
         )
         val fingerprint = QueryFingerprint.create(listOf(filter), setOf(relay))
         val purpleQuartz = PurpleQuartz.createForTesting(

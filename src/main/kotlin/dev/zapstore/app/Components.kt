@@ -63,6 +63,7 @@ fun AppIcon(
 fun AppCard(
     app: AppInfo,
     onClick: () -> Unit,
+    repository: CatalogRepository? = null,
     modifier: Modifier = Modifier,
     release: ReleaseInfo? = null,
 ) {
@@ -104,6 +105,11 @@ fun AppCard(
                 )
             }
         }
+        ProfileComponent(
+            pubkey = app.event.pubKey,
+            repository = repository,
+            modifier = Modifier.padding(top = 10.dp),
+        )
         if (app.summary.isNotBlank()) {
             Spacer(Modifier.height(10.dp))
             MarkdownText(
