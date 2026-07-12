@@ -56,8 +56,7 @@ class ScreensTest {
     }
 
     @Test
-    fun appDetailBackAndExternalLinkCallbacksAreWired() {
-        var backed = false
+    fun appDetailExternalLinkCallbackIsWired() {
         var openedUrl: String? = null
         val app = AppInfo(
             event(
@@ -78,16 +77,13 @@ class ScreensTest {
                         appLoading = false,
                         releaseLoading = false,
                     ),
-                    onBack = { backed = true },
                     onOpenUrl = { openedUrl = it },
                 )
             }
         }
 
-        composeRule.onNodeWithTag("backButton").assertIsDisplayed().performClick()
         composeRule.onNodeWithText("https://example.com/repo").performClick()
 
-        assertTrue(backed)
         assertEquals("https://example.com/repo", openedUrl)
     }
 }

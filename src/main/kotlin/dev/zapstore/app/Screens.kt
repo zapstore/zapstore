@@ -158,7 +158,6 @@ fun HomeScreen(
 @Composable
 fun StackDetailScreen(
     state: StackDetailUiState,
-    onBack: () -> Unit,
     onAppClick: (identifier: String, author: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -170,8 +169,6 @@ fun StackDetailScreen(
         contentPadding = PaddingValues(start = 20.dp, top = 4.dp, end = 20.dp, bottom = 36.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item { BackButton(onBack) }
-
         val stack = state.stack
         if (stack == null) {
             item {
@@ -238,7 +235,6 @@ fun StackDetailScreen(
 @Composable
 fun AppDetailScreen(
     state: AppDetailUiState,
-    onBack: () -> Unit,
     onOpenUrl: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -250,8 +246,6 @@ fun AppDetailScreen(
         contentPadding = PaddingValues(start = 20.dp, top = 4.dp, end = 20.dp, bottom = 36.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        item { BackButton(onBack) }
-
         val app = state.app
         if (app == null) {
             item {
@@ -392,16 +386,6 @@ fun AppDetailScreen(
             )
         }
         state.error?.let { error -> item { StatusText(error) } }
-    }
-}
-
-@Composable
-private fun BackButton(onClick: () -> Unit) {
-    TextButton(
-        onClick = onClick,
-        modifier = Modifier.testTag("backButton"),
-    ) {
-        Text("‹ ${stringResource(R.string.back)}")
     }
 }
 

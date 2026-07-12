@@ -6,6 +6,9 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -41,6 +44,30 @@ class MainActivity : ComponentActivity() {
                     NavHost(
                         navController = navController,
                         startDestination = HOME_ROUTE,
+                        enterTransition = {
+                            slideIntoContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Left,
+                                tween(NAVIGATION_TRANSITION_DURATION, easing = FastOutSlowInEasing),
+                            )
+                        },
+                        exitTransition = {
+                            slideOutOfContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Left,
+                                tween(NAVIGATION_TRANSITION_DURATION, easing = FastOutSlowInEasing),
+                            )
+                        },
+                        popEnterTransition = {
+                            slideIntoContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Right,
+                                tween(NAVIGATION_TRANSITION_DURATION, easing = FastOutSlowInEasing),
+                            )
+                        },
+                        popExitTransition = {
+                            slideOutOfContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Right,
+                                tween(NAVIGATION_TRANSITION_DURATION, easing = FastOutSlowInEasing),
+                            )
+                        },
                     ) {
                         composable(HOME_ROUTE) {
                             val viewModel: HomeViewModel = viewModel(
@@ -73,7 +100,6 @@ class MainActivity : ComponentActivity() {
                             val state by viewModel.uiState.collectAsStateWithLifecycle()
                             StackDetailScreen(
                                 state = state,
-                                onBack = { navController.popBackStack() },
                                 onAppClick = { identifier, author ->
                                     navController.navigate(appRoute(identifier, author))
                                 },
@@ -97,7 +123,6 @@ class MainActivity : ComponentActivity() {
                             val state by viewModel.uiState.collectAsStateWithLifecycle()
                             AppDetailScreen(
                                 state = state,
-                                onBack = { navController.popBackStack() },
                                 onOpenUrl = { value ->
                                     if (isHttpUrl(value)) {
                                         runCatching {
@@ -125,6 +150,7 @@ private const val HOME_ROUTE = "home"
 private const val STACK_ROUTE = "stack/{$STACK_ID_ARGUMENT}"
 private const val APP_ROUTE =
     "app/{$APP_IDENTIFIER_ARGUMENT}?$APP_AUTHOR_ARGUMENT={$APP_AUTHOR_ARGUMENT}"
+private const val NAVIGATION_TRANSITION_DURATION = 150
 
 private fun stackRoute(stackId: String): String =
     "stack/${Uri.encode(stackId)}"
