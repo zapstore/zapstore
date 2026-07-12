@@ -13,13 +13,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -29,9 +34,14 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
@@ -55,8 +65,20 @@ fun HomeScreen(
     onSearchCleared: () -> Unit,
     onStackClick: (String) -> Unit,
     onAppClick: (identifier: String, author: String) -> Unit,
+    onProfileClick: (String) -> Unit = {},
+    onLoadMoreReleases: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    val listState = rememberLazyListState()
+    val latestReleases = stringResource(R.string.latest_releases)
+    val noReleases = stringResource(R.string.no_releases)
+    LoadMoreReleasesWhenNearEnd(
+        listState = listState,
+        entries = state.releaseFeed.entries,
+        loading = state.releaseFeed.loadingMore,
+        canLoadMore = state.releaseFeed.canLoadMore,
+        onLoadMore = onLoadMoreReleases,
+    )
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -64,6 +86,7 @@ fun HomeScreen(
             .windowInsetsPadding(WindowInsets.safeDrawing),
         contentPadding = PaddingValues(start = 20.dp, top = 8.dp, end = 20.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
+        state = listState,
     ) {
         item {
             OutlinedTextField(
@@ -103,6 +126,7 @@ fun HomeScreen(
             AppCard(
                 app = app,
                 onClick = { onAppClick(app.identifier, app.event.pubKey) },
+                onProfileClick = { onProfileClick(app.event.pubKey) },
                 repository = repository,
                 modifier = Modifier.testTag("searchResult:${app.address}"),
             )
@@ -132,29 +156,21 @@ fun HomeScreen(
                     }
                 }
 
-                state.stacksLoading -> StatusText(stringResource(R.string.loading_stacks))
+                state.stacksLoading -> LoadingIndicator(Modifier.padding(vertical = 12.dp))
                 state.stacksError != null -> StatusText(state.stacksError)
                 else -> StatusText(stringResource(R.string.no_stacks))
             }
         }
 
-        item {
-            SectionTitle(
-                value = stringResource(R.string.latest_releases),
-                modifier = Modifier.padding(top = 8.dp),
-            )
-        }
-        item { StatusText(state.releasesMessage) }
-        items(state.releases, key = { it.event.id }) { release ->
-            val app = release.appIdentifier?.let(state.releaseApps::get) ?: AppInfo(release.event)
-            AppCard(
-                app = app,
-                release = release,
-                onClick = { onAppClick(app.identifier, app.event.pubKey) },
-                repository = repository,
-                modifier = Modifier.testTag("release:${release.event.id}"),
-            )
-        }
+        releaseFeed(
+            state = state.releaseFeed,
+            title = latestReleases,
+            emptyMessage = noReleases,
+            repository = repository,
+            onAppClick = onAppClick,
+            onProfileClick = onProfileClick,
+            modifier = Modifier,
+        )
     }
 }
 
@@ -163,6 +179,7 @@ fun StackDetailScreen(
     state: StackDetailUiState,
     repository: CatalogRepository? = null,
     onAppClick: (identifier: String, author: String) -> Unit,
+    onProfileClick: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -176,13 +193,14 @@ fun StackDetailScreen(
         val stack = state.stack
         if (stack == null) {
             item {
-                Text(
-                    text = when {
-                        state.stackLoading -> stringResource(R.string.loading_stack)
-                        else -> stringResource(R.string.stack_not_found)
-                    },
-                    style = MaterialTheme.typography.headlineSmall,
-                )
+                if (state.stackLoading) {
+                    LoadingIndicator(Modifier.padding(vertical = 20.dp))
+                } else {
+                    Text(
+                        text = stringResource(R.string.stack_not_found),
+                        style = MaterialTheme.typography.headlineSmall,
+                    )
+                }
             }
             state.error?.let { error -> item { StatusText(error) } }
             return@LazyColumn
@@ -218,19 +236,18 @@ fun StackDetailScreen(
             AppCard(
                 app = app,
                 onClick = { onAppClick(app.identifier, app.event.pubKey) },
+                onProfileClick = { onProfileClick(app.event.pubKey) },
                 repository = repository,
                 modifier = Modifier.testTag("stackApp:${app.address}"),
             )
         }
         if (state.appsByAddress.isEmpty()) {
             item {
-                StatusText(
-                    if (state.appsLoading) {
-                        stringResource(R.string.loading_stack_apps)
-                    } else {
-                        stringResource(R.string.no_stack_apps)
-                    },
-                )
+                if (state.appsLoading) {
+                    LoadingIndicator(Modifier.padding(vertical = 12.dp))
+                } else {
+                    StatusText(stringResource(R.string.no_stack_apps))
+                }
             }
         }
         state.error?.let { error -> item { StatusText(error) } }
@@ -242,6 +259,7 @@ fun AppDetailScreen(
     state: AppDetailUiState,
     onOpenUrl: (String) -> Unit,
     repository: CatalogRepository? = null,
+    onProfileClick: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -263,14 +281,14 @@ fun AppDetailScreen(
                         .background(ZapSurfaceVariant),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        text = if (state.appLoading) {
-                            stringResource(R.string.loading_app)
-                        } else {
-                            stringResource(R.string.app_not_found)
-                        },
-                        color = ZapMuted,
-                    )
+                    if (state.appLoading) {
+                        LoadingIndicator()
+                    } else {
+                        Text(
+                            text = stringResource(R.string.app_not_found),
+                            color = ZapMuted,
+                        )
+                    }
                 }
             }
             state.error?.let { error -> item { StatusText(error) } }
@@ -313,6 +331,7 @@ fun AppDetailScreen(
             ProfileComponent(
                 pubkey = app.event.pubKey,
                 repository = repository,
+                onClick = { onProfileClick(app.event.pubKey) },
             )
         }
 
@@ -390,10 +409,262 @@ fun AppDetailScreen(
                 release = state.release,
                 onOpenUrl = onOpenUrl,
                 repository = repository,
+                onProfileClick = { onProfileClick(app.event.pubKey) },
                 modifier = Modifier.padding(top = 8.dp),
             )
         }
         state.error?.let { error -> item { StatusText(error) } }
+    }
+}
+
+@Composable
+fun ProfileScreen(
+    state: ProfileUiState,
+    onOpenUrl: (String) -> Unit,
+    repository: CatalogRepository? = null,
+    onAppClick: (identifier: String, author: String) -> Unit = { _, _ -> },
+    onLoadMoreReleases: () -> Unit = {},
+    modifier: Modifier = Modifier,
+) {
+    val listState = rememberLazyListState()
+    val profileApps = stringResource(R.string.profile_apps)
+    val noProfileApps = stringResource(R.string.no_profile_apps)
+    LoadMoreReleasesWhenNearEnd(
+        listState = listState,
+        entries = state.releaseFeed.entries,
+        loading = state.releaseFeed.loadingMore,
+        canLoadMore = state.releaseFeed.canLoadMore,
+        onLoadMore = onLoadMoreReleases,
+    )
+    val bannerParallax = if (listState.firstVisibleItemIndex == 0) {
+        listState.firstVisibleItemScrollOffset * 0.25f
+    } else {
+        0f
+    }
+
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .background(ZapBackground)
+            .navigationBarsPadding(),
+        state = listState,
+        contentPadding = PaddingValues(bottom = 36.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        val profile = state.profile
+        if (profile == null) {
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(100.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(ZapSurfaceVariant),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (state.profileLoading) {
+                        LoadingIndicator()
+                    } else {
+                        Text(
+                            text = stringResource(R.string.profile_not_found),
+                            color = ZapMuted,
+                        )
+                    }
+                }
+            }
+            state.error?.let { error -> item { StatusText(error) } }
+            return@LazyColumn
+        }
+
+        item {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(240.dp)
+                    .background(ZapSurfaceVariant),
+            ) {
+                profile.banner?.takeIf(::isHttpUrl)?.let { bannerUrl ->
+                    AsyncImage(
+                        model = bannerUrl,
+                        contentDescription = stringResource(R.string.profile_banner_description),
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(280.dp)
+                            .graphicsLayer { translationY = bannerParallax }
+                            .background(ZapSurfaceVariant),
+                    )
+                }
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(20.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ProfileAvatar(
+                        name = profile.displayName ?: profile.name ?: state.pubkey,
+                        pictureUrl = profile.picture,
+                        size = 84.dp,
+                    )
+                    Spacer(Modifier.width(16.dp))
+                    Column {
+                        Text(
+                            text = profile.displayName ?: profile.name ?: state.pubkey,
+                            style = MaterialTheme.typography.displaySmall,
+                        )
+                        profile.name?.takeIf { it != profile.displayName }?.let {
+                            StatusText("@$it")
+                        }
+                    }
+                }
+            }
+        }
+
+        profile.about?.takeIf(String::isNotBlank)?.let { about ->
+            item {
+                MarkdownText(
+                    value = about,
+                    color = ZapMuted,
+                    style = MaterialTheme.typography.bodyLarge,
+                    onOpenUrl = onOpenUrl,
+                    modifier = Modifier.padding(horizontal = 20.dp),
+                )
+            }
+        }
+
+        item {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(ZapSurface)
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+            ) {
+                profile.website?.let {
+                    InfoRow(stringResource(R.string.website), it, link = it, onOpenUrl = onOpenUrl)
+                }
+                profile.nip05?.let {
+                    InfoRow(stringResource(R.string.nip05), it, onOpenUrl = onOpenUrl)
+                }
+                InfoRow(stringResource(R.string.public_key), state.pubkey, onOpenUrl = onOpenUrl)
+            }
+        }
+
+        releaseFeed(
+            state = state.releaseFeed,
+            title = profileApps,
+            emptyMessage = noProfileApps,
+            repository = repository,
+            onAppClick = onAppClick,
+            modifier = Modifier.padding(horizontal = 20.dp),
+        )
+        state.error?.let { error -> item { StatusText(error) } }
+    }
+}
+
+private fun LazyListScope.releaseFeed(
+    state: ReleaseFeedUiState,
+    title: String,
+    emptyMessage: String,
+    repository: CatalogRepository?,
+    onAppClick: (identifier: String, author: String) -> Unit,
+    onProfileClick: (String) -> Unit = {},
+    modifier: Modifier,
+) {
+    item {
+        SectionTitle(
+            value = title,
+            modifier = modifier.padding(top = 4.dp),
+        )
+    }
+    when {
+        state.entries.isEmpty() && state.initialLoading -> item {
+            LoadingIndicator(modifier.padding(vertical = 12.dp))
+        }
+
+        state.entries.isEmpty() -> item {
+            StatusText(state.error ?: emptyMessage, modifier)
+        }
+
+        else -> {
+            state.error?.let { error -> item { StatusText(error, modifier) } }
+            items(state.entries, key = { "app:${it.app.event.id}" }) { entry ->
+                val app = entry.app
+                AppCard(
+                    app = app,
+                    release = entry.release,
+                    onClick = { onAppClick(app.identifier, app.event.pubKey) },
+                    onProfileClick = { onProfileClick(app.event.pubKey) },
+                    repository = repository,
+                    modifier = modifier.testTag("app:${app.event.id}"),
+                )
+            }
+            if (state.loadingMore) {
+                item(key = "release-loading") {
+                    LoadingIndicator(
+                        modifier
+                            .testTag("releaseLoading")
+                            .padding(vertical = 8.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LoadMoreReleasesWhenNearEnd(
+    listState: LazyListState,
+    entries: List<ReleaseFeedEntry>,
+    loading: Boolean,
+    canLoadMore: Boolean,
+    onLoadMore: () -> Unit,
+) {
+    val prefetchKeys = remember(entries) {
+        entries.takeLast(RELEASE_PREFETCH_THRESHOLD)
+            .mapTo(mutableSetOf()) { "app:${it.app.event.id}" }
+    }
+    val nearEnd by remember(listState, prefetchKeys) {
+        derivedStateOf {
+            listState.layoutInfo.visibleItemsInfo.any { it.key in prefetchKeys }
+        }
+    }
+    LaunchedEffect(nearEnd, loading, canLoadMore) {
+        if (nearEnd && !loading && canLoadMore) onLoadMore()
+    }
+}
+
+private const val RELEASE_PREFETCH_THRESHOLD = 3
+
+@Composable
+private fun ProfileAvatar(
+    name: String,
+    pictureUrl: String?,
+    size: androidx.compose.ui.unit.Dp,
+) {
+    Box(
+        modifier = Modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(ZapSurfaceVariant),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = name.take(1).uppercase(),
+            style = MaterialTheme.typography.headlineMedium,
+            color = ZapMuted,
+        )
+        pictureUrl?.takeIf(::isHttpUrl)?.let { url ->
+            AsyncImage(
+                model = url,
+                contentDescription = stringResource(R.string.profile_avatar_description, name),
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(CircleShape),
+            )
+        }
     }
 }
 
@@ -425,6 +696,7 @@ private fun AppInfoCard(
     release: ReleaseInfo?,
     onOpenUrl: (String) -> Unit,
     repository: CatalogRepository?,
+    onProfileClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -455,6 +727,7 @@ private fun AppInfoCard(
                 pubkey = app.event.pubKey,
                 repository = repository,
                 modifier = Modifier.weight(1f),
+                onClick = onProfileClick,
             )
         }
         release?.let {

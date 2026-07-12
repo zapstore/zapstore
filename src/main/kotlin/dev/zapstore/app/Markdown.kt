@@ -4,6 +4,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
@@ -162,6 +163,7 @@ fun MarkdownText(
     maxLines: Int = Int.MAX_VALUE,
     overflow: TextOverflow = TextOverflow.Clip,
     onOpenUrl: ((String) -> Unit)? = null,
+    modifier: Modifier = Modifier,
 ) {
     val annotated = remember(value, onOpenUrl) {
         ZapMarkdown.parse(value, onOpenUrl)
@@ -172,5 +174,6 @@ fun MarkdownText(
         style = style,
         maxLines = maxLines,
         overflow = overflow,
+        modifier = modifier,
     )
 }

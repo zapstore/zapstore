@@ -86,6 +86,60 @@ class ScreensTest {
 
         assertEquals("https://example.com/repo", openedUrl)
     }
+
+    @Test
+    fun appProfileCallbackIsWired() {
+        var openedProfile: String? = null
+        val app = AppInfo(event(kind = Catalog.appKind))
+
+        composeRule.setContent {
+            ZapstoreTheme {
+                AppCard(
+                    app = app,
+                    repository = null,
+                    onClick = {},
+                    onProfileClick = { openedProfile = app.event.pubKey },
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("profile:${app.event.pubKey}").performClick()
+
+        assertEquals(app.event.pubKey, openedProfile)
+    }
+
+    @Test
+    fun releaseFeedShowsItsLoadingFooter() {
+        val release = ReleaseInfo(
+            event(
+                id = "release-id",
+                kind = Catalog.releaseKind,
+                tags = arrayOf(arrayOf("i", "zap")),
+            ),
+        )
+
+        composeRule.setContent {
+            ZapstoreTheme {
+                HomeScreen(
+                    state = HomeUiState(
+                        releaseFeed = ReleaseFeedUiState(
+                            entries = listOf(ReleaseFeedEntry(release)),
+                            initialLoading = false,
+                            loadingMore = true,
+                        ),
+                    ),
+                    onSearchQueryChanged = {},
+                    onSearchSubmitted = {},
+                    onSearchCleared = {},
+                    onStackClick = {},
+                    onAppClick = { _, _ -> },
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("release:release-id").assertIsDisplayed()
+        composeRule.onNodeWithTag("releaseLoading").assertIsDisplayed()
+    }
 }
 
 private fun event(

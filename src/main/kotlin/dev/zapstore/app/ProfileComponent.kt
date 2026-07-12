@@ -1,6 +1,7 @@
 package dev.zapstore.app
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -15,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -22,7 +24,6 @@ import coil3.compose.AsyncImage
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import kotlinx.coroutines.flow.collect
-import org.json.JSONObject
 import kotlin.time.Duration.Companion.hours
 
 @Composable
@@ -30,14 +31,16 @@ fun ProfileComponent(
     pubkey: String,
     repository: CatalogRepository?,
     modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
 ) {
     val profile by produceState<ProfileInfo?>(initialValue = null, pubkey, repository) {
         if (repository == null) return@produceState
 
         repository.query(
-            Filter(authors = listOf(pubkey), kinds = listOf(PROFILE_KIND), limit = 1),
+            Filter(authors = listOf(pubkey), kinds = listOf(Catalog.profileKind), limit = 1),
             type = QueryType.LocalAndRemote,
             cachedFor = PROFILE_CACHE_DURATION,
+            relays = PROFILE_RELAYS,
         ).collect { state ->
             value = state.items.maxByOrNull(Event::createdAt)?.let(::ProfileInfo)
         }
@@ -51,7 +54,9 @@ fun ProfileComponent(
     val pictureUrl = profile?.picture?.takeIf(::isHttpUrl)
 
     Row(
-        modifier = modifier,
+        modifier = modifier
+            .testTag("profile:$pubkey")
+            .then(onClick?.let { Modifier.clickable(onClick = it) } ?: Modifier),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -82,24 +87,6 @@ fun ProfileComponent(
         )
     }
 }
-
-private data class ProfileInfo(
-    val name: String?,
-    val displayName: String?,
-    val picture: String?,
-) {
-    constructor(event: Event) : this(
-        name = runCatching { JSONObject(event.content).optString("name") }.getOrNull(),
-        displayName = runCatching { JSONObject(event.content).optString("display_name") }.getOrNull(),
-        picture = runCatching {
-            JSONObject(event.content).optString("picture").ifBlank {
-                JSONObject(event.content).optString("image")
-            }
-        }.getOrNull(),
-    )
-}
-
-private const val PROFILE_KIND = 0
 private val PROFILE_CACHE_DURATION = 6.hours
 
 private val BECH32_CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"

@@ -4,19 +4,19 @@
     <string name="clear_search">Clear search</string>
     <string name="curated_stacks">Curated stacks</string>
     <string name="latest_releases">Latest releases</string>
-    <string name="loading_stacks">Loading community stacks…</string>
+    <string name="no_releases">No releases found.</string>
     <string name="no_stacks">No stacks found.</string>
-    <string name="loading_stack">Loading stack…</string>
     <string name="stack_not_found">Stack not found.</string>
     <string name="apps">Apps</string>
     <plurals name="curated_apps">
         <item quantity="one">%1$d curated app</item>
         <item quantity="other">%1$d curated apps</item>
     </plurals>
-    <string name="loading_stack_apps">Loading apps in this stack…</string>
     <string name="no_stack_apps">No apps found in this stack.</string>
-    <string name="loading_app">Loading app…</string>
     <string name="app_not_found">App not found.</string>
+    <string name="profile_not_found">Profile not found.</string>
+    <string name="profile_apps">Apps by this profile</string>
+    <string name="no_profile_apps">No apps published by this profile.</string>
     <string name="published_by">Published by · %1$s…</string>
     <string name="latest_release">Latest release</string>
     <string name="version">Version:</string>
@@ -25,8 +25,12 @@
     <string name="app_id">App ID</string>
     <string name="author">Author</string>
     <string name="release_date">Release date</string>
+    <string name="website">Website</string>
+    <string name="nip05">NIP-05</string>
+    <string name="public_key">Public key</string>
     <string name="not_available">Not available</string>
     <string name="app_icon_description">%1$s icon</string>
     <string name="screenshot_description">%1$s screenshot</string>
     <string name="profile_avatar_description">%1$s avatar</string>
+    <string name="profile_banner_description">Profile banner</string>
 </resources>

@@ -13,12 +13,14 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 const val STACK_ID_ARGUMENT = "stackId"
 const val APP_IDENTIFIER_ARGUMENT = "identifier"
 const val APP_AUTHOR_ARGUMENT = "author"
+const val PROFILE_PUBKEY_ARGUMENT = "pubkey"
 
 data class HomeUiState(
     val searchQuery: String = "",
@@ -30,11 +32,186 @@ data class HomeUiState(
     val stackApps: Map<String, AppInfo> = emptyMap(),
     val stacksLoading: Boolean = true,
     val stacksError: String? = null,
-    val releases: List<ReleaseInfo> = emptyList(),
-    val releaseApps: Map<String, AppInfo> = emptyMap(),
-    val releasesLoading: Boolean = true,
-    val releasesMessage: String = "Connecting to relay.zapstore.dev",
+    val releaseFeed: ReleaseFeedUiState = ReleaseFeedUiState(),
 )
+
+data class ReleaseFeedEntry(
+    val app: AppInfo,
+    val release: ReleaseInfo? = null,
+)
+
+data class ReleaseFeedUiState(
+    val entries: List<ReleaseFeedEntry> = emptyList(),
+    val initialLoading: Boolean = true,
+    val loadingMore: Boolean = false,
+    val canLoadMore: Boolean = true,
+    val error: String? = null,
+)
+
+/**
+ * App-first feed with release-ranked presentation.
+ *
+ * Kind 32267 app events are the identity and pagination source, so exhausting the
+ * feed exhausts the app catalog. Kinds 30063 and 3063 only provide each app's
+ * latest-version metadata and sort key; they can never create a feed row.
+ */
+private class ReleaseFeedLoader(
+    private val repository: CatalogRepository,
+    private val scope: kotlinx.coroutines.CoroutineScope,
+    private val author: String? = null,
+    private val onStateChanged: (ReleaseFeedUiState) -> Unit,
+) {
+    private val appsByAddress = linkedMapOf<String, AppInfo>()
+    private val releasesByApp = mutableMapOf<String, ReleaseInfo>()
+    private var nextUntil: Long? = null
+    private val boundaryEventIds = mutableSetOf<String>()
+    private var releaseLookupKeys: Set<String> = emptySet()
+    private var releaseJob: Job? = null
+    private var requestInFlight = false
+    private var state = ReleaseFeedUiState()
+
+    fun loadNextPage() {
+        if (requestInFlight || !state.canLoadMore) return
+        requestInFlight = true
+
+        updateState(
+            state.copy(
+                initialLoading = appsByAddress.isEmpty(),
+                loadingMore = appsByAddress.isNotEmpty(),
+                error = null,
+            ),
+        )
+        val pageUntil = nextUntil
+        val pageLimit = APP_PAGE_SIZE + boundaryEventIds.size
+        scope.launch {
+            var receivedTerminalState = false
+            repository.query(
+                Filter(
+                    authors = author?.let(::listOf),
+                    kinds = listOf(Catalog.appKind),
+                    limit = pageLimit,
+                    until = pageUntil,
+                ),
+                type = QueryType.LocalAndRemote,
+            ).takeWhile { queryState ->
+                val page = queryState.items
+                    .filter { it.kind == Catalog.appKind }
+                    .map(::AppInfo)
+                    .sortedByDescending { it.event.createdAt }
+                    .distinctBy { it.event.id }
+                page.forEach { app ->
+                    val existing = appsByAddress[app.address]
+                    if (
+                        existing == null ||
+                        app.event.createdAt > existing.event.createdAt ||
+                        app.event.createdAt == existing.event.createdAt && app.event.id < existing.event.id
+                    ) {
+                        appsByAddress[app.address] = app
+                    }
+                }
+                publishEntries()
+
+                val terminal = !queryState.sync.isLoading || queryState.error != null
+                if (!terminal && appsByAddress.isNotEmpty()) {
+                    updateState(state.copy(initialLoading = false, loadingMore = true))
+                } else if (terminal) {
+                    receivedTerminalState = true
+                    requestInFlight = false
+                    page.minOfOrNull { it.event.createdAt }?.let { oldestTimestamp ->
+                        val idsAtBoundary = page
+                            .asSequence()
+                            .filter { it.event.createdAt == oldestTimestamp }
+                            .mapTo(mutableSetOf()) { it.event.id }
+                        if (pageUntil != oldestTimestamp) boundaryEventIds.clear()
+                        boundaryEventIds += idsAtBoundary
+                        nextUntil = oldestTimestamp
+                    }
+                    updateState(
+                        state.copy(
+                            initialLoading = false,
+                            loadingMore = false,
+                            canLoadMore = queryState.error == null && page.size >= pageLimit,
+                            error = queryState.error?.message,
+                        ),
+                    )
+                }
+                !terminal
+            }.collect {
+                // State is handled in takeWhile so the terminal emission can stop this live query.
+            }
+            if (!receivedTerminalState) {
+                requestInFlight = false
+                updateState(state.copy(initialLoading = false, loadingMore = false, canLoadMore = false))
+            }
+        }
+    }
+
+    private fun publishEntries() {
+        val entries = appsByAddress.values
+            .sortedWith(
+                compareByDescending<AppInfo> {
+                    releasesByApp[it.address]?.event?.createdAt ?: Long.MIN_VALUE
+                }.thenByDescending { it.event.createdAt }
+                    .thenBy { it.address },
+            )
+            .map { app ->
+                ReleaseFeedEntry(
+                    app = app,
+                    release = releasesByApp[app.address],
+                )
+            }
+        updateState(state.copy(entries = entries))
+        observeReleases(entries.map(ReleaseFeedEntry::app))
+    }
+
+    private fun observeReleases(apps: List<AppInfo>) {
+        val lookupKeys = apps.map(AppInfo::address).toSet()
+        if (lookupKeys == releaseLookupKeys) return
+        releaseLookupKeys = lookupKeys
+        releaseJob?.cancel()
+
+        if (apps.isEmpty()) return
+
+        val releaseFilters = apps.map { app ->
+            Filter(
+                authors = listOf(app.event.pubKey),
+                kinds = Catalog.releaseKinds,
+                tags = mapOf("i" to listOf(app.identifier)),
+                limit = 1,
+            )
+        }
+        releaseJob = scope.launch {
+            repository.query(
+                releaseFilters,
+                type = QueryType.LocalAndRemote,
+            ).collect { queryState ->
+                queryState.items
+                    .filter { it.kind in Catalog.releaseKinds }
+                    .map(::ReleaseInfo)
+                    .forEach { release ->
+                        val identifier = release.appIdentifier ?: return@forEach
+                        val address = "${Catalog.appKind}:${release.event.pubKey}:$identifier"
+                        if (address in appsByAddress) {
+                            val existing = releasesByApp[address]
+                            if (existing == null || existing.event.createdAt < release.event.createdAt) {
+                                releasesByApp[address] = release
+                            }
+                        }
+                    }
+                publishEntries()
+            }
+        }
+    }
+
+    private fun updateState(value: ReleaseFeedUiState) {
+        state = value
+        onStateChanged(value)
+    }
+
+    private companion object {
+        const val APP_PAGE_SIZE = 20
+    }
+}
 
 class HomeViewModel(
     private val repository: CatalogRepository,
@@ -46,14 +223,15 @@ class HomeViewModel(
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     private var stackPreviewJob: Job? = null
-    private var releaseAppsJob: Job? = null
     private var searchJob: Job? = null
     private var stackAddresses: List<String> = emptyList()
-    private var releaseIdentifiers: Set<String> = emptySet()
+    private val releaseFeed = ReleaseFeedLoader(repository, viewModelScope) { feed ->
+        _uiState.update { it.copy(releaseFeed = feed) }
+    }
 
     init {
         observeStacks()
-        observeLatestReleases()
+        releaseFeed.loadNextPage()
     }
 
     fun onSearchQueryChanged(value: String) {
@@ -120,6 +298,8 @@ class HomeViewModel(
         }
     }
 
+    fun loadMoreReleases() = releaseFeed.loadNextPage()
+
     private fun observeStacks() {
         viewModelScope.launch {
             repository.query(
@@ -167,54 +347,6 @@ class HomeViewModel(
             ).collect { state ->
                 _uiState.update {
                     it.copy(stackApps = state.items.map(::AppInfo).associateBy(AppInfo::address))
-                }
-            }
-        }
-    }
-
-    private fun observeLatestReleases() {
-        viewModelScope.launch {
-            repository.query(
-                Filter(kinds = listOf(Catalog.releaseKind), limit = 20),
-                type = QueryType.LocalAndRemote,
-            ).collect { state ->
-                val releases = state.items.map(::ReleaseInfo)
-                    .sortedByDescending { it.event.createdAt }
-                    .distinctBy { it.appIdentifier ?: it.event.id }
-                    .take(10)
-                _uiState.update {
-                    it.copy(
-                        releases = releases,
-                        releasesLoading = releases.isEmpty() && state.sync.isLoading,
-                        releasesMessage = state.error?.message ?: "${releases.size} recently updated apps",
-                    )
-                }
-                observeReleaseApps(releases)
-            }
-        }
-    }
-
-    private fun observeReleaseApps(releases: List<ReleaseInfo>) {
-        val identifiers = releases.mapNotNull(ReleaseInfo::appIdentifier).toSet()
-        if (identifiers == releaseIdentifiers) return
-        releaseIdentifiers = identifiers
-        releaseAppsJob?.cancel()
-        if (identifiers.isEmpty()) {
-            _uiState.update { it.copy(releaseApps = emptyMap()) }
-            return
-        }
-
-        releaseAppsJob = viewModelScope.launch {
-            repository.query(
-                Filter(
-                    kinds = listOf(Catalog.appKind),
-                    tags = mapOf("d" to identifiers.toList()),
-                    limit = identifiers.size * 3,
-                ),
-                type = QueryType.LocalAndRemote,
-            ).collect { state ->
-                _uiState.update {
-                    it.copy(releaseApps = state.items.map(::AppInfo).associateBy(AppInfo::identifier))
                 }
             }
         }
@@ -307,6 +439,52 @@ data class AppDetailUiState(
     val error: String? = null,
 )
 
+data class ProfileUiState(
+    val profile: ProfileInfo? = null,
+    val pubkey: String = "",
+    val releaseFeed: ReleaseFeedUiState = ReleaseFeedUiState(),
+    val profileLoading: Boolean = true,
+    val error: String? = null,
+)
+
+class ProfileViewModel(
+    private val repository: CatalogRepository,
+    savedStateHandle: SavedStateHandle,
+) : ViewModel() {
+    private val pubkey = requireNotNull(savedStateHandle.get<String>(PROFILE_PUBKEY_ARGUMENT))
+    private val _uiState = MutableStateFlow(ProfileUiState(pubkey = pubkey))
+    val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()
+    private val releaseFeed = ReleaseFeedLoader(repository, viewModelScope, pubkey) { feed ->
+        _uiState.update { it.copy(releaseFeed = feed) }
+    }
+
+    init {
+        observeProfile()
+        releaseFeed.loadNextPage()
+    }
+
+    private fun observeProfile() {
+        viewModelScope.launch {
+            repository.query(
+                Filter(authors = listOf(pubkey), kinds = listOf(Catalog.profileKind), limit = 1),
+                type = QueryType.LocalAndRemote,
+                relays = PROFILE_RELAYS,
+            ).collect { state ->
+                val profile = state.items.maxByOrNull { it.createdAt }?.let(::ProfileInfo)
+                _uiState.update {
+                    it.copy(
+                        profile = profile,
+                        profileLoading = profile == null && state.sync.isLoading,
+                        error = state.error?.message,
+                    )
+                }
+            }
+        }
+    }
+
+    fun loadMoreReleases() = releaseFeed.loadNextPage()
+}
+
 class AppDetailViewModel(
     private val repository: CatalogRepository,
     savedStateHandle: SavedStateHandle,
@@ -377,6 +555,10 @@ fun stackDetailViewModelFactory(repository: CatalogRepository): ViewModelProvide
 
 fun appDetailViewModelFactory(repository: CatalogRepository): ViewModelProvider.Factory = viewModelFactory {
     initializer { AppDetailViewModel(repository, createSavedStateHandle()) }
+}
+
+fun profileViewModelFactory(repository: CatalogRepository): ViewModelProvider.Factory = viewModelFactory {
+    initializer { ProfileViewModel(repository, createSavedStateHandle()) }
 }
 
 private val QuerySync.isLoading: Boolean

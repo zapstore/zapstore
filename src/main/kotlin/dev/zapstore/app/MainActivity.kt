@@ -80,11 +80,15 @@ class MainActivity : ComponentActivity() {
                                 onSearchQueryChanged = viewModel::onSearchQueryChanged,
                                 onSearchSubmitted = viewModel::submitSearch,
                                 onSearchCleared = viewModel::clearSearch,
+                                onLoadMoreReleases = viewModel::loadMoreReleases,
                                 onStackClick = { stackId ->
                                     navController.navigate(stackRoute(stackId))
                                 },
                                 onAppClick = { identifier, author ->
                                     navController.navigate(appRoute(identifier, author))
+                                },
+                                onProfileClick = { pubkey ->
+                                    navController.navigate(profileRoute(pubkey))
                                 },
                             )
                         }
@@ -104,6 +108,9 @@ class MainActivity : ComponentActivity() {
                                 repository = repository,
                                 onAppClick = { identifier, author ->
                                     navController.navigate(appRoute(identifier, author))
+                                },
+                                onProfileClick = { pubkey ->
+                                    navController.navigate(profileRoute(pubkey))
                                 },
                             )
                         }
@@ -135,6 +142,38 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
                                 repository = repository,
+                                onProfileClick = { pubkey ->
+                                    navController.navigate(profileRoute(pubkey))
+                                },
+                            )
+                        }
+
+                        composable(
+                            route = PROFILE_ROUTE,
+                            arguments = listOf(
+                                navArgument(PROFILE_PUBKEY_ARGUMENT) { type = NavType.StringType },
+                            ),
+                        ) {
+                            val viewModel: ProfileViewModel = viewModel(
+                                factory = profileViewModelFactory(repository),
+                            )
+                            val state by viewModel.uiState.collectAsStateWithLifecycle()
+                            ProfileScreen(
+                                state = state,
+                                repository = repository,
+                                onAppClick = { identifier, author ->
+                                    navController.navigate(appRoute(identifier, author))
+                                },
+                                onLoadMoreReleases = viewModel::loadMoreReleases,
+                                onOpenUrl = { value ->
+                                    if (isHttpUrl(value)) {
+                                        runCatching {
+                                            context.startActivity(
+                                                Intent(Intent.ACTION_VIEW, value.toUri()),
+                                            )
+                                        }
+                                    }
+                                },
                             )
                         }
                     }
@@ -153,6 +192,7 @@ private const val HOME_ROUTE = "home"
 private const val STACK_ROUTE = "stack/{$STACK_ID_ARGUMENT}"
 private const val APP_ROUTE =
     "app/{$APP_IDENTIFIER_ARGUMENT}?$APP_AUTHOR_ARGUMENT={$APP_AUTHOR_ARGUMENT}"
+private const val PROFILE_ROUTE = "profile/{$PROFILE_PUBKEY_ARGUMENT}"
 private const val NAVIGATION_TRANSITION_DURATION = 150
 
 private fun stackRoute(stackId: String): String =
@@ -164,3 +204,6 @@ private fun appRoute(identifier: String, author: String?): String = buildString 
         append("?").append(APP_AUTHOR_ARGUMENT).append("=").append(Uri.encode(it))
     }
 }
+
+private fun profileRoute(pubkey: String): String =
+    "profile/${Uri.encode(pubkey)}"

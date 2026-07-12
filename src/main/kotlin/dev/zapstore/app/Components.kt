@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -66,6 +67,7 @@ fun AppCard(
     repository: CatalogRepository? = null,
     modifier: Modifier = Modifier,
     release: ReleaseInfo? = null,
+    onProfileClick: (() -> Unit)? = null,
 ) {
     Column(
         modifier = modifier
@@ -109,11 +111,12 @@ fun AppCard(
             pubkey = app.event.pubKey,
             repository = repository,
             modifier = Modifier.padding(top = 10.dp),
+            onClick = onProfileClick,
         )
         if (app.summary.isNotBlank()) {
             Spacer(Modifier.height(10.dp))
-            MarkdownText(
-                value = app.summary,
+            Text(
+                text = ZapMarkdown.parse(app.summary).text,
                 color = ZapMuted,
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 3,
@@ -189,6 +192,22 @@ fun StatusText(
         style = MaterialTheme.typography.labelMedium,
         modifier = modifier,
     )
+}
+
+@Composable
+fun LoadingIndicator(
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center,
+    ) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(18.dp),
+            color = ZapMuted,
+            strokeWidth = 2.dp,
+        )
+    }
 }
 
 fun isHttpUrl(value: String): Boolean =
