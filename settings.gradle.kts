@@ -16,6 +16,3 @@ dependencyResolutionManagement {
 
 rootProject.name = "zapstore"
 include(":purplequartz")
-include(":app")
-
-project(":app").projectDir = rootDir.parentFile
