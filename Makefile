@@ -17,17 +17,19 @@ install:
 	$(GRADLE) installDebug
 
 run: install
-	@while :; do \
-		$(ADB) shell am force-stop $(PACKAGE); \
-		$(ADB) shell am start -n $(PACKAGE)/$(ACTIVITY); \
+	@$(ADB) shell am force-stop $(PACKAGE)
+	@$(ADB) shell am start -n $(PACKAGE)/$(ACTIVITY)
+	@if [ -t 0 ]; then \
+		while :; do \
 		printf "\nPress r to rebuild and reload, or q to quit: "; \
 		IFS= read -r -n 1 key; \
 		printf "\n"; \
 		case "$$key" in \
 			q) break ;; \
-			r) $(GRADLE) installDebug ;; \
+			r) $(GRADLE) installDebug && $(ADB) shell am force-stop $(PACKAGE) && $(ADB) shell am start -n $(PACKAGE)/$(ACTIVITY) ;; \
 		esac; \
-	done
+		done; \
+	fi
 
 deploy: run
 
