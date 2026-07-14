@@ -356,6 +356,9 @@ Future<bool> _checkForUpdatesInBackground(
             installed: pmState.installed,
             displayNames: displayNames,
           );
+          await BackgroundNativeInstaller.notifyBackgroundUpdatesCompleted(
+            result.updatedAppIds,
+          );
           if (result.hasWork) {
             await _showAutoUpdateResultNotification(result, updatableApps);
           }

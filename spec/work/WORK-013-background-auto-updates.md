@@ -22,6 +22,7 @@ apply updates, with a result notification instead of "updates available".
 - [x] Confirm opt-in before enabling and explain first-run timing and cadence
 - [x] Queue the first auto-update run immediately with an unmetered-network constraint
 - [x] Emulator UAT: schedule constraints, staging, notification, and install prompt
+- [x] Refresh foreground package and Updates-screen state after a headless silent update
 - [ ] Manual UAT on device
 
 ## Decisions
@@ -42,6 +43,10 @@ apply updates, with a result notification instead of "updates available".
   unmetered network. It runs as soon as Wi-Fi is available and does not poll
   while offline; the existing periodic auto-update task remains approximately
   every 24 hours.
+- A headless worker emits a completion-only native event to foreground Flutter
+  engines after silent updates succeed. Foreground state then rescans installed
+  packages and refreshes local catalog categories; install-progress events are
+  never replayed into the foreground state machine.
 
 ## Test Coverage
 

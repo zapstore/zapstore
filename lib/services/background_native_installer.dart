@@ -72,6 +72,31 @@ class BackgroundNativeInstaller {
     }
   }
 
+  /// Notify an attached foreground engine that silent background updates finished.
+  ///
+  /// The foreground package manager will rescan installed packages and refresh
+  /// its local update categories. This does not forward per-install status
+  /// events, which belong only to the headless worker.
+  static Future<void> notifyBackgroundUpdatesCompleted(
+    List<String> updatedAppIds,
+  ) async {
+    if (updatedAppIds.isEmpty) return;
+
+    try {
+      await _channel.invokeMethod<void>('notifyBackgroundUpdatesCompleted', {
+        'updatedAppIds': updatedAppIds,
+      });
+    } catch (e, st) {
+      LogService.I.warn(
+        'could not notify foreground background updates completed',
+        tag: 'background_updates',
+        fields: {'updatedAppIds': updatedAppIds.join(',')},
+        err: e,
+        stack: st,
+      );
+    }
+  }
+
   /// Launch the Android install confirmation dialog for a prepared manual update.
   static Future<bool> launchPreparedInstall({
     required String appId,

@@ -161,6 +161,18 @@ class AndroidPackageManagerPlugin :
         private val awaitResults = ConcurrentHashMap<String, Map<String, Any?>>()
 
         /**
+         * Plugins whose Dart engines are listening for UI install events.
+         *
+         * WorkManager starts a separate headless Flutter engine. Its plugin
+         * instance has no EventChannel listener, while the foreground engine
+         * can remain attached in the same process. Keep listeners per plugin
+         * instead of relying on [instance], which points at the most recently
+         * attached engine.
+         */
+        private val eventListenerPlugins =
+                ConcurrentHashMap.newKeySet<AndroidPackageManagerPlugin>()
+
+        /**
          * Weak reference to the current Activity. Used by launchConfirmDialog to start
          * the PackageInstaller confirmation dialog in the same task as the app, which
          * ensures the dialog appears on top of the current UI. Using Application context
@@ -331,6 +343,35 @@ class AndroidPackageManagerPlugin :
             awaitResults[packageName] = result
             latch.countDown()
         }
+
+        /**
+         * Notify foreground Flutter engines after a headless auto-update
+         * worker has successfully installed one or more packages.
+         *
+         * This intentionally emits a distinct completion event rather than
+         * replaying install progress. The foreground package manager does not
+         * own the background install operation, so replayed status events
+         * would be treated as orphaned sessions.
+         */
+        fun notifyBackgroundUpdatesCompleted(updatedAppIds: List<String>) {
+            if (updatedAppIds.isEmpty()) return
+
+            val event =
+                    mapOf(
+                            "type" to "backgroundUpdatesCompleted",
+                            "updatedAppIds" to updatedAppIds
+                    )
+            for (plugin in eventListenerPlugins) {
+                plugin.mainHandler.post {
+                    val sink = plugin.eventSink ?: return@post
+                    try {
+                        sink.success(event)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to emit background update completion", e)
+                    }
+                }
+            }
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════
@@ -369,6 +410,7 @@ class AndroidPackageManagerPlugin :
         methodChannel.setMethodCallHandler(null)
         eventChannel.setStreamHandler(null)
         eventSink = null
+        eventListenerPlugins.remove(this)
         instance = null
     }
 
@@ -520,6 +562,11 @@ class AndroidPackageManagerPlugin :
 
     override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
         eventSink = events
+        if (events != null) {
+            eventListenerPlugins.add(this)
+        } else {
+            eventListenerPlugins.remove(this)
+        }
         // Flush buffered events (if any) so Dart can reconcile state.
         val sink = eventSink ?: return
         mainHandler.post {
@@ -538,6 +585,7 @@ class AndroidPackageManagerPlugin :
 
     override fun onCancel(arguments: Any?) {
         eventSink = null
+        eventListenerPlugins.remove(this)
     }
 
     private fun emitInstallStatus(
@@ -773,6 +821,12 @@ class AndroidPackageManagerPlugin :
                         c1Proof,
                         result
                 )
+            }
+            "notifyBackgroundUpdatesCompleted" -> {
+                val updatedAppIds =
+                        call.argument<List<String>>("updatedAppIds") ?: emptyList()
+                notifyBackgroundUpdatesCompleted(updatedAppIds)
+                result.success(null)
             }
             else -> result.notImplemented()
         }

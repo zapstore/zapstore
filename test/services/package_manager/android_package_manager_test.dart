@@ -51,4 +51,54 @@ void main() {
 
     expect(scanCalls, 1);
   });
+
+  test(
+    'refreshes installed packages after background update completion',
+    () async {
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      final installedPackagesSynced = Completer<void>();
+
+      messenger.setMockMethodCallHandler(eventChannel, (_) async => null);
+      messenger.setMockMethodCallHandler(methodChannel, (call) async {
+        expect(call.method, 'getInstalledApps');
+        installedPackagesSynced.complete();
+        return [
+          {
+            'packageName': 'place.poster.app',
+            'name': 'Poster',
+            'versionName': '2.0.0',
+            'versionCode': 2,
+            'signatureHashes': <String>[],
+            'canInstallSilently': true,
+          },
+        ];
+      });
+
+      final container = ProviderContainer(
+        overrides: [
+          packageManagerProvider.overrideWith(AndroidPackageManager.new),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final packageManager =
+          container.read(packageManagerProvider.notifier)
+              as AndroidPackageManager;
+      packageManager.handlePlatformEventForTesting({
+        'type': 'backgroundUpdatesCompleted',
+        'updatedAppIds': ['place.poster.app'],
+      });
+      await installedPackagesSynced.future;
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        container
+            .read(packageManagerProvider)
+            .installed['place.poster.app']
+            ?.versionCode,
+        2,
+      );
+    },
+  );
 }

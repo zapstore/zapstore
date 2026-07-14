@@ -8,6 +8,7 @@ import 'package:zapstore/services/c1_proof_verification.dart';
 import 'package:zapstore/services/log_service.dart';
 import 'package:zapstore/services/package_manager/installed_packages_snapshot.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
+import 'package:zapstore/services/updates_service.dart';
 import 'package:zapstore/utils/extensions.dart';
 
 /// Install status values from native side.
@@ -78,6 +79,7 @@ final class AndroidPackageManager extends PackageManager {
   int _syncGeneration = 0;
   Future<void>? _syncInFlight;
   StreamSubscription<dynamic>? _eventSubscription;
+  Future<void>? _backgroundRefreshInFlight;
 
   /// Tracks appIds where we've already attempted to abort orphaned sessions.
   /// Prevents spamming abort calls when native keeps sending events.
@@ -145,6 +147,11 @@ final class AndroidPackageManager extends PackageManager {
         tag: 'package_manager',
         fields: {'event': event.toString()},
       );
+      return;
+    }
+
+    if (event['type'] == 'backgroundUpdatesCompleted') {
+      _refreshAfterBackgroundUpdates();
       return;
     }
 
@@ -368,6 +375,31 @@ final class AndroidPackageManager extends PackageManager {
         clearInstallSlot(appId);
         break;
     }
+  }
+
+  @visibleForTesting
+  void handlePlatformEventForTesting(dynamic event) =>
+      _handleInstallEvent(event);
+
+  /// Reconcile package state after a headless WorkManager engine installs an
+  /// update. The foreground engine did not own that operation, so it receives
+  /// only a completion signal and rebuilds from local sources.
+  void _refreshAfterBackgroundUpdates() {
+    if (_backgroundRefreshInFlight != null) return;
+
+    late final Future<void> refresh;
+    refresh = _refreshAfterBackgroundUpdatesImpl().whenComplete(() {
+      if (identical(_backgroundRefreshInFlight, refresh)) {
+        _backgroundRefreshInFlight = null;
+      }
+    });
+    _backgroundRefreshInFlight = refresh;
+  }
+
+  Future<void> _refreshAfterBackgroundUpdatesImpl() async {
+    await syncInstalledPackages();
+    if (!mounted) return;
+    await ref.read(updatePollerProvider.notifier).refreshFromLocal();
   }
 
   @override
