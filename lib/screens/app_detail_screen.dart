@@ -22,6 +22,11 @@ import 'package:zapstore/widgets/install_button.dart';
 import 'package:zapstore/widgets/screenshots_gallery.dart';
 import 'package:zapstore/widgets/stacked_by_row.dart';
 
+const _detailCatalogSource = LocalAndRemoteSource(
+  relays: 'AppCatalog',
+  stream: true,
+);
+
 class AppDetailScreen extends HookConsumerWidget {
   const AppDetailScreen({super.key, required this.appId, this.authorPubkey});
 
@@ -42,12 +47,15 @@ class AppDetailScreen extends HookConsumerWidget {
         },
         limit: 1,
         and: (a) => {
-          a.latestAsset.query(),
+          a.latestAsset.query(source: _detailCatalogSource),
           a.latestRelease.query(
-            and: (release) => {release.latestMetadata.query()},
+            source: _detailCatalogSource,
+            and: (release) => {
+              release.latestMetadata.query(source: _detailCatalogSource),
+            },
           ),
         },
-        source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
+        source: _detailCatalogSource,
         subscriptionPrefix: 'app-detail-$appId',
       ),
     );
@@ -62,12 +70,15 @@ class AppDetailScreen extends HookConsumerWidget {
         },
         limit: 1,
         and: (a) => {
-          a.latestAsset.query(),
+          a.latestAsset.query(source: _detailCatalogSource),
           a.latestRelease.query(
-            and: (release) => {release.latestMetadata.query()},
+            source: _detailCatalogSource,
+            and: (release) => {
+              release.latestMetadata.query(source: _detailCatalogSource),
+            },
           ),
         },
-        source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
+        source: _detailCatalogSource,
         subscriptionPrefix: 'app-detail-$appId',
       ),
       (previous, next) async {
