@@ -263,6 +263,9 @@ class _StackMigrationWarning extends ConsumerWidget {
     final stacksState = ref.watch(
       query<AppStack>(
         authors: {pubkey},
+        tags: {
+          '#h': {kZapstoreCommunityPubkey},
+        },
         where: (s) => stackNeedsMigration(s, platform),
         source: LocalAndRemoteSource(relays: {'AppCatalog'}, stream: false),
         subscriptionPrefix: 'app-user-stacks-migration-profile',
@@ -1796,7 +1799,7 @@ class _UserStacksSection extends ConsumerWidget {
     final stacksState = ref.watch(
       query<AppStack>(
         authors: {devicePubkey},
-        source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
+        source: const LocalSource(),
         subscriptionPrefix: 'app-profile-user-stacks',
       ),
     );

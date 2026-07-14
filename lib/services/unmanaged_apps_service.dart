@@ -4,6 +4,7 @@ import 'package:collection/collection.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/constants/app_constants.dart';
+import 'package:zapstore/services/device_private_event_service.dart';
 import 'package:zapstore/services/device_key_service.dart';
 import 'package:zapstore/services/log_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
@@ -32,14 +33,15 @@ final _persistedUnmanagedAppsProvider = Provider<_UnmanagedAppsSnapshot?>((
       tags: {
         '#d': {kUnmanagedAppsIdentifier},
       },
-      source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: true),
+      source: const LocalSource(),
       subscriptionPrefix: 'app-unmanaged-apps',
     ),
   );
 
   final stack = switch (stackState) {
-    StorageLoading() || StorageError() => null,
+    StorageLoading(:final models) ||
     StorageData(:final models) => models.firstOrNull,
+    StorageError() => null,
   };
 
   if (stack == null) {
@@ -196,8 +198,9 @@ class UnmanagedAppsPublishException implements Exception {
   String toString() => message;
 }
 
-bool wasUnmanagedStackAccepted(PublishResponse response, String eventId) {
-  return response.results[eventId]?.any((result) => result.accepted) ?? false;
+bool wasUnmanagedStackAccepted(PublishResponse response, AppStack stack) {
+  return response.results[stack.event.id]?.any((result) => result.accepted) ??
+      false;
 }
 
 PartialAppStack createUnmanagedAppsStack({
@@ -220,17 +223,6 @@ Future<void> _writeUnmanagedApps(
   Set<String> appIds, {
   required DateTime createdAt,
 }) async {
-  final devicePubkey = ref.read(devicePubkeyProvider);
-  if (devicePubkey == null) {
-    throw const UnmanagedAppsSaveException('Device key is unavailable.');
-  }
-
-  final signer = ref.read(Signer.signerProvider(devicePubkey));
-  if (signer == null) {
-    throw const UnmanagedAppsSaveException('Device signer is unavailable.');
-  }
-
-  final storage = ref.read(storageNotifierProvider.notifier);
   final platform = ref.read(packageManagerProvider.notifier).platform;
   final partial = createUnmanagedAppsStack(
     appIds: appIds,
@@ -238,19 +230,12 @@ Future<void> _writeUnmanagedApps(
     createdAt: createdAt,
   );
 
-  final signed = await partial.signWith(signer);
-  final saved = await storage.save({signed});
-  if (!saved) {
-    throw const UnmanagedAppsSaveException(
-      'Could not save the unmanaged apps list locally.',
-    );
-  }
-
-  final response = await storage.publish({signed}, relays: 'AppCatalog');
-  if (!wasUnmanagedStackAccepted(response, signed.id)) {
-    throw const UnmanagedAppsPublishException(
-      'Saved locally, but no AppCatalog relay accepted the event.',
-    );
+  try {
+    await ref.read(devicePrivateEventServiceProvider).signAndSave(partial);
+  } on DevicePrivateSaveException catch (error) {
+    throw UnmanagedAppsSaveException(error.message);
+  } on DevicePrivatePublishException catch (error) {
+    throw UnmanagedAppsPublishException(error.message);
   }
 }
 

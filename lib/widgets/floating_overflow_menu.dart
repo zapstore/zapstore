@@ -182,53 +182,10 @@ class FloatingOverflowMenu extends HookConsumerWidget {
     if (a == null) return;
 
     try {
-      final devicePubkey = ref.read(devicePubkeyProvider);
-      if (devicePubkey == null) return;
-
-      final signer = ref.read(Signer.signerProvider(devicePubkey));
-      if (signer == null) return;
-
-      final existingStacks = await ref.storage.query(
-        RequestFilter<AppStack>(
-          authors: {devicePubkey},
-          tags: {
-            '#d': {kAppBookmarksIdentifier},
-          },
-        ).toRequest(),
-        source: const LocalSource(),
-      );
-      final existingStack = existingStacks.firstOrNull;
-
-      final existingAppIds = List<String>.from(
-        existingStack?.privateAppIds ?? [],
-      );
-
-      final appAddressableId = '${a.event.kind}:${a.pubkey}:${a.identifier}';
-
-      if (isCurrentlySaved) {
-        existingAppIds.remove(appAddressableId);
-      } else {
-        if (!existingAppIds.contains(appAddressableId)) {
-          existingAppIds.add(appAddressableId);
-        }
-      }
-
-      final platform = ref.read(packageManagerProvider.notifier).platform;
-      final partialStack = PartialAppStack.withEncryptedApps(
-        name: 'Saved Apps',
-        identifier: kAppBookmarksIdentifier,
-        apps: existingAppIds,
-        platform: platform,
-      );
-
-      final signedStack = await partialStack.signWith(signer);
-      await ref.storage.save({signedStack});
-      ref.storage.publish({signedStack}, relays: 'AppCatalog');
+      final added = await toggleBookmark(ref, a);
 
       if (context.mounted) {
-        context.showInfo(
-          isCurrentlySaved ? 'App removed from saved' : 'App saved',
-        );
+        context.showInfo(added ? 'App saved' : 'App removed from saved');
       }
     } catch (e) {
       if (context.mounted) {

@@ -82,8 +82,10 @@ class StacksNotifier extends PagedSubscriptionNotifier<AppStack> {
     final items = await storage
         .query(
           req,
-          source:
-              const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
+          source: const LocalAndRemoteSource(
+            relays: 'AppCatalog',
+            stream: false,
+          ),
           subscriptionPrefix: 'app-stacks-older',
         )
         .timeout(
@@ -158,6 +160,9 @@ class AppStacksScreen extends HookConsumerWidget {
         ? ref.watch(
             query<AppStack>(
               authors: {signedInPubkey},
+              tags: {
+                '#h': {kZapstoreCommunityPubkey},
+              },
               where: (s) => stackNeedsMigration(s, platform),
               source: LocalAndRemoteSource(
                 relays: {'social', 'AppCatalog'},

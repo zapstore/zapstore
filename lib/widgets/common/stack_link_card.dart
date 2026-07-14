@@ -1,7 +1,4 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/utils/extensions.dart';
@@ -9,12 +6,8 @@ import 'package:zapstore/utils/nostr_route.dart';
 
 /// Shared stack link card used in profile and user screens.
 /// Shows stack name, app count badge, and padlock icon for private stacks.
-class StackLinkCard extends HookConsumerWidget {
-  const StackLinkCard({
-    super.key,
-    required this.stack,
-    this.displayName,
-  });
+class StackLinkCard extends ConsumerWidget {
+  const StackLinkCard({super.key, required this.stack, this.displayName});
 
   final AppStack stack;
   final String? displayName;
@@ -23,35 +16,12 @@ class StackLinkCard extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final appCount = useState<int?>(null);
-
-    useEffect(() {
-      if (_isEncrypted) {
-        Future<void> decrypt() async {
-          final signer = ref.read(Signer.activeSignerProvider);
-          final pubkey = ref.read(Signer.activePubkeyProvider);
-          if (signer == null || pubkey == null) return;
-
-          try {
-            final decrypted = await signer.nip44Decrypt(stack.content, pubkey);
-            final ids = (jsonDecode(decrypted) as List).cast<String>();
-            appCount.value = ids.length;
-          } catch (_) {
-            // Decryption failed, leave count as null
-          }
-        }
-
-        decrypt();
-      } else {
-        // Public stack: count 'a' tags
-        final count = stack.event
-            .getTagSetValues('a')
-            .where((id) => id.startsWith('32267:'))
-            .length;
-        appCount.value = count;
-      }
-      return null;
-    }, [stack.content, stack.id]);
+    final appCount = _isEncrypted
+        ? (stack.isDecrypted ? stack.privateAppIds.length : null)
+        : stack.event
+              .getTagSetValues('a')
+              .where((id) => id.startsWith('32267:'))
+              .length;
 
     final title = displayName ?? stack.name ?? stack.identifier;
 
@@ -72,7 +42,9 @@ class StackLinkCard extends HookConsumerWidget {
             color: Theme.of(context).colorScheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
+              color: Theme.of(
+                context,
+              ).colorScheme.outline.withValues(alpha: 0.2),
             ),
           ),
           child: Row(
@@ -98,18 +70,25 @@ class StackLinkCard extends HookConsumerWidget {
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ],
-                    if (appCount.value != null && appCount.value! > 0) ...[
+                    if (appCount != null && appCount > 0) ...[
                       const SizedBox(width: 8),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.surfaceContainerHigh,
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
-                          '${appCount.value}',
+                          '$appCount',
                           style: context.textTheme.labelSmall?.copyWith(
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
                             fontWeight: FontWeight.w600,
                           ),
                         ),

@@ -94,10 +94,10 @@ packages:
     dependency: "direct main"
     description:
       name: background_downloader
-      sha256: "2d17c211eb9bf1f947f154fb85d1bea96944fb1efb1b0714851caac993c02dc8"
+      sha256: d27fcaf94f738032f1e6db098230799bf31ae7bf184f173fc9a752fcdae75c0e
       url: "https://pub.dev"
     source: hosted
-    version: "9.4.3"
+    version: "9.5.6"
   bech32:
     dependency: transitive
     description:

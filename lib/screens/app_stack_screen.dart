@@ -1,11 +1,9 @@
-import 'dart:convert';
-
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:skeletonizer/skeletonizer.dart';
+import 'package:zapstore/services/device_key_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/nostr_route.dart';
@@ -17,7 +15,7 @@ import 'package:zapstore/widgets/common/time_utils.dart';
 import 'package:zapstore/widgets/floating_overflow_menu.dart';
 import 'package:zapstore/theme.dart';
 
-class AppStackScreen extends HookConsumerWidget {
+class AppStackScreen extends ConsumerWidget {
   const AppStackScreen({super.key, required this.stackId, this.authorPubkey});
 
   final String stackId;
@@ -25,6 +23,8 @@ class AppStackScreen extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isDeviceOwned =
+        authorPubkey != null && authorPubkey == ref.watch(devicePubkeyProvider);
     final stackState = ref.watch(
       query<AppStack>(
         authors: authorPubkey != null ? {authorPubkey!} : null,
@@ -32,10 +32,9 @@ class AppStackScreen extends HookConsumerWidget {
           '#d': {stackId},
         },
         limit: 1,
-        source: const LocalAndRemoteSource(
-          relays: 'AppCatalog',
-          stream: false,
-        ),
+        source: isDeviceOwned
+            ? const LocalSource()
+            : const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
         subscriptionPrefix: 'app-stack-detail-$stackId',
       ),
     );
@@ -65,7 +64,7 @@ class AppStackScreen extends HookConsumerWidget {
 }
 
 /// Intermediate widget that loads apps with their release relationships
-class _AppStackContentWithApps extends HookConsumerWidget {
+class _AppStackContentWithApps extends ConsumerWidget {
   final AppStack stack;
 
   const _AppStackContentWithApps({required this.stack});
@@ -73,62 +72,22 @@ class _AppStackContentWithApps extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isEncrypted = stack.content.isNotEmpty;
-
-    // For encrypted stacks, decrypt content to get app IDs
-    final decryptedAppIds = useState<Set<String>?>(null);
-    final decryptError = useState<String?>(null);
-
-    useEffect(() {
-      if (!isEncrypted) return null;
-
-      Future<void> decrypt() async {
-        final signer = ref.read(Signer.activeSignerProvider);
-        final pubkey = ref.read(Signer.activePubkeyProvider);
-
-        if (signer == null || pubkey == null) {
-          decryptError.value = 'Sign in required to view this stack';
-          return;
-        }
-
-        try {
-          final decrypted = await signer.nip44Decrypt(stack.content, pubkey);
-          final ids = (jsonDecode(decrypted) as List).cast<String>().toSet();
-          decryptedAppIds.value = ids;
-        } catch (e) {
-          decryptError.value = 'Failed to decrypt stack';
-        }
-      }
-
-      decrypt();
-      return null;
-    }, [stack.content]);
-
-    // Handle decrypt error
-    if (decryptError.value != null) {
+    if (isEncrypted && !stack.isDecrypted) {
       return _AppStackContent(
         stack: stack,
         apps: const [],
-        errorMessage: decryptError.value,
-      );
-    }
-
-    // For encrypted stacks, wait for decryption
-    if (isEncrypted && decryptedAppIds.value == null) {
-      return Scaffold(
-        body: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: _AppStackSkeleton(),
-        ),
+        errorMessage:
+            'This private stack could not be decrypted on this device',
       );
     }
 
     // Get app addressable IDs from either tags (public) or decrypted content (private)
     final appAddressableIds = isEncrypted
-        ? decryptedAppIds.value!
+        ? stack.privateAppIds.toSet()
         : stack.event
-            .getTagSetValues('a')
-            .where((id) => id.startsWith('32267:'))
-            .toSet();
+              .getTagSetValues('a')
+              .where((id) => id.startsWith('32267:'))
+              .toSet();
 
     if (appAddressableIds.isEmpty) {
       return _AppStackContent(stack: stack, apps: const []);
@@ -229,8 +188,8 @@ class _NotFoundScaffold extends StatelessWidget {
               Text(
                 'This stack may have been deleted or is not available',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
                 textAlign: TextAlign.center,
               ),
             ],
@@ -316,7 +275,8 @@ class _AppStackContent extends HookConsumerWidget {
                     _EmptyAppsPlaceholder()
                   else
                     ...sortedApps.map(
-                      (app) => AppCard(app: app, showUpdateArrow: app.hasUpdate),
+                      (app) =>
+                          AppCard(app: app, showUpdateArrow: app.hasUpdate),
                     ),
                   // Comments section - hidden for private/encrypted stacks
                   if (stack.content.isEmpty)
@@ -374,9 +334,9 @@ class _StackHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final subtitleColor = Theme.of(context).colorScheme.onSurfaceVariant;
-    final subtitleStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: subtitleColor,
-        );
+    final subtitleStyle = Theme.of(
+      context,
+    ).textTheme.bodySmall?.copyWith(color: subtitleColor);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -434,7 +394,9 @@ class _StackHeader extends StatelessWidget {
                     const SizedBox(width: 4),
                     Text(
                       'Private',
-                      style: subtitleStyle?.copyWith(fontWeight: FontWeight.w600),
+                      style: subtitleStyle?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ],
                 ),
@@ -447,8 +409,8 @@ class _StackHeader extends StatelessWidget {
           Text(
             description,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
         ],
       ],

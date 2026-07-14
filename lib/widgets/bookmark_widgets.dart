@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
-import 'package:zapstore/services/device_key_service.dart';
+import 'package:zapstore/services/bookmarks_service.dart';
 import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/utils/extensions.dart';
@@ -83,54 +83,12 @@ class SaveAppDialog extends HookConsumerWidget {
     bool isCurrentlySaved,
   ) async {
     try {
-      final devicePubkey = ref.read(devicePubkeyProvider);
-      if (devicePubkey == null) return;
-
-      final signer = ref.read(Signer.signerProvider(devicePubkey));
-      if (signer == null) return;
-
-      final existingStacks = await ref.storage.query(
-        RequestFilter<AppStack>(
-          authors: {devicePubkey},
-          tags: {
-            '#d': {kAppBookmarksIdentifier},
-          },
-        ).toRequest(),
-        source: const LocalSource(),
-      );
-      final existingStack = existingStacks.firstOrNull;
-
-      final existingAppIds = List<String>.from(
-        existingStack?.privateAppIds ?? [],
-      );
-
-      final appAddressableId =
-          '${app.event.kind}:${app.pubkey}:${app.identifier}';
-
-      if (isCurrentlySaved) {
-        existingAppIds.remove(appAddressableId);
-      } else {
-        if (!existingAppIds.contains(appAddressableId)) {
-          existingAppIds.add(appAddressableId);
-        }
-      }
-
-      final platform = ref.read(packageManagerProvider.notifier).platform;
-      final partialStack = PartialAppStack.withEncryptedApps(
-        name: 'Saved Apps',
-        identifier: kAppBookmarksIdentifier,
-        apps: existingAppIds,
-        platform: platform,
-      );
-
-      final signedStack = await partialStack.signWith(signer);
-      await ref.storage.save({signedStack});
-      ref.storage.publish({signedStack}, relays: 'AppCatalog');
+      final added = await toggleBookmark(ref, app);
 
       if (context.mounted) {
         Navigator.pop(context);
         context.showInfo(
-          isCurrentlySaved ? 'App removed from saved' : 'App saved privately',
+          added ? 'App saved privately' : 'App removed from saved',
         );
       }
     } catch (e) {

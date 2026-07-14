@@ -29,6 +29,8 @@ cross-device sync.
 - [x] Include the platform tag and require explicit relay acceptance
 - [x] Surface local-save and relay-publish failures to the user
 - [x] Cover accumulation, overlapping writes, timestamps, tags, and failures
+- [x] Load the decrypted local stack before the background AppCatalog refresh completes
+- [x] Use a non-streaming background refresh for the unmanaged-apps query
 - [ ] Preserve catalog metadata for cataloged unmanaged apps in the Unmanaged Apps section
 - [ ] Extend native package scan with Android installer-source metadata
 - [ ] Default apps installed by known third-party app stores to unmanaged
@@ -57,6 +59,9 @@ cross-device sync.
   map when Android reports no changes.
 - Android package enumeration runs on a lifecycle-owned worker so package,
   signature, and installer-source reads cannot block rendering.
+- The unmanaged-apps query uses `LocalAndRemoteSource(stream: false)`: local
+  SQLite state is emitted immediately, while the one-shot AppCatalog query
+  refreshes it in the background without leaving a live subscription.
 
 ## Implementation Notes
 - Android can expose source through `PackageManager.getInstallSourceInfo(packageName)` on API 30+ and `getInstallerPackageName(packageName)` on older APIs.

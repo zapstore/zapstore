@@ -6,7 +6,6 @@ import 'package:zapstore/constants/app_constants.dart';
 import 'package:zapstore/main.dart';
 import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
-import 'package:zapstore/utils/debug_utils.dart';
 
 /// Reusable sign-in prompt widget for dialogs and bottom sheets.
 /// Displays a styled tappable message prompting the user to sign in.
@@ -40,7 +39,6 @@ class SignInPrompt extends HookConsumerWidget {
         isLoading.value = true;
         try {
           await ref.read(amberSignerProvider).signIn();
-          onSignInSuccess(ref.read(refProvider));
         } catch (e) {
           if (context.mounted) {
             context.showError(

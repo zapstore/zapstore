@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
@@ -8,206 +10,289 @@ import 'package:models/models.dart';
 import 'package:zapstore/constants/app_constants.dart';
 import 'package:zapstore/router.dart';
 import 'package:zapstore/services/device_key_service.dart';
+import 'package:zapstore/services/device_private_event_service.dart';
+import 'package:zapstore/services/device_private_sync_service.dart';
 import 'package:zapstore/services/log_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
+import 'package:zapstore/services/trusted_signers_service.dart';
 import 'package:zapstore/widgets/device_backup_dialog.dart';
 
-const kSettingsIdentifier = 'zapstore-settings';
-const _kDeviceBackupsKey = 'deviceBackups';
+const _kSettingsFormatVersion = 2;
+const _kRecoveriesKey = 'recoveries';
+const _kRecoveryAuthorization = 'zapstore-device-key-authorization-v1';
 const _kLegacyInstalledAppsBackupIdentifier = 'zapstore-installed-backup';
 const _kLegacyUnmanagedAppsIdentifier = 'zapstore-ignored-apps';
 
-/// Manages device key backup/restore via the Amber-signed settings event.
-///
-/// The settings event is a single replaceable CustomData (kind 30078) event
-/// with d-tag "zapstore-settings". Its content is always NIP-44 encrypted to
-/// the Amber key and contains a JSON object. Device key backups live under
-/// "deviceBackups": [{"pk": "<hex>", "name": "Pixel 7", "ts": 1715...}, ...].
+/// Manages device-signed settings recovery and legacy Amber stack migration.
 class DeviceBackupService {
-  /// Fetch the existing encrypted settings event for the given Amber pubkey.
-  Future<CustomData?> fetchExistingSettings(Ref ref, String amberPubkey) async {
-    final storage = ref.read(storageNotifierProvider.notifier);
-    final results = await storage.query(
+  final Set<Request<Model<dynamic>>> _activeRequests = {};
+  bool _cancelled = false;
+
+  void beginWork() => _cancelled = false;
+
+  void _checkCancelled() {
+    if (_cancelled) throw const DeviceBackupCancelled();
+  }
+
+  Future<CustomData?> fetchExistingSettings(
+    Ref ref,
+    String devicePubkey,
+  ) async {
+    final results = await _queryTracked(
+      ref,
       RequestFilter<CustomData>(
-        authors: {amberPubkey},
+        authors: {devicePubkey},
         tags: {
           '#d': {kSettingsIdentifier},
         },
+        limit: 1,
       ).toRequest(),
       source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
-      subscriptionPrefix: 'app-settings-check',
+      subscriptionPrefix: 'app-device-settings-upsert',
     );
     return results.firstOrNull;
   }
 
-  /// Decrypt the settings content. Invalid or legacy list content degrades
-  /// gracefully to an empty object.
-  Future<Map<String, dynamic>> decryptSettings(
-    Signer signer,
-    CustomData settings,
-  ) async {
-    try {
-      final decrypted = await signer.nip44Decrypt(
-        settings.content,
-        signer.pubkey,
-      );
-      final decoded = jsonDecode(decrypted);
-      if (decoded is Map<String, dynamic>) return decoded;
-      if (decoded is List) {
-        return {_kDeviceBackupsKey: decoded};
+  /// Finds device-authored settings events recoverable by [amberSigner].
+  Future<List<DeviceBackupInfo>> fetchRecoveryCandidates({
+    required Ref ref,
+    required Signer amberSigner,
+  }) async {
+    _checkCancelled();
+    final request = RequestFilter<CustomData>(
+      tags: {
+        '#d': {kSettingsIdentifier},
+        '#p': {amberSigner.pubkey},
+      },
+      limit: 50,
+    ).toRequest();
+    final settingsEvents = await _queryTracked(
+      ref,
+      request,
+      source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
+      subscriptionPrefix: 'app-device-recovery',
+    );
+
+    final candidates = <String, DeviceBackupInfo>{};
+    for (final settings in settingsEvents) {
+      _checkCancelled();
+      if (!verifySignedEvent(ref, settings.event) ||
+          !Nip13.isValid(
+            settings.event,
+            minimumDifficulty: kPrivateEventPowDifficulty,
+          )) {
+        continue;
       }
-    } catch (_) {
-      return {};
+      final envelope = _decodeSettingsEnvelope(settings.content);
+      if (envelope == null) continue;
+      final recoveries = envelope[_kRecoveriesKey];
+      if (recoveries is! List) continue;
+
+      for (final raw in recoveries.whereType<Map>()) {
+        final recovery = Map<String, dynamic>.from(raw);
+        if (recovery['p'] != amberSigner.pubkey) continue;
+        final ciphertext = recovery['content'];
+        if (ciphertext is! String || ciphertext.isEmpty) continue;
+        try {
+          final plaintext = await amberSigner.nip44Decrypt(
+            ciphertext,
+            settings.pubkey,
+          );
+          _checkCancelled();
+          final capsule = Map<String, dynamic>.from(
+            jsonDecode(plaintext) as Map,
+          );
+          final privateKey = capsule['pk'];
+          final authorization = capsule['authorization'];
+          if (privateKey is! String ||
+              privateKey.length != 64 ||
+              Utils.derivePublicKey(privateKey) != settings.pubkey ||
+              authorization is! Map ||
+              !validateRecoveryAuthorization(
+                ref,
+                Map<String, dynamic>.from(authorization),
+                amberPubkey: amberSigner.pubkey,
+                devicePubkey: settings.pubkey,
+              )) {
+            continue;
+          }
+          candidates[privateKey] = DeviceBackupInfo(
+            privateKeyHex: privateKey,
+            deviceName: capsule['name'] as String? ?? 'Android device',
+            backedUpAt: capsule['ts'] is int
+                ? DateTime.fromMillisecondsSinceEpoch(capsule['ts'] as int)
+                : null,
+          );
+        } catch (_) {
+          // Invalid or unrelated recovery capsules degrade gracefully.
+        }
+      }
     }
-    return {};
+    return candidates.values.toList(growable: false);
   }
 
-  /// Decode device backup entries from an encrypted settings event.
-  Future<List<Map<String, dynamic>>> decryptEntries(
-    Signer signer,
-    CustomData settings,
-  ) async {
-    final decodedSettings = await decryptSettings(signer, settings);
-    final entries = decodedSettings[_kDeviceBackupsKey];
-    if (entries is! List) return [];
-    return entries.whereType<Map<String, dynamic>>().toList();
-  }
-
-  /// Back up the current device key. Reads existing entries, upserts the
-  /// current device, then publishes the updated array.
+  /// Upserts a recovery capsule for the active Amber identity.
   Future<void> backupDeviceKey({
     required Ref ref,
     required Signer amberSigner,
   }) async {
-    final deviceKeyService = ref.read(deviceKeyServiceProvider);
-    final privateKeyHex = await deviceKeyService.getOrCreatePrivateKey();
+    _checkCancelled();
+    final privateEvents = ref.read(devicePrivateEventServiceProvider);
+    final keyService = ref.read(deviceKeyServiceProvider);
+    final privateKeyHex = await keyService.getOrCreatePrivateKey();
+    final devicePubkey = privateEvents.devicePubkey;
+    final existing = await fetchExistingSettings(ref, devicePubkey);
+    final envelope = existing != null
+        ? _decodeSettingsEnvelope(existing.content) ?? _emptySettingsEnvelope()
+        : _emptySettingsEnvelope();
+
     final deviceName = await _getDeviceName();
-
-    // Load and preserve existing encrypted settings fields.
-    final existing = await fetchExistingSettings(ref, amberSigner.pubkey);
-    final settings = existing != null
-        ? await decryptSettings(amberSigner, existing)
-        : <String, dynamic>{};
-    final entries = (settings[_kDeviceBackupsKey] as List?)
-            ?.whereType<Map<String, dynamic>>()
-            .toList() ??
-        <Map<String, dynamic>>[];
-
-    // Upsert this device's entry (match by pk)
-    entries.removeWhere((e) => e['pk'] == privateKeyHex);
-    entries.add({
-      'pk': privateKeyHex,
-      'name': deviceName,
-      'ts': DateTime.now().millisecondsSinceEpoch,
-    });
-    settings[_kDeviceBackupsKey] = entries;
-
-    final encrypted = await amberSigner.nip44Encrypt(
-      jsonEncode(settings),
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final authorizationPartial = PartialNote(_kRecoveryAuthorization);
+    authorizationPartial.event.addTagValue('device', devicePubkey);
+    authorizationPartial.event.addTagValue('p', amberSigner.pubkey);
+    final authorization = await authorizationPartial.signWith(amberSigner);
+    _checkCancelled();
+    final capsule = await privateEvents.encryptFor(
+      jsonEncode({
+        'pk': privateKeyHex,
+        'name': deviceName,
+        'ts': timestamp,
+        'authorization': authorization.event.toMap(),
+      }),
       amberSigner.pubkey,
     );
+    _checkCancelled();
+
+    final recoveries =
+        (envelope[_kRecoveriesKey] as List?)
+            ?.whereType<Map>()
+            .map((entry) => Map<String, dynamic>.from(entry))
+            .toList() ??
+        <Map<String, dynamic>>[];
+    recoveries.removeWhere((entry) => entry['p'] == amberSigner.pubkey);
+    recoveries.add({
+      'p': amberSigner.pubkey,
+      'content': capsule,
+      'ts': timestamp,
+    });
+    envelope[_kRecoveriesKey] = recoveries;
 
     final partial = PartialCustomData(
       identifier: kSettingsIdentifier,
-      content: encrypted,
+      content: jsonEncode(envelope),
     );
-
-    final signed = await partial.signWith(amberSigner);
-    final storage = ref.read(storageNotifierProvider.notifier);
-    await storage.save({signed});
-    storage.publish({signed}, relays: 'AppCatalog');
+    for (final recovery in recoveries) {
+      final pubkey = recovery['p'];
+      if (pubkey is String) partial.event.addTagValue('p', pubkey);
+    }
+    partial.event.setTagValue('format', 'zapstore-device-settings-v2');
+    partial.event.createdAt = privateEvents.nextReplaceableTimestamp(
+      existing?.createdAt,
+    );
+    await privateEvents.signAndSave(partial);
   }
 
-  /// Move Amber-authored encrypted AppStacks to equivalent device-key stacks.
-  ///
-  /// Existing device-key stacks are merged, not overwritten. Legacy identifiers
-  /// from the pre-device-key branch are normalized to the current d-tags.
+  /// Merges every Amber-authored encrypted AppStack into device ownership.
   Future<bool> migratePrivateStacksToDeviceKey({
     required Ref ref,
     required Signer amberSigner,
   }) async {
-    final keyService = ref.read(deviceKeyServiceProvider);
-    final devicePubkey = ref.read(devicePubkeyProvider);
-    if (devicePubkey == null) return false;
-
-    if (await keyService.hasPrivateStacksMigrated(
-      amberSigner.pubkey,
-      devicePubkey,
-    )) {
-      return true;
-    }
-
-    final deviceSigner = ref.read(Signer.signerProvider(devicePubkey));
-    if (deviceSigner == null) return false;
-
-    final storage = ref.read(storageNotifierProvider.notifier);
-    final platform = ref.read(packageManagerProvider.notifier).platform;
-
-    final amberStacks = await storage.query(
-      RequestFilter<AppStack>(authors: {amberSigner.pubkey}).toRequest(),
+    _checkCancelled();
+    final request = RequestFilter<AppStack>(
+      authors: {amberSigner.pubkey},
+    ).toRequest();
+    final amberStacks = await _queryTracked(
+      ref,
+      request,
       source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
       subscriptionPrefix: 'app-private-stack-migration',
     );
 
-    final encryptedAmberStacks = amberStacks
-        .where((stack) => stack.content.isNotEmpty)
-        .toList();
-    if (encryptedAmberStacks.isEmpty) {
-      return false;
-    }
-
+    final privateEvents = ref.read(devicePrivateEventServiceProvider);
+    final storage = ref.read(storageNotifierProvider.notifier);
+    final platform = ref.read(packageManagerProvider.notifier).platform;
     var migratedAny = false;
-    for (final stack in encryptedAmberStacks) {
-      final identifier = _deviceIdentifierFor(stack.identifier);
-      final oldAppIds = stack.privateAppIds;
-      if (oldAppIds.isEmpty) continue;
 
-      final existingDeviceStacks = await storage.query(
+    for (final stack in amberStacks.where(
+      (stack) => stack.content.isNotEmpty,
+    )) {
+      _checkCancelled();
+      if (!verifySignedEvent(ref, stack.event)) {
+        LogService.I.warn(
+          'ignored unverified Amber private stack',
+          tag: 'backup',
+          fields: {'identifier': stack.identifier},
+        );
+        continue;
+      }
+      final oldAppIds = await decryptAmberStackAppIds(amberSigner, stack);
+      _checkCancelled();
+      if (oldAppIds == null) {
+        LogService.I.warn(
+          'could not decrypt Amber private stack; migration remains retryable',
+          tag: 'backup',
+          fields: {'identifier': stack.identifier},
+        );
+        continue;
+      }
+
+      final identifier = _deviceIdentifierFor(stack.identifier);
+      final existing = (await storage.query(
         RequestFilter<AppStack>(
-          authors: {devicePubkey},
+          authors: {privateEvents.devicePubkey},
           tags: {
             '#d': {identifier},
           },
+          limit: 1,
         ).toRequest(),
         source: const LocalSource(),
         subscriptionPrefix: 'app-private-stack-migration-device',
-      );
-      final existingAppIds =
-          existingDeviceStacks.firstOrNull?.privateAppIds ?? const <String>[];
-      final mergedAppIds = [
-        ...existingAppIds,
-        ...oldAppIds.where((id) => !existingAppIds.contains(id)),
-      ];
+      )).firstOrNull;
+      if (existing != null) {
+        await existing.prepareAfterLoading(ref);
+        _checkCancelled();
+        if (!existing.isDecrypted) {
+          LogService.I.warn(
+            'could not decrypt device stack; migration remains retryable',
+            tag: 'backup',
+            fields: {'identifier': identifier},
+          );
+          continue;
+        }
+      }
 
-      if (mergedAppIds.length == existingAppIds.length) continue;
+      final merged = LinkedHashSet<String>.of(
+        existing?.privateAppIds ?? const [],
+      )..addAll(oldAppIds);
+      if (existing != null &&
+          merged.length == existing.privateAppIds.toSet().length) {
+        continue;
+      }
 
       final partial = PartialAppStack.withEncryptedApps(
         name: stack.name ?? identifier,
         identifier: identifier,
-        apps: mergedAppIds,
-        platform: platform,
+        description: stack.description,
+        apps: merged.toList(growable: false),
+        platform: stack.platform ?? platform,
       );
-
-      final signed = await partial.signWith(deviceSigner);
-      await storage.save({signed});
-      storage.publish({signed}, relays: 'AppCatalog');
+      partial.event.createdAt = privateEvents.nextReplaceableTimestamp(
+        existing?.createdAt,
+      );
+      await privateEvents.signAndSave(partial);
       migratedAny = true;
     }
 
-    await keyService.markPrivateStacksMigrated(
-      amberSigner.pubkey,
-      devicePubkey,
-    );
     if (migratedAny) {
       LogService.I.info(
         'migrated Amber private stacks to device key',
         tag: 'backup',
       );
     }
-    return true;
+    return migratedAny;
   }
 
-  /// Replace the stored device key and register the restored signer immediately.
   Future<void> restoreDeviceKey({
     required Ref ref,
     required String privateKeyHex,
@@ -218,20 +303,114 @@ class DeviceBackupService {
     ref.read(devicePubkeyProvider.notifier).state = restoredSigner.pubkey;
   }
 
+  Future<List<E>> _queryTracked<E extends Model<dynamic>>(
+    Ref ref,
+    Request<E> request, {
+    required Source source,
+    required String subscriptionPrefix,
+  }) async {
+    _checkCancelled();
+    _activeRequests.add(request);
+    try {
+      final results = await ref
+          .read(storageNotifierProvider.notifier)
+          .query(
+            request,
+            source: source,
+            subscriptionPrefix: subscriptionPrefix,
+          );
+      _checkCancelled();
+      return results;
+    } finally {
+      _activeRequests.remove(request);
+    }
+  }
+
+  void cancelCurrentWork(Ref ref) {
+    _cancelled = true;
+    final storage = ref.read(storageNotifierProvider.notifier);
+    for (final request in _activeRequests.toList(growable: false)) {
+      unawaited(storage.cancel(request));
+    }
+    _activeRequests.clear();
+    ref.read(devicePrivateEventServiceProvider).cancelMining();
+  }
+
   Future<String> _getDeviceName() async {
     try {
       if (Platform.isAndroid) {
-        final info = await DeviceInfoPlugin().androidInfo;
-        return info.model;
+        return (await DeviceInfoPlugin().androidInfo).model;
       }
     } catch (_) {}
     return 'Android device';
   }
 }
 
+/// Explicitly decrypts an imperatively queried Amber stack.
+///
+/// Imperative storage queries do not run EncryptableModel preparation, so
+/// migration must not rely on [AppStack.privateAppIds] being populated.
+Future<List<String>?> decryptAmberStackAppIds(
+  Signer amberSigner,
+  AppStack stack,
+) async {
+  try {
+    final plaintext = await amberSigner.nip44Decrypt(
+      stack.content,
+      amberSigner.pubkey,
+    );
+    final decoded = jsonDecode(plaintext);
+    return decoded is List ? decoded.whereType<String>().toList() : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 final deviceBackupServiceProvider = Provider<DeviceBackupService>(
   (ref) => DeviceBackupService(),
 );
+
+Map<String, dynamic> _emptySettingsEnvelope() => {
+  'version': _kSettingsFormatVersion,
+  _kRecoveriesKey: <Map<String, dynamic>>[],
+};
+
+Map<String, dynamic>? _decodeSettingsEnvelope(String content) {
+  try {
+    final decoded = jsonDecode(content);
+    if (decoded is! Map) return null;
+    final envelope = Map<String, dynamic>.from(decoded);
+    if (envelope['version'] != _kSettingsFormatVersion) return null;
+    return envelope;
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Verifies that Amber explicitly authorized the recovered device pubkey.
+bool validateRecoveryAuthorization(
+  Ref ref,
+  Map<String, dynamic> authorization, {
+  required String amberPubkey,
+  required String devicePubkey,
+}) {
+  try {
+    if (authorization['kind'] != 1 ||
+        authorization['pubkey'] != amberPubkey ||
+        authorization['content'] != _kRecoveryAuthorization) {
+      return false;
+    }
+    final event = PartialEvent<Model<dynamic>>(authorization, 1);
+    if (!event.getTagSetValues('device').contains(devicePubkey) ||
+        !event.getTagSetValues('p').contains(amberPubkey) ||
+        authorization['id'] != Utils.getEventId(event, amberPubkey)) {
+      return false;
+    }
+    return ref.read(verifierProvider).verify(authorization);
+  } catch (_) {
+    return false;
+  }
+}
 
 String _deviceIdentifierFor(String identifier) {
   return switch (identifier) {
@@ -241,7 +420,6 @@ String _deviceIdentifierFor(String identifier) {
   };
 }
 
-/// Decoded device entry for display in the restore dialog.
 class DeviceBackupInfo {
   DeviceBackupInfo({
     required this.privateKeyHex,
@@ -254,80 +432,74 @@ class DeviceBackupInfo {
   final DateTime? backedUpAt;
 }
 
-/// Called after successful Amber sign-in. Automatically backs up the device
-/// key, then shows a restore dialog only if other device entries exist.
+final class DeviceBackupCancelled implements Exception {
+  const DeviceBackupCancelled();
+}
+
+/// Runs recovery, migration, and backup after every successful Amber sign-in.
 Future<void> maybeOfferDeviceBackup(Ref ref) async {
   final amberPubkey = ref.read(Signer.activePubkeyProvider);
-  if (amberPubkey == null) return;
+  final amberSigner = ref.read(Signer.activeSignerProvider);
+  if (amberPubkey == null || amberSigner == null) return;
 
   final keyService = ref.read(deviceKeyServiceProvider);
-
   final service = ref.read(deviceBackupServiceProvider);
-  final signer = ref.read(Signer.activeSignerProvider);
-  if (signer == null) return;
 
   try {
-    final hasBackupBeenOffered = await keyService.hasBackupBeenOffered(
-      amberPubkey,
-    );
-    final backup = hasBackupBeenOffered
-        ? null
-        : await service.fetchExistingSettings(ref, amberPubkey);
-
-    final entries = backup != null
-        ? await service.decryptEntries(signer, backup)
-        : const <Map<String, dynamic>>[];
-    final currentPrivateKey = await keyService.getOrCreatePrivateKey();
-
-    final otherDevices = entries
-        .where((e) => e['pk'] != currentPrivateKey)
-        .map(
-          (e) => DeviceBackupInfo(
-            privateKeyHex: e['pk'] as String,
-            deviceName: e['name'] as String? ?? 'Unknown device',
-            backedUpAt: e['ts'] != null
-                ? DateTime.fromMillisecondsSinceEpoch(e['ts'] as int)
-                : null,
-          ),
-        )
-        .toList();
-
-    if (otherDevices.isNotEmpty) {
-      final context = rootNavigatorKey.currentState?.overlay?.context;
-      if (context == null || !context.mounted) {
-        return;
-      }
-
-      final selectedBackup = await showDialog<DeviceBackupInfo>(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => DeviceBackupRestoreDialog(backups: otherDevices),
+    final alreadyOffered = await keyService.hasBackupBeenOffered(amberPubkey);
+    List<DeviceBackupInfo> candidates = const [];
+    try {
+      candidates = await service.fetchRecoveryCandidates(
+        ref: ref,
+        amberSigner: amberSigner,
       );
+    } catch (error, stack) {
+      LogService.I.warn(
+        'device recovery query failed',
+        tag: 'backup',
+        err: error,
+        stack: stack,
+      );
+    }
 
-      if (selectedBackup != null) {
-        await service.restoreDeviceKey(
-          ref: ref,
-          privateKeyHex: selectedBackup.privateKeyHex,
+    final currentPrivateKey = await keyService.getOrCreatePrivateKey();
+    final otherDevices = candidates
+        .where((entry) => entry.privateKeyHex != currentPrivateKey)
+        .toList(growable: false);
+
+    if (!alreadyOffered && otherDevices.isNotEmpty) {
+      final context = rootNavigatorKey.currentState?.overlay?.context;
+      if (context != null && context.mounted) {
+        final selected = await showDialog<DeviceBackupInfo>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => DeviceBackupRestoreDialog(backups: otherDevices),
         );
+        if (selected != null) {
+          await service.restoreDeviceKey(
+            ref: ref,
+            privateKeyHex: selected.privateKeyHex,
+          );
+          await ref.read(devicePrivateSyncProvider.notifier).syncRestoredKey();
+        }
       }
     }
 
     await service.migratePrivateStacksToDeviceKey(
       ref: ref,
-      amberSigner: signer,
+      amberSigner: amberSigner,
     );
-
-    if (hasBackupBeenOffered) return;
-
-    // Always back up whichever device key is active after optional restore.
-    await service.backupDeviceKey(ref: ref, amberSigner: signer);
-    await keyService.markBackupOffered(amberPubkey);
-  } catch (e, st) {
+    await ref.read(trustServiceProvider).migrateLegacyAmberRecord(amberSigner);
+    await service.backupDeviceKey(ref: ref, amberSigner: amberSigner);
+    if (!alreadyOffered) {
+      await keyService.markBackupOffered(amberPubkey);
+    }
+  } catch (error, stack) {
     LogService.I.warn(
-      'device backup/restore check failed',
+      'device recovery/migration/backup failed',
       tag: 'backup',
-      err: e,
-      stack: st,
+      err: error,
+      stack: stack,
     );
   }
 }

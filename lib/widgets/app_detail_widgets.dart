@@ -6,7 +6,6 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 import 'package:zapstore/services/bookmarks_service.dart';
-import 'package:zapstore/services/device_key_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/theme.dart';
@@ -117,12 +116,8 @@ class SocialActionsRow extends HookConsumerWidget {
               Expanded(
                 flex: 16,
                 child: FilledButton(
-                  onPressed: () => _handleSaveApp(
-                    context,
-                    ref,
-                    app,
-                    isPrivatelySaved,
-                  ),
+                  onPressed: () =>
+                      _handleSaveApp(context, ref, app, isPrivatelySaved),
                   style: FilledButton.styleFrom(
                     padding: EdgeInsets.zero,
                     backgroundColor: isPrivatelySaved
@@ -142,9 +137,7 @@ class SocialActionsRow extends HookConsumerWidget {
                     ),
                   ),
                   child: Icon(
-                    isPrivatelySaved
-                        ? Icons.bookmark
-                        : Icons.bookmark_border,
+                    isPrivatelySaved ? Icons.bookmark : Icons.bookmark_border,
                     size: 20,
                   ),
                 ),
@@ -178,6 +171,7 @@ class SocialActionsRow extends HookConsumerWidget {
       ],
     );
   }
+
   Future<void> _handleSaveApp(
     BuildContext context,
     WidgetRef ref,
@@ -185,53 +179,11 @@ class SocialActionsRow extends HookConsumerWidget {
     bool isPrivatelySaved,
   ) async {
     try {
-      final devicePubkey = ref.read(devicePubkeyProvider);
-      if (devicePubkey == null) return;
-
-      final signer = ref.read(Signer.signerProvider(devicePubkey));
-      if (signer == null) return;
-
-      final existingStacks = await ref.storage.query(
-        RequestFilter<AppStack>(
-          authors: {devicePubkey},
-          tags: {
-            '#d': {kAppBookmarksIdentifier},
-          },
-        ).toRequest(),
-        source: const LocalSource(),
-      );
-      final existingStack = existingStacks.firstOrNull;
-
-      final existingAppIds = List<String>.from(
-        existingStack?.privateAppIds ?? [],
-      );
-
-      final appAddressableId =
-          '${app.event.kind}:${app.pubkey}:${app.identifier}';
-
-      if (isPrivatelySaved) {
-        existingAppIds.remove(appAddressableId);
-      } else {
-        if (!existingAppIds.contains(appAddressableId)) {
-          existingAppIds.add(appAddressableId);
-        }
-      }
-
-      final platform = ref.read(packageManagerProvider.notifier).platform;
-      final partialStack = PartialAppStack.withEncryptedApps(
-        name: 'Saved Apps',
-        identifier: kAppBookmarksIdentifier,
-        apps: existingAppIds,
-        platform: platform,
-      );
-
-      final signedStack = await partialStack.signWith(signer);
-      await ref.storage.save({signedStack});
-      ref.storage.publish({signedStack}, relays: 'AppCatalog');
+      final added = await toggleBookmark(ref, app);
 
       if (context.mounted) {
         context.showInfo(
-          isPrivatelySaved ? 'App removed from saved' : 'App saved privately',
+          added ? 'App saved privately' : 'App removed from saved',
         );
       }
     } catch (e) {
@@ -240,8 +192,6 @@ class SocialActionsRow extends HookConsumerWidget {
       }
     }
   }
-
-
 
   Future<void> _showAddToStackDialog(BuildContext context, App app) async {
     await showBaseDialog(

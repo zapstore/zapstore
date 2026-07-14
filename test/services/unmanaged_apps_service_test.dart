@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/constants/app_constants.dart';
 import 'package:zapstore/services/unmanaged_apps_service.dart';
@@ -118,23 +119,53 @@ void main() {
   });
 
   group('wasUnmanagedStackAccepted', () {
-    test('requires explicit acceptance for the stack event', () {
-      final accepted = PublishResponse()
-        ..addEvent(
-          'stack-id',
-          relayUrl: 'wss://relay.zapstore.dev',
-          accepted: true,
+    test(
+      'uses the raw event ID for a parameterized replaceable stack',
+      () async {
+        final container = ProviderContainer(
+          overrides: [
+            storageNotifierProvider.overrideWith(DummyStorageNotifier.new),
+          ],
         );
-      final rejected = PublishResponse()
-        ..addEvent(
-          'stack-id',
-          relayUrl: 'wss://relay.zapstore.dev',
-          accepted: false,
-        );
+        addTearDown(container.dispose);
+        await container
+            .read(storageNotifierProvider.notifier)
+            .initialize(StorageConfiguration());
+        final stack = createUnmanagedAppsStack(
+          appIds: {'app.one'},
+          platform: 'android-arm64-v8a',
+          createdAt: DateTime.utc(2026, 7, 10, 20),
+        ).dummySign('a' * 64);
 
-      expect(wasUnmanagedStackAccepted(accepted, 'stack-id'), isTrue);
-      expect(wasUnmanagedStackAccepted(rejected, 'stack-id'), isFalse);
-      expect(wasUnmanagedStackAccepted(PublishResponse(), 'stack-id'), isFalse);
-    });
+        expect(stack.id, isNot(stack.event.id));
+
+        final accepted = PublishResponse()
+          ..addEvent(
+            stack.event.id,
+            relayUrl: 'wss://relay.zapstore.dev',
+            accepted: true,
+          );
+        final rejected = PublishResponse()
+          ..addEvent(
+            stack.event.id,
+            relayUrl: 'wss://relay.zapstore.dev',
+            accepted: false,
+          );
+        final addressableIdResponse = PublishResponse()
+          ..addEvent(
+            stack.id,
+            relayUrl: 'wss://relay.zapstore.dev',
+            accepted: true,
+          );
+
+        expect(wasUnmanagedStackAccepted(accepted, stack), isTrue);
+        expect(wasUnmanagedStackAccepted(rejected, stack), isFalse);
+        expect(
+          wasUnmanagedStackAccepted(addressableIdResponse, stack),
+          isFalse,
+        );
+        expect(wasUnmanagedStackAccepted(PublishResponse(), stack), isFalse);
+      },
+    );
   });
 }

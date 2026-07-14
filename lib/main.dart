@@ -26,7 +26,9 @@ import 'package:zapstore/services/package_manager/dummy_package_manager.dart';
 import 'package:zapstore/services/deep_link_service.dart';
 import 'package:zapstore/services/device_backup_service.dart';
 import 'package:zapstore/services/device_key_service.dart';
+import 'package:zapstore/services/device_private_sync_service.dart';
 import 'package:zapstore/services/app_catalog_relay_service.dart';
+import 'package:zapstore/utils/debug_utils.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/widgets/breathing_logo.dart';
 
@@ -168,6 +170,13 @@ class ZapstoreApp extends HookConsumerWidget {
 
     // Watch initialization state for error overlay display
     final initState = ref.watch(appInitializationProvider);
+
+    // One coordinator handles every successful Amber key transition, including
+    // auto sign-in and every manual sign-in entry point.
+    ref.listen<String?>(Signer.activePubkeyProvider, (previous, next) {
+      if (next == null || next == previous) return;
+      onSignInSuccess(ref.read(refProvider));
+    });
 
     // Listen to app lifecycle and check for updates when app regains focus
     useEffect(() {
@@ -402,6 +411,9 @@ final storageReadyProvider = FutureProvider<void>((ref) async {
 final appInitializationProvider = FutureProvider<void>((ref) async {
   await ref.read(storageReadyProvider.future);
 
+  // Private relay ingestion is one-shot, non-streaming, and never gates UI.
+  unawaited(ref.read(devicePrivateSyncProvider.notifier).start());
+
   // Initialize device capabilities (used for dynamic download concurrency)
   await DeviceCapabilitiesCache.initialize();
 
@@ -464,7 +476,6 @@ Future<void> _maybeCopySeedDatabase(String dbPath, {bool skip = false}) async {
 Future<void> _attemptAutoSignIn(Ref ref) async {
   try {
     await ref.read(amberSignerProvider).attemptAutoSignIn();
-    onSignInSuccess(ref);
   } catch (e, st) {
     // Auto sign-in fails on first install — that's fine, just continue.
     // Logged at debug because this is expected for new users.
@@ -486,6 +497,7 @@ Future<void> _attemptAutoSignIn(Ref ref) async {
 void onSignInSuccess(Ref ref) {
   final pubkey = ref.read(Signer.activePubkeyProvider);
   if (pubkey == null) return;
+  ref.read(deviceBackupServiceProvider).beginWork();
 
   final storage =
       ref.read(storageNotifierProvider.notifier) as PurplebaseStorageNotifier;
@@ -562,6 +574,10 @@ class _AppLifecycleObserver with WidgetsBindingObserver {
       unawaited(_ref.read(appCatalogRelayServiceProvider).checkForUpdates());
     } else if (state == AppLifecycleState.paused) {
       _ref.read(appCatalogRelayServiceProvider).cancelCurrentCheck();
+      _ref.read(devicePrivateSyncProvider.notifier).cancel();
+      _ref
+          .read(deviceBackupServiceProvider)
+          .cancelCurrentWork(_ref.read(refProvider));
       notifier.disconnect();
       // Flush any pending log entries to disk before the OS may freeze
       // or kill us, so diagnostics survive backgrounding.

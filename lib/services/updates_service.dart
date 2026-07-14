@@ -8,6 +8,7 @@ import 'package:zapstore/services/catalog_fetcher.dart';
 import 'package:zapstore/services/log_service.dart';
 import 'package:zapstore/services/deletion_processor.dart';
 import 'package:zapstore/services/device_key_service.dart';
+import 'package:zapstore/services/device_private_event_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/services/unmanaged_apps_service.dart';
 import 'package:zapstore/services/settings_service.dart';
@@ -289,9 +290,6 @@ class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
     final settings = await ref.read(settingsServiceProvider).load();
     if (!settings.installedAppsBackupEnabled) return;
 
-    final signer = ref.read(Signer.signerProvider(devicePubkey));
-    if (signer == null) return;
-
     final pmNotifier = ref.read(packageManagerProvider.notifier);
     final installed = ref.read(packageManagerProvider).installed;
     final platform = pmNotifier.platform;
@@ -324,9 +322,9 @@ class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
         platform: platform,
       );
 
-      final signed = await partialStack.signWith(signer);
-      await storage.save({signed});
-      await storage.publish({signed}, relays: 'AppCatalog');
+      await ref
+          .read(devicePrivateEventServiceProvider)
+          .signAndSave(partialStack);
       _lastBackedUpIds = appIds;
     } catch (e, st) {
       LogService.I.warn(
@@ -387,9 +385,11 @@ final categorizedUpdatesProvider = Provider<CategorizedUpdates>((ref) {
   final unmanagedIds = ref.watch(unmanagedAppsProvider);
 
   final catalogedIds = pollerState.catalogedIds;
+  // Keep the local App query independent of the unmanaged set. Otherwise a
+  // toggle changes its filter, briefly replaces the cached result with a
+  // loading query, and makes the updates list visibly jump.
   final catalogedInstalledIds = installed.keys
       .where(catalogedIds.contains)
-      .where((id) => !unmanagedIds.contains(id))
       .toSet();
 
   if (catalogedInstalledIds.isEmpty) {
@@ -457,7 +457,7 @@ final categorizedUpdatesProvider = Provider<CategorizedUpdates>((ref) {
 
   for (final app in apps) {
     final pkg = installed[app.identifier];
-    if (pkg == null) continue;
+    if (pkg == null || unmanagedIds.contains(app.identifier)) continue;
 
     if (app.hasUpdate) {
       if (pkg.canInstallSilently) {
