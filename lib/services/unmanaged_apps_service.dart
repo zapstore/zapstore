@@ -231,7 +231,9 @@ Future<void> _writeUnmanagedApps(
   );
 
   try {
-    await ref.read(devicePrivateEventServiceProvider).signAndSave(partial);
+    await ref
+        .read(devicePrivateEventServiceProvider)
+        .saveDraftAndQueue(partial);
   } on DevicePrivateSaveException catch (error) {
     throw UnmanagedAppsSaveException(error.message);
   } on DevicePrivatePublishException catch (error) {

@@ -10,6 +10,7 @@ import 'package:zapstore/constants/app_constants.dart';
 import 'package:zapstore/router.dart';
 import 'package:zapstore/services/app_restart_service.dart';
 import 'package:zapstore/services/device_key_service.dart';
+import 'package:zapstore/services/device_private_event_service.dart';
 import 'package:zapstore/services/log_service.dart';
 
 const _handoffKey = 'pending_app_catalog_relay_event';
@@ -88,7 +89,11 @@ class AppCatalogRelayService {
     _applyRelayGroup(relays);
 
     if (restored != null) {
-      unawaited(_publish(restored));
+      unawaited(
+        ref
+            .read(devicePrivateEventServiceProvider)
+            .queueExistingDraft(restored),
+      );
     }
   }
 
@@ -102,15 +107,13 @@ class AppCatalogRelayService {
     if (devicePubkey == null) {
       throw StateError('Device key is not ready');
     }
-    final signer = ref.read(Signer.signerProvider(devicePubkey));
-    if (signer == null) {
-      throw StateError('Device signer is not available');
+    final draft = await ref
+        .read(devicePrivateEventServiceProvider)
+        .saveDraftAndQueue(PartialAppCatalogRelayList(relays: relays));
+    if (draft is! AppCatalogRelayList) {
+      throw StateError('Could not save the local AppCatalog relay-list draft.');
     }
-
-    final event = await PartialAppCatalogRelayList(
-      relays: relays,
-    ).signWith(signer);
-    await _stageAndRestart(event);
+    await _stageAndRestart(draft);
   }
 
   /// Checks only the hardcoded Zapstore relay for this device's list.
@@ -383,8 +386,8 @@ class AppCatalogRelayService {
   Future<void> _publish(AppCatalogRelayList event) async {
     try {
       await ref
-          .read(storageNotifierProvider.notifier)
-          .publish({event}, relays: const {kDefaultRelay});
+          .read(devicePrivateEventServiceProvider)
+          .queueExistingDraft(event);
     } catch (error, stack) {
       LogService.I.warn(
         'app catalog relay publish failed',

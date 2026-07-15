@@ -324,7 +324,7 @@ class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
 
       await ref
           .read(devicePrivateEventServiceProvider)
-          .signAndSave(partialStack);
+          .saveDraftAndQueue(partialStack);
       _lastBackedUpIds = appIds;
     } catch (e, st) {
       LogService.I.warn(

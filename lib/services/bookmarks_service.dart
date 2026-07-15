@@ -144,7 +144,7 @@ Future<void> _writeBookmarks(
     platform: platform,
   );
   partial.event.createdAt = createdAt;
-  await ref.read(devicePrivateEventServiceProvider).signAndSave(partial);
+  await ref.read(devicePrivateEventServiceProvider).saveDraftAndQueue(partial);
 }
 
 Future<bool> toggleBookmark(WidgetRef ref, App app) {
