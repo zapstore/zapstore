@@ -28,11 +28,11 @@ const kInstalledAppsIdentifier = 'zapstore-installed-apps';
 /// Identifier for the encrypted stack of apps the user chose as unmanaged
 const kUnmanagedAppsIdentifier = 'zapstore-unmanaged-apps';
 
-/// Identifier for device-private settings and recovery capsules
-const kSettingsIdentifier = 'zapstore-settings';
+/// Identifier for the device-owned encrypted portable settings record.
+const kDeviceStateIdentifier = 'zapstore-device-state';
 
-/// Identifier for the local encrypted trusted-signer preference
-const kTrustedSignersIdentifier = 'trusted-signers';
+/// Identifier for the Amber-owned encrypted device-key backup record.
+const kDeviceKeyBackupIdentifier = 'zapstore-device-key-backup';
 
 /// Authoritative relay for NIP-82 software application events (kind 32267).
 /// Used as the relay hint in naddr encoding so other clients can resolve app events.

@@ -26,7 +26,9 @@ import 'package:zapstore/services/package_manager/dummy_package_manager.dart';
 import 'package:zapstore/services/deep_link_service.dart';
 import 'package:zapstore/services/device_backup_service.dart';
 import 'package:zapstore/services/device_key_service.dart';
+import 'package:zapstore/services/device_private_event_service.dart';
 import 'package:zapstore/services/device_private_sync_service.dart';
+import 'package:zapstore/services/device_state_service.dart';
 import 'package:zapstore/services/app_catalog_relay_service.dart';
 import 'package:zapstore/utils/debug_utils.dart';
 import 'package:zapstore/utils/extensions.dart';
@@ -193,6 +195,9 @@ class ZapstoreApp extends HookConsumerWidget {
       // Check initial connectivity state
       connectivity.checkConnectivity().then((results) {
         notifier.connect();
+        unawaited(
+          ref.read(devicePrivateEventServiceProvider).processPendingEvents(),
+        );
         unawaited(ref.read(appCatalogRelayServiceProvider).checkForUpdates());
       });
 
@@ -200,6 +205,9 @@ class ZapstoreApp extends HookConsumerWidget {
       subscription = connectivity.onConnectivityChanged.listen((results) {
         notifier.connect();
         if (results.any((result) => result != ConnectivityResult.none)) {
+          unawaited(
+            ref.read(devicePrivateEventServiceProvider).processPendingEvents(),
+          );
           unawaited(ref.read(appCatalogRelayServiceProvider).checkForUpdates());
         }
       });
@@ -411,8 +419,13 @@ final storageReadyProvider = FutureProvider<void>((ref) async {
 final appInitializationProvider = FutureProvider<void>((ref) async {
   await ref.read(storageReadyProvider.future);
 
+  // There is no bootstrap publication. Mark portable state usable before
+  // background draft mining and relay work begin.
+  await ref.read(deviceStateProvider.notifier).bootstrap();
+
   // Private relay ingestion is one-shot, non-streaming, and never gates UI.
   unawaited(ref.read(devicePrivateSyncProvider.notifier).start());
+  unawaited(ref.read(devicePrivateEventServiceProvider).processPendingEvents());
 
   // Initialize device capabilities (used for dynamic download concurrency)
   await DeviceCapabilitiesCache.initialize();
@@ -434,6 +447,9 @@ final appInitializationProvider = FutureProvider<void>((ref) async {
   await _attemptAutoSignIn(ref);
 
   WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (ref.read(Signer.activePubkeyProvider) == null) {
+      unawaited(maybeOfferInitialDeviceRestore(ref));
+    }
     unawaited(ref.read(appCatalogRelayServiceProvider).checkForUpdates());
   });
 });
@@ -571,6 +587,9 @@ class _AppLifecycleObserver with WidgetsBindingObserver {
 
       // Reconnect storage/relay connections
       notifier.connect();
+      unawaited(
+        _ref.read(devicePrivateEventServiceProvider).processPendingEvents(),
+      );
       unawaited(_ref.read(appCatalogRelayServiceProvider).checkForUpdates());
     } else if (state == AppLifecycleState.paused) {
       _ref.read(appCatalogRelayServiceProvider).cancelCurrentCheck();

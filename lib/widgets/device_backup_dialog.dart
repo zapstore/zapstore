@@ -1,70 +1,37 @@
 import 'package:flutter/material.dart';
-import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:zapstore/services/device_backup_service.dart';
 import 'package:zapstore/widgets/common/base_dialog.dart';
 
-/// Dialog shown on first Amber sign-in when other device backups are found.
-/// Offers to restore a device key from a previous device.
-class DeviceBackupRestoreDialog extends ConsumerWidget {
-  const DeviceBackupRestoreDialog({super.key, required this.backups});
+/// Dialog shown when Amber can recover a previous device key.
+class DeviceBackupRestoreDialog extends StatelessWidget {
+  const DeviceBackupRestoreDialog({
+    super.key,
+    required this.onRestore,
+    required this.onKeepCurrent,
+  });
 
-  final List<DeviceBackupInfo> backups;
+  final VoidCallback onRestore;
+  final VoidCallback onKeepCurrent;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     return BaseDialog(
       title: const BaseDialogTitle('Restore Device Key'),
       titleIcon: const Icon(Icons.restore, size: 20),
       content: BaseDialogContent(
         children: [
           const Text(
-            'Found device keys from other devices linked to this identity. '
-            'Restore one to sync your bookmarks and settings.',
+            'Amber has a device key backup. Restore it to recover your '
+            'bookmarks and portable settings.',
           ),
-          const SizedBox(height: 16),
-          ...backups.map((info) => _BackupTile(
-                info: info,
-                onRestore: () {
-                  Navigator.pop(context, info);
-                },
-              )),
         ],
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: onKeepCurrent,
           child: const Text('Keep current key'),
         ),
+        FilledButton(onPressed: onRestore, child: const Text('Restore')),
       ],
-    );
-  }
-}
-
-class _BackupTile extends StatelessWidget {
-  const _BackupTile({required this.info, this.onRestore});
-
-  final DeviceBackupInfo info;
-  final VoidCallback? onRestore;
-
-  @override
-  Widget build(BuildContext context) {
-    String? dateStr;
-    if (info.backedUpAt != null) {
-      final dt = info.backedUpAt!;
-      dateStr =
-          '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
-    }
-
-    return Card(
-      child: ListTile(
-        leading: const Icon(Icons.smartphone),
-        title: Text(info.deviceName),
-        subtitle: dateStr != null ? Text('Backed up: $dateStr') : null,
-        trailing: FilledButton.tonal(
-          onPressed: onRestore,
-          child: const Text('Restore'),
-        ),
-      ),
     );
   }
 }

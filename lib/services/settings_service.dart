@@ -10,53 +10,121 @@ const _storage = FlutterSecureStorage(
   iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
 );
 
-/// All local settings stored as a single JSON blob in secure storage.
-class LocalSettings {
-  final String? nwcConnectionString;
-  final DateTime? lastAppOpened;
-  final DateTime? seenUntil;
-  final DateTime? deletionSyncedUntil;
+/// Portable preferences, mirrored by DeviceStateService.
+class PortableSettings {
   final bool installedAppsBackupEnabled;
   final bool backgroundAutoUpdatesEnabled;
-  final LogLevel logLevel;
+  final Set<String> trustedSigners;
 
-  const LocalSettings({
-    this.nwcConnectionString,
-    this.lastAppOpened,
-    this.seenUntil,
-    this.deletionSyncedUntil,
+  const PortableSettings({
     this.installedAppsBackupEnabled = false,
     this.backgroundAutoUpdatesEnabled = false,
-    this.logLevel = LogLevel.debug,
+    this.trustedSigners = const {},
   });
 
-  bool get hasNwcString => nwcConnectionString?.isNotEmpty == true;
-
-  factory LocalSettings.fromJson(Map<String, dynamic> json) {
-    return LocalSettings(
-      nwcConnectionString: json['nwc'] as String?,
-      lastAppOpened: _parseDateTime(json['lastAppOpened']),
-      seenUntil: _parseDateTime(json['seenUntil']),
-      deletionSyncedUntil: _parseDateTime(json['deletionSyncedUntil']),
-      installedAppsBackupEnabled: json['backupEnabled'] as bool? ?? false,
+  factory PortableSettings.fromJson(Map<String, dynamic> json) {
+    return PortableSettings(
+      installedAppsBackupEnabled:
+          json['installedAppsBackupEnabled'] as bool? ?? false,
       backgroundAutoUpdatesEnabled:
-          json['backgroundAutoUpdates'] as bool? ?? false,
-      logLevel: LogLevel.parse(json['logLevel'] as String?) ?? LogLevel.debug,
+          json['backgroundAutoUpdatesEnabled'] as bool? ?? false,
+      trustedSigners:
+          (json['trustedSigners'] as List?)?.whereType<String>().toSet() ??
+          const {},
     );
   }
 
   Map<String, dynamic> toJson() => {
-    if (nwcConnectionString != null) 'nwc': nwcConnectionString,
+    'installedAppsBackupEnabled': installedAppsBackupEnabled,
+    'backgroundAutoUpdatesEnabled': backgroundAutoUpdatesEnabled,
+    'trustedSigners': trustedSigners.toList()..sort(),
+  };
+
+  PortableSettings copyWith({
+    bool? installedAppsBackupEnabled,
+    bool? backgroundAutoUpdatesEnabled,
+    Set<String>? trustedSigners,
+  }) => PortableSettings(
+    installedAppsBackupEnabled:
+        installedAppsBackupEnabled ?? this.installedAppsBackupEnabled,
+    backgroundAutoUpdatesEnabled:
+        backgroundAutoUpdatesEnabled ?? this.backgroundAutoUpdatesEnabled,
+    trustedSigners: trustedSigners ?? this.trustedSigners,
+  );
+}
+
+/// Per-install operational values. This data is deliberately never backed up.
+class TempSettings {
+  final DateTime? lastAppOpened;
+  final DateTime? seenUntil;
+  final DateTime? deletionSyncedUntil;
+  final LogLevel logLevel;
+  final bool restoreOnboardingComplete;
+
+  const TempSettings({
+    this.lastAppOpened,
+    this.seenUntil,
+    this.deletionSyncedUntil,
+    this.logLevel = LogLevel.debug,
+    this.restoreOnboardingComplete = false,
+  });
+
+  factory TempSettings.fromJson(Map<String, dynamic> json) => TempSettings(
+    lastAppOpened: _parseDateTime(json['lastAppOpened']),
+    seenUntil: _parseDateTime(json['seenUntil']),
+    deletionSyncedUntil: _parseDateTime(json['deletionSyncedUntil']),
+    logLevel: LogLevel.parse(json['logLevel'] as String?) ?? LogLevel.debug,
+    restoreOnboardingComplete:
+        json['restoreOnboardingComplete'] as bool? ?? false,
+  );
+
+  Map<String, dynamic> toJson() => {
     if (lastAppOpened != null)
       'lastAppOpened': lastAppOpened!.millisecondsSinceEpoch,
     if (seenUntil != null) 'seenUntil': seenUntil!.millisecondsSinceEpoch,
     if (deletionSyncedUntil != null)
       'deletionSyncedUntil': deletionSyncedUntil!.millisecondsSinceEpoch,
-    if (installedAppsBackupEnabled) 'backupEnabled': true,
-    if (backgroundAutoUpdatesEnabled) 'backgroundAutoUpdates': true,
-    // Only persist non-default value to keep blob small.
     if (logLevel != LogLevel.debug) 'logLevel': logLevel.name,
+    if (restoreOnboardingComplete) 'restoreOnboardingComplete': true,
   };
+
+  TempSettings copyWith({
+    DateTime? lastAppOpened,
+    DateTime? seenUntil,
+    DateTime? deletionSyncedUntil,
+    LogLevel? logLevel,
+    bool? restoreOnboardingComplete,
+  }) => TempSettings(
+    lastAppOpened: lastAppOpened ?? this.lastAppOpened,
+    seenUntil: seenUntil ?? this.seenUntil,
+    deletionSyncedUntil: deletionSyncedUntil ?? this.deletionSyncedUntil,
+    logLevel: logLevel ?? this.logLevel,
+    restoreOnboardingComplete:
+        restoreOnboardingComplete ?? this.restoreOnboardingComplete,
+  );
+}
+
+/// Compatibility view over the three deliberate local storage entries.
+class LocalSettings {
+  final String? nwcConnectionString;
+  final TempSettings temp;
+  final PortableSettings portable;
+
+  const LocalSettings({
+    this.nwcConnectionString,
+    this.temp = const TempSettings(),
+    this.portable = const PortableSettings(),
+  });
+
+  DateTime? get lastAppOpened => temp.lastAppOpened;
+  DateTime? get seenUntil => temp.seenUntil;
+  DateTime? get deletionSyncedUntil => temp.deletionSyncedUntil;
+  LogLevel get logLevel => temp.logLevel;
+  bool get installedAppsBackupEnabled => portable.installedAppsBackupEnabled;
+  bool get backgroundAutoUpdatesEnabled =>
+      portable.backgroundAutoUpdatesEnabled;
+  Set<String> get trustedSigners => portable.trustedSigners;
+  bool get hasNwcString => nwcConnectionString?.isNotEmpty == true;
 
   LocalSettings copyWith({
     String? nwcConnectionString,
@@ -65,129 +133,114 @@ class LocalSettings {
     DateTime? deletionSyncedUntil,
     bool? installedAppsBackupEnabled,
     bool? backgroundAutoUpdatesEnabled,
+    Set<String>? trustedSigners,
     LogLevel? logLevel,
+    bool? restoreOnboardingComplete,
     bool clearNwc = false,
-  }) {
-    return LocalSettings(
-      nwcConnectionString: clearNwc
-          ? null
-          : (nwcConnectionString ?? this.nwcConnectionString),
-      lastAppOpened: lastAppOpened ?? this.lastAppOpened,
-      seenUntil: seenUntil ?? this.seenUntil,
-      deletionSyncedUntil: deletionSyncedUntil ?? this.deletionSyncedUntil,
-      installedAppsBackupEnabled:
-          installedAppsBackupEnabled ?? this.installedAppsBackupEnabled,
-      backgroundAutoUpdatesEnabled:
-          backgroundAutoUpdatesEnabled ?? this.backgroundAutoUpdatesEnabled,
-      logLevel: logLevel ?? this.logLevel,
-    );
-  }
-
-  static DateTime? _parseDateTime(dynamic value) =>
-      value is int ? DateTime.fromMillisecondsSinceEpoch(value) : null;
+  }) => LocalSettings(
+    nwcConnectionString: clearNwc
+        ? null
+        : (nwcConnectionString ?? this.nwcConnectionString),
+    portable: portable.copyWith(
+      installedAppsBackupEnabled: installedAppsBackupEnabled,
+      backgroundAutoUpdatesEnabled: backgroundAutoUpdatesEnabled,
+      trustedSigners: trustedSigners,
+    ),
+    temp: temp.copyWith(
+      lastAppOpened: lastAppOpened,
+      seenUntil: seenUntil,
+      deletionSyncedUntil: deletionSyncedUntil,
+      logLevel: logLevel,
+      restoreOnboardingComplete: restoreOnboardingComplete,
+    ),
+  );
 }
 
-/// Service for reading and writing local settings.
 class SettingsService {
-  static const _key = 'settings';
-  static const _discardedLegacyRelaysKey = 'app_catalog_relays';
-
-  // Legacy keys for migration
-  static const _legacyNwcKey = 'nwc_connection_string';
-  static const _legacyLastAppOpenedKey = 'last_app_opened';
-  static const _legacySeenUntilKey = 'seen_until';
-  static const _legacyDeletionSyncedUntilKey = 'deletion_synced_until';
-  static const _legacyBackupKey = 'installed_apps_backup_enabled';
+  static const settingsKey = 'settings';
+  static const tempSettingsKey = 'temp_settings';
+  static const nwcKey = 'nwc';
 
   Future<LocalSettings> load() async {
-    final json = await _storage.read(key: _key);
-    if (json != null && json.isNotEmpty) {
-      try {
-        final decoded = jsonDecode(json) as Map<String, dynamic>;
-        final settings = LocalSettings.fromJson(decoded);
-        try {
-          if (decoded.containsKey('relays')) {
-            await save(settings);
-          }
-          await _storage.delete(key: _discardedLegacyRelaysKey);
-        } catch (error, stack) {
-          LogService.I.warn(
-            'legacy relay settings cleanup failed',
-            tag: 'settings',
-            err: error,
-            stack: stack,
-          );
-        }
-        return settings;
-      } catch (_) {
-        return const LocalSettings();
-      }
-    }
-
-    // Migrate from legacy format if present
-    return _migrateFromLegacy();
-  }
-
-  Future<LocalSettings> _migrateFromLegacy() async {
-    final nwc = await _storage.read(key: _legacyNwcKey);
-    final lastAppOpened = await _storage.read(key: _legacyLastAppOpenedKey);
-    final seenUntil = await _storage.read(key: _legacySeenUntilKey);
-    final deletionSynced = await _storage.read(
-      key: _legacyDeletionSyncedUntilKey,
-    );
-    final backupEnabled = await _storage.read(key: _legacyBackupKey);
-
-    // No legacy data found
-    if ([
-      nwc,
-      lastAppOpened,
-      seenUntil,
-      deletionSynced,
-      backupEnabled,
-    ].every((v) => v == null || v.isEmpty)) {
-      return const LocalSettings();
-    }
-
-    final settings = LocalSettings(
-      nwcConnectionString: (nwc?.isNotEmpty == true) ? nwc : null,
-      lastAppOpened: _parseLegacyDateTime(lastAppOpened),
-      seenUntil: _parseLegacyDateTime(seenUntil),
-      deletionSyncedUntil: _parseLegacyDateTime(deletionSynced),
-      installedAppsBackupEnabled: backupEnabled == 'true',
-    );
-
-    // Save migrated settings and clean up legacy keys
-    await save(settings);
-    await Future.wait([
-      _storage.delete(key: _legacyNwcKey),
-      _storage.delete(key: _legacyLastAppOpenedKey),
-      _storage.delete(key: _legacySeenUntilKey),
-      _storage.delete(key: _legacyDeletionSyncedUntilKey),
-      _storage.delete(key: _legacyBackupKey),
+    final values = await Future.wait([
+      _storage.read(key: settingsKey),
+      _storage.read(key: tempSettingsKey),
+      _storage.read(key: nwcKey),
     ]);
-
-    return settings;
+    return LocalSettings(
+      portable: _decodePortable(values[0]),
+      temp: _decodeTemp(values[1]),
+      nwcConnectionString: values[2]?.isNotEmpty == true ? values[2] : null,
+    );
   }
 
-  static DateTime? _parseLegacyDateTime(String? value) {
-    if (value == null || value.isEmpty) return null;
-    final ms = int.tryParse(value);
-    return ms != null ? DateTime.fromMillisecondsSinceEpoch(ms) : null;
-  }
+  Future<PortableSettings> loadPortable() async =>
+      _decodePortable(await _storage.read(key: settingsKey));
+
+  Future<TempSettings> loadTemp() async =>
+      _decodeTemp(await _storage.read(key: tempSettingsKey));
 
   Future<void> save(LocalSettings settings) async {
-    await _storage.write(key: _key, value: jsonEncode(settings.toJson()));
+    await Future.wait([
+      _storage.write(
+        key: settingsKey,
+        value: jsonEncode(settings.portable.toJson()),
+      ),
+      _storage.write(
+        key: tempSettingsKey,
+        value: jsonEncode(settings.temp.toJson()),
+      ),
+      if (settings.nwcConnectionString?.isNotEmpty == true)
+        _storage.write(key: nwcKey, value: settings.nwcConnectionString!)
+      else
+        _storage.delete(key: nwcKey),
+    ]);
   }
+
+  Future<void> savePortable(PortableSettings settings) =>
+      _storage.write(key: settingsKey, value: jsonEncode(settings.toJson()));
+
+  Future<void> saveTemp(TempSettings settings) => _storage.write(
+    key: tempSettingsKey,
+    value: jsonEncode(settings.toJson()),
+  );
+
+  Future<void> saveNwc(String? connectionString) =>
+      connectionString?.isNotEmpty == true
+      ? _storage.write(key: nwcKey, value: connectionString!)
+      : _storage.delete(key: nwcKey);
 
   Future<LocalSettings> update(
     LocalSettings Function(LocalSettings) updater,
   ) async {
-    final current = await load();
-    final updated = updater(current);
+    final updated = updater(await load());
     await save(updated);
     return updated;
   }
+
+  static PortableSettings _decodePortable(String? raw) {
+    try {
+      return raw == null || raw.isEmpty
+          ? const PortableSettings()
+          : PortableSettings.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    } catch (_) {
+      return const PortableSettings();
+    }
+  }
+
+  static TempSettings _decodeTemp(String? raw) {
+    try {
+      return raw == null || raw.isEmpty
+          ? const TempSettings()
+          : TempSettings.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    } catch (_) {
+      return const TempSettings();
+    }
+  }
 }
+
+DateTime? _parseDateTime(dynamic value) =>
+    value is int ? DateTime.fromMillisecondsSinceEpoch(value) : null;
 
 /// Persists the AmberSigner pubkey in secure storage.
 class SecureStoragePubkeyPersistence implements AmberPubkeyPersistence {

@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:models/models.dart';
-import 'package:zapstore/constants/app_constants.dart';
 import 'package:zapstore/services/device_key_service.dart';
 import 'package:zapstore/services/device_private_event_service.dart';
+import 'package:zapstore/services/device_state_service.dart';
 import 'package:zapstore/services/log_service.dart';
 
 enum DevicePrivateSyncPhase { idle, syncing, success, error, cancelled }
@@ -78,7 +78,7 @@ class DevicePrivateSyncNotifier extends StateNotifier<DevicePrivateSyncState> {
         subscriptionPrefix: 'app-device-private-boot',
       );
       if (_cancelled) return;
-      await _upgradeLegacyProofs(request);
+      await ref.read(deviceStateProvider.notifier).restoreFromLocalEvent();
       if (_cancelled) return;
       state = const DevicePrivateSyncState(DevicePrivateSyncPhase.success);
     } catch (error, stack) {
@@ -95,69 +95,6 @@ class DevicePrivateSyncNotifier extends StateNotifier<DevicePrivateSyncState> {
       );
     } finally {
       _activeRequest = null;
-    }
-  }
-
-  Future<void> _upgradeLegacyProofs(Request<Model<dynamic>> request) async {
-    final privateEvents = ref.read(devicePrivateEventServiceProvider);
-    final models = await _queryStorage(
-      request,
-      source: const LocalSource(),
-      subscriptionPrefix: 'app-device-private-upgrade',
-    );
-
-    for (final model in models) {
-      if (_cancelled ||
-          Nip13.isValid(
-            model.event,
-            minimumDifficulty: kPrivateEventPowDifficulty,
-          )) {
-        continue;
-      }
-
-      switch (model) {
-        case AppStack stack when stack.content.isNotEmpty:
-          await stack.prepareAfterLoading(ref);
-          if (!stack.isDecrypted) {
-            LogService.I.warn(
-              'legacy private stack could not be decrypted for PoW upgrade',
-              tag: 'private-sync',
-              fields: {'identifier': stack.identifier},
-            );
-            continue;
-          }
-          final partial = PartialAppStack.withEncryptedApps(
-            name: stack.name ?? stack.identifier,
-            identifier: stack.identifier,
-            description: stack.description,
-            apps: stack.privateAppIds,
-            platform: stack.platform,
-          );
-          partial.event.createdAt = privateEvents.nextReplaceableTimestamp(
-            stack.createdAt,
-          );
-          await privateEvents.signAndSave(partial);
-        case CustomData data
-            when data.identifier == kSettingsIdentifier ||
-                data.identifier == kTrustedSignersIdentifier:
-          final partial = PartialCustomData(
-            identifier: data.identifier,
-            content: data.content,
-          );
-          for (final tag in data.event.tags) {
-            if (tag.first == 'd' || tag.first == 'nonce') continue;
-            partial.event.tags.add(List<String>.of(tag));
-          }
-          partial.event.createdAt = privateEvents.nextReplaceableTimestamp(
-            data.createdAt,
-          );
-          await privateEvents.signAndSave(
-            partial,
-            publish: data.identifier != kTrustedSignersIdentifier,
-          );
-        default:
-          break;
-      }
     }
   }
 

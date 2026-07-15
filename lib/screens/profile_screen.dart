@@ -16,6 +16,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/main.dart';
 import 'package:zapstore/services/device_key_service.dart';
+import 'package:zapstore/services/device_private_event_service.dart';
+import 'package:zapstore/services/device_state_service.dart';
 import 'package:zapstore/services/log_service.dart' as app_logs;
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/services/settings_service.dart';
@@ -1404,12 +1406,38 @@ class _DeviceKeyCard extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final devicePubkey = ref.watch(devicePubkeyProvider);
+    final deviceState = ref.watch(deviceStateProvider);
     if (devicePubkey == null) return const SizedBox.shrink();
 
     final npub = bech32Encode('npub', devicePubkey);
     final shortened =
         '${npub.substring(0, 12)}...${npub.substring(npub.length - 8)}';
     final isCopying = useState(false);
+    final powElapsed = useState(Duration.zero);
+    useEffect(() {
+      final startedAt = deviceState.startedAt;
+      if (deviceState.phase != DeviceStatePhase.bootstrapping ||
+          startedAt == null) {
+        return null;
+      }
+
+      void updateElapsed() {
+        powElapsed.value = DateTime.now().difference(startedAt);
+      }
+
+      updateElapsed();
+      final timer = Timer.periodic(const Duration(seconds: 1), (_) {
+        updateElapsed();
+      });
+      return timer.cancel;
+    }, [deviceState.phase, deviceState.startedAt]);
+
+    String formatElapsed(Duration elapsed) {
+      final seconds = elapsed.inSeconds;
+      final minutes = seconds ~/ 60;
+      final remainingSeconds = seconds % 60;
+      return '$minutes:${remainingSeconds.toString().padLeft(2, '0')}';
+    }
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -1445,20 +1473,46 @@ class _DeviceKeyCard extends HookConsumerWidget {
                   style: TextStyle(fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  shortened,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withValues(alpha: 0.6),
+                if (deviceState.phase == DeviceStatePhase.bootstrapping) ...[
+                  const Text('Preparing device backup…'),
+                  const SizedBox(height: 6),
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
                   ),
-                  overflow: TextOverflow.ellipsis,
-                ),
+                  const SizedBox(height: 2),
+                  Text(
+                    formatElapsed(powElapsed.value),
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.6),
+                    ),
+                  ),
+                ] else if (deviceState.isReady)
+                  Text(
+                    shortened,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.6),
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  )
+                else
+                  Text(
+                    'Device backup failed: ${deviceState.error}',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
               ],
             ),
           ),
           TextButton.icon(
-            onPressed: isCopying.value
+            onPressed: !deviceState.isReady || isCopying.value
                 ? null
                 : () async {
                     final shouldCopy = await showDialog<bool>(
@@ -1504,13 +1558,7 @@ class _DeviceKeyCard extends HookConsumerWidget {
                       isCopying.value = false;
                     }
                   },
-            icon: isCopying.value
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.copy, size: 18),
+            icon: const Icon(Icons.copy, size: 18),
             label: const Text('Copy nsec'),
           ),
         ],
@@ -1525,6 +1573,7 @@ class _BackgroundAutoUpdatesToggle extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final settingsAsync = ref.watch(localSettingsProvider);
+    final ready = ref.watch(deviceStateProvider).isReady;
     final enabled =
         settingsAsync.valueOrNull?.backgroundAutoUpdatesEnabled ?? false;
 
@@ -1543,61 +1592,65 @@ class _BackgroundAutoUpdatesToggle extends ConsumerWidget {
       title: const Text('Background auto-updates'),
       value: enabled,
       contentPadding: EdgeInsets.zero,
-      onChanged: (value) async {
-        if (value && !enabled) {
-          final confirmed = await showDialog<bool>(
-            context: context,
-            builder: (dialogContext) => AlertDialog(
-              title: const Text('Turn on background auto-updates?'),
-              content: const Text(
-                'Zapstore will check for updates and apply them in the '
-                'background. The first check will start immediately when '
-                'Wi-Fi is available. After that, checks run approximately '
-                'every 24 hours. You can turn this off at any time.',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext, false),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.pop(dialogContext, true),
-                  child: const Text('Turn on'),
-                ),
-              ],
-            ),
-          );
-          if (confirmed != true || !context.mounted) return;
-        }
-
-        await ref
-            .read(settingsServiceProvider)
-            .update((s) => s.copyWith(backgroundAutoUpdatesEnabled: value));
-        ref.invalidate(localSettingsProvider);
-
-        if (value) {
-          unawaited(() async {
-            try {
-              await ref
-                  .read(backgroundUpdateServiceProvider)
-                  .scheduleImmediateAutoUpdate();
-            } catch (error, stack) {
-              app_logs.LogService.I.warn(
-                'initial background auto-update scheduling failed',
-                tag: 'background_updates',
-                err: error,
-                stack: stack,
-              );
-              if (context.mounted) {
-                context.showError(
-                  'Background auto-updates are enabled, but the first check '
-                  'could not be scheduled.',
+      onChanged: !ready
+          ? null
+          : (value) async {
+              if (value && !enabled) {
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (dialogContext) => AlertDialog(
+                    title: const Text('Turn on background auto-updates?'),
+                    content: const Text(
+                      'Zapstore will check for updates and apply them in the '
+                      'background. The first check will start immediately when '
+                      'Wi-Fi is available. After that, checks run approximately '
+                      'every 24 hours. You can turn this off at any time.',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(dialogContext, false),
+                        child: const Text('Cancel'),
+                      ),
+                      FilledButton(
+                        onPressed: () => Navigator.pop(dialogContext, true),
+                        child: const Text('Turn on'),
+                      ),
+                    ],
+                  ),
                 );
+                if (confirmed != true || !context.mounted) return;
               }
-            }
-          }());
-        }
-      },
+
+              await ref
+                  .read(deviceStateProvider.notifier)
+                  .updatePortable(
+                    (s) => s.copyWith(backgroundAutoUpdatesEnabled: value),
+                  );
+              ref.invalidate(localSettingsProvider);
+
+              if (value) {
+                unawaited(() async {
+                  try {
+                    await ref
+                        .read(backgroundUpdateServiceProvider)
+                        .scheduleImmediateAutoUpdate();
+                  } catch (error, stack) {
+                    app_logs.LogService.I.warn(
+                      'initial background auto-update scheduling failed',
+                      tag: 'background_updates',
+                      err: error,
+                      stack: stack,
+                    );
+                    if (context.mounted) {
+                      context.showError(
+                        'Background auto-updates are enabled, but the first check '
+                        'could not be scheduled.',
+                      );
+                    }
+                  }
+                }());
+              }
+            },
     );
   }
 }
@@ -1609,6 +1662,7 @@ class _InstalledAppsBackupToggle extends ConsumerWidget {
     if (devicePubkey == null) return const SizedBox.shrink();
 
     final settingsAsync = ref.watch(localSettingsProvider);
+    final ready = ref.watch(deviceStateProvider).isReady;
     final enabled =
         settingsAsync.valueOrNull?.installedAppsBackupEnabled ?? false;
 
@@ -1627,12 +1681,16 @@ class _InstalledAppsBackupToggle extends ConsumerWidget {
       title: const Text('Back up installed apps'),
       value: enabled,
       contentPadding: EdgeInsets.zero,
-      onChanged: (value) async {
-        await ref
-            .read(settingsServiceProvider)
-            .update((s) => s.copyWith(installedAppsBackupEnabled: value));
-        ref.invalidate(localSettingsProvider);
-      },
+      onChanged: !ready
+          ? null
+          : (value) async {
+              await ref
+                  .read(deviceStateProvider.notifier)
+                  .updatePortable(
+                    (s) => s.copyWith(installedAppsBackupEnabled: value),
+                  );
+              ref.invalidate(localSettingsProvider);
+            },
     );
   }
 }

@@ -2,104 +2,110 @@
 
 ## Goal
 
-Decouple private data (bookmarks, unmanaged apps, installed backup, settings) from
-Amber sign-in by generating a local device key (nsec) that owns all private
-encrypted events. Every private kind 30267 and 30078 event is signed by the
-device key and carries NIP-13 proof of work. Amber is only the identity and
-recovery layer for public actions and encrypted device-key backup capsules.
+Provide one portable, encrypted device state that restores with either a copied
+device nsec or Amber, while keeping private app stacks in Purplebase and all
+device-only data local.
 
 ## Non-Goals
 
-- Continuous or multi-device live sync
-- Migrating legacy Amber-signed `zapstore-settings` events
-- Changing how public stacks work (still Amber-signed with h tag)
-- Implementing the publish queue (handled in purplebase)
-
-## User-Visible Behavior
-
-- On first launch, a device key is silently generated and stored in secure storage
-- Bookmarks, unmanaged apps, and settings work immediately without sign-in
-- Private data renders from SQLite; one non-streaming relay sync runs at app boot
-- Profile screen shows device key section with ability to copy nsec
-- On every Amber sign-in, the app performs one-shot recovery and legacy queries:
-  - Restore is offered when device-signed settings events contain a recovery
-    capsule for the Amber key
-  - The final device key is backed up in its device-signed settings event
-  - Amber-authored encrypted AppStacks are merged into device-owned stacks
-- Clearing app data (SQLite) does NOT delete device key or NWC string
-- Background sync, migration, and proof-of-work jobs are bounded and cancellable
+- Migrating prior `zapstore-settings`, `trusted-signers`, or capsule data
+- Backing up NWC, operational state, or actual installed-package detection
+- Continuous live sync or changing public community stacks
+- A user-facing way to cancel bootstrap mining
 
 ## Data Model
 
-- Device nsec: secure storage only (`zapstore_secure_prefs` JSON blob, field `nsec`, hex)
-- NWC string: secure storage only (existing key)
-- Bookmarks: encrypted AppStack (30267), d=zapstore-bookmarks, signed by device key
-- Unmanaged apps: encrypted AppStack (30267), d=zapstore-unmanaged-apps, signed by device key
-- Installed backup: encrypted AppStack (30267), d=zapstore-installed-apps, signed by device key
-- App settings: versioned private CustomData (30078), d=zapstore-settings,
-  signed by the device key
-- Device backup: NIP-44 recovery capsules encrypted from the device key to Amber
-  identities inside `zapstore-settings`; matching `p` tags allow discovery.
-  Each capsule includes an Amber-signed authorization binding that identity to
-  the device pubkey, preventing third-party recovery-candidate injection.
-- Trusted signers: encrypted, local-only CustomData (30078), d=trusted-signers,
-  signed by the device key
-- Every private event commits to at least 16 bits of NIP-13 proof of work
+- Secure storage keys:
+  - `settings`: lower-camel-case portable JSON: `backgroundAutoUpdatesEnabled`,
+    `installedAppsBackupEnabled`, and `trustedSigners`.
+  - `temp_settings`: lower-camel-case device-only JSON, including `logLevel`,
+    `lastAppOpened`, `seenUntil`, `deletionSyncedUntil`, and restore onboarding.
+  - `nwc`: local-only NWC connection string.
+  - `device_key`: local device nsec in hex.
+  - `amber_pubkey`: local Amber reconnect identity.
+- Device state: kind `30078`, `d=zapstore-device-state`, authored and signed by
+  the device key; its content is the NIP-44 self-encrypted `settings` JSON.
+- Amber key backup: kind `30078`, `d=zapstore-device-key-backup`, authored and
+  signed by Amber; its content is NIP-44 self-encrypted JSON with
+  `privateKeyHex`.
+- Private Purplebase stacks remain kind `30267`, authored by the device key:
+  `zapstore-bookmarks`, `zapstore-installed-apps`, and
+  `zapstore-unmanaged-apps`.
+- The device-owned AppCatalog relay list is kind `10067` and has no `d` tag.
+- Purplebase stores the latest local-only, PoW-less draft for each pending
+  device-key event. The drafts are never published to a relay.
+- Secure storage records each pending event's kind and, when present, `d` tag
+  in a list namespaced by the device pubkey derived from the active device key.
+  This small marker survives process restart and identifies the latest local
+  draft that must be mined and published.
+- JSON uses lower camel case; Nostr tag values use kebab case.
 
-## Signer Roles
+## User-Visible Behavior
 
-- Device signer (Bip340PrivateKeySigner): always available, never null. Signs all
-  private events. Registered on boot, NOT set as active.
-- Amber signer (AmberSigner): optional. When present, is the active signer. Used
-  for public stacks, zaps, WoT queries, and recovery-capsule encryption/decryption.
-- NIP-13 mining runs in a Purplebase-owned worker isolate after encryption and
-  before signing; no mining loop runs on Flutter's main isolate.
+- A new device key does not publish an empty device-state event.
+- A persistable device-state or private-stack change first saves its latest
+  local-only PoW-less draft and records a secure-storage pending marker.
+  Local persistence completes without waiting for mining or relay acceptance.
+- The device-event queue rebuilds each marked draft as a 20-bit-PoW event in a
+  background isolate. Private state and app stacks publish to AppCatalog;
+  device relay lists publish to the bootstrap relay. Pending markers resume
+  processing after process restart and when relay connectivity returns.
+- A fresh install offers paste nsec, restore with Amber, or start fresh.
+  If Amber is unavailable, its option opens the Amber install page.
+- Pasted nsec or Amber recovery imports the device key, then fetches and
+  decrypts device state and the three private stacks.
+- On Amber sign-in during restore onboarding, a non-empty legacy
+  `zapstore-installed-apps` stack is offered as “Restore apps from previous
+  device.” The user selects apps to install; it is never mistaken for packages
+  installed on this device or overwritten with an empty stack.
+- SQLite remains a local-first cache. Offline restore and publishing show
+  explicit retry/error states without preventing use of local data.
 
-## Filtering Strategy
+## PoW and Lifecycle
 
-- Public stacks: filtered by #h tag (community pubkey) naturally excludes device stacks
-- Device private stacks: queried by authors: {devicePubkey} + specific #d tag
-- appStackEventFilter schema filter removed; #h tag filtering is sufficient
-- Device private 30267/30078 events are fetched once with stream=false at boot.
-  Private UI consumers use LocalSource only.
-- Amber sign-in recovery and migration are explicit one-shot exceptions; they
-  never open streaming subscriptions.
+- Every device-key event submitted to a relay requires 20-bit NIP-13 proof of
+  work, including device-state events, encrypted private app stacks, and the
+  device-owned AppCatalog relay list.
+  Purplebase-local drafts are the sole exception and must never be published.
+- The Zapstore device-event queue uses secure-storage pending markers and
+  Purplebase-local drafts. Relay failures retain the marker; replay is driven
+  by app startup and connectivity/reconnection signals, never polling or
+  artificial delays. A marker is cleared only after AppCatalog acceptance.
+- Mining has no timeout or user cancellation. It runs outside the Flutter UI
+  isolate and is cancelled when its owning service/provider is disposed to
+  avoid a lifecycle leak. Cancellation leaves the local mutation intact and
+  the operation eligible to be re-enqueued.
+- The client verifies a restored event's signature and expected author; relay
+  admission proof is not a client restore criterion.
 
-## Edge Cases
+## Upgrade from 1.0.6
 
-- Device key lost (app uninstalled without backup): data unrecoverable, fresh start
-- Amber uninstalled while backup dialog pending: backup deferred to next sign-in
-- Restore on device that already has data: ask user to confirm (replace or keep current)
-- Offline: events save locally, purplebase publish queue syncs when online
-- Multiple devices with same Amber key: each has own device key; backup stores device name
-- Existing device-authored events without PoW are re-signed in the background;
-  invalid or undecryptable events are never overwritten.
-- Legacy Amber-authored settings are ignored even if that loses old backups.
-- Migration is idempotent and rechecks on every Amber sign-in; failed decrypts
-  remain retryable.
+- The release intentionally starts fresh: it does not migrate any prior secure
+  storage, device key, Amber identity, private settings event, trusted signers,
+  recovery capsules, or migration flags.
+- Users lose NWC, both settings toggles, log level, update/notification and
+  deletion cursors, trusted signers, old device nsec, and Amber reconnect state.
+- Existing device-owned stacks are recoverable only when the user exported the
+  old nsec before updating. Existing Amber-installed-app stacks remain
+  discoverable after Amber sign-in during restore onboarding.
+- Release notes and an in-app warning must explain the loss and tell users to
+  copy their device nsec before updating.
 
 ## Acceptance Criteria
 
-- [ ] Device key generated on first launch and persisted in secure storage
-- [ ] Device key survives SQLite clear / app restart
-- [ ] Bookmarks work without Amber sign-in
-- [ ] Unmanaged apps work without Amber sign-in
-- [ ] User can copy device nsec from profile screen
-- [ ] First Amber sign-in triggers backup/restore dialog
-- [ ] Every Amber sign-in upserts a recovery capsule in device-signed settings
-- [ ] Restore discovers device-signed settings by Amber `p` tag and imports nsec
-- [ ] Legacy Amber-signed settings are ignored
-- [ ] Amber private bookmarks, installed backups, unmanaged apps, and other
-      encrypted AppStacks migrate safely to the final device key
-- [ ] All new private 30267/30078 events have valid 16-bit NIP-13 proof of work
-- [ ] PoW mining does not run on Flutter's main isolate
-- [ ] Private relay reads happen only at boot and explicit Amber sign-in recovery
-- [ ] appStackEventFilter removed; queries use #h tag filtering
-- [ ] EncryptableModel auto-decrypts device-key stacks (no manual decrypt calls)
-
-## Phases
-
-- A: Device key generation + service + registration at boot + copy nsec UI
-- B: Migrate bookmarks/unmanaged/backup to device key (drop Amber requirement)
-- C: Amber backup/restore dialog + CustomData events
-- D: Remove appStackEventFilter, clean up sign-in gating in UI
+- [ ] A new device key publishes no empty bootstrap event
+- [ ] Every device-key event submitted to a relay has at least 20 bits of valid
+      NIP-13 proof of work; local drafts are never published
+- [ ] Mining runs off the Flutter UI isolate and is lifecycle-safe
+- [ ] Pending kind-and-identifier markers survive app restart and retry from
+      their latest Purplebase-local drafts on startup or reconnection without
+      polling
+- [ ] Local state changes remain usable while proof mining or publishing is
+      pending, cancelled, or failing
+- [ ] Portable settings and trusted signers restore from `zapstore-device-state`
+- [ ] NWC and all temp settings never appear in device-state
+- [ ] Pasted-nsec and Amber restore both recover the same device state
+- [ ] Amber backup contains only its self-encrypted `privateKeyHex`
+- [ ] Legacy installed-app recovery offers selected installs without claiming
+      those apps are locally installed
+- [ ] New JSON and tag casing follows the defined convention

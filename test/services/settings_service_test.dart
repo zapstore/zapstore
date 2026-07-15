@@ -1,33 +1,43 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zapstore/services/log_service.dart';
 import 'package:zapstore/services/settings_service.dart';
 
 void main() {
-  group('LocalSettings', () {
+  group('PortableSettings', () {
     test('backgroundAutoUpdatesEnabled defaults to false', () {
-      const settings = LocalSettings();
+      const settings = PortableSettings();
       expect(settings.backgroundAutoUpdatesEnabled, isFalse);
     });
 
     test('round-trips backgroundAutoUpdatesEnabled in JSON', () {
-      const settings = LocalSettings(backgroundAutoUpdatesEnabled: true);
-      final restored = LocalSettings.fromJson(settings.toJson());
+      const settings = PortableSettings(backgroundAutoUpdatesEnabled: true);
+      final restored = PortableSettings.fromJson(settings.toJson());
       expect(restored.backgroundAutoUpdatesEnabled, isTrue);
     });
 
     test('copyWith toggles backgroundAutoUpdatesEnabled', () {
-      const settings = LocalSettings();
+      const settings = PortableSettings();
       final updated = settings.copyWith(backgroundAutoUpdatesEnabled: true);
       expect(updated.backgroundAutoUpdatesEnabled, isTrue);
     });
 
-    test('discards legacy relay settings', () {
-      final restored = LocalSettings.fromJson({
-        'relays': ['wss://legacy.example'],
-        'logLevel': 'info',
-      });
+    test('uses lower camel case portable JSON keys', () {
+      const settings = PortableSettings(
+        installedAppsBackupEnabled: true,
+        trustedSigners: {'a'},
+      );
 
-      expect(restored.toJson(), isNot(contains('relays')));
-      expect(restored.toJson()['logLevel'], 'info');
+      expect(settings.toJson(), {
+        'installedAppsBackupEnabled': true,
+        'backgroundAutoUpdatesEnabled': false,
+        'trustedSigners': ['a'],
+      });
     });
+  });
+
+  test('temp settings keep log level out of portable data', () {
+    const temp = TempSettings(logLevel: LogLevel.info);
+    expect(temp.toJson()['logLevel'], 'info');
+    expect(const PortableSettings().toJson(), isNot(contains('logLevel')));
   });
 }
