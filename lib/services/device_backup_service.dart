@@ -16,7 +16,6 @@ import 'package:zapstore/services/log_service.dart';
 import 'package:zapstore/services/settings_service.dart';
 import 'package:zapstore/widgets/device_backup_dialog.dart';
 import 'package:zapstore/widgets/device_restore_dialog.dart';
-import 'package:zapstore/widgets/legacy_installed_apps_dialog.dart';
 
 /// Backs up the device key to the active Amber identity and restores it again.
 ///
@@ -127,45 +126,6 @@ class DeviceBackupService {
     await signer.signIn(setAsActive: false);
     ref.read(devicePubkeyProvider.notifier).state = pubkey;
   }
-
-  Future<List<String>> fetchLegacyInstalledAppIds({
-    required Ref ref,
-    required Signer amberSigner,
-  }) async {
-    final results = await ref
-        .read(storageNotifierProvider.notifier)
-        .query(
-          RequestFilter<AppStack>(
-            authors: {amberSigner.pubkey},
-            tags: {
-              '#d': {kInstalledAppsIdentifier},
-            },
-            limit: 1,
-          ).toRequest(),
-          source: const LocalAndRemoteSource(
-            relays: 'AppCatalog',
-            stream: false,
-          ),
-          subscriptionPrefix: 'app-legacy-installed-recovery',
-        );
-    final stack = results.firstOrNull;
-    if (stack == null || !verifySignedEvent(ref, stack.event)) return const [];
-    try {
-      final plaintext = await amberSigner.nip44Decrypt(
-        stack.content,
-        amberSigner.pubkey,
-      );
-      final decoded = jsonDecode(plaintext);
-      return decoded is List
-          ? decoded
-                .whereType<String>()
-                .where((id) => id.startsWith('32267:'))
-                .toList()
-          : const [];
-    } catch (_) {
-      return const [];
-    }
-  }
 }
 
 final deviceBackupServiceProvider = Provider<DeviceBackupService>(
@@ -255,20 +215,6 @@ Future<void> maybeOfferDeviceBackup(Ref ref) async {
               unawaited(ref.read(deviceStateProvider.notifier).bootstrap());
             }
           }
-        }
-      }
-      final legacyInstalledApps = await service.fetchLegacyInstalledAppIds(
-        ref: ref,
-        amberSigner: amberSigner,
-      );
-      if (legacyInstalledApps.isNotEmpty) {
-        final context = rootNavigatorKey.currentState?.overlay?.context;
-        if (context != null && context.mounted) {
-          await showDialog<void>(
-            context: context,
-            builder: (_) =>
-                LegacyInstalledAppsDialog(appIds: legacyInstalledApps),
-          );
         }
       }
       await settings.saveTemp(temp.copyWith(restoreOnboardingComplete: true));

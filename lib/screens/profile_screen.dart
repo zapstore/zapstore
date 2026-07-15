@@ -16,7 +16,6 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/main.dart';
 import 'package:zapstore/services/device_key_service.dart';
-import 'package:zapstore/services/device_private_event_service.dart';
 import 'package:zapstore/services/device_state_service.dart';
 import 'package:zapstore/services/log_service.dart' as app_logs;
 import 'package:zapstore/services/package_manager/package_manager.dart';
@@ -46,7 +45,7 @@ class ProfileScreen extends ConsumerWidget {
 
           const SizedBox(height: 24),
 
-          // User Stacks Section (Saved Apps + Installed Apps)
+          // User Stacks Section
           const _UserStacksSection(),
 
           const SizedBox(height: 24),
@@ -1655,46 +1654,6 @@ class _BackgroundAutoUpdatesToggle extends ConsumerWidget {
   }
 }
 
-class _InstalledAppsBackupToggle extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final devicePubkey = ref.watch(devicePubkeyProvider);
-    if (devicePubkey == null) return const SizedBox.shrink();
-
-    final settingsAsync = ref.watch(localSettingsProvider);
-    final ready = ref.watch(deviceStateProvider).isReady;
-    final enabled =
-        settingsAsync.valueOrNull?.installedAppsBackupEnabled ?? false;
-
-    return SwitchListTile(
-      secondary: CircleAvatar(
-        radius: 18,
-        backgroundColor: Theme.of(
-          context,
-        ).colorScheme.primary.withValues(alpha: 0.12),
-        child: Icon(
-          Icons.cloud_upload,
-          color: Theme.of(context).colorScheme.primary,
-          size: 20,
-        ),
-      ),
-      title: const Text('Back up installed apps'),
-      value: enabled,
-      contentPadding: EdgeInsets.zero,
-      onChanged: !ready
-          ? null
-          : (value) async {
-              await ref
-                  .read(deviceStateProvider.notifier)
-                  .updatePortable(
-                    (s) => s.copyWith(installedAppsBackupEnabled: value),
-                  );
-              ref.invalidate(localSettingsProvider);
-            },
-    );
-  }
-}
-
 class _DataManagementSection extends ConsumerWidget {
   const _DataManagementSection();
 
@@ -1712,8 +1671,6 @@ class _DataManagementSection extends ConsumerWidget {
             ),
             const SizedBox(height: 16),
             const _DeviceKeyCard(),
-            const SizedBox(height: 8),
-            _InstalledAppsBackupToggle(),
             const SizedBox(height: 8),
             const _BackgroundAutoUpdatesToggle(),
             const SizedBox(height: 8),
@@ -1864,7 +1821,10 @@ class _UserStacksSection extends ConsumerWidget {
 
     // Filter to only encrypted (private) stacks
     final privateStacks = stacksState.models
-        .where((s) => s.content.isNotEmpty)
+        .where(
+          (s) =>
+              s.content.isNotEmpty && s.identifier != 'zapstore-installed-apps',
+        )
         .toList();
 
     // Don't show section if no private stacks exist
@@ -1872,12 +1832,10 @@ class _UserStacksSection extends ConsumerWidget {
       return const SizedBox.shrink();
     }
 
-    // Sort: Saved Apps first, then Installed Apps, then others alphabetically
+    // Sort: Saved Apps first, then Unmanaged Apps, then others alphabetically
     privateStacks.sort((a, b) {
       if (a.identifier == kAppBookmarksIdentifier) return -1;
       if (b.identifier == kAppBookmarksIdentifier) return 1;
-      if (a.identifier == kInstalledAppsIdentifier) return -1;
-      if (b.identifier == kInstalledAppsIdentifier) return 1;
       if (a.identifier == kUnmanagedAppsIdentifier) return -1;
       if (b.identifier == kUnmanagedAppsIdentifier) return 1;
       return (a.name ?? a.identifier).compareTo(b.name ?? b.identifier);
@@ -1899,8 +1857,6 @@ class _UserStacksSection extends ConsumerWidget {
           final stack = entry.value;
           final displayName = stack.identifier == kAppBookmarksIdentifier
               ? 'Saved Apps'
-              : stack.identifier == kInstalledAppsIdentifier
-              ? 'Installed Apps'
               : stack.identifier == kUnmanagedAppsIdentifier
               ? 'Unmanaged Apps'
               : null;

@@ -22,13 +22,9 @@ void main() {
     });
 
     test('uses lower camel case portable JSON keys', () {
-      const settings = PortableSettings(
-        installedAppsBackupEnabled: true,
-        trustedSigners: {'a'},
-      );
+      const settings = PortableSettings(trustedSigners: {'a'});
 
       expect(settings.toJson(), {
-        'installedAppsBackupEnabled': true,
         'backgroundAutoUpdatesEnabled': false,
         'trustedSigners': ['a'],
       });

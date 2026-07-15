@@ -22,9 +22,6 @@ const kZapstoreCommunityPubkey =
 /// Identifier for storing user saved apps
 const kAppBookmarksIdentifier = 'zapstore-bookmarks';
 
-/// Identifier for the encrypted stack of installed apps
-const kInstalledAppsIdentifier = 'zapstore-installed-apps';
-
 /// Identifier for the encrypted stack of apps the user chose as unmanaged
 const kUnmanagedAppsIdentifier = 'zapstore-unmanaged-apps';
 

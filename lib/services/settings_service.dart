@@ -12,20 +12,16 @@ const _storage = FlutterSecureStorage(
 
 /// Portable preferences, mirrored by DeviceStateService.
 class PortableSettings {
-  final bool installedAppsBackupEnabled;
   final bool backgroundAutoUpdatesEnabled;
   final Set<String> trustedSigners;
 
   const PortableSettings({
-    this.installedAppsBackupEnabled = false,
     this.backgroundAutoUpdatesEnabled = false,
     this.trustedSigners = const {},
   });
 
   factory PortableSettings.fromJson(Map<String, dynamic> json) {
     return PortableSettings(
-      installedAppsBackupEnabled:
-          json['installedAppsBackupEnabled'] as bool? ?? false,
       backgroundAutoUpdatesEnabled:
           json['backgroundAutoUpdatesEnabled'] as bool? ?? false,
       trustedSigners:
@@ -35,18 +31,14 @@ class PortableSettings {
   }
 
   Map<String, dynamic> toJson() => {
-    'installedAppsBackupEnabled': installedAppsBackupEnabled,
     'backgroundAutoUpdatesEnabled': backgroundAutoUpdatesEnabled,
     'trustedSigners': trustedSigners.toList()..sort(),
   };
 
   PortableSettings copyWith({
-    bool? installedAppsBackupEnabled,
     bool? backgroundAutoUpdatesEnabled,
     Set<String>? trustedSigners,
   }) => PortableSettings(
-    installedAppsBackupEnabled:
-        installedAppsBackupEnabled ?? this.installedAppsBackupEnabled,
     backgroundAutoUpdatesEnabled:
         backgroundAutoUpdatesEnabled ?? this.backgroundAutoUpdatesEnabled,
     trustedSigners: trustedSigners ?? this.trustedSigners,
@@ -120,7 +112,6 @@ class LocalSettings {
   DateTime? get seenUntil => temp.seenUntil;
   DateTime? get deletionSyncedUntil => temp.deletionSyncedUntil;
   LogLevel get logLevel => temp.logLevel;
-  bool get installedAppsBackupEnabled => portable.installedAppsBackupEnabled;
   bool get backgroundAutoUpdatesEnabled =>
       portable.backgroundAutoUpdatesEnabled;
   Set<String> get trustedSigners => portable.trustedSigners;
@@ -131,7 +122,6 @@ class LocalSettings {
     DateTime? lastAppOpened,
     DateTime? seenUntil,
     DateTime? deletionSyncedUntil,
-    bool? installedAppsBackupEnabled,
     bool? backgroundAutoUpdatesEnabled,
     Set<String>? trustedSigners,
     LogLevel? logLevel,
@@ -142,7 +132,6 @@ class LocalSettings {
         ? null
         : (nwcConnectionString ?? this.nwcConnectionString),
     portable: portable.copyWith(
-      installedAppsBackupEnabled: installedAppsBackupEnabled,
       backgroundAutoUpdatesEnabled: backgroundAutoUpdatesEnabled,
       trustedSigners: trustedSigners,
     ),

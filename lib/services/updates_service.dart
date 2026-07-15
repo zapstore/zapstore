@@ -7,8 +7,6 @@ import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/services/catalog_fetcher.dart';
 import 'package:zapstore/services/log_service.dart';
 import 'package:zapstore/services/deletion_processor.dart';
-import 'package:zapstore/services/device_key_service.dart';
-import 'package:zapstore/services/device_private_event_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/services/unmanaged_apps_service.dart';
 import 'package:zapstore/services/settings_service.dart';
@@ -109,7 +107,6 @@ class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
 
   final Ref ref;
   Timer? _pollTimer;
-  List<String> _lastBackedUpIds = [];
 
   void _init() {
     // Hydrate from local storage as soon as SQLite is ready — no network.
@@ -173,7 +170,6 @@ class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
         clearError: true,
         hasHydrated: true,
       );
-      unawaited(_backupInstalledApps());
     } catch (e, st) {
       LogService.I.warn(
         'update check failed',
@@ -278,70 +274,6 @@ class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
       // categorization falls through to "uncataloged".
       state = state.copyWith(hasHydrated: true);
     }
-  }
-
-  /// Best-effort backup of installed apps as an encrypted private stack.
-  /// Runs after each successful update check. Only publishes when the set
-  /// of cataloged installed apps has changed since the last backup.
-  Future<void> _backupInstalledApps() async {
-    final devicePubkey = ref.read(devicePubkeyProvider);
-    if (devicePubkey == null) return;
-
-    final settings = await ref.read(settingsServiceProvider).load();
-    if (!settings.installedAppsBackupEnabled) return;
-
-    final pmNotifier = ref.read(packageManagerProvider.notifier);
-    final installed = ref.read(packageManagerProvider).installed;
-    final platform = pmNotifier.platform;
-    final storage = ref.read(storageNotifierProvider.notifier);
-
-    try {
-      final apps = await storage.query(
-        RequestFilter<App>(
-          tags: {
-            '#d': installed.keys.toSet(),
-            '#f': {platform},
-          },
-        ).toRequest(),
-        source: const LocalSource(),
-        subscriptionPrefix: 'app-backup-resolve',
-      );
-
-      final appIds =
-          apps
-              .map((a) => '${a.event.kind}:${a.event.pubkey}:${a.identifier}')
-              .toList()
-            ..sort();
-
-      if (_listEquals(appIds, _lastBackedUpIds)) return;
-
-      final partialStack = PartialAppStack.withEncryptedApps(
-        name: 'Installed Apps',
-        identifier: kInstalledAppsIdentifier,
-        apps: appIds,
-        platform: platform,
-      );
-
-      await ref
-          .read(devicePrivateEventServiceProvider)
-          .saveDraftAndQueue(partialStack);
-      _lastBackedUpIds = appIds;
-    } catch (e, st) {
-      LogService.I.warn(
-        'installed apps backup failed',
-        tag: 'updates',
-        err: e,
-        stack: st,
-      );
-    }
-  }
-
-  static bool _listEquals(List<String> a, List<String> b) {
-    if (a.length != b.length) return false;
-    for (var i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) return false;
-    }
-    return true;
   }
 
   @override
