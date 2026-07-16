@@ -185,32 +185,46 @@ class _NewDeviceKeyReminder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Dark yellow (hue ~50°), not muddy brown — reads as yellow on dark UI.
-    const toastBackground = Color(0xFFC9A000);
-    const toastForeground = Colors.white;
+    // Elevated dark grey chip — quiet welcome, readable on the blue-black shell.
+    const toastBackground = Color(0xFF2C313A);
+    const toastBorder = Color(0xFF3E4552);
+    const toastForeground = Color(0xFFF2F4F7);
+    const toastMuted = Color(0xFFC5CAD3);
+    const iconWell = Color(0xFF3A404C);
 
     return Material(
       color: toastBackground,
-      elevation: 2,
-      shadowColor: Colors.black38,
-      borderRadius: BorderRadius.circular(14),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: const BorderSide(color: toastBorder),
+      ),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(14),
+        splashColor: Colors.white10,
+        highlightColor: Colors.white10,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 12, 4, 12),
+          padding: const EdgeInsets.fromLTRB(12, 12, 4, 12),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Padding(
-                padding: EdgeInsets.only(top: 1),
-                child: Icon(
-                  Icons.vpn_key_outlined,
+              Container(
+                width: 36,
+                height: 36,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: iconWell,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.key_rounded,
                   color: toastForeground,
                   size: 20,
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -220,13 +234,15 @@ class _NewDeviceKeyReminder extends StatelessWidget {
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         color: toastForeground,
                         fontWeight: FontWeight.w700,
+                        letterSpacing: -0.2,
                       ),
                     ),
-                    const SizedBox(height: 3),
+                    const SizedBox(height: 4),
                     Text(
                       'Used Zapstore before? Restore your device key via nsec or by signing in with Amber.',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: toastForeground.withValues(alpha: 0.92),
+                        color: toastMuted,
+                        height: 1.35,
                       ),
                     ),
                   ],
@@ -235,7 +251,10 @@ class _NewDeviceKeyReminder extends StatelessWidget {
               IconButton(
                 onPressed: onDismiss,
                 tooltip: 'Dismiss',
-                icon: const Icon(Icons.close_rounded, color: toastForeground),
+                icon: Icon(
+                  Icons.close_rounded,
+                  color: toastMuted.withValues(alpha: 0.9),
+                ),
                 constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
                 padding: EdgeInsets.zero,
               ),
