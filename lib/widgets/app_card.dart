@@ -7,6 +7,7 @@ import 'package:markdown/markdown.dart' as md;
 import 'package:skeletonizer/skeletonizer.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/nostr_route.dart';
+import 'package:zapstore/utils/image_url.dart';
 import 'package:zapstore/utils/url_utils.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/widgets/zap_widgets.dart';
@@ -180,7 +181,10 @@ class AppCard extends HookConsumerWidget {
   }
 
   Widget _buildAppIcon(BuildContext context, double size) {
-    final iconUrl = firstValidHttpUrl(app!.icons);
+    final iconUrl = getCdnImageUrl(
+      firstValidHttpUrl(app!.icons),
+      CdnImageVariant.icon,
+    );
 
     return SizedBox(
       width: size,

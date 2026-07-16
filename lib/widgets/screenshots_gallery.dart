@@ -3,6 +3,7 @@ import 'package:easy_image_viewer/easy_image_viewer.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:models/models.dart';
+import 'package:zapstore/utils/image_url.dart';
 import 'package:zapstore/utils/url_utils.dart';
 // Local shimmer duplicated to avoid private import
 
@@ -16,6 +17,11 @@ class ScreenshotsGallery extends HookWidget {
     final imageUrls = filterValidHttpUrls(app.images);
     if (imageUrls.isEmpty) return const SizedBox.shrink();
 
+    final thumbUrls = [
+      for (final url in imageUrls)
+        getCdnImageUrl(url, CdnImageVariant.thumbsm)!,
+    ];
+
     final scrollController = useScrollController();
     useListenable(scrollController);
 
@@ -25,9 +31,9 @@ class ScreenshotsGallery extends HookWidget {
         controller: scrollController,
         padding: EdgeInsets.zero,
         scrollDirection: Axis.horizontal,
-        itemCount: imageUrls.length,
+        itemCount: thumbUrls.length,
         itemBuilder: (context, index) {
-          final imageUrl = imageUrls[index];
+          final imageUrl = thumbUrls[index];
           return GestureDetector(
             onTap: () => _showImageViewer(context, imageUrls, index),
             child: Container(
@@ -78,7 +84,11 @@ class ScreenshotsGallery extends HookWidget {
     int initialIndex,
   ) {
     final imageProviders = imageUrls
-        .map((url) => CachedNetworkImageProvider(url) as ImageProvider)
+        .map(
+          (url) => CachedNetworkImageProvider(
+            getCdnImageUrl(url, CdnImageVariant.thumblg)!,
+          ) as ImageProvider,
+        )
         .toList();
 
     showImageViewerPager(

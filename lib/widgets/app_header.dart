@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/widgets/version_pill_widget.dart';
+import 'package:zapstore/utils/image_url.dart';
 import 'package:zapstore/utils/url_utils.dart';
 
 class AppHeader extends StatelessWidget {
@@ -13,7 +14,10 @@ class AppHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final iconUrl = firstValidHttpUrl(app.icons);
+    final iconUrl = getCdnImageUrl(
+      firstValidHttpUrl(app.icons),
+      CdnImageVariant.icon,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

@@ -6,6 +6,7 @@ import 'package:models/models.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/nostr_route.dart';
+import 'package:zapstore/utils/image_url.dart';
 import 'package:zapstore/utils/url_utils.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import '../theme.dart';
@@ -27,7 +28,10 @@ class SearchAppCard extends ConsumerWidget {
     final isInstalled =
         ref.watch(installedPackageProvider(app!.identifier)) != null;
 
-    final iconUrl = firstValidHttpUrl(app!.icons);
+    final iconUrl = getCdnImageUrl(
+      firstValidHttpUrl(app!.icons),
+      CdnImageVariant.icon,
+    );
     const iconSize = 48.0;
 
     return GestureDetector(

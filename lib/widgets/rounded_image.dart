@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:zapstore/utils/image_url.dart';
 import 'package:zapstore/utils/url_utils.dart';
 
 /// A rounded image widget with fallback to person icon
@@ -10,15 +11,17 @@ class RoundedImage extends StatelessWidget {
     this.url,
     this.size = 22,
     this.radius = 60,
+    this.cdnVariant = CdnImageVariant.iconsm,
   });
 
   final String? url;
   final double size;
   final double radius;
+  final CdnImageVariant cdnVariant;
 
   @override
   Widget build(BuildContext context) {
-    final sanitizedUrl = sanitizeHttpUrl(url);
+    final sanitizedUrl = getCdnImageUrl(sanitizeHttpUrl(url), cdnVariant);
     final fallbackContainer = Container(
       height: size,
       width: size,

@@ -7,6 +7,7 @@ import 'package:zapstore/utils/nostr_route.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 import '../utils/extensions.dart';
+import '../utils/image_url.dart';
 import '../utils/url_utils.dart';
 import '../theme.dart';
 import '../services/package_manager/package_manager.dart';
@@ -500,7 +501,10 @@ class _AppIconTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final iconUrl = firstValidHttpUrl(app.icons);
+    final iconUrl = getCdnImageUrl(
+      firstValidHttpUrl(app.icons),
+      CdnImageVariant.iconsm,
+    );
 
     return Padding(
       padding: const EdgeInsets.all(2),
