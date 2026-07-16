@@ -21,3 +21,15 @@ String? getCdnImageUrl(String? imageUrl, CdnImageVariant variant) {
   params['class'] = variant.name;
   return uri.replace(queryParameters: params).toString();
 }
+
+/// Zapstore CDN profile picture for a hex pubkey (256px by default).
+///
+/// For tiny avatars, pass [tiny] to request `class=iconsm`.
+String? getProfileCdnUrl(String? pubkey, {bool tiny = false}) {
+  if (pubkey == null || pubkey.isEmpty) return null;
+  if (!RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(pubkey)) return null;
+
+  final url = 'https://$_cdnHost/p/${pubkey.toLowerCase()}.webp';
+  if (!tiny) return url;
+  return getCdnImageUrl(url, CdnImageVariant.iconsm);
+}

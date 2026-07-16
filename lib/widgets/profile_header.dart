@@ -32,7 +32,7 @@ class ProfileHeader extends StatelessWidget {
       child: Column(
         children: [
           // Profile avatar (handles null profile with fallback)
-          ProfileAvatar(profile: profile, radius: radius),
+          ProfileAvatar(profile: profile, pubkey: pubkey, radius: radius),
           const SizedBox(height: 16),
 
           // Display name with loading state
