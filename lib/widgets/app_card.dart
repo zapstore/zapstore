@@ -208,6 +208,7 @@ class AppCard extends HookConsumerWidget {
                   fit: BoxFit.cover,
                   fadeInDuration: const Duration(milliseconds: 500),
                   fadeOutDuration: const Duration(milliseconds: 200),
+                  errorListener: ignoreImageLoadError,
                   placeholder: (_, url) => const SizedBox.shrink(),
                   errorWidget: (context, url, error) => Center(
                     child: Icon(

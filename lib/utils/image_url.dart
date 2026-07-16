@@ -8,6 +8,12 @@ enum CdnImageVariant {
   thumblg,
 }
 
+/// Pass to `CachedNetworkImage.errorListener` / `CachedNetworkImageProvider`.
+///
+/// Without a listener, failed loads report to `FlutterError.onError` and get
+/// logged as fatal crashes even when `errorWidget` shows a graceful fallback.
+void ignoreImageLoadError(Object error) {}
+
 /// Add a CDN image variant only for Zapstore's CDN.
 ///
 /// Non-CDN hosts, null/empty values, and unparseable URLs are returned unchanged.

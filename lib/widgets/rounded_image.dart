@@ -41,6 +41,7 @@ class RoundedImage extends StatelessWidget {
               ? fallbackContainer
               : CachedNetworkImage(
                   imageUrl: sanitizedUrl,
+                  errorListener: ignoreImageLoadError,
                   errorWidget: (_, __, ___) => fallbackContainer,
                   useOldImageOnUrlChange: false,
                   fit: BoxFit.cover,

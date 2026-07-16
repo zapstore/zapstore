@@ -39,6 +39,7 @@ class AppHeader extends StatelessWidget {
                         fit: BoxFit.cover,
                         fadeInDuration: const Duration(milliseconds: 500),
                         fadeOutDuration: const Duration(milliseconds: 200),
+                        errorListener: ignoreImageLoadError,
                         errorWidget: (context, url, error) => Center(
                           child: Icon(
                             Icons.broken_image_outlined,

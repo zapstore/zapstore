@@ -77,6 +77,7 @@ class SearchAppCard extends ConsumerWidget {
                         fit: BoxFit.cover,
                         fadeInDuration: const Duration(milliseconds: 500),
                         fadeOutDuration: const Duration(milliseconds: 200),
+                        errorListener: ignoreImageLoadError,
                         placeholder: (_, __) => const SizedBox.shrink(),
                         errorWidget: (_, __, ___) => Center(
                           child: Icon(

@@ -34,18 +34,19 @@ class DeviceRestoreDialog extends HookConsumerWidget {
       content: BaseDialogContent(
         children: [
           const Text(
-            'Restore your saved apps and portable settings with a copied '
-            'device nsec or Amber.',
+            'Restore your settings and saved apps with a backed up device key.',
           ),
-          const SizedBox(height: 8),
-          const Text('Restoring replaces this device’s current key.'),
+          const SizedBox(height: 10),
+          const Text(
+            'Alternatively, you can sign in with Amber and settings may be recovered that way.',
+          ),
           const SizedBox(height: 16),
           TextField(
             controller: controller,
             autocorrect: false,
             enableSuggestions: false,
             decoration: const InputDecoration(
-              labelText: 'Device nsec',
+              labelText: 'Device key',
               hintText: 'nsec1…',
             ),
           ),
@@ -60,26 +61,7 @@ class DeviceRestoreDialog extends HookConsumerWidget {
               );
             },
             icon: const Icon(Icons.key),
-            label: const Text('Restore pasted key'),
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: () {
-              if (amberInstalled) {
-                Navigator.pop(
-                  context,
-                  const DeviceRestoreResult(DeviceRestoreAction.amber),
-                );
-              } else {
-                context.push('/profile/app/$kAmberNaddr');
-              }
-            },
-            icon: const Icon(Icons.login),
-            label: Text(
-              amberInstalled
-                  ? 'Restore with Amber'
-                  : 'Install Amber to restore',
-            ),
+            label: const Text('Restore'),
           ),
         ],
       ),

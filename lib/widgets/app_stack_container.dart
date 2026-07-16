@@ -519,6 +519,7 @@ class _AppIconTile extends StatelessWidget {
                     imageUrl: iconUrl,
                     fit: BoxFit.cover,
                     fadeInDuration: const Duration(milliseconds: 200),
+                    errorListener: ignoreImageLoadError,
                     placeholder: (_, __) => Container(
                       color: Theme.of(
                         context,

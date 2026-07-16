@@ -107,6 +107,7 @@ class _ProfileAvatarState extends State<ProfileAvatar> {
               fadeInDuration: const Duration(milliseconds: 500),
               fadeOutDuration: const Duration(milliseconds: 200),
               placeholder: (context, url) => _buildPlaceholder(context),
+              errorListener: ignoreImageLoadError,
               errorWidget: (context, url, error) {
                 _onImageError(url);
                 return _buildPlaceholder(context);

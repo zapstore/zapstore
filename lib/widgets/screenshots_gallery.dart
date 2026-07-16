@@ -47,6 +47,7 @@ class ScreenshotsGallery extends HookWidget {
                   fit: BoxFit.cover,
                   fadeInDuration: const Duration(milliseconds: 300),
                   fadeOutDuration: const Duration(milliseconds: 150),
+                  errorListener: ignoreImageLoadError,
                   errorWidget: (context, url, error) => Center(
                     child: Icon(
                       Icons.broken_image_outlined,
@@ -87,6 +88,7 @@ class ScreenshotsGallery extends HookWidget {
         .map(
           (url) => CachedNetworkImageProvider(
             getCdnImageUrl(url, CdnImageVariant.thumblg)!,
+            errorListener: ignoreImageLoadError,
           ) as ImageProvider,
         )
         .toList();
