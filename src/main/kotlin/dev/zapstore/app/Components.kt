@@ -22,10 +22,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 
 @Composable
@@ -69,6 +73,8 @@ fun AppCard(
     release: ReleaseInfo? = null,
     onProfileClick: (() -> Unit)? = null,
 ) {
+    val authorName = rememberProfileDisplayName(app.event.pubKey, repository)
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -77,42 +83,27 @@ fun AppCard(
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.Top) {
             AppIcon(
                 title = app.name,
                 iconUrl = app.iconUrl,
                 modifier = Modifier.size(52.dp),
             )
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    text = app.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+            Spacer(modifier.width(12.dp))
+            Column(modifier.weight(1f)) {
+                AppNameWithByline(
+                    name = app.name,
+                    authorName = authorName,
+                    nameStyle = MaterialTheme.typography.titleMedium,
+                    onAuthorClick = onProfileClick,
+                    authorTestTag = "profile:${app.event.pubKey}",
                 )
-                Text(
-                    text = buildString {
-                        release?.let {
-                            append(it.version)
-                            it.channel?.let { channel -> append(" · ").append(channel) }
-                            append(" · ")
-                        }
-                        append(app.identifier)
-                    },
-                    color = ZapMuted,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.MiddleEllipsis,
-                )
+                release?.let {
+                    Spacer(Modifier.height(8.dp))
+                    VersionPill(version = it.version)
+                }
             }
         }
-        ProfileComponent(
-            pubkey = app.event.pubKey,
-            repository = repository,
-            modifier = Modifier.padding(top = 10.dp),
-            onClick = onProfileClick,
-        )
         if (app.summary.isNotBlank()) {
             Spacer(Modifier.height(10.dp))
             Text(
@@ -124,6 +115,56 @@ fun AppCard(
             )
         }
     }
+}
+
+@Composable
+fun AppNameWithByline(
+    name: String,
+    authorName: String,
+    nameStyle: TextStyle,
+    modifier: Modifier = Modifier,
+    onAuthorClick: (() -> Unit)? = null,
+    authorTestTag: String? = null,
+) {
+    val bylineSize = (nameStyle.fontSize.value * 0.72f).sp
+    Column(modifier = modifier) {
+        Text(
+            text = name,
+            style = nameStyle,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = stringResource(R.string.app_by_author, authorName),
+            color = ZapMuted,
+            style = MaterialTheme.typography.bodySmall.copy(
+                fontSize = bylineSize,
+                fontWeight = FontWeight.Normal,
+                fontFamily = InterFontFamily,
+            ),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .then(authorTestTag?.let { Modifier.testTag(it) } ?: Modifier)
+                .then(onAuthorClick?.let { Modifier.clickable(onClick = it) } ?: Modifier),
+        )
+    }
+}
+
+@Composable
+fun VersionPill(
+    version: String,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        text = version,
+        color = MaterialTheme.colorScheme.onPrimary,
+        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(ZapPrimary)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+    )
 }
 
 @Composable
@@ -154,7 +195,7 @@ fun StackCard(
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-        Spacer(Modifier.height(12.dp))
+        Spacer(modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             stack.appAddresses.take(3).forEach { address ->
                 val app = appsByAddress[address]

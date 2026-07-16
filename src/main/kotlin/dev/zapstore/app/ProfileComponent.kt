@@ -27,12 +27,7 @@ import kotlinx.coroutines.flow.collect
 import kotlin.time.Duration.Companion.hours
 
 @Composable
-fun ProfileComponent(
-    pubkey: String,
-    repository: CatalogRepository?,
-    modifier: Modifier = Modifier,
-    onClick: (() -> Unit)? = null,
-) {
+fun rememberProfile(pubkey: String, repository: CatalogRepository?): ProfileInfo? {
     val profile by produceState<ProfileInfo?>(initialValue = null, pubkey, repository) {
         if (repository == null) return@produceState
 
@@ -45,12 +40,30 @@ fun ProfileComponent(
             value = state.items.maxByOrNull(Event::createdAt)?.let(::ProfileInfo)
         }
     }
+    return profile
+}
 
-    val npub = pubkey.toNpub()
-    val displayName = profile?.displayName
+fun profileDisplayName(profile: ProfileInfo?, pubkey: String): String =
+    profile?.displayName
         ?.takeIf(String::isNotBlank)
         ?: profile?.name?.takeIf(String::isNotBlank)
-        ?: npub
+        ?: pubkey.toNpub()
+
+@Composable
+fun rememberProfileDisplayName(
+    pubkey: String,
+    repository: CatalogRepository?,
+): String = profileDisplayName(rememberProfile(pubkey, repository), pubkey)
+
+@Composable
+fun ProfileComponent(
+    pubkey: String,
+    repository: CatalogRepository?,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+) {
+    val profile = rememberProfile(pubkey, repository)
+    val displayName = profileDisplayName(profile, pubkey)
     val pictureUrl = profile?.picture?.takeIf(::isHttpUrl)
 
     Row(

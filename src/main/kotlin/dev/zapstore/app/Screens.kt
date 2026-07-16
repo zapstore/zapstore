@@ -296,43 +296,28 @@ fun AppDetailScreen(
         }
 
         item {
+            val authorName = rememberProfileDisplayName(app.event.pubKey, repository)
             Row(verticalAlignment = Alignment.Top) {
                 AppIcon(
                     title = app.name,
                     iconUrl = app.iconUrl,
                     modifier = Modifier.size(84.dp),
                 )
-                Spacer(Modifier.width(16.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        text = app.name,
-                        style = MaterialTheme.typography.displaySmall,
+                Spacer(modifier.width(16.dp))
+                Column(modifier.weight(1f)) {
+                    AppNameWithByline(
+                        name = app.name,
+                        authorName = authorName,
+                        nameStyle = MaterialTheme.typography.displaySmall,
+                        onAuthorClick = { onProfileClick(app.event.pubKey) },
+                        authorTestTag = "profile:${app.event.pubKey}",
                     )
-                    StatusText(app.identifier)
                     state.release?.let { release ->
-                        Spacer(Modifier.height(10.dp))
-                        Text(
-                            text = buildString {
-                                append(release.version)
-                                release.channel?.let { append(" · ").append(it) }
-                            },
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            style = MaterialTheme.typography.labelMedium,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(ZapPrimary)
-                                .padding(horizontal = 10.dp, vertical = 4.dp),
-                        )
+                        Spacer(modifier.height(10.dp))
+                        VersionPill(version = release.version)
                     }
                 }
             }
-        }
-        item {
-            ProfileComponent(
-                pubkey = app.event.pubKey,
-                repository = repository,
-                onClick = { onProfileClick(app.event.pubKey) },
-            )
         }
 
         if (app.screenshots.isNotEmpty()) {
