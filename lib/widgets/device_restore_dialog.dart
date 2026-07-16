@@ -6,7 +6,7 @@ import 'package:zapstore/constants/app_constants.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/widgets/common/base_dialog.dart';
 
-enum DeviceRestoreAction { startFresh, pasteKey, amber }
+enum DeviceRestoreAction { pasteKey, amber }
 
 class DeviceRestoreResult {
   const DeviceRestoreResult(this.action, {this.key});
@@ -15,7 +15,7 @@ class DeviceRestoreResult {
   final String? key;
 }
 
-/// First-run choice for recovering an existing device identity.
+/// Lets a user replace the current device identity with a recovered one.
 class DeviceRestoreDialog extends HookConsumerWidget {
   const DeviceRestoreDialog({super.key});
 
@@ -29,7 +29,7 @@ class DeviceRestoreDialog extends HookConsumerWidget {
     );
 
     return BaseDialog(
-      title: const BaseDialogTitle('Restore device'),
+      title: const BaseDialogTitle('Restore device key'),
       titleIcon: const Icon(Icons.restore, size: 20),
       content: BaseDialogContent(
         children: [
@@ -38,10 +38,7 @@ class DeviceRestoreDialog extends HookConsumerWidget {
             'device nsec or Amber.',
           ),
           const SizedBox(height: 8),
-          const Text(
-            'Older local settings are not migrated. If you are updating, '
-            'copy your old device nsec before continuing.',
-          ),
+          const Text('Restoring replaces this device’s current key.'),
           const SizedBox(height: 16),
           TextField(
             controller: controller,
@@ -88,11 +85,8 @@ class DeviceRestoreDialog extends HookConsumerWidget {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(
-            context,
-            const DeviceRestoreResult(DeviceRestoreAction.startFresh),
-          ),
-          child: const Text('Start fresh'),
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
         ),
       ],
     );

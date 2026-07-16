@@ -400,9 +400,10 @@ final storageReadyProvider = FutureProvider<void>((ref) async {
 
   // Initialize device key signer — must be registered before any encrypted
   // queries fire, so EncryptableModel.prepareAfterLoading can find it.
-  final deviceKey = await ref
-      .read(deviceKeyServiceProvider)
-      .getOrCreatePrivateKey();
+  final deviceKeyService = ref.read(deviceKeyServiceProvider);
+  final hasExistingDeviceKey = await deviceKeyService.hasPrivateKey();
+  ref.read(isNewDeviceKeyProvider.notifier).state = !hasExistingDeviceKey;
+  final deviceKey = await deviceKeyService.getOrCreatePrivateKey();
   final deviceSigner = Bip340PrivateKeySigner(deviceKey, ref);
   await deviceSigner.signIn(setAsActive: false);
   ref.read(devicePubkeyProvider.notifier).state = deviceSigner.pubkey;
@@ -447,9 +448,6 @@ final appInitializationProvider = FutureProvider<void>((ref) async {
   await _attemptAutoSignIn(ref);
 
   WidgetsBinding.instance.addPostFrameCallback((_) {
-    if (ref.read(Signer.activePubkeyProvider) == null) {
-      unawaited(maybeOfferInitialDeviceRestore(ref));
-    }
     unawaited(ref.read(appCatalogRelayServiceProvider).checkForUpdates());
   });
 });

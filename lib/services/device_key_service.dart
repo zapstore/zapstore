@@ -12,6 +12,12 @@ const _kDeviceKey = 'device_key';
 /// Manages the device private key. The nsec is intentionally isolated from
 /// portable settings and temporary local state.
 class DeviceKeyService {
+  /// Whether secure storage already contains a usable device key.
+  Future<bool> hasPrivateKey() async {
+    final existing = await _storage.read(key: _kDeviceKey);
+    return existing != null && existing.isNotEmpty;
+  }
+
   /// Load existing device key or generate a new one. Returns hex private key.
   Future<String> getOrCreatePrivateKey() async {
     final existing = await _storage.read(key: _kDeviceKey);
@@ -113,3 +119,9 @@ final deviceKeyServiceProvider = Provider<DeviceKeyService>(
 
 /// The device pubkey (hex). Available after storageReadyProvider resolves.
 final devicePubkeyProvider = StateProvider<String?>((_) => null);
+
+/// Whether this process generated the device key for a fresh installation.
+///
+/// This is intentionally session-only: once the new key is stored, subsequent
+/// launches have no need to show the recovery reminder.
+final isNewDeviceKeyProvider = StateProvider<bool>((_) => false);

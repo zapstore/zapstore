@@ -13,15 +13,17 @@ import 'package:zapstore/services/device_private_event_service.dart';
 import 'package:zapstore/services/device_private_sync_service.dart';
 import 'package:zapstore/services/device_state_service.dart';
 import 'package:zapstore/services/log_service.dart';
-import 'package:zapstore/services/settings_service.dart';
 import 'package:zapstore/widgets/device_backup_dialog.dart';
-import 'package:zapstore/widgets/device_restore_dialog.dart';
 
 /// Backs up the device key to the active Amber identity and restores it again.
 ///
 /// The relay record is authored by Amber, unlike portable device state which is
 /// always authored by the recovered device key.
 class DeviceBackupService {
+  Future<void>? _amberRestore;
+
+  bool get isRestoringFromAmber => _amberRestore != null;
+
   /// Retained as a lifecycle hook for callers from the previous recovery
   /// implementation. Device-key backup has no long-lived foreground request.
   void beginWork() {}
@@ -126,106 +128,74 @@ class DeviceBackupService {
     await signer.signIn(setAsActive: false);
     ref.read(devicePubkeyProvider.notifier).state = pubkey;
   }
+
+  /// Signs in to Amber, verifies its backup, and offers to replace the key.
+  ///
+  /// This is explicitly user-initiated from Device key management. It prevents
+  /// the regular sign-in backup from overwriting the remote backup first.
+  Future<void> restoreFromAmber({required Ref ref}) {
+    return _amberRestore ??= _restoreFromAmber(ref).whenComplete(() {
+      _amberRestore = null;
+    });
+  }
+
+  Future<void> _restoreFromAmber(Ref ref) async {
+    await ref.read(amberSignerProvider).signIn();
+    final amberSigner = ref.read(Signer.activeSignerProvider);
+    if (amberSigner == null) {
+      throw const DeviceBackupException('Could not sign in with Amber.');
+    }
+
+    final privateKeyHex = await fetchAmberBackup(
+      ref: ref,
+      amberSigner: amberSigner,
+    );
+    if (privateKeyHex == null) {
+      throw const DeviceBackupException(
+        'No device key backup was found for this Amber identity.',
+      );
+    }
+
+    final context = rootNavigatorKey.currentState?.overlay?.context;
+    if (context == null || !context.mounted) {
+      throw const DeviceBackupException('Restore screen is unavailable.');
+    }
+    final restore = await showDialog<bool>(
+      context: context,
+      builder: (_) => DeviceBackupRestoreDialog(
+        onRestore: () => Navigator.of(context).pop(true),
+        onKeepCurrent: () => Navigator.of(context).pop(false),
+      ),
+    );
+    if (restore != true) return;
+
+    await restoreDeviceKey(ref: ref, privateKeyHex: privateKeyHex);
+    await ref.read(devicePrivateSyncProvider.notifier).syncRestoredKey();
+    if (!ref.read(deviceStateProvider).isReady) {
+      unawaited(ref.read(deviceStateProvider.notifier).bootstrap());
+    }
+  }
 }
 
 final deviceBackupServiceProvider = Provider<DeviceBackupService>(
   (ref) => DeviceBackupService(),
 );
 
-/// Runs the one-time recovery choice after the navigator overlay is available.
-Future<void> maybeOfferInitialDeviceRestore(Ref ref) async {
-  final settings = ref.read(settingsServiceProvider);
-  final temp = await settings.loadTemp();
-  if (temp.restoreOnboardingComplete) return;
-  final context = rootNavigatorKey.currentState?.overlay?.context;
-  if (context == null || !context.mounted) return;
-
-  final result = await showDialog<DeviceRestoreResult>(
-    context: context,
-    barrierDismissible: false,
-    builder: (_) => const DeviceRestoreDialog(),
-  );
-  if (result == null) return;
-
-  switch (result.action) {
-    case DeviceRestoreAction.startFresh:
-      await settings.saveTemp(temp.copyWith(restoreOnboardingComplete: true));
-      unawaited(ref.read(deviceStateProvider.notifier).bootstrap());
-      break;
-    case DeviceRestoreAction.pasteKey:
-      final privateKeyHex = ref
-          .read(deviceKeyServiceProvider)
-          .parsePrivateKey(result.key ?? '');
-      if (privateKeyHex == null) {
-        LogService.I.warn('invalid pasted device key', tag: 'backup');
-        return;
-      }
-      await ref
-          .read(deviceBackupServiceProvider)
-          .restoreDeviceKey(ref: ref, privateKeyHex: privateKeyHex);
-      await ref.read(devicePrivateSyncProvider.notifier).syncRestoredKey();
-      final restored = await ref
-          .read(deviceStateProvider.notifier)
-          .restoreFromLocalEvent();
-      if (!restored) {
-        unawaited(ref.read(deviceStateProvider.notifier).bootstrap());
-      }
-      await settings.saveTemp(temp.copyWith(restoreOnboardingComplete: true));
-      break;
-    case DeviceRestoreAction.amber:
-      await ref.read(amberSignerProvider).signIn();
-      break;
-  }
-}
-
-/// Offers Amber recovery only once per fresh local installation.
+/// Backs up the current device key after a normal Amber sign-in.
 Future<void> maybeOfferDeviceBackup(Ref ref) async {
   final amberSigner = ref.read(Signer.activeSignerProvider);
   if (amberSigner == null) return;
 
-  final settings = ref.read(settingsServiceProvider);
-  final temp = await settings.loadTemp();
   final service = ref.read(deviceBackupServiceProvider);
+  if (service.isRestoringFromAmber) return;
   try {
-    if (!temp.restoreOnboardingComplete) {
-      final privateKeyHex = await service.fetchAmberBackup(
-        ref: ref,
-        amberSigner: amberSigner,
-      );
-      if (privateKeyHex != null) {
-        final context = rootNavigatorKey.currentState?.overlay?.context;
-        if (context != null && context.mounted) {
-          final restore = await showDialog<bool>(
-            context: context,
-            barrierDismissible: false,
-            builder: (_) => DeviceBackupRestoreDialog(
-              onRestore: () => Navigator.of(context).pop(true),
-              onKeepCurrent: () => Navigator.of(context).pop(false),
-            ),
-          );
-          if (restore == true) {
-            await service.restoreDeviceKey(
-              ref: ref,
-              privateKeyHex: privateKeyHex,
-            );
-            await ref
-                .read(devicePrivateSyncProvider.notifier)
-                .syncRestoredKey();
-            if (!ref.read(deviceStateProvider).isReady) {
-              unawaited(ref.read(deviceStateProvider.notifier).bootstrap());
-            }
-          }
-        }
-      }
-      await settings.saveTemp(temp.copyWith(restoreOnboardingComplete: true));
-    }
     await service.backupDeviceKey(ref: ref, amberSigner: amberSigner);
     if (!ref.read(deviceStateProvider).isReady) {
       unawaited(ref.read(deviceStateProvider.notifier).bootstrap());
     }
   } catch (error, stack) {
     LogService.I.warn(
-      'device key backup or recovery failed',
+      'device key backup failed',
       tag: 'backup',
       err: error,
       stack: stack,

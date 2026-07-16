@@ -15,15 +15,19 @@ import 'package:zapstore/services/background_update_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:zapstore/main.dart';
+import 'package:zapstore/services/device_backup_service.dart';
 import 'package:zapstore/services/device_key_service.dart';
+import 'package:zapstore/services/device_private_sync_service.dart';
 import 'package:zapstore/services/device_state_service.dart';
 import 'package:zapstore/services/log_service.dart' as app_logs;
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/services/settings_service.dart';
 import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/utils/debug_utils.dart';
 import 'package:zapstore/utils/nostr_route.dart';
 import 'package:zapstore/widgets/common/profile_identity_row.dart';
 import 'package:zapstore/widgets/common/stack_link_card.dart';
+import 'package:zapstore/widgets/device_restore_dialog.dart';
 import 'package:zapstore/theme.dart';
 import 'package:zapstore/services/notification_service.dart';
 import 'package:zapstore/widgets/common/note_parser.dart';
@@ -63,13 +67,13 @@ class ProfileScreen extends ConsumerWidget {
 
           const SizedBox(height: 16),
 
-          // App Catalog Relay Management Section
-          const RelayManagementCard(),
+          // Data Management Section
+          const _DataManagementSection(),
 
           const SizedBox(height: 16),
 
-          // Data Management Section
-          const _DataManagementSection(),
+          // App Catalog Relay Management Section
+          const RelayManagementCard(),
 
           const SizedBox(height: 24),
 
@@ -1412,6 +1416,7 @@ class _DeviceKeyCard extends HookConsumerWidget {
     final shortened =
         '${npub.substring(0, 12)}...${npub.substring(npub.length - 8)}';
     final isCopying = useState(false);
+    final isRestoring = useState(false);
     final powElapsed = useState(Duration.zero);
     useEffect(() {
       final startedAt = deviceState.startedAt;
@@ -1510,55 +1515,148 @@ class _DeviceKeyCard extends HookConsumerWidget {
               ],
             ),
           ),
-          TextButton.icon(
-            onPressed: !deviceState.isReady || isCopying.value
-                ? null
-                : () async {
-                    final shouldCopy = await showDialog<bool>(
-                      context: context,
-                      builder: (dialogContext) => AlertDialog(
-                        title: const Text('Copy device private key?'),
-                        content: const Text(
-                          'This nsec controls your private Zapstore data, including saved apps '
-                          'and unmanaged apps. Anyone with it can read and modify that data.',
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () =>
-                                Navigator.pop(dialogContext, false),
-                            child: const Text('Cancel'),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextButton.icon(
+                onPressed: !deviceState.isReady || isCopying.value
+                    ? null
+                    : () async {
+                        final shouldCopy = await showDialog<bool>(
+                          context: context,
+                          builder: (dialogContext) => AlertDialog(
+                            title: const Text('Copy device private key?'),
+                            content: const Text(
+                              'This nsec controls your private Zapstore data, including saved apps '
+                              'and unmanaged apps. Anyone with it can read and modify that data.',
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () =>
+                                    Navigator.pop(dialogContext, false),
+                                child: const Text('Cancel'),
+                              ),
+                              FilledButton(
+                                onPressed: () =>
+                                    Navigator.pop(dialogContext, true),
+                                child: const Text('Copy nsec'),
+                              ),
+                            ],
                           ),
-                          FilledButton(
-                            onPressed: () => Navigator.pop(dialogContext, true),
-                            child: const Text('Copy nsec'),
-                          ),
-                        ],
-                      ),
-                    );
-                    if (shouldCopy != true) return;
-
-                    isCopying.value = true;
-                    try {
-                      final nsec = await ref
-                          .read(deviceKeyServiceProvider)
-                          .getNsec();
-                      await Clipboard.setData(ClipboardData(text: nsec));
-                      if (context.mounted) {
-                        context.showInfo('Device nsec copied');
-                      }
-                    } catch (e) {
-                      if (context.mounted) {
-                        context.showError(
-                          'Could not copy device key',
-                          technicalDetails: e.toString(),
                         );
-                      }
-                    } finally {
-                      isCopying.value = false;
-                    }
-                  },
-            icon: const Icon(Icons.copy, size: 18),
-            label: const Text('Copy nsec'),
+                        if (shouldCopy != true) return;
+
+                        isCopying.value = true;
+                        try {
+                          final nsec = await ref
+                              .read(deviceKeyServiceProvider)
+                              .getNsec();
+                          await Clipboard.setData(ClipboardData(text: nsec));
+                          if (context.mounted) {
+                            context.showInfo('Device nsec copied');
+                          }
+                        } catch (e) {
+                          if (context.mounted) {
+                            context.showError(
+                              'Could not copy device key',
+                              technicalDetails: e.toString(),
+                            );
+                          }
+                        } finally {
+                          isCopying.value = false;
+                        }
+                      },
+                icon: const Icon(Icons.copy, size: 18),
+                label: const Text('Copy nsec'),
+              ),
+              TextButton.icon(
+                onPressed: isRestoring.value
+                    ? null
+                    : () async {
+                        final result = await showDialog<DeviceRestoreResult>(
+                          context: context,
+                          builder: (_) => const DeviceRestoreDialog(),
+                        );
+                        if (result == null || !context.mounted) return;
+
+                        if (result.action == DeviceRestoreAction.amber) {
+                          isRestoring.value = true;
+                          try {
+                            await ref
+                                .read(deviceBackupServiceProvider)
+                                .restoreFromAmber(ref: ref.read(refProvider));
+                            if (context.mounted) {
+                              context.showInfo('Device key restored');
+                            }
+                          } catch (error, stack) {
+                            app_logs.LogService.I.warn(
+                              'Amber device key restore failed',
+                              tag: 'backup',
+                              err: error,
+                              stack: stack,
+                            );
+                            if (context.mounted) {
+                              context.showError(
+                                'Could not restore device key',
+                                technicalDetails: error.toString(),
+                              );
+                            }
+                          } finally {
+                            isRestoring.value = false;
+                          }
+                          return;
+                        }
+
+                        final privateKeyHex = ref
+                            .read(deviceKeyServiceProvider)
+                            .parsePrivateKey(result.key ?? '');
+                        if (privateKeyHex == null) {
+                          context.showError('Enter a valid device nsec.');
+                          return;
+                        }
+
+                        isRestoring.value = true;
+                        try {
+                          await ref
+                              .read(deviceBackupServiceProvider)
+                              .restoreDeviceKey(
+                                ref: ref.read(refProvider),
+                                privateKeyHex: privateKeyHex,
+                              );
+                          await ref
+                              .read(devicePrivateSyncProvider.notifier)
+                              .syncRestoredKey();
+                          if (!ref.read(deviceStateProvider).isReady) {
+                            unawaited(
+                              ref
+                                  .read(deviceStateProvider.notifier)
+                                  .bootstrap(),
+                            );
+                          }
+                          if (context.mounted) {
+                            context.showInfo('Device key restored');
+                          }
+                        } catch (error, stack) {
+                          app_logs.LogService.I.warn(
+                            'device key restore failed',
+                            tag: 'backup',
+                            err: error,
+                            stack: stack,
+                          );
+                          if (context.mounted) {
+                            context.showError(
+                              'Could not restore device key',
+                              technicalDetails: error.toString(),
+                            );
+                          }
+                        } finally {
+                          isRestoring.value = false;
+                        }
+                      },
+                icon: const Icon(Icons.restore, size: 18),
+                label: const Text('Restore'),
+              ),
+            ],
           ),
         ],
       ),

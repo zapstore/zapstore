@@ -10,6 +10,7 @@ import '../widgets/latest_releases_container.dart';
 import '../widgets/search_app_card.dart';
 import '../utils/extensions.dart';
 import '../main.dart';
+import '../services/device_key_service.dart';
 import '../services/package_manager/package_manager.dart';
 
 /// Main search and app discovery screen
@@ -67,58 +68,71 @@ class SearchScreen extends HookConsumerWidget {
       backgroundColor: Colors.transparent,
       body: Column(
         children: [
-          // Professional search bar with better spacing
+          // Sticky search bar (+ optional device-key reminder)
           Container(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 18),
-            child: ValueListenableBuilder<TextEditingValue>(
-              valueListenable: searchController,
-              builder: (context, value, _) {
-                final hasText = value.text.isNotEmpty;
+            child: Column(
+              children: [
+                ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: searchController,
+                  builder: (context, value, _) {
+                    final hasText = value.text.isNotEmpty;
 
-                return SearchBar(
-                  controller: searchController,
-                  focusNode: searchFocusNode,
-                  hintText: 'Search apps',
-                  leading: Icon(
-                    Icons.search_rounded,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  trailing: [
-                    if (hasText)
-                      IconButton(
-                        icon: Icon(
-                          Icons.clear_rounded,
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                    return SearchBar(
+                      controller: searchController,
+                      focusNode: searchFocusNode,
+                      hintText: 'Search apps',
+                      leading: Icon(
+                        Icons.search_rounded,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                      trailing: [
+                        if (hasText)
+                          IconButton(
+                            icon: Icon(
+                              Icons.clear_rounded,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant
+                                  .withValues(alpha: 0.6),
+                            ),
+                            onPressed: () {
+                              searchController.clear();
+                              searchQuery.value = '';
+                              searchFocusNode.requestFocus();
+                            },
+                            tooltip: 'Clear search',
+                          ),
+                      ],
+                      onSubmitted: performSearch,
+                      elevation: WidgetStateProperty.all(0),
+                      backgroundColor: WidgetStateProperty.all(
+                        Theme.of(context).colorScheme.surfaceContainerHighest
+                            .withValues(alpha: 0.8),
+                      ),
+                      shape: WidgetStateProperty.all(
+                        RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          side: BorderSide(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.outline.withValues(alpha: 0.3),
+                            width: 1,
+                          ),
                         ),
-                        onPressed: () {
-                          searchController.clear();
-                          searchQuery.value = '';
-                          searchFocusNode.requestFocus();
-                        },
-                        tooltip: 'Clear search',
                       ),
-                  ],
-                  onSubmitted: performSearch,
-                  elevation: WidgetStateProperty.all(0),
-                  backgroundColor: WidgetStateProperty.all(
-                    Theme.of(context).colorScheme.surfaceContainerHighest
-                        .withValues(alpha: 0.8),
+                    );
+                  },
+                ),
+                if (ref.watch(isNewDeviceKeyProvider)) ...[
+                  const SizedBox(height: 12),
+                  _NewDeviceKeyReminder(
+                    onTap: () => context.go('/profile'),
+                    onDismiss: () =>
+                        ref.read(isNewDeviceKeyProvider.notifier).state = false,
                   ),
-                  shape: WidgetStateProperty.all(
-                    RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      side: BorderSide(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.outline.withValues(alpha: 0.3),
-                        width: 1,
-                      ),
-                    ),
-                  ),
-                );
-              },
+                ],
+              ],
             ),
           ),
           // Scrollable content
@@ -158,6 +172,76 @@ class SearchScreen extends HookConsumerWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _NewDeviceKeyReminder extends StatelessWidget {
+  const _NewDeviceKeyReminder({required this.onTap, required this.onDismiss});
+
+  final VoidCallback onTap;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    // Dark yellow (hue ~50°), not muddy brown — reads as yellow on dark UI.
+    const toastBackground = Color(0xFFC9A000);
+    const toastForeground = Colors.white;
+
+    return Material(
+      color: toastBackground,
+      elevation: 2,
+      shadowColor: Colors.black38,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 4, 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(top: 1),
+                child: Icon(
+                  Icons.vpn_key_outlined,
+                  color: toastForeground,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Welcome to Zapstore',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: toastForeground,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Used Zapstore before? Restore your device key via nsec or by signing in with Amber.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: toastForeground.withValues(alpha: 0.92),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                onPressed: onDismiss,
+                tooltip: 'Dismiss',
+                icon: const Icon(Icons.close_rounded, color: toastForeground),
+                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                padding: EdgeInsets.zero,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

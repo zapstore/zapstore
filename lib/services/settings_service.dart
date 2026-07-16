@@ -51,14 +51,12 @@ class TempSettings {
   final DateTime? seenUntil;
   final DateTime? deletionSyncedUntil;
   final LogLevel logLevel;
-  final bool restoreOnboardingComplete;
 
   const TempSettings({
     this.lastAppOpened,
     this.seenUntil,
     this.deletionSyncedUntil,
     this.logLevel = LogLevel.debug,
-    this.restoreOnboardingComplete = false,
   });
 
   factory TempSettings.fromJson(Map<String, dynamic> json) => TempSettings(
@@ -66,8 +64,6 @@ class TempSettings {
     seenUntil: _parseDateTime(json['seenUntil']),
     deletionSyncedUntil: _parseDateTime(json['deletionSyncedUntil']),
     logLevel: LogLevel.parse(json['logLevel'] as String?) ?? LogLevel.debug,
-    restoreOnboardingComplete:
-        json['restoreOnboardingComplete'] as bool? ?? false,
   );
 
   Map<String, dynamic> toJson() => {
@@ -77,7 +73,6 @@ class TempSettings {
     if (deletionSyncedUntil != null)
       'deletionSyncedUntil': deletionSyncedUntil!.millisecondsSinceEpoch,
     if (logLevel != LogLevel.debug) 'logLevel': logLevel.name,
-    if (restoreOnboardingComplete) 'restoreOnboardingComplete': true,
   };
 
   TempSettings copyWith({
@@ -85,14 +80,11 @@ class TempSettings {
     DateTime? seenUntil,
     DateTime? deletionSyncedUntil,
     LogLevel? logLevel,
-    bool? restoreOnboardingComplete,
   }) => TempSettings(
     lastAppOpened: lastAppOpened ?? this.lastAppOpened,
     seenUntil: seenUntil ?? this.seenUntil,
     deletionSyncedUntil: deletionSyncedUntil ?? this.deletionSyncedUntil,
     logLevel: logLevel ?? this.logLevel,
-    restoreOnboardingComplete:
-        restoreOnboardingComplete ?? this.restoreOnboardingComplete,
   );
 }
 
@@ -125,7 +117,6 @@ class LocalSettings {
     bool? backgroundAutoUpdatesEnabled,
     Set<String>? trustedSigners,
     LogLevel? logLevel,
-    bool? restoreOnboardingComplete,
     bool clearNwc = false,
   }) => LocalSettings(
     nwcConnectionString: clearNwc
@@ -140,7 +131,6 @@ class LocalSettings {
       seenUntil: seenUntil,
       deletionSyncedUntil: deletionSyncedUntil,
       logLevel: logLevel,
-      restoreOnboardingComplete: restoreOnboardingComplete,
     ),
   );
 }
