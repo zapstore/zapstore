@@ -41,6 +41,26 @@ class DeviceRestoreDialog extends HookConsumerWidget {
             'Alternatively, you can sign in with Amber and settings may be recovered that way.',
           ),
           const SizedBox(height: 16),
+          OutlinedButton.icon(
+            onPressed: () {
+              if (amberInstalled) {
+                Navigator.pop(
+                  context,
+                  const DeviceRestoreResult(DeviceRestoreAction.amber),
+                );
+              } else {
+                Navigator.pop(context);
+                context.push('/search/app/$kAmberNaddr');
+              }
+            },
+            icon: const Icon(Icons.login),
+            label: Text(
+              amberInstalled
+                  ? 'Restore with Amber'
+                  : 'Install Amber to restore',
+            ),
+          ),
+          const SizedBox(height: 12),
           TextField(
             controller: controller,
             autocorrect: false,

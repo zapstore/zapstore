@@ -72,28 +72,8 @@ class DeviceBackupService {
     required Ref ref,
     required Signer amberSigner,
   }) async {
-    final results = await ref
-        .read(storageNotifierProvider.notifier)
-        .query(
-          RequestFilter<CustomData>(
-            authors: {amberSigner.pubkey},
-            tags: {
-              '#d': {kDeviceKeyBackupIdentifier},
-            },
-            limit: 1,
-          ).toRequest(),
-          source: const LocalAndRemoteSource(
-            relays: 'AppCatalog',
-            stream: false,
-          ),
-          subscriptionPrefix: 'app-device-key-backup',
-        );
-    final backup = results.firstOrNull;
-    if (backup == null ||
-        backup.pubkey != amberSigner.pubkey ||
-        !verifySignedEvent(ref, backup.event)) {
-      return null;
-    }
+    final backup = await _findAmberBackup(ref: ref, amberSigner: amberSigner);
+    if (backup == null) return null;
     try {
       final plaintext = await amberSigner.nip44Decrypt(
         backup.content,
@@ -111,6 +91,57 @@ class DeviceBackupService {
     } catch (_) {
       return null;
     }
+  }
+
+  /// Returns whether Amber already holds a signed recovery record.
+  ///
+  /// A normal sign-in must not replace an existing recovery key. In
+  /// particular, a fresh install has already generated a new device key before
+  /// Amber becomes available; publishing that key would orphan the user's
+  /// existing private state.
+  Future<bool> hasAmberBackup({
+    required Ref ref,
+    required Signer amberSigner,
+  }) async =>
+      await _findAmberBackup(ref: ref, amberSigner: amberSigner) != null;
+
+  static bool isValidAmberBackup({
+    required Ref ref,
+    required CustomData? backup,
+    required Signer amberSigner,
+  }) =>
+      backup != null &&
+      backup.pubkey == amberSigner.pubkey &&
+      verifySignedEvent(ref, backup.event);
+
+  Future<CustomData?> _findAmberBackup({
+    required Ref ref,
+    required Signer amberSigner,
+  }) async {
+    final results = await ref
+        .read(storageNotifierProvider.notifier)
+        .query(
+          RequestFilter<CustomData>(
+            authors: {amberSigner.pubkey},
+            tags: {
+              '#d': {kDeviceKeyBackupIdentifier},
+            },
+            limit: 1,
+          ).toRequest(),
+          source: const LocalAndRemoteSource(
+            relays: 'AppCatalog',
+            stream: false,
+          ),
+          subscriptionPrefix: 'app-device-key-backup',
+        );
+    final backup = results.firstOrNull;
+    return isValidAmberBackup(
+          ref: ref,
+          backup: backup,
+          amberSigner: amberSigner,
+        )
+        ? backup
+        : null;
   }
 
   Future<void> restoreDeviceKey({
@@ -189,6 +220,9 @@ Future<void> maybeOfferDeviceBackup(Ref ref) async {
   final service = ref.read(deviceBackupServiceProvider);
   if (service.isRestoringFromAmber) return;
   try {
+    if (await service.hasAmberBackup(ref: ref, amberSigner: amberSigner)) {
+      return;
+    }
     await service.backupDeviceKey(ref: ref, amberSigner: amberSigner);
     if (!ref.read(deviceStateProvider).isReady) {
       unawaited(ref.read(deviceStateProvider.notifier).bootstrap());

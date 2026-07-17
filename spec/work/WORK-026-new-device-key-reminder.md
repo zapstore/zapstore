@@ -21,6 +21,12 @@
     test/services/device_backup_service_test.dart
     test/services/settings_service_test.dart`
   - `HOME=/tmp fvm flutter analyze`
+- [x] 5. Protect Amber recovery records
+  - Files: `lib/services/device_backup_service.dart`,
+    `lib/widgets/device_restore_dialog.dart`
+  - Normal Amber sign-in preserves an existing verified Amber recovery record;
+    explicit Device key management offers Amber recovery without scheduling a
+    replacement backup.
 
 ## Verification
 
@@ -47,3 +53,16 @@ any time without treating Amber as a prerequisite or gating the UI.
 The obsolete persisted `restoreOnboardingComplete` value is removed. Amber
 recovery is now explicitly initiated from Device key management, which prevents
 normal Amber sign-in backup from overwriting a recovery record first.
+
+### 2026-07-17 - Existing Amber recovery records are immutable on sign-in
+
+**Context:** A fresh install creates a new device key before the user can sign
+in with Amber. Automatically backing up that key could replace the only record
+that points to the prior device's private state.
+
+**Decision:** On a normal Amber sign-in, query for a signature-verified backup
+first and only create one when none exists. Recovery must be started explicitly
+from Device key management, which now exposes the Amber option.
+
+**Rationale:** An Amber sign-in must not silently make prior private stacks and
+portable settings unrecoverable.
