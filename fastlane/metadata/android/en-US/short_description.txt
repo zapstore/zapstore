@@ -1,0 +1,1 @@
+The open app store for Android. Privacy-first, interoperable catalogs, and a social layer based on Nostr.

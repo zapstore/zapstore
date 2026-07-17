@@ -1,0 +1,3 @@
+Zapstore is an open Android app store built around portable catalogs anyone can run. Discover and update apps with privacy and transparent trust.
+
+A free catalog for everyday use, plus optional supporter-funded curation.

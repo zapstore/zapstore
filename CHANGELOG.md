@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-07-17
+
+### Added
+
+- Device key: portable encrypted device state, Amber key backup, and restart-safe PoW publishing for private device events
+- Opt-in background auto-updates with Wi-Fi-only downloads and silent or staged installs
+- App catalog relays as device-signed kind 10067 events
+- NIP-56 app reporting from the overflow menu
+- Local diagnostic logs with export/share
+- Unmanaged apps on the Updates screen (#315)
+- C1 proof verification before install
+- CDN image variants (including profile pictures via CDN pubkey path)
+
+### Changed
+
+- Latest releases are asset-first / offline-first again
+- Private app data moves to the device key; remove the broken installed-apps backup feature
+- Narrower deep link handling
+- Drop Linux and macOS platform targets
+
+### Fixed
+
+- Amber restore from backup
+- Unmanaged apps persistence and AppCatalog publish acceptance for reports/updates
+- Resume and navigation responsiveness (log flush races, incremental catalog resolution, coalesced package scans)
+
 ## [1.0.6] - 2026-04-11
 
 ### Fixed

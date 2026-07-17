@@ -667,10 +667,12 @@ packages:
   models:
     dependency: "direct main"
     description:
-      path: "../models"
-      relative: true
-    source: path
-    version: "0.3.3"
+      path: "."
+      ref: "5e48ed94c79b6c8f1564f986d14aa85352771f9f"
+      resolved-ref: "5e48ed94c79b6c8f1564f986d14aa85352771f9f"
+      url: "https://github.com/purplebase/models"
+    source: git
+    version: "0.3.4"
   nm:
     dependency: transitive
     description:
@@ -802,10 +804,12 @@ packages:
   purplebase:
     dependency: "direct main"
     description:
-      path: "../purplebase"
-      relative: true
-    source: path
-    version: "0.3.3"
+      path: "."
+      ref: "8db57ac606d79dd89980b968c33524570b63e8db"
+      resolved-ref: "8db57ac606d79dd89980b968c33524570b63e8db"
+      url: "https://github.com/purplebase/purplebase"
+    source: git
+    version: "0.3.4"
   qr:
     dependency: transitive
     description:
