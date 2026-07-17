@@ -1,4 +1,3 @@
 repository: https://github.com/zapstore/zapstore
-release_source: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
 changelog: CHANGELOG.md
 license: MIT
