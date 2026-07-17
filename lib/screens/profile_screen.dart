@@ -1738,12 +1738,6 @@ class _BackgroundAutoUpdatesToggle extends ConsumerWidget {
                       err: error,
                       stack: stack,
                     );
-                    if (context.mounted) {
-                      context.showError(
-                        'Background auto-updates are enabled, but the first check '
-                        'could not be scheduled.',
-                      );
-                    }
                   }
                 }());
               }

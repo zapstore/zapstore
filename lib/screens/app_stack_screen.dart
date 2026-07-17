@@ -7,7 +7,9 @@ import 'package:zapstore/services/device_key_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/nostr_route.dart';
+import 'package:zapstore/utils/stack_app_ids.dart';
 import 'package:zapstore/widgets/app_card.dart';
+import 'package:zapstore/widgets/app_stack_container.dart';
 import 'package:zapstore/widgets/author_container.dart';
 import 'package:zapstore/widgets/comments_section.dart';
 import 'package:zapstore/widgets/common/badges.dart';
@@ -75,63 +77,142 @@ class _AppStackContentWithApps extends ConsumerWidget {
     if (isEncrypted && !stack.isDecrypted) {
       return _AppStackContent(
         stack: stack,
-        apps: const [],
+        entries: const [],
         errorMessage:
             'This private stack could not be decrypted on this device',
       );
     }
 
-    // Get app addressable IDs from either tags (public) or decrypted content (private)
-    final appAddressableIds = isEncrypted
-        ? stack.privateAppIds.toSet()
+    // Public stacks use `a` tags (addressable IDs). Private stacks may store
+    // addressable IDs (Saved Apps) or bare package IDs (Unmanaged Apps).
+    final orderedIds = isEncrypted
+        ? stack.privateAppIds
         : stack.event
               .getTagSetValues('a')
               .where((id) => id.startsWith('32267:'))
-              .toSet();
+              .toList();
 
-    if (appAddressableIds.isEmpty) {
-      return _AppStackContent(stack: stack, apps: const []);
+    if (orderedIds.isEmpty) {
+      return _AppStackContent(stack: stack, entries: const []);
     }
 
-    final authors = <String>{};
-    final identifiers = <String>{};
-    for (final id in appAddressableIds) {
-      final parts = id.split(':');
-      if (parts.length >= 3) {
-        authors.add(parts[1]);
-        identifiers.add(parts.skip(2).join(':'));
-      }
-    }
-
-    final appsState = ref.watch(
-      query<App>(
-        authors: authors,
-        tags: {
-          '#d': identifiers,
-          '#f': {'android-arm64-v8a'},
-        },
-        and: (app) => {
-          app.latestRelease.query(
-            and: (release) => {
-              release.latestMetadata.query(),
-              release.latestAsset.query(),
-            },
-          ),
-        },
-        source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
-        subscriptionPrefix: 'app-stack-apps-${stack.identifier}',
-      ),
+    final (:addressableIds, :packageIds) = partitionStackAppIds(orderedIds);
+    final (:authors, :identifiers) = decomposeAddressableIds(addressableIds);
+    final platform = ref.read(packageManagerProvider.notifier).platform;
+    final installed = ref.watch(
+      packageManagerProvider.select((s) => s.installed),
     );
 
-    // Key by addressable ID and preserve the original stack order
-    final appsMap = {for (final app in appsState.models) app.id: app};
-    final orderedApps = appAddressableIds
-        .map((id) => appsMap[id])
-        .whereType<App>()
-        .toList();
+    final addressableState = addressableIds.isNotEmpty
+        ? ref.watch(
+            query<App>(
+              authors: authors,
+              tags: {
+                '#d': identifiers,
+                '#f': {platform},
+              },
+              and: (app) => {
+                app.latestRelease.query(
+                  and: (release) => {
+                    release.latestMetadata.query(),
+                    release.latestAsset.query(),
+                  },
+                ),
+              },
+              source: const LocalAndRemoteSource(
+                relays: 'AppCatalog',
+                stream: false,
+              ),
+              subscriptionPrefix: 'app-stack-apps-${stack.identifier}',
+            ),
+          )
+        : null;
 
-    return _AppStackContent(stack: stack, apps: orderedApps);
+    final packageState = packageIds.isNotEmpty
+        ? ref.watch(
+            query<App>(
+              tags: {
+                '#d': packageIds.toSet(),
+                '#f': {platform},
+              },
+              and: (app) => {
+                app.latestRelease.query(
+                  and: (release) => {
+                    release.latestMetadata.query(),
+                    release.latestAsset.query(),
+                  },
+                ),
+              },
+              source: const LocalAndRemoteSource(
+                relays: 'AppCatalog',
+                stream: false,
+              ),
+              subscriptionPrefix: 'app-stack-pkgs-${stack.identifier}',
+            ),
+          )
+        : null;
+
+    final appsByAddressableId = {
+      for (final app in addressableState?.models ?? const <App>[]) app.id: app,
+    };
+    final appsByPackageId = <String, App>{};
+    for (final app in packageState?.models ?? const <App>[]) {
+      appsByPackageId.putIfAbsent(app.identifier, () => app);
+    }
+
+    final resolutions = resolveStackAppIds(
+      orderedIds: orderedIds,
+      foundAddressableIds: appsByAddressableId.keys.toSet(),
+      foundPackageIds: appsByPackageId.keys.toSet(),
+    );
+
+    final entries = <_StackAppEntry>[
+      for (final resolution in resolutions)
+        switch (resolution.kind) {
+          StackAppResolveKind.catalogAddressable => _CatalogedStackAppEntry(
+            appsByAddressableId[resolution.rawId]!,
+          ),
+          StackAppResolveKind.catalogPackage => _CatalogedStackAppEntry(
+            appsByPackageId[resolution.rawId]!,
+          ),
+          StackAppResolveKind.packageFallback => _PackageStackAppEntry(
+            installed[resolution.rawId] ??
+                PackageInfo(
+                  appId: resolution.rawId,
+                  version: 'Unknown',
+                  versionCode: null,
+                ),
+          ),
+        },
+    ];
+
+    return _AppStackContent(stack: stack, entries: entries);
   }
+}
+
+/// A resolved row for the stack detail list.
+sealed class _StackAppEntry {
+  const _StackAppEntry();
+
+  String get key;
+}
+
+class _CatalogedStackAppEntry extends _StackAppEntry {
+  const _CatalogedStackAppEntry(this.app);
+
+  final App app;
+
+  @override
+  String get key => app.identifier;
+}
+
+class _PackageStackAppEntry extends _StackAppEntry {
+  const _PackageStackAppEntry(this.packageInfo);
+
+  final PackageInfo packageInfo;
+
+  @override
+  String get key => packageInfo.appId;
 }
 
 class _ErrorScaffold extends StatelessWidget {
@@ -203,35 +284,39 @@ class _NotFoundScaffold extends StatelessWidget {
 /// Internal widget that displays stack details
 class _AppStackContent extends HookConsumerWidget {
   final AppStack stack;
-  final List<App> apps;
+  final List<_StackAppEntry> entries;
   final String? errorMessage;
 
   const _AppStackContent({
     required this.stack,
-    required this.apps,
+    required this.entries,
     this.errorMessage,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Query author profile from social relays
-    final authorState = ref.watch(
-      query<Profile>(
-        authors: {stack.pubkey},
-        source: const LocalAndRemoteSource(
-          relays: {'social', 'vertex'},
-          cachedFor: Duration(hours: 2),
-        ),
-        subscriptionPrefix: 'app-stack-profile',
-      ),
-    );
-    final author = authorState.models.firstOrNull;
-    final isAuthorLoading = authorState is StorageLoading && author == null;
+    final isPrivate = stack.content.isNotEmpty;
 
-    // Sort apps: uninstalled first, keeping original order otherwise
+    // Author is only shown for public stacks; skip the query for private ones.
+    final authorState = isPrivate
+        ? null
+        : ref.watch(
+            query<Profile>(
+              authors: {stack.pubkey},
+              source: const LocalAndRemoteSource(
+                relays: {'social', 'vertex'},
+                cachedFor: Duration(hours: 2),
+              ),
+              subscriptionPrefix: 'app-stack-profile',
+            ),
+          );
+    final author = authorState?.models.firstOrNull;
+    final isAuthorLoading =
+        authorState is StorageLoading && author == null;
+
     final packageManager = ref.watch(packageManagerProvider.notifier);
-    final sortedApps = _sortAppsUninstalledFirst(apps, packageManager);
-    final totalApps = sortedApps.length;
+    final sortedEntries = _sortEntriesUninstalledFirst(entries, packageManager);
+    final totalApps = sortedEntries.length;
 
     return Scaffold(
       body: SafeArea(
@@ -251,6 +336,18 @@ class _AppStackContent extends HookConsumerWidget {
                       isAuthorLoading: isAuthorLoading,
                     ),
                   ),
+                  if (errorMessage != null) ...[
+                    const SizedBox(height: 16),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Text(
+                        errorMessage!,
+                        style: context.textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 24),
                   // Apps section header with count badge
                   Padding(
@@ -271,13 +368,17 @@ class _AppStackContent extends HookConsumerWidget {
                   ),
                   const SizedBox(height: 12),
                   // Apps list
-                  if (sortedApps.isEmpty)
+                  if (sortedEntries.isEmpty)
                     _EmptyAppsPlaceholder()
                   else
-                    ...sortedApps.map(
-                      (app) =>
-                          AppCard(app: app, showUpdateArrow: app.hasUpdate),
-                    ),
+                    ...sortedEntries.map((entry) => switch (entry) {
+                      _CatalogedStackAppEntry(:final app) => AppCard(
+                        app: app,
+                        showUpdateArrow: app.hasUpdate,
+                      ),
+                      _PackageStackAppEntry(:final packageInfo) =>
+                        _StackPackageCard(packageInfo: packageInfo),
+                    }),
                   // Comments section - hidden for private/encrypted stacks
                   if (stack.content.isEmpty)
                     Padding(
@@ -297,23 +398,104 @@ class _AppStackContent extends HookConsumerWidget {
     );
   }
 
-  /// Sort apps so uninstalled ones come first, keeping original order otherwise
-  List<App> _sortAppsUninstalledFirst(
-    List<App> apps,
+  /// Sort so uninstalled entries come first, keeping original order otherwise.
+  List<_StackAppEntry> _sortEntriesUninstalledFirst(
+    List<_StackAppEntry> entries,
     PackageManager packageManager,
   ) {
-    final uninstalled = <App>[];
-    final installed = <App>[];
+    final uninstalled = <_StackAppEntry>[];
+    final installed = <_StackAppEntry>[];
 
-    for (final app in apps) {
-      if (packageManager.isInstalled(app.identifier)) {
-        installed.add(app);
+    for (final entry in entries) {
+      final id = entry.key;
+      if (packageManager.isInstalled(id)) {
+        installed.add(entry);
       } else {
-        uninstalled.add(app);
+        uninstalled.add(entry);
       }
     }
 
     return [...uninstalled, ...installed];
+  }
+}
+
+/// Fallback card for bare package IDs with no catalog App metadata.
+class _StackPackageCard extends StatelessWidget {
+  const _StackPackageCard({required this.packageInfo});
+
+  final PackageInfo packageInfo;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.6),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 50,
+            height: 50,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(
+              Icons.android,
+              color: AppColors.darkOnSurfaceSecondary,
+              size: 28,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  packageInfo.name ?? packageInfo.appId,
+                  style: context.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  packageInfo.appId,
+                  style: context.textTheme.bodySmall?.copyWith(
+                    color: AppColors.darkOnSurfaceSecondary,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.darkPillBackground,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    packageInfo.version,
+                    style: context.textTheme.labelSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -360,17 +542,18 @@ class _StackHeader extends StatelessWidget {
             ],
           ],
         ),
-        const SizedBox(height: 8),
-        // Published by author - always show, with fallback to npub
-        AuthorContainer(
-          profile: author,
-          pubkey: stack.pubkey,
-          beforeText: 'Published by',
-          oneLine: true,
-          size: 14,
-          isLoading: isAuthorLoading,
-          onTap: () => pushUser(context, stack.pubkey),
-        ),
+        if (!_isEncrypted) ...[
+          const SizedBox(height: 8),
+          AuthorContainer(
+            profile: author,
+            pubkey: stack.pubkey,
+            beforeText: 'Published by',
+            oneLine: true,
+            size: 14,
+            isLoading: isAuthorLoading,
+            onTap: () => pushUser(context, stack.pubkey),
+          ),
+        ],
         const SizedBox(height: 4),
         // Metadata row: updated timestamp + private indicator
         Row(

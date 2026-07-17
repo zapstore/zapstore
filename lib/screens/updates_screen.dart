@@ -184,13 +184,14 @@ class _UpdatesList extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final automaticUpdates = categorized.automaticUpdates;
-    final manualUpdates = categorized.manualUpdates;
+    final availableAutomaticUpdates = categorized.automaticUpdates;
+    final availableManualUpdates = categorized.manualUpdates;
     final upToDateApps = categorized.upToDateApps;
     final uncatalogedApps = categorized.uncatalogedApps;
     final unmanagedApps = categorized.unmanagedApps;
 
-    // Resolve installing apps (active operations not already in update lists)
+    // Resolve all active operations into one section. Active updates are
+    // removed from their available-update sections below to avoid duplicates.
     final operations = ref.watch(
       packageManagerProvider.select((s) => s.operations),
     );
@@ -199,36 +200,34 @@ class _UpdatesList extends ConsumerWidget {
         .map((entry) => entry.key)
         .toSet();
 
-    final updateAppIds = {
-      ...automaticUpdates.map((a) => a.identifier),
-      ...manualUpdates.map((a) => a.identifier),
-    };
+    final automaticUpdates = availableAutomaticUpdates
+        .where((app) => !activeAppIds.contains(app.identifier))
+        .toList();
+    final manualUpdates = availableManualUpdates
+        .where((app) => !activeAppIds.contains(app.identifier))
+        .toList();
 
-    final List<App> installingApps;
+    final List<App> inProgressApps;
     if (activeAppIds.isEmpty) {
-      installingApps = const [];
+      inProgressApps = const [];
     } else {
-      final installingAppsState = ref.watch(
+      final inProgressAppsState = ref.watch(
         query<App>(
           tags: {'#d': activeAppIds},
           and: (app) => {app.latestRelease.query()},
           source: const LocalAndRemoteSource(relays: 'AppCatalog'),
-          subscriptionPrefix: 'app-installing-apps',
+          subscriptionPrefix: 'app-in-progress-apps',
         ),
       );
-      installingApps = installingAppsState.models
-          .where(
-            (app) =>
-                activeAppIds.contains(app.identifier) &&
-                !updateAppIds.contains(app.identifier),
-          )
+      inProgressApps = inProgressAppsState.models
+          .where((app) => activeAppIds.contains(app.identifier))
           .toList();
     }
 
     // Empty state: only show if there are truly no apps at all (unmanaged ones don't count)
     if (automaticUpdates.isEmpty &&
         manualUpdates.isEmpty &&
-        installingApps.isEmpty &&
+        inProgressApps.isEmpty &&
         upToDateApps.isEmpty &&
         uncatalogedApps.isEmpty &&
         unmanagedApps.isEmpty) {
@@ -297,12 +296,12 @@ class _UpdatesList extends ConsumerWidget {
           if (allUpdates.length > 1)
             SliverToBoxAdapter(child: UpdateAllRow(allUpdates: allUpdates)),
           const SliverToBoxAdapter(child: _LastCheckedIndicator()),
-          if (installingApps.isNotEmpty)
+          if (inProgressApps.isNotEmpty)
             _AppSection(
               icon: Icons.downloading,
-              title: 'Installing',
-              apps: installingApps,
-              keyPrefix: 'installing',
+              title: 'In Progress',
+              apps: inProgressApps,
+              keyPrefix: 'in-progress',
               showUpdateButton: true,
               showZapEncouragement: true,
             ),

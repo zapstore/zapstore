@@ -55,6 +55,10 @@ cross-device sync.
   timestamps to avoid same-second replacement collisions.
 - An unmanaged-app action succeeds remotely only when an AppCatalog relay
   explicitly accepts the signed device-key event.
+- Stack detail (`AppStackScreen`) must treat bare package IDs in
+  `privateAppIds` as package IDs: query Apps by `#d`, fall back to
+  installed `PackageInfo`. Saved Apps keep addressable `kind:pubkey:d`
+  coordinates; Unmanaged Apps intentionally do not.
 - Installed-package scans are single-flight and do not emit a fresh installed
   map when Android reports no changes.
 - Android package enumeration runs on a lifecycle-owned worker so package,
