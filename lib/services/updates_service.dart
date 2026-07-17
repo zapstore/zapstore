@@ -18,6 +18,14 @@ const _pollInterval = Duration(minutes: 5);
 /// Minimum time between manual refreshes
 const _refreshCooldown = Duration(seconds: 30);
 
+/// Installed package IDs eligible for catalog discovery and update management.
+Set<String> managedInstalledAppIds(
+  Map<String, PackageInfo> installed,
+  Set<String> unmanagedIds,
+) {
+  return installed.keys.where((id) => !unmanagedIds.contains(id)).toSet();
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // CATEGORIZED UPDATES
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -107,6 +115,8 @@ class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
 
   final Ref ref;
   Timer? _pollTimer;
+  bool _catalogRefreshPending = false;
+  bool _isRefreshingManagedCatalog = false;
 
   void _init() {
     // Hydrate from local storage as soon as SQLite is ready — no network.
@@ -117,6 +127,9 @@ class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
         unawaited(_hydrateAndStartPolling());
       }
     }, fireImmediately: true);
+    ref.listen<Set<String>>(unmanagedAppsProvider, (previous, next) {
+      if (previous != next) _queueManagedCatalogRefresh();
+    });
   }
 
   Future<void> _hydrateAndStartPolling() async {
@@ -137,6 +150,7 @@ class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
     await refreshFromLocal();
 
     _startPolling();
+    _drainManagedCatalogRefresh();
   }
 
   void _startPolling() {
@@ -182,6 +196,54 @@ class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
         lastCheckTime: DateTime.now(),
         lastError: 'Update check failed — will retry',
       );
+    } finally {
+      _drainManagedCatalogRefresh();
+    }
+  }
+
+  /// Fetches catalog data after a Manage/Unmanage transition. This is separate
+  /// from [checkNow] because the transition changes which installed IDs are
+  /// eligible for discovery and must not wait for its refresh cooldown.
+  void _queueManagedCatalogRefresh() {
+    _catalogRefreshPending = true;
+    _drainManagedCatalogRefresh();
+  }
+
+  void _drainManagedCatalogRefresh() {
+    if (_isRefreshingManagedCatalog ||
+        state.isChecking ||
+        !state.hasHydrated ||
+        !_catalogRefreshPending) {
+      return;
+    }
+    unawaited(_refreshManagedCatalog());
+  }
+
+  Future<void> _refreshManagedCatalog() async {
+    _isRefreshingManagedCatalog = true;
+    _catalogRefreshPending = false;
+    state = state.copyWith(isChecking: true);
+    try {
+      await _fetchCatalog();
+      state = state.copyWith(
+        isChecking: false,
+        lastCheckTime: DateTime.now(),
+        clearError: true,
+      );
+    } catch (e, st) {
+      LogService.I.warn(
+        'managed catalog refresh failed',
+        tag: 'updates',
+        err: e,
+        stack: st,
+      );
+      state = state.copyWith(
+        isChecking: false,
+        lastError: 'Update check failed — will retry',
+      );
+    } finally {
+      _isRefreshingManagedCatalog = false;
+      _drainManagedCatalogRefresh();
     }
   }
 
@@ -196,9 +258,10 @@ class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
     }
 
     final unmanagedIds = ref.read(unmanagedAppsProvider);
-    final installedIds = pmState.installed.keys
-        .where((id) => !unmanagedIds.contains(id))
-        .toSet();
+    final installedIds = managedInstalledAppIds(
+      pmState.installed,
+      unmanagedIds,
+    );
 
     if (installedIds.isEmpty) {
       state = state.copyWith(catalogedIds: const {});
@@ -242,9 +305,10 @@ class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
     }
 
     final unmanagedIds = ref.read(unmanagedAppsProvider);
-    final installedIds = pmState.installed.keys
-        .where((id) => !unmanagedIds.contains(id))
-        .toSet();
+    final installedIds = managedInstalledAppIds(
+      pmState.installed,
+      unmanagedIds,
+    );
 
     if (installedIds.isEmpty) {
       state = state.copyWith(hasHydrated: true);

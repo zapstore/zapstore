@@ -5,7 +5,6 @@ import 'dart:ui' as ui;
 import 'dart:ui' show PlatformDispatcher;
 
 import 'package:background_downloader/background_downloader.dart' hide Request;
-import 'package:flutter/foundation.dart' show FlutterError;
 import 'package:flutter/widgets.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
