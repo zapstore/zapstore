@@ -122,6 +122,7 @@ class DeviceStateNotifier extends StateNotifier<DeviceStateStatus> {
           .savePortable(
             PortableSettings.fromJson(Map<String, dynamic>.from(decoded)),
           );
+      ref.invalidate(localSettingsProvider);
       if (!_disposed) state = const DeviceStateStatus.ready();
       return true;
     } catch (_) {

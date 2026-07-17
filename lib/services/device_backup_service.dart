@@ -187,6 +187,25 @@ class DeviceBackupService {
       );
     }
 
+    // Already inside `_amberRestore`; call the prompt body directly.
+    await _promptAndRestoreBackup(ref, privateKeyHex);
+  }
+
+  /// Shows the restore confirmation and, if accepted, imports [privateKeyHex].
+  ///
+  /// Used by normal Amber sign-in when Amber already holds a different device
+  /// key. Explicit Device key → Restore goes through [restoreFromAmber].
+  Future<void> promptAndRestoreBackup({
+    required Ref ref,
+    required String privateKeyHex,
+  }) {
+    return _amberRestore ??= _promptAndRestoreBackup(ref, privateKeyHex)
+        .whenComplete(() {
+          _amberRestore = null;
+        });
+  }
+
+  Future<void> _promptAndRestoreBackup(Ref ref, String privateKeyHex) async {
     final context = rootNavigatorKey.currentState?.overlay?.context;
     if (context == null || !context.mounted) {
       throw const DeviceBackupException('Restore screen is unavailable.');
@@ -198,7 +217,13 @@ class DeviceBackupService {
         onKeepCurrent: () => Navigator.of(context).pop(false),
       ),
     );
-    if (restore != true) return;
+    if (restore != true) {
+      LogService.I.info(
+        'user kept current device key; Amber backup preserved',
+        tag: 'backup',
+      );
+      return;
+    }
 
     await restoreDeviceKey(ref: ref, privateKeyHex: privateKeyHex);
     await ref.read(devicePrivateSyncProvider.notifier).syncRestoredKey();
@@ -212,7 +237,12 @@ final deviceBackupServiceProvider = Provider<DeviceBackupService>(
   (ref) => DeviceBackupService(),
 );
 
-/// Backs up the current device key after a normal Amber sign-in.
+/// After a normal Amber sign-in: restore an existing Amber device-key backup,
+/// or create one when Amber has none yet.
+///
+/// A fresh install always has a new local device key before Amber is available.
+/// If Amber already backs up a different key, offer to restore it — never
+/// silently overwrite that recovery record.
 Future<void> maybeOfferDeviceBackup(Ref ref) async {
   final amberSigner = ref.read(Signer.activeSignerProvider);
   if (amberSigner == null) return;
@@ -220,13 +250,37 @@ Future<void> maybeOfferDeviceBackup(Ref ref) async {
   final service = ref.read(deviceBackupServiceProvider);
   if (service.isRestoringFromAmber) return;
   try {
-    if (await service.hasAmberBackup(ref: ref, amberSigner: amberSigner)) {
+    final privateKeyHex = await service.fetchAmberBackup(
+      ref: ref,
+      amberSigner: amberSigner,
+    );
+    if (privateKeyHex == null) {
+      await service.backupDeviceKey(ref: ref, amberSigner: amberSigner);
+      if (!ref.read(deviceStateProvider).isReady) {
+        unawaited(ref.read(deviceStateProvider.notifier).bootstrap());
+      }
       return;
     }
-    await service.backupDeviceKey(ref: ref, amberSigner: amberSigner);
-    if (!ref.read(deviceStateProvider).isReady) {
-      unawaited(ref.read(deviceStateProvider.notifier).bootstrap());
+
+    final current = await ref
+        .read(deviceKeyServiceProvider)
+        .getOrCreatePrivateKey();
+    if (privateKeyHex == current) {
+      LogService.I.info(
+        'Amber backup already matches current device key',
+        tag: 'backup',
+      );
+      return;
     }
+
+    LogService.I.info(
+      'Amber backup differs from current device key; offering restore',
+      tag: 'backup',
+    );
+    await service.promptAndRestoreBackup(
+      ref: ref,
+      privateKeyHex: privateKeyHex,
+    );
   } catch (error, stack) {
     LogService.I.warn(
       'device key backup failed',

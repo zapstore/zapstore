@@ -77,6 +77,16 @@ class UnmanagedAppsNotifier extends StateNotifier<Set<String>> {
   DateTime? _lastIssuedAt;
   int _pendingWrites = 0;
 
+  /// Clears in-memory unmanaged state when the active device key changes.
+  void reset() {
+    _writeQueue = Future.value();
+    _lastPersisted = const {};
+    _lastPersistedAt = null;
+    _lastIssuedAt = null;
+    _pendingWrites = 0;
+    state = const {};
+  }
+
   void acceptPersisted(Set<String> appIds, DateTime? createdAt) {
     if (createdAt == null ||
         _lastPersistedAt == null ||
@@ -169,6 +179,9 @@ final unmanagedAppsProvider =
         (appIds, createdAt) =>
             _writeUnmanagedApps(ref, appIds, createdAt: createdAt),
       );
+      ref.listen<String?>(devicePubkeyProvider, (previous, next) {
+        if (previous != next) notifier.reset();
+      });
       ref.listen<_UnmanagedAppsSnapshot?>(_persistedUnmanagedAppsProvider, (
         _,
         snapshot,

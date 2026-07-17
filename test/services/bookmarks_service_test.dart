@@ -58,4 +58,15 @@ void main() {
     );
     expect(notifier.state, isEmpty);
   });
+
+  test('reset clears optimistic bookmark state for a new device key', () async {
+    final notifier = BookmarksNotifier((_, _) async {});
+    addTearDown(notifier.dispose);
+
+    await notifier.toggle('app.one');
+    expect(notifier.state, {'app.one'});
+
+    notifier.reset();
+    expect(notifier.state, isEmpty);
+  });
 }

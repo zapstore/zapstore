@@ -60,9 +60,36 @@ normal Amber sign-in backup from overwriting a recovery record first.
 in with Amber. Automatically backing up that key could replace the only record
 that points to the prior device's private state.
 
-**Decision:** On a normal Amber sign-in, query for a signature-verified backup
-first and only create one when none exists. Recovery must be started explicitly
-from Device key management, which now exposes the Amber option.
+**Decision:** On a normal Amber sign-in, decrypt any existing Amber backup. If
+it holds a different device key, offer restore (never overwrite). If it matches
+the current key, do nothing. Only create a new Amber backup when none exists.
 
-**Rationale:** An Amber sign-in must not silently make prior private stacks and
-portable settings unrecoverable.
+**Rationale:** Sign-in is the path users expect for recovery. Preserving the
+remote backup alone left them with an empty fresh key and no prompt.
+
+### 2026-07-17 - Emulator verification
+
+Verified on `emulator-5554` with a fresh Amber account:
+
+1. Signed in, enabled background auto-updates, confirmed device-state publish.
+2. Cleared Zapstore data (new device key generated).
+3. Normal Amber sign-in logged `preserving existing Amber device-key backup`
+   and left the new key in place.
+4. Profile → Restore → Restore with Amber restored `npub15adrzvs…`.
+5. After relaunch, background auto-updates was on again.
+6. Restored portable settings now also invalidate `localSettingsProvider` so
+   the toggle refreshes without requiring an app restart.
+
+### 2026-07-17 - Private stack hydration after restore
+
+**Context:** `syncRestoredKey` did query kinds `30267`/`30078`, but discarded the
+result and relied on isolate `QueryResultNotification` to refresh LocalSource
+stack watchers. After a pubkey swap those watchers can miss the update, and
+bookmarks/unmanaged notifiers kept empty in-memory state from the fresh key.
+
+**Decision:** Sync with `LocalAndRemoteSource`, re-save fetched models so
+LocalSource consumers refresh with `req:null`, and reset bookmarks/unmanaged
+notifiers whenever `devicePubkeyProvider` changes.
+
+**Rationale:** Private stacks must decrypt and appear under the restored device
+key without requiring an app restart.

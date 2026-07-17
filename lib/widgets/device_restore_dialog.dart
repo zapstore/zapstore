@@ -38,7 +38,8 @@ class DeviceRestoreDialog extends HookConsumerWidget {
           ),
           const SizedBox(height: 10),
           const Text(
-            'Alternatively, you can sign in with Amber and settings may be recovered that way.',
+            'Or restore with Amber: if this identity already backs up a device '
+            'key, you will be offered to recover it.',
           ),
           const SizedBox(height: 16),
           OutlinedButton.icon(

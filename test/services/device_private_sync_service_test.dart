@@ -44,4 +44,42 @@ void main() {
     expect(calls, 1);
     expect(notifier.state.phase, DevicePrivateSyncPhase.cancelled);
   });
+
+  test('syncRestoredKey re-queries for the restored device pubkey', () async {
+    final container = ProviderContainer(
+      overrides: [
+        storageNotifierProvider.overrideWith(DummyStorageNotifier.new),
+      ],
+    );
+    await container
+        .read(storageNotifierProvider.notifier)
+        .initialize(StorageConfiguration());
+    container.read(devicePubkeyProvider.notifier).state = 'a' * 64;
+
+    final authors = <String>[];
+    final sources = <Source>[];
+    final notifier = DevicePrivateSyncNotifier(
+      container.read(refProvider),
+      query: (request, source, prefix) async {
+        authors.add(request.filters.single.authors.single);
+        sources.add(source);
+        return const [];
+      },
+    );
+    addTearDown(() {
+      notifier.dispose();
+      // DeviceStateNotifier.dispose reads another provider; keep this test
+      // focused on sync authorship rather than container teardown order.
+    });
+
+    await notifier.start();
+    expect(authors, ['a' * 64]);
+
+    container.read(devicePubkeyProvider.notifier).state = 'b' * 64;
+    await notifier.syncRestoredKey();
+
+    expect(authors, ['a' * 64, 'b' * 64]);
+    expect(sources.last, isA<LocalAndRemoteSource>());
+    expect(notifier.state.phase, DevicePrivateSyncPhase.success);
+  });
 }

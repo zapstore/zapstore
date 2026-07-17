@@ -33,6 +33,20 @@ void main() {
       ]);
     });
 
+    test(
+      'reset clears optimistic unmanaged state for a new device key',
+      () async {
+        final notifier = UnmanagedAppsNotifier((_, _) async {});
+        addTearDown(notifier.dispose);
+
+        await notifier.toggle('app.one', unmanage: true);
+        expect(notifier.state, {'app.one'});
+
+        notifier.reset();
+        expect(notifier.state, isEmpty);
+      },
+    );
+
     test('serializes overlapping writes and keeps optimistic state', () async {
       final firstWrite = Completer<void>();
       final writes = <Set<String>>[];

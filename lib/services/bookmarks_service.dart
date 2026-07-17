@@ -48,6 +48,16 @@ class BookmarksNotifier extends StateNotifier<Set<String>> {
   DateTime? _lastIssuedAt;
   int _pendingWrites = 0;
 
+  /// Clears in-memory bookmark state when the active device key changes.
+  void reset() {
+    _writeQueue = Future.value();
+    _lastPersisted = const {};
+    _lastPersistedAt = null;
+    _lastIssuedAt = null;
+    _pendingWrites = 0;
+    state = const {};
+  }
+
   void acceptPersisted(AppStack? stack) {
     if (stack == null || !stack.isDecrypted) return;
     if (_lastPersistedAt == null ||
@@ -122,6 +132,9 @@ final bookmarksProvider = StateNotifierProvider<BookmarksNotifier, Set<String>>(
     final notifier = BookmarksNotifier(
       (ids, createdAt) => _writeBookmarks(ref, ids, createdAt),
     );
+    ref.listen<String?>(devicePubkeyProvider, (previous, next) {
+      if (previous != next) notifier.reset();
+    });
     ref.listen<AppStack?>(
       _persistedBookmarksProvider,
       (_, stack) => notifier.acceptPersisted(stack),

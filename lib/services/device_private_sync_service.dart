@@ -72,12 +72,30 @@ class DevicePrivateSyncNotifier extends StateNotifier<DevicePrivateSyncState> {
     _activeRequest = request;
 
     try {
-      await _queryStorage(
+      // LocalAndRemoteSource ensures remote events are saved, then re-read from
+      // SQLite before we restore portable settings or notify stack consumers.
+      final models = await _queryStorage(
         request,
-        source: const RemoteSource(relays: 'AppCatalog', stream: false),
+        source: const LocalAndRemoteSource(relays: 'AppCatalog', stream: false),
         subscriptionPrefix: 'app-device-private-boot',
       );
       if (_cancelled) return;
+
+      // Remote query notifications carry the remote request identity. Re-saving
+      // on the main isolate emits req:null so LocalSource stack watchers refresh
+      // under the restored device pubkey and decrypt with its signer.
+      if (models.isNotEmpty) {
+        await ref.read(storageNotifierProvider.notifier).save(models.toSet());
+      }
+      LogService.I.info(
+        'device private sync completed',
+        tag: 'private-sync',
+        fields: {
+          'models': models.length,
+          'stacks': models.whereType<AppStack>().length,
+        },
+      );
+
       await ref.read(deviceStateProvider.notifier).restoreFromLocalEvent();
       if (_cancelled) return;
       state = const DevicePrivateSyncState(DevicePrivateSyncPhase.success);
