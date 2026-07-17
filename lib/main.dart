@@ -431,7 +431,7 @@ final appInitializationProvider = FutureProvider<void>((ref) async {
   // Initialize device capabilities (used for dynamic download concurrency)
   await DeviceCapabilitiesCache.initialize();
 
-  // Record app open time for background notification throttling
+  // Record app open time (retained for settings / device-key restore)
   await ref
       .read(settingsServiceProvider)
       .update((s) => s.copyWith(lastAppOpened: DateTime.now()));
@@ -574,7 +574,7 @@ class _AppLifecycleObserver with WidgetsBindingObserver {
     final packageManager = _ref.read(packageManagerProvider.notifier);
 
     if (state == AppLifecycleState.resumed) {
-      // Record app open time for background notification throttling
+      // Record app open time (retained for settings / device-key restore)
       unawaited(_recordAppOpened());
 
       // Sync installed packages to detect installs that completed while backgrounded
@@ -606,7 +606,6 @@ class _AppLifecycleObserver with WidgetsBindingObserver {
   }
 
   /// Record that the user opened the app.
-  /// This is used to check inactivity for background notifications.
   Future<void> _recordAppOpened() async {
     await SettingsService().update(
       (s) => s.copyWith(lastAppOpened: DateTime.now()),

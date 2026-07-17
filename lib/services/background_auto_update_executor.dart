@@ -52,8 +52,7 @@ class BackgroundAutoUpdateExecutor {
 
       final pending = pendingInstalls[appId];
       if (!pkg.canInstallSilently && pending?.hash == target.hash) {
-        // This exact manual update is already downloaded and verified. It was
-        // reported when first staged, so avoid downloading and notifying again.
+        // This exact manual update is already downloaded and verified.
         continue;
       }
 

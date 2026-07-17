@@ -5,30 +5,24 @@ import 'dart:ui' as ui;
 import 'dart:ui' show PlatformDispatcher;
 
 import 'package:background_downloader/background_downloader.dart' hide Request;
-import 'package:flutter/foundation.dart' show FlutterError, kDebugMode;
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter/foundation.dart' show FlutterError;
 import 'package:flutter/widgets.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:workmanager/workmanager.dart';
-import 'package:zapstore/router.dart';
 import 'package:zapstore/services/background_auto_update_executor.dart';
 import 'package:zapstore/services/background_native_installer.dart';
-import 'package:zapstore/services/background_pending_install_store.dart';
 import 'package:zapstore/services/log_service.dart';
 import 'package:zapstore/services/package_manager/background_package_manager.dart';
 import 'package:zapstore/services/package_manager/dummy_package_manager.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/services/catalog_fetcher.dart';
 import 'package:zapstore/services/settings_service.dart';
-import 'package:zapstore/utils/extensions.dart';
 
-/// Unique task name for background update checking
+/// Legacy notification-only task name (cancelled on init; no longer registered).
 const kBackgroundUpdateTaskName = 'dev.zapstore.backgroundUpdateCheck';
 
 /// Unique task name for unmetered background auto-updates
@@ -37,7 +31,7 @@ const kBackgroundAutoUpdateTaskName = 'dev.zapstore.backgroundAutoUpdate';
 /// Unique task name for weekly cleanup
 const kWeeklyCleanupTaskName = 'dev.zapstore.weeklyCleanup';
 
-/// Unique task identifier
+/// Legacy notification-only task id (cancelled on init; no longer registered).
 const kBackgroundUpdateTaskId = 'backgroundUpdateCheck';
 
 /// Unique task identifier for unmetered background auto-updates
@@ -49,27 +43,8 @@ const kBackgroundAutoUpdateImmediateTaskId = 'backgroundAutoUpdateImmediate';
 /// Unique task identifier for weekly cleanup
 const kWeeklyCleanupTaskId = 'weeklyCleanup';
 
-/// Notification channel for update notifications
-const kUpdateNotificationChannelId = 'zapstore_updates';
-const kUpdateNotificationChannelName = 'App Updates';
-const kUpdateNotificationChannelDescription =
-    'Notifications for available app updates';
-
 /// Stale download threshold for cleanup
 const _staleDownloadThreshold = Duration(days: 7);
-
-/// How long user must be inactive before showing background notification
-const _inactivityThreshold = Duration(hours: 24);
-
-/// Notification payload for deep linking to updates screen
-const _kNotificationPayload = 'updates';
-
-/// Notification payload prefix for ready-to-install manual background updates.
-/// Format: `background-ready:appId1,appId2`
-const _kNotificationPayloadReadyPrefix = 'background-ready:';
-
-/// Notification payload when auto-update ran but needs no user install action.
-const _kNotificationPayloadResults = 'background-results';
 
 /// Input data key for AppCatalog relay URLs
 const kAppCatalogRelaysKey = 'appCatalogRelays';
@@ -141,32 +116,15 @@ void callbackDispatcher() {
         try {
           switch (task) {
             case kBackgroundUpdateTaskName:
-              final relayUrls =
-                  (inputData?[kAppCatalogRelaysKey] as List<dynamic>?)
-                      ?.cast<String>()
-                      .toSet();
-              return await _checkForUpdatesInBackground(
-                relayUrls,
-                autoUpdateWorker: false,
-              );
+              // Legacy notification-only worker — no longer does work.
+              return true;
             case kBackgroundAutoUpdateTaskName:
-              final relayUrls =
-                  (inputData?[kAppCatalogRelaysKey] as List<dynamic>?)
-                      ?.cast<String>()
-                      .toSet();
-              return await _checkForUpdatesInBackground(
-                relayUrls,
-                autoUpdateWorker: true,
-              );
             case kBackgroundAutoUpdateImmediateTaskId:
               final relayUrls =
                   (inputData?[kAppCatalogRelaysKey] as List<dynamic>?)
                       ?.cast<String>()
                       .toSet();
-              return await _checkForUpdatesInBackground(
-                relayUrls,
-                autoUpdateWorker: true,
-              );
+              return await _checkForUpdatesInBackground(relayUrls);
             case kWeeklyCleanupTaskName:
               return await _performWeeklyCleanup();
             default:
@@ -269,22 +227,16 @@ Future<bool> _performWeeklyCleanup() async {
   }
 }
 
-/// Background update check logic - runs in a separate isolate via WorkManager.
+/// Background auto-update check — runs in a separate isolate via WorkManager.
 ///
 /// [appCatalogRelays] - Relay URLs resolved from main isolate. Falls back to
 /// default relay if not provided.
-Future<bool> _checkForUpdatesInBackground(
-  Set<String>? appCatalogRelays, {
-  required bool autoUpdateWorker,
-}) async {
+Future<bool> _checkForUpdatesInBackground(Set<String>? appCatalogRelays) async {
   try {
     final relays = appCatalogRelays ?? {'wss://relay.zapstore.dev'};
     final settings = await SettingsService().load();
 
-    // Notification-only checks keep their existing connected-network schedule.
-    // Auto-update work runs in a separate worker constrained to unmetered
-    // networks. Exactly one worker proceeds for the current setting.
-    if (settings.backgroundAutoUpdatesEnabled != autoUpdateWorker) {
+    if (!settings.backgroundAutoUpdatesEnabled) {
       return true;
     }
 
@@ -346,28 +298,18 @@ Future<bool> _checkForUpdatesInBackground(
           source: const LocalSource(),
         );
 
-        if (autoUpdateWorker) {
-          final displayNames = {
-            for (final app in updatableApps)
-              app.identifier: app.name ?? app.identifier,
-          };
-          final result = await BackgroundAutoUpdateExecutor.run(
-            updatableInstallables: updatableInstallables,
-            installed: pmState.installed,
-            displayNames: displayNames,
-          );
-          await BackgroundNativeInstaller.notifyBackgroundUpdatesCompleted(
-            result.updatedAppIds,
-          );
-          if (result.hasWork) {
-            await _showAutoUpdateResultNotification(result, updatableApps);
-          }
-        } else {
-          await _showUpdateNotificationIfNeeded(
-            updatableApps,
-            updatableInstallables,
-          );
-        }
+        final displayNames = {
+          for (final app in updatableApps)
+            app.identifier: app.name ?? app.identifier,
+        };
+        final result = await BackgroundAutoUpdateExecutor.run(
+          updatableInstallables: updatableInstallables,
+          installed: pmState.installed,
+          displayNames: displayNames,
+        );
+        await BackgroundNativeInstaller.notifyBackgroundUpdatesCompleted(
+          result.updatedAppIds,
+        );
       }
 
       return true;
@@ -377,184 +319,6 @@ Future<bool> _checkForUpdatesInBackground(
   } catch (e) {
     return false;
   }
-}
-
-/// Show a local notification for available updates.
-/// Only notifies if:
-/// 1. User hasn't opened app in 24+ hours
-/// 2. There are updates with installable.createdAt > seenUntil AND > lastOpened
-///    (new since both last notification AND last time user saw the app)
-///
-/// [installables] maps app identifier → the installable (SoftwareAsset or
-/// FileMetadata) that represents the available update. Its `createdAt` is used
-/// for freshness checks instead of `app.latestRelease.value` which is not
-/// populated in the background isolate context.
-Future<void> _showUpdateNotificationIfNeeded(
-  List<App> updates,
-  Map<String, Installable> installables,
-) async {
-  final settingsService = SettingsService();
-  final settings = await settingsService.load();
-
-  // Skip if user recently opened the app
-  if (settings.lastAppOpened != null &&
-      DateTime.now().difference(settings.lastAppOpened!) <
-          _inactivityThreshold) {
-    return;
-  }
-
-  // Get the "seen until" timestamp - updates with createdAt > this are new
-  final seenUntil = settings.seenUntil;
-
-  // Filter to only updates that are genuinely new:
-  // - installable.createdAt > seenUntil (not already notified via background)
-  // - installable.createdAt > lastOpened (not already seen when user opened app)
-  // This prevents nagging about updates user saw in the app but chose to ignore
-  final newUpdates = updates.where((app) {
-    final installable = installables[app.identifier];
-    if (installable == null) return false;
-    final releaseTime = installable.createdAt;
-
-    // Must be newer than last notification (if any)
-    if (seenUntil != null && !releaseTime.isAfter(seenUntil)) {
-      return false;
-    }
-
-    // Must be newer than last app open (if any) - user may have seen it in UI
-    if (settings.lastAppOpened != null &&
-        !releaseTime.isAfter(settings.lastAppOpened!)) {
-      return false;
-    }
-
-    return true;
-  }).toList();
-
-  if (newUpdates.isEmpty) {
-    return; // No new updates to notify about
-  }
-
-  // Show the notification
-  final plugin = FlutterLocalNotificationsPlugin();
-  const initSettings = InitializationSettings(
-    android: AndroidInitializationSettings('@drawable/ic_notification'),
-  );
-  await plugin.initialize(initSettings);
-  await _ensureUpdateNotificationChannel(plugin);
-
-  final appNames = newUpdates.map((a) => a.name ?? a.identifier).toList();
-  final title = newUpdates.length == 1
-      ? '1 app update available'
-      : '${newUpdates.length} app updates available';
-  final body = appNames.length <= 3
-      ? appNames.join(', ')
-      : '${appNames.take(3).join(', ')} and ${appNames.length - 3} more';
-
-  await plugin.show(
-    0,
-    title,
-    body,
-    const NotificationDetails(
-      android: AndroidNotificationDetails(
-        kUpdateNotificationChannelId,
-        kUpdateNotificationChannelName,
-        channelDescription: kUpdateNotificationChannelDescription,
-        importance: Importance.defaultImportance,
-        priority: Priority.defaultPriority,
-        showWhen: true,
-        autoCancel: true,
-      ),
-    ),
-    payload: _kNotificationPayload,
-  );
-
-  // Update seenUntil to now - future checks will only notify about releases after this
-  await settingsService.update((s) => s.copyWith(seenUntil: DateTime.now()));
-}
-
-/// Show a notification summarizing background auto-update results.
-Future<void> _showAutoUpdateResultNotification(
-  BackgroundAutoUpdateResult result,
-  List<App> updatableApps,
-) async {
-  final plugin = FlutterLocalNotificationsPlugin();
-  const initSettings = InitializationSettings(
-    android: AndroidInitializationSettings('@drawable/ic_notification'),
-  );
-  await plugin.initialize(initSettings);
-  await _ensureUpdateNotificationChannel(plugin);
-
-  final nameById = {
-    for (final app in updatableApps) app.identifier: app.name ?? app.identifier,
-  };
-
-  String name(String appId) => nameById[appId] ?? appId;
-
-  final parts = <String>[];
-  if (result.updatedAppIds.isNotEmpty) {
-    final names = result.updatedAppIds.map(name).toList();
-    parts.add(
-      result.updatedAppIds.length == 1
-          ? 'Updated ${names.first}'
-          : 'Updated ${names.length} apps: ${_formatNameList(names)}',
-    );
-  }
-  if (result.readyAppIds.isNotEmpty) {
-    final names = result.readyAppIds.map(name).toList();
-    parts.add(
-      result.readyAppIds.length == 1
-          ? '${names.first} is ready to update — tap to install'
-          : '${names.length} apps ready to update — tap to install',
-    );
-  }
-  if (result.failedAppIds.isNotEmpty) {
-    parts.add(
-      result.failedAppIds.length == 1
-          ? 'Failed to update ${name(result.failedAppIds.first)}'
-          : 'Failed to update ${result.failedAppIds.length} apps',
-    );
-  }
-
-  final body = parts.join('\n');
-
-  final title = switch ((
-    result.updatedAppIds.isNotEmpty,
-    result.readyAppIds.isNotEmpty,
-  )) {
-    (true, true) => 'Updates applied',
-    (true, false) =>
-      result.updatedAppIds.length == 1 ? 'App updated' : 'Apps updated',
-    (false, true) =>
-      result.readyAppIds.length == 1 ? 'Update ready' : 'Updates ready',
-    _ => 'Update check finished',
-  };
-
-  final payload = result.readyAppIds.isNotEmpty
-      ? '$_kNotificationPayloadReadyPrefix${result.readyAppIds.join(',')}'
-      : _kNotificationPayloadResults;
-
-  await plugin.show(
-    0,
-    title,
-    body,
-    NotificationDetails(
-      android: AndroidNotificationDetails(
-        kUpdateNotificationChannelId,
-        kUpdateNotificationChannelName,
-        channelDescription: kUpdateNotificationChannelDescription,
-        importance: Importance.defaultImportance,
-        priority: Priority.defaultPriority,
-        showWhen: true,
-        autoCancel: true,
-        styleInformation: BigTextStyleInformation(body),
-      ),
-    ),
-    payload: payload,
-  );
-}
-
-String _formatNameList(List<String> names) {
-  if (names.length <= 3) return names.join(', ');
-  return '${names.take(3).join(', ')} and ${names.length - 3} more';
 }
 
 /// Service for managing background update checks
@@ -576,31 +340,13 @@ class BackgroundUpdateService {
     // Initialize WorkManager
     await Workmanager().initialize(callbackDispatcher);
 
-    // Initialize local notifications
-    await _initializeNotifications();
+    // Drop any previously scheduled notification-only checks.
+    await Workmanager().cancelByUniqueName(kBackgroundUpdateTaskId);
 
     // Resolve AppCatalog relays from main isolate to pass to background task
     final appCatalogRelays = await ref
         .read(storageNotifierProvider.notifier)
         .resolveRelays('AppCatalog');
-
-    // Register periodic task (minimum 15 minutes on Android)
-    // We use 24 hours to match the inactivity threshold for notifications.
-    // More frequent checks would be wasted since we only notify users
-    // who haven't opened the app in 24+ hours.
-    await Workmanager().registerPeriodicTask(
-      kBackgroundUpdateTaskId,
-      kBackgroundUpdateTaskName,
-      frequency: const Duration(hours: 24),
-      constraints: Constraints(
-        networkType: NetworkType.connected,
-        requiresBatteryNotLow: true,
-      ),
-      existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
-      backoffPolicy: BackoffPolicy.exponential,
-      initialDelay: const Duration(hours: 1),
-      inputData: {kAppCatalogRelaysKey: appCatalogRelays.toList()},
-    );
 
     await _registerAutoUpdatePeriodicTask(
       appCatalogRelays,
@@ -680,130 +426,12 @@ class BackgroundUpdateService {
     );
   }
 
-  /// Initialize local notifications plugin and request permission (release/profile only).
-  Future<void> _initializeNotifications() async {
-    // Request notification permission on Android 13+ (API 33+); skip in debug / dev runs.
-    if (Platform.isAndroid && !kDebugMode) {
-      final status = await Permission.notification.status;
-      if (!status.isGranted) {
-        await Permission.notification.request();
-      }
-    }
-
-    final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
-
-    const initializationSettingsAndroid = AndroidInitializationSettings(
-      '@drawable/ic_notification',
-    );
-    const initializationSettings = InitializationSettings(
-      android: initializationSettingsAndroid,
-    );
-
-    await flutterLocalNotificationsPlugin.initialize(
-      initializationSettings,
-      onDidReceiveNotificationResponse: _handleNotificationTap,
-    );
-
-    // Check if app was launched from a notification (terminated state)
-    final launchDetails = await flutterLocalNotificationsPlugin
-        .getNotificationAppLaunchDetails();
-    if (launchDetails?.didNotificationLaunchApp == true) {
-      final payload = launchDetails?.notificationResponse?.payload;
-      if (payload != null) {
-        _handleNotificationPayload(payload);
-      }
-    }
-
-    await _ensureUpdateNotificationChannel(flutterLocalNotificationsPlugin);
-  }
-
-  /// Handle notification tap - navigate or launch pending installs
-  static void _handleNotificationTap(NotificationResponse response) {
-    final payload = response.payload;
-    if (payload == null || payload.isEmpty) return;
-    _handleNotificationPayload(payload);
-  }
-
-  static void _handleNotificationPayload(String payload) {
-    if (payload.startsWith(_kNotificationPayloadReadyPrefix)) {
-      final raw = payload.substring(_kNotificationPayloadReadyPrefix.length);
-      final appIds = raw.split(',').where((id) => id.isNotEmpty).toList();
-      // A notification can cold-start the app before its Activity, method
-      // channels, and router have finished attaching. Defer to the next frame
-      // so the prepared install can safely launch Android system UI.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        unawaited(launchPendingBackgroundInstalls(appIds));
-      });
-      return;
-    }
-
-    if (payload == _kNotificationPayload ||
-        payload == _kNotificationPayloadResults) {
-      _navigateToUpdates();
-    }
-  }
-
-  /// Launch Android install dialogs for manual updates prepared in the background.
-  static Future<void> launchPendingBackgroundInstalls(
-    List<String> appIds,
-  ) async {
-    final pending = await BackgroundPendingInstallStore.loadAll();
-    final targets = appIds.isEmpty ? pending.keys.toList() : appIds;
-
-    for (final appId in targets) {
-      final install = pending[appId];
-      if (install == null) continue;
-
-      await BackgroundNativeInstaller.launchPreparedInstall(
-        appId: install.appId,
-        filePath: install.filePath,
-        expectedHash: install.hash,
-        expectedSize: install.size,
-        expectedCertHashes: install.certificateHashes,
-      );
-    }
-
-    final context = rootNavigatorKey.currentContext;
-    if (context != null && context.mounted) {
-      GoRouter.of(context).go('/updates');
-    }
-  }
-
-  /// Navigate to the updates screen
-  static void _navigateToUpdates() {
-    // Use the root navigator key to navigate
-    final context = rootNavigatorKey.currentContext;
-    if (context != null) {
-      GoRouter.of(context).go('/updates');
-    }
-  }
-
   /// Cancel background update checks
   Future<void> cancelBackgroundChecks() async {
     await Future.wait([
       Workmanager().cancelByUniqueName(kBackgroundUpdateTaskId),
       Workmanager().cancelByUniqueName(kBackgroundAutoUpdateTaskId),
     ]);
-  }
-}
-
-Future<void> _ensureUpdateNotificationChannel(
-  FlutterLocalNotificationsPlugin plugin,
-) async {
-  final androidPlugin = plugin
-      .resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin
-      >();
-
-  if (androidPlugin != null) {
-    await androidPlugin.createNotificationChannel(
-      const AndroidNotificationChannel(
-        kUpdateNotificationChannelId,
-        kUpdateNotificationChannelName,
-        description: kUpdateNotificationChannelDescription,
-        importance: Importance.defaultImportance,
-      ),
-    );
   }
 }
 

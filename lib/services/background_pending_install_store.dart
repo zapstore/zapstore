@@ -79,7 +79,7 @@ class PendingBackgroundInstall {
   }
 }
 
-/// Persists manual background installs until the user taps the notification.
+/// Persists manual background installs until the user installs from Updates.
 class BackgroundPendingInstallStore {
   static const _fileName = 'background_pending_installs.json';
 

@@ -41,7 +41,6 @@ dependencies:
   auto_size_text: ^3.0.0
   percent_indicator: ^4.2.5
   flutter_layout_grid: ^2.0.8
-  permission_handler: ^12.0.1
   equatable: ^2.0.7
   state_notifier: ^1.0.0
   gap: ^3.0.1
@@ -56,7 +55,6 @@ dependencies:
   flutter_secure_storage: ^9.2.4 # DO NOT UPDATE TO BROKEN ^10.0.0
   markdown: ^7.3.0
   workmanager: ^0.9.0+3
-  flutter_local_notifications: ^19.5.0
   device_info_plus: ^12.0.0
   archive: ^4.0.7
   flutter_slidable: ^4.0.3
