@@ -210,6 +210,12 @@ There is no third option. Timeouts, crashes, backgrounding, network loss—all p
 
 - Download concurrency adapts to device RAM to prevent crashes on low-capability devices
 - Behavior degrades gracefully on constrained devices, never hangs
+- Catalog queries filter on the platform tag of the device's primary ABI, so a
+  device is only offered artifacts it can run. Exactly one tag is queried, so
+  query cost does not depend on architecture
+- An artifact's architecture is checked before its `versionCode` is compared.
+  Per-ABI `versionCode` offsets otherwise rank a 64-bit artifact above the
+  32-bit one for the same release. Untagged artifacts count as compatible
 
 ## Acceptance Criteria
 
