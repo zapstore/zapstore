@@ -735,6 +735,10 @@ class AndroidPackageManagerPlugin :
             }
             "hasUnknownSourcesPermission" -> result.success(hasUnknownSourcesPermission())
             "requestInstallPermission" -> requestInstallPermission(result)
+            // Ordered best-first by Android. Served over this channel rather
+            // than a plugin so the WorkManager isolate resolves the same ABIs
+            // as the UI engine.
+            "getSupportedAbis" -> result.success(Build.SUPPORTED_ABIS.toList())
             "getInstalledApps" -> {
                 val includeSystem = call.argument<Boolean>("includeSystemApps") ?: false
                 val executor = packageQueryExecutor

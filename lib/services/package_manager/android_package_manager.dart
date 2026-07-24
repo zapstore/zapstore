@@ -86,7 +86,7 @@ final class AndroidPackageManager extends PackageManager {
   final Set<String> _abortedOrphans = {};
 
   @override
-  String get platform => 'android-arm64-v8a';
+  String get platform => DeviceCapabilitiesCache.capabilities.platformTag;
 
   @override
   String get packageExtension => '.apk';

@@ -57,7 +57,7 @@ Future<CatalogResult> fetchCatalog({
   for (final a in localAssets) {
     final id = a.appIdentifier;
     if (id.isEmpty) continue;
-    _mergeInstallable(installableByApp, id, a);
+    _mergeInstallable(installableByApp, id, a, platform);
     final prev = newestTimestamp[id];
     if (prev == null || a.createdAt.isAfter(prev)) {
       newestTimestamp[id] = a.createdAt;
@@ -101,7 +101,7 @@ Future<CatalogResult> fetchCatalog({
   for (final a in newAssets) {
     final id = a.appIdentifier;
     if (id.isEmpty) continue;
-    _mergeInstallable(installableByApp, id, a);
+    _mergeInstallable(installableByApp, id, a, platform);
     // Track 3063 coverage so we know which apps are asset-covered
     assetCoveredIds.add(id);
   }
@@ -118,7 +118,7 @@ Future<CatalogResult> fetchCatalog({
       subscriptionPrefix: '$subscriptionPrefix-legacy',
     );
     legacyResult.installableByApp.forEach((id, candidate) {
-      _mergeInstallable(installableByApp, id, candidate);
+      _mergeInstallable(installableByApp, id, candidate, platform);
     });
   }
 
@@ -239,7 +239,7 @@ Future<_LegacyBaseline> _localLegacyBaseline({
   for (final m in metadatas) {
     final id = m.appIdentifier;
     if (id.isEmpty) continue;
-    _mergeInstallable(installableByApp, id, m);
+    _mergeInstallable(installableByApp, id, m, platform);
     final prev = timestamps[id];
     if (prev == null || m.createdAt.isAfter(prev)) {
       timestamps[id] = m.createdAt;
@@ -302,7 +302,7 @@ Future<_LegacyBaseline> _remoteLegacyChain({
   for (final m in metadatas) {
     final id = m.appIdentifier;
     if (id.isEmpty) continue;
-    _mergeInstallable(installableByApp, id, m);
+    _mergeInstallable(installableByApp, id, m, platform);
   }
 
   return _LegacyBaseline(installableByApp, const {});
@@ -340,17 +340,34 @@ Future<CatalogResult> _buildResult({
   );
 }
 
+/// Keeps the best candidate per app: installable on this device first, then
+/// highest versionCode.
+///
+/// The platform check must happen *before* the versionCode comparison.
+/// `--split-per-abi` offsets versionCode by ABI (arm64 ranks above
+/// armeabi-v7a), so ranking on versionCode alone always picks the 64-bit
+/// artifact — which a 32-bit device cannot install. Filtering first keeps
+/// update detection itself a pure versionCode comparison, per INVARIANTS.
 void _mergeInstallable(
   Map<String, Installable> map,
   String id,
   Installable candidate,
+  String platform,
 ) {
+  if (!supportsPlatform(candidate.platforms, platform)) return;
   final existing = map[id];
   if (existing == null ||
       (candidate.versionCode ?? 0) > (existing.versionCode ?? 0)) {
     map[id] = candidate;
   }
 }
+
+/// Whether an installable tagged for [assetPlatforms] can run on [platform].
+///
+/// Events with no `f` tags predate per-architecture tagging, so they count as
+/// compatible rather than hiding apps that install fine today.
+bool supportsPlatform(Set<String> assetPlatforms, String platform) =>
+    assetPlatforms.isEmpty || assetPlatforms.contains(platform);
 
 class _LegacyBaseline {
   const _LegacyBaseline(this.installableByApp, this.timestamps);

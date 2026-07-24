@@ -239,6 +239,11 @@ Future<bool> _checkForUpdatesInBackground(Set<String>? appCatalogRelays) async {
       return true;
     }
 
+    // This isolate has its own cache, so the device's platform tag must be
+    // resolved here too — otherwise background checks would query a different
+    // architecture than the UI does.
+    await DeviceCapabilitiesCache.initialize();
+
     final container = ProviderContainer(
       overrides: [
         storageNotifierProvider.overrideWith(PurplebaseStorageNotifier.new),

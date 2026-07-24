@@ -32,11 +32,12 @@ class UserScreen extends HookConsumerWidget {
     final profile = profileState.models.firstOrNull;
 
     // Query user's apps
+    final platform = ref.packageManager.platform;
     final userAppsState = ref.watch(
       query<App>(
         authors: {pubkey},
         tags: {
-          '#f': {'android-arm64-v8a'},
+          '#f': {platform},
         },
         limit: 20,
         and: (app) => {
