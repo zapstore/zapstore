@@ -32,8 +32,9 @@ final class DummyPackageManager extends PackageManager {
     );
   }
 
+  // Non-Android stand-in: no device ABIs to resolve, so keep the default.
   @override
-  String get platform => 'android-arm64-v8a';
+  String get platform => kDefaultPlatformTag;
 
   @override
   String get packageExtension => '.apk';

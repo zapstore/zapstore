@@ -10,9 +10,11 @@ final class BackgroundPackageManager extends PackageManager {
 
   static const _methodChannel = MethodChannel('android_package_manager');
 
-  // Zapstore currently targets arm64 APKs for background checks.
+  // Resolved from the device's ABIs, same as the foreground manager. The
+  // background entry point initializes the cache before this is read;
+  // if that ever fails it falls back to [kDefaultPlatformTag].
   @override
-  String get platform => 'android-arm64-v8a';
+  String get platform => DeviceCapabilitiesCache.capabilities.platformTag;
 
   @override
   String get packageExtension => '.apk';

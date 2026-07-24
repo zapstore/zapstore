@@ -1,4 +1,4 @@
-.PHONY: help debug build-release release deploy deploy-debug pub-get
+.PHONY: help debug build-release release deploy deploy-debug pub-get check-abi
 
 .ONESHELL:
 SHELL := /bin/bash
@@ -6,8 +6,18 @@ SHELL := /bin/bash
 
 FLUTTER := fvm flutter
 APK_DIR := build/app/outputs/flutter-apk
-DEBUG_APK := $(APK_DIR)/app-arm64-v8a-debug.apk
-RELEASE_APK := $(APK_DIR)/app-arm64-v8a-release.apk
+
+# Target ABI. Defaults to arm64-v8a, so release output is unchanged.
+# Override for other architectures, e.g. `make debug ABI=armeabi-v7a`.
+ABI ?= arm64-v8a
+# Flutter names arm ABIs differently on the command line than in APK filenames.
+TARGET_PLATFORM_arm64-v8a := android-arm64
+TARGET_PLATFORM_armeabi-v7a := android-arm
+TARGET_PLATFORM_x86_64 := android-x64
+TARGET_PLATFORM := $(TARGET_PLATFORM_$(ABI))
+
+DEBUG_APK := $(APK_DIR)/app-$(ABI)-debug.apk
+RELEASE_APK := $(APK_DIR)/app-$(ABI)-release.apk
 CURRENT_VERSION := $(shell awk '/^version:/ {print $$2; exit}' pubspec.yaml)
 CURRENT_NAME := $(word 1,$(subst +, ,$(CURRENT_VERSION)))
 CURRENT_CODE := $(word 2,$(subst +, ,$(CURRENT_VERSION)))
@@ -15,7 +25,7 @@ CURRENT_CODE := $(word 2,$(subst +, ,$(CURRENT_VERSION)))
 # Reproducible release builds honor SOURCE_DATE_EPOCH (see spec/guidelines/INVARIANTS.md).
 SOURCE_DATE_EPOCH ?= $(shell git log -1 --format=%ct 2>/dev/null || date +%s)
 
-ARM64_FLAGS := --split-per-abi --target-platform android-arm64
+ABI_FLAGS := --split-per-abi --target-platform $(TARGET_PLATFORM)
 RED := \033[0;31m
 GREEN := \033[0;32m
 YELLOW := \033[1;33m
@@ -49,19 +59,28 @@ help:
 	@echo "  make release      prepare and build a release"
 	@echo "  make deploy       prepare, build, and install release APK"
 	@echo "  make deploy-debug build and install debug APK"
+	@echo ""
+	@echo "  ABI=<abi>         target architecture (default: arm64-v8a)"
+	@echo "                    one of: arm64-v8a, armeabi-v7a, x86_64"
+
+check-abi:
+	@if [ -z "$(TARGET_PLATFORM)" ]; then \
+		printf "$(RED)Error: unsupported ABI '$(ABI)'. Use arm64-v8a, armeabi-v7a or x86_64.$(NC)\n"; \
+		exit 1; \
+	fi
 
 pub-get:
 	$(FLUTTER) pub get
 
-debug: pub-get
-	$(FLUTTER) build apk --debug $(ARM64_FLAGS)
+debug: check-abi pub-get
+	$(FLUTTER) build apk --debug $(ABI_FLAGS)
 	@test -f $(DEBUG_APK)
 
-build-release: pub-get
-	SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH) $(FLUTTER) build apk --release $(ARM64_FLAGS)
+build-release: check-abi pub-get
+	SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH) $(FLUTTER) build apk --release $(ABI_FLAGS)
 	@test -f $(RELEASE_APK)
 
-release:
+release: check-abi
 	@if [[ -n "$$(git status --porcelain)" ]]; then \
 		printf "$(RED)Error: Working tree is not clean. Commit or stash changes first.$(NC)\n"; \
 		exit 1; \
@@ -102,7 +121,7 @@ release:
 	printf "\n$(GREEN)Building reproducible release APK...$(NC)\n"; \
 	export SOURCE_DATE_EPOCH="$(SOURCE_DATE_EPOCH)"; \
 	printf "  Using SOURCE_DATE_EPOCH=%s\n" "$$SOURCE_DATE_EPOCH"; \
-	$(FLUTTER) build apk --release $(ARM64_FLAGS); \
+	$(FLUTTER) build apk --release $(ABI_FLAGS); \
 	test -f "$(RELEASE_APK)"; \
 	apk_size="$$(du -h "$(RELEASE_APK)" | cut -f1)"; \
 	apk_sha256="$$(shasum -a 256 "$(RELEASE_APK)" | cut -d' ' -f1)"; \
@@ -123,7 +142,7 @@ release:
 	printf "  2. Push to remote: git push origin master && git push origin %s\n" "$$tag_name"; \
 	printf "  3. Create GitHub release with the APK\n"; \
 	printf "\nTo rebuild this APK reproducibly:\n"; \
-	printf "  git checkout %s\n  export SOURCE_DATE_EPOCH=%s\n  $(FLUTTER) build apk --release $(ARM64_FLAGS)\n" "$$tag_name" "$$SOURCE_DATE_EPOCH"
+	printf "  git checkout %s\n  export SOURCE_DATE_EPOCH=%s\n  $(FLUTTER) build apk --release $(ABI_FLAGS)\n" "$$tag_name" "$$SOURCE_DATE_EPOCH"
 
 deploy: release
 	@$(call deploy-apk-cmd,$(RELEASE_APK))
