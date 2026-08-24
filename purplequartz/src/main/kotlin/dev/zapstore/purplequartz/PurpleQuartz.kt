@@ -3,8 +3,12 @@ package dev.zapstore.purplequartz
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
+import com.vitorpamplona.quartz.nip01Core.cache.projection.EventStoreProjection
+import com.vitorpamplona.quartz.nip01Core.core.Address
+import com.vitorpamplona.quartz.nip01Core.core.AddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.isEphemeral
+import com.vitorpamplona.quartz.nip01Core.core.isReplaceable
 import com.vitorpamplona.quartz.nip01Core.crypto.verifyId
 import com.vitorpamplona.quartz.nip01Core.crypto.verifySignature
 import com.vitorpamplona.quartz.nip01Core.relay.client.INostrClient
@@ -19,6 +23,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.normalizer.normalizeRelayUrl
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebsocketBuilder
 import com.vitorpamplona.quartz.nip01Core.store.IEventStore
 import com.vitorpamplona.quartz.nip01Core.store.ObservableEventStore
+import com.vitorpamplona.quartz.nip01Core.store.ObservableEventStore.StoreChange
 import com.vitorpamplona.quartz.nip01Core.store.sqlite.EventStore
 import com.vitorpamplona.quartz.nip40Expiration.isExpired
 import kotlinx.coroutines.CancellationException
@@ -35,6 +40,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -65,7 +71,9 @@ class PurpleQuartz private constructor(
 
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
-            reconnectWithoutBackoff()
+            // While relay traffic is suspended (app backgrounded) a network flap
+            // must not wake the pool.
+            if (client.isActive()) reconnectWithoutBackoff()
         }
     }
 
@@ -86,11 +94,28 @@ class PurpleQuartz private constructor(
         data class Disconnected(override val relay: NormalizedRelayUrl, override val generation: Long) : Inbound
     }
 
+    private data class IngestOutcome(
+        val batch: List<Event>? = null,
+        val eoseAccepted: Boolean = false,
+    )
+
     private val expirationJob = scope.launch {
         while (isActive) {
             delay(config.expirationSweepInterval)
-            if (!closed.get()) runCatching { withStoreOperation { store.deleteExpiredEvents() } }
+            if (!closed.get()) runCatching { withStoreOperation { sweepStore() } }
         }
+    }
+
+    private suspend fun sweepStore() {
+        store.deleteExpiredEvents()
+        if (config.pruneRules.isNotEmpty()) {
+            val nowSeconds = clock.now() / 1_000
+            config.pruneRules.forEach { (kind, maxAge) ->
+                store.delete(Filter(kinds = listOf(kind), until = nowSeconds - maxAge.inWholeSeconds))
+            }
+        }
+        // Keeps the SQLite query planner honest as the corpus grows; no-op for other stores.
+        (store.inner as? EventStore)?.optimize()
     }
 
     fun query(filter: Filter, source: QuerySource = QuerySource.Local): Flow<QueryState> = query(listOf(filter), source)
@@ -142,6 +167,22 @@ class PurpleQuartz private constructor(
      */
     fun refreshConnections() {
         reconnectWithoutBackoff()
+    }
+
+    /**
+     * Enables or suspends all relay traffic for app foreground/background.
+     * Suspending closes every relay socket and stops the keep-alive reconnector;
+     * local data remains fully queryable. Re-enabling re-dials stale connections
+     * immediately, bypassing retry backoff.
+     */
+    fun setRelayTrafficEnabled(enabled: Boolean) {
+        if (closed.get()) return
+        if (enabled) {
+            client.connect()
+            client.reconnect(onlyIfChanged = true, ignoreRetryDelays = true)
+        } else {
+            client.disconnect()
+        }
     }
 
     private fun performClose() {
@@ -214,6 +255,8 @@ class PurpleQuartz private constructor(
         private val remoteDeferred = AtomicBoolean(false)
         private val stateMutex = Mutex()
         private val emitMutex = Mutex()
+        private val batchMutex = Mutex()
+        private val flushIoMutex = Mutex()
         private val subId = newSubId()
         private val relays = when (source) {
             QuerySource.Local -> emptySet()
@@ -244,6 +287,12 @@ class PurpleQuartz private constructor(
         private var workerJob: Job? = null
         private var timeoutJob: Job? = null
         private var remoteDelayJob: Job? = null
+        private var flushJob: Job? = null
+        private val pendingInserts = ArrayList<Event>()
+        @Volatile
+        private var emittedIds: List<String> = emptyList()
+        @Volatile
+        private var emittedAddresses: Set<Address> = emptySet()
 
         private val subscriptionListener = object : SubscriptionListener {
             override fun onSubscriptionStarted(relay: String, forFilters: List<Filter>) {
@@ -376,43 +425,75 @@ class PurpleQuartz private constructor(
         }
 
         /**
-         * Starts collecting changes before the seed query. A change that races the seed is
-         * queued by the collector and causes a post-seed projection.
+         * Subscribes to the store change feed before seeding the projection, so a change
+         * that races the seed is buffered by the SharedFlow and applied right after it.
+         * The projection applies each change in memory; collectors only re-emit when the
+         * visible id set actually changes (plus in-place updates of visible replaceables).
          */
         private fun startObserver(
             initialSync: () -> QuerySync,
             afterSeed: ((QuerySync) -> Unit)? = null,
         ): Job =
             scope.launch(start = CoroutineStart.UNDISPATCHED) {
-                val changes = Channel<Unit>(Channel.CONFLATED)
-                val changesJob = launch(start = CoroutineStart.UNDISPATCHED) {
-                    store.changes.collect { changes.trySend(Unit) }
-                }
+                val projection = EventStoreProjection<Event>(store, filters)
                 try {
-                    val seedSync = initialSync()
-                    stateMutex.withLock { requery(seedSync, force = true) }
-                    while (changes.tryReceive().isSuccess) stateMutex.withLock { requery(sync(), force = false) }
-                    afterSeed?.invoke(seedSync)
-                    if (stopped.get()) return@launch
-                    for (ignored in changes) stateMutex.withLock { requery(sync(), force = false) }
+                    store.changes
+                        .onSubscription {
+                            val seedSync = initialSync()
+                            projection.seed()
+                            stateMutex.withLock {
+                                publishLocked(projection.snapshotItems(), seedSync, force = true)
+                            }
+                            afterSeed?.invoke(seedSync)
+                        }
+                        .collect { change ->
+                            if (stopped.get()) throw CancellationException("query session stopped")
+                            val applied = projection.apply(change)
+                            if (!applied && !change.isVisibleInPlaceUpdate()) return@collect
+                            val fresh = projection.snapshotItems()
+                            stateMutex.withLock { publishLocked(fresh, sync()) }
+                        }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: Throwable) {
                     fail(QueryError.UnsupportedLocalProjection("Local store projection failed"))
-                } finally {
-                    changesJob.cancel()
-                    changes.close()
                 }
             }
+
+        private fun StoreChange.isVisibleInPlaceUpdate(): Boolean {
+            val event = (this as? StoreChange.Insert)?.event ?: return false
+            val address = addressOf(event) ?: return false
+            return address in emittedAddresses
+        }
+
+        private suspend fun publishLocked(fresh: List<Event>, sync: QuerySync, force: Boolean = false) {
+            val ids = fresh.map { it.id }
+            if (!force && ids == emittedIds) return
+            emittedIds = ids
+            emittedAddresses = fresh.mapNotNullTo(HashSet(), Companion::addressOf)
+            items = fresh
+            emitState(sync)
+        }
 
         private fun startRemote() {
             if (stopped.get() || !remoteStarted.compareAndSet(false, true)) return
             prepareRemote()
             workerJob = scope.launch {
-                for (message in messages) {
-                    stateMutex.withLock {
-                        if (!stopped.get()) process(message)
+                try {
+                    for (message in messages) {
+                        val outcome = stateMutex.withLock {
+                            if (!stopped.get()) processLocked(message) else IngestOutcome()
+                        }
+                        outcome.batch?.let { flushBatch(it) }
+                        if (outcome.eoseAccepted) {
+                            flushPendingAndWait()
+                            stateMutex.withLock {
+                                if (!stopped.get()) postEoseLocked(message as Inbound.Eose)
+                            }
+                        }
                     }
+                } finally {
+                    flushPendingAndWait()
                 }
             }
             try {
@@ -454,73 +535,102 @@ class PurpleQuartz private constructor(
             }
         }
 
-        private suspend fun process(message: Inbound) {
-            val currentGeneration = relayStates[message.relay]?.generation ?: return
+        private suspend fun processLocked(message: Inbound): IngestOutcome {
+            val currentGeneration = relayStates[message.relay]?.generation ?: return IngestOutcome()
             if (message is Inbound.Connecting) {
-                if (message.generation < currentGeneration) return
+                if (message.generation < currentGeneration) return IngestOutcome()
             } else if (message.generation != currentGeneration) {
-                return
+                return IngestOutcome()
             }
-            when (message) {
+            return when (message) {
                 is Inbound.Started -> {
                     updateRelay(message.relay) { it.copy(connection = RelayConnectionState.Connected, eose = false, lastError = null) }
                     emitState(sync())
+                    IngestOutcome()
                 }
                 is Inbound.Connecting -> {
                     updateRelay(message.relay) {
                         it.copy(generation = message.generation, connection = RelayConnectionState.Connecting, eose = false)
                     }
                     emitState(sync())
+                    IngestOutcome()
                 }
                 is Inbound.Disconnected -> {
                     updateRelay(message.relay) { it.copy(connection = RelayConnectionState.Disconnected, eose = false) }
                     emitState(sync())
+                    IngestOutcome()
                 }
                 is Inbound.CannotConnect -> {
                     updateRelay(message.relay) { it.copy(connection = RelayConnectionState.Disconnected, lastError = message.message) }
                     error = QueryError.RelayFailure(message.relay, message.message)
                     emitState(sync())
+                    IngestOutcome()
                 }
                 is Inbound.Closed -> {
                     updateRelay(message.relay) {
                         it.copy(connection = RelayConnectionState.Closed, lastError = message.message)
                     }
                     fail(QueryError.RelayFailure(message.relay, message.message))
+                    IngestOutcome()
                 }
-                is Inbound.EventReceived -> ingest(message.relay, message.event)
+                is Inbound.EventReceived -> IngestOutcome(batch = ingestLocked(message.relay, message.event))
                 is Inbound.Eose -> {
                     updateRelay(message.relay) { it.copy(eose = true) }
-                    if (timeoutRequested.get()) return
-                    error = null
-                    val allRelaysCaughtUp = relayStates.values.all { it.eose }
-                    if (allRelaysCaughtUp) {
-                        if (mode is RemoteMode.OneShot) {
-                            if (source is QuerySource.LocalAndRemote) {
-                                try {
-                                    requery(QuerySync.Complete, force = true)
-                                } catch (cancelled: CancellationException) {
-                                    throw cancelled
-                                } catch (_: Throwable) {
-                                    fail(QueryError.UnsupportedLocalProjection("Local store projection failed"))
-                                    return
-                                }
-                                recordRefresh()
-                            } else {
-                                emitState(QuerySync.Complete)
-                            }
-                            finish()
-                        } else {
-                            recordRefresh()
-                            emitState(sync())
+                    if (timeoutRequested.get()) return IngestOutcome()
+                    IngestOutcome(batch = drainPendingInserts(), eoseAccepted = true)
+                }
+            }
+        }
+
+        private suspend fun postEoseLocked(message: Inbound.Eose) {
+            if (timeoutRequested.get()) return
+            error = null
+            val allRelaysCaughtUp = relayStates.values.all { it.eose }
+            if (allRelaysCaughtUp) {
+                if (mode is RemoteMode.OneShot) {
+                    if (source is QuerySource.LocalAndRemote) {
+                        try {
+                            terminalRequeryLocked(QuerySync.Complete)
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Throwable) {
+                            fail(QueryError.UnsupportedLocalProjection("Local store projection failed"))
+                            return
+                        }
+                        recordRefresh()
+                    } else {
+                        emitState(QuerySync.Complete)
+                    }
+                    finish()
+                } else {
+                    recordRefresh()
+                    if (source is QuerySource.LocalAndRemote) {
+                        // EOSE is a sync barrier: the final ingest batch was just flushed,
+                        // but the observer coroutine may not have applied it yet. Requery
+                        // so the terminal-at-EOSE state cannot lag the store.
+                        try {
+                            terminalRequeryLocked(sync())
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Throwable) {
+                            fail(QueryError.UnsupportedLocalProjection("Local store projection failed"))
+                            return
                         }
                     } else {
                         emitState(sync())
                     }
                 }
+            } else {
+                emitState(sync())
             }
         }
 
-        private suspend fun ingest(relay: NormalizedRelayUrl, event: Event) {
+        private suspend fun terminalRequeryLocked(sync: QuerySync) {
+            val fresh = withStoreOperation { store.query<Event>(filters) }
+            publishLocked(fresh, sync, force = true)
+        }
+
+        private suspend fun ingestLocked(relay: NormalizedRelayUrl, event: Event): List<Event>? {
             val eventId = validatedId(event.id)
             val valid = try {
                 eventVerifier(event)
@@ -533,46 +643,91 @@ class PurpleQuartz private constructor(
                 error = QueryError.VerificationRejected(relay, eventId, "Relay event failed verification")
                 updateRelay(relay) { it.copy(lastError = error?.message) }
                 emitState(sync())
-                return
+                return null
             }
             if (!filters.any { it.match(event) }) {
                 error = QueryError.ProtocolViolation(relay, eventId, "Relay event does not match this query")
                 updateRelay(relay) { it.copy(lastError = error?.message) }
                 emitState(sync())
-                return
+                return null
             }
-            if (event.isExpired()) return
+            if (event.isExpired()) return null
 
             if (source is QuerySource.Remote && seenRemoteIds.add(event.id)) {
                 items = items + event
                 error = null
                 emitState(sync())
             }
-            if (event.kind.isEphemeral()) return
+            if (event.kind.isEphemeral()) return null
 
-            try {
-                withStoreOperation { store.insert(event) }
-                error = null
+            return batchMutex.withLock {
+                pendingInserts += event
+                if (pendingInserts.size >= config.ingestBatchSize) {
+                    drainPendingInsertsLocked()
+                } else {
+                    scheduleFlush()
+                    null
+                }
+            }
+        }
+
+        private fun scheduleFlush() {
+            if (stopped.get() || flushJob?.isActive == true) return
+            flushJob = scope.launch {
+                delay(config.ingestFlushInterval)
+                val batch = drainPendingInserts()
+                if (batch != null) flushBatch(batch)
+            }
+        }
+
+        private fun drainPendingInsertsLocked(): List<Event>? {
+            if (pendingInserts.isEmpty()) return null
+            flushJob?.cancel()
+            return pendingInserts.toList().also { pendingInserts.clear() }
+        }
+
+        private suspend fun drainPendingInserts(): List<Event>? =
+            batchMutex.withLock { drainPendingInsertsLocked() }
+
+        private suspend fun flushBatch(batch: List<Event>) {
+            val outcomes = try {
+                flushIoMutex.withLock {
+                    withStoreOperation { store.batchInsert(batch) }
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Throwable) {
-                // Quartz may throw after a concurrent duplicate commit. A direct exact-ID
+                null
+            }
+            val rejected = when {
+                outcomes == null -> batch
+                else -> batch.filterIndexed { index, _ ->
+                    outcomes[index] is IEventStore.InsertOutcome.Rejected
+                }
+            }
+            var genuinelyMissing: Event? = null
+            for (event in rejected) {
+                // Quartz may reject after a concurrent duplicate commit. A direct exact-ID
                 // filter distinguishes that expected outcome from a genuine failed insert.
                 val existing = runCatching {
                     withStoreOperation { store.query<Event>(Filter(ids = listOf(event.id))) }
                 }.getOrDefault(emptyList())
                 if (existing.none { it.id == event.id } && !event.isExpired()) {
-                    fail(QueryError.PersistenceFailure(eventId, "Unable to persist relay event"))
+                    genuinelyMissing = event
+                    break
                 }
+            }
+            if (genuinelyMissing != null) {
+                fail(QueryError.PersistenceFailure(validatedId(genuinelyMissing.id), "Unable to persist relay event"))
+            } else {
+                stateMutex.withLock { if (!stopped.get()) error = null }
             }
         }
 
-        private suspend fun requery(sync: QuerySync, force: Boolean) {
-            val fresh = withStoreOperation { store.query<Event>(filters) }
-            if (force || fresh != items) {
-                items = fresh
-                emitState(sync)
-            }
+        private suspend fun flushPendingAndWait() {
+            val batch = drainPendingInserts()
+            if (batch != null) flushBatch(batch)
+            flushIoMutex.withLock { }
         }
 
         private fun sync(): QuerySync = when {
@@ -664,6 +819,7 @@ class PurpleQuartz private constructor(
             timeoutJob?.cancel()
             remoteDelayJob?.cancel()
             observerJob?.cancel()
+            flushJob?.cancel()
             messages.close()
             workerJob?.cancel()
             unsubscribeRemote()
@@ -782,6 +938,15 @@ class PurpleQuartz private constructor(
             }.also { parentJob ->
                 require(parentJob.isActive) { "parentScope must be active" }
             }
+
+        private fun addressOf(event: Event): Address? = when {
+            event is AddressableEvent -> event.address()
+            event.kind.isReplaceable() -> Address(event.kind, event.pubKey, "")
+            else -> null
+        }
+
+        private fun <T : Event> EventStoreProjection<T>.snapshotItems(): List<T> =
+            snapshot().items.map { it.value }
 
         private val DEFAULT_EVENT_VERIFIER: (Event) -> Boolean = { event ->
             event.verifyId() && event.verifySignature()

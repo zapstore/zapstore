@@ -73,11 +73,26 @@ class QueryWiringTest {
         purpleQuartz.close()
     }
 
+    @Test
+    fun `relay traffic toggle disconnects and reconnects the client`() = runBlocking {
+        val client = RecordingClient()
+        val purpleQuartz = PurpleQuartz.createForTesting(MemoryEventStore(), client, this)
+
+        purpleQuartz.setRelayTrafficEnabled(false)
+        purpleQuartz.setRelayTrafficEnabled(true)
+
+        assertEquals(listOf(false, true), client.traffic)
+        assertEquals(listOf(ReconnectCall(true, true)), client.reconnectCalls)
+        purpleQuartz.close()
+    }
+
 }
 
 private class RecordingClient : INostrClient by EmptyNostrClient() {
     val requests = mutableListOf<Map<NormalizedRelayUrl, List<Filter>>>()
     val reconnectCalls = mutableListOf<ReconnectCall>()
+    val traffic = mutableListOf<Boolean>()
+    private var active = true
 
     override fun subscribe(
         subId: String,
@@ -90,6 +105,18 @@ private class RecordingClient : INostrClient by EmptyNostrClient() {
     override fun reconnect(onlyIfChanged: Boolean, ignoreRetryDelays: Boolean) {
         reconnectCalls += ReconnectCall(onlyIfChanged, ignoreRetryDelays)
     }
+
+    override fun connect() {
+        active = true
+        traffic += true
+    }
+
+    override fun disconnect() {
+        active = false
+        traffic += false
+    }
+
+    override fun isActive() = active
 }
 
 private data class ReconnectCall(

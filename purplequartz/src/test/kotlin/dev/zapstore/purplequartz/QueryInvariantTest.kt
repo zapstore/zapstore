@@ -327,7 +327,7 @@ class QueryInvariantTest {
     fun `bounded ingestion fails closed instead of dropping EOSE`() = runBlocking {
         val client = ControlledClient()
         val store = ControlledEventStore(blockInserts = true)
-        val config = PurpleQuartzConfig(ingestionCapacity = 1)
+        val config = PurpleQuartzConfig(ingestionCapacity = 1, ingestBatchSize = 1)
         val purpleQuartz = PurpleQuartz.createForTesting(store, client, this, config, eventVerifier = { true })
         val states = CopyOnWriteArrayList<QueryState>()
         val source = QuerySource.Remote(setOf(relay), RemoteMode.OneShot(5.seconds))
@@ -365,6 +365,39 @@ class QueryInvariantTest {
         assertTrue(failed.error is QueryError.PersistenceFailure)
         assertTrue(failed.items.any { it.id == event.id })
         withTimeout(2.seconds) { collection.join() }
+        purpleQuartz.close()
+    }
+
+    @Test
+    fun `prune rules delete events beyond max age and keep the rest`() = runBlocking {
+        val store = ControlledEventStore()
+        val nowMillis = 1_800_000_000_000L
+        val clock = MutableEpochClock(nowMillis)
+        val purpleQuartz = PurpleQuartz.createForTesting(
+            store,
+            ControlledClient(),
+            this,
+            config = PurpleQuartzConfig(
+                expirationSweepInterval = 50.milliseconds,
+                pruneRules = mapOf(9735 to 1.hours),
+            ),
+            eventVerifier = { true },
+            clock = clock,
+        )
+        val nowSeconds = nowMillis / 1_000
+        val old = signedEvent(content = "old", kind = 9735, createdAt = nowSeconds - 2.hours.inWholeSeconds)
+        val recent = signedEvent(content = "recent", kind = 9735, createdAt = nowSeconds)
+        val otherKind = signedEvent(content = "other", kind = 1, createdAt = nowSeconds - 2.hours.inWholeSeconds)
+        store.insert(old)
+        store.insert(recent)
+        store.insert(otherKind)
+
+        withTimeout(2.seconds) {
+            while (store.query<Event>(Filter(kinds = listOf(9735))).size > 1) delay(10)
+        }
+
+        val remaining = store.query<Event>(Filter())
+        assertEquals(setOf(recent.id, otherKind.id), remaining.map { it.id }.toSet())
         purpleQuartz.close()
     }
 
@@ -409,6 +442,36 @@ class QueryInvariantTest {
         purpleQuartz.close()
     }
 
+    @Test
+    fun `stream query emits every ingested event at eose`() = runBlocking {
+        val client = ControlledClient()
+        val purpleQuartz = PurpleQuartz.createForTesting(
+            ControlledEventStore(),
+            client,
+            this,
+            eventVerifier = { true },
+        )
+        val states = CopyOnWriteArrayList<QueryState>()
+        val collection = collect(
+            purpleQuartz,
+            QuerySource.LocalAndRemote(setOf(relay), RemoteMode.Stream),
+            states,
+        )
+
+        client.awaitSubscription()
+        client.started(relay)
+        val events = (1..5).map { signedEvent(content = "note-$it", createdAt = 1_750_000_000L + it) }
+        events.forEach { client.event(relay, it) }
+        client.eose(relay)
+
+        val live = awaitState(states) { it.sync == QuerySync.Live }
+        assertEquals(events.map { it.id }.toSet(), live.items.map { it.id }.toSet())
+
+        collection.cancel()
+        withTimeout(2.seconds) { collection.join() }
+        purpleQuartz.close()
+    }
+
     private fun kotlinx.coroutines.CoroutineScope.collect(
         purpleQuartz: PurpleQuartz,
         source: QuerySource,
@@ -428,13 +491,17 @@ class QueryInvariantTest {
         error("unreachable")
     }
 
-    private fun signedEvent(content: String): Event {
+    private fun signedEvent(
+        content: String,
+        kind: Int = 1,
+        createdAt: Long = 1_750_000_000,
+    ): Event {
         val id = eventSequence.incrementAndGet().toString(16).padStart(64, '0')
         return Event(
             id = id,
             pubKey = "1".repeat(64),
-            createdAt = 1_750_000_000,
-            kind = 1,
+            createdAt = createdAt,
+            kind = kind,
             tags = emptyArray(),
             content = content,
             sig = "2".repeat(128),

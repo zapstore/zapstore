@@ -25,6 +25,10 @@ class PublicContractsTest {
         assertFails { PurpleQuartzConfig(oneShotTimeout = 0.milliseconds).validate() }
         assertFails { PurpleQuartzConfig(ingestionCapacity = 0).validate() }
         assertFails { PurpleQuartzConfig(expirationSweepInterval = 0.milliseconds).validate() }
+        assertFails { PurpleQuartzConfig(ingestBatchSize = 0).validate() }
+        assertFails { PurpleQuartzConfig(ingestFlushInterval = 0.milliseconds).validate() }
+        assertFails { PurpleQuartzConfig(pruneRules = mapOf(9735 to 0.milliseconds)).validate() }
+        assertFails { PurpleQuartzConfig(pruneRules = mapOf(-1 to 1.hours)).validate() }
     }
 
     @Test
