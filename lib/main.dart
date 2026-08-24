@@ -29,6 +29,7 @@ import 'package:zapstore/services/device_key_service.dart';
 import 'package:zapstore/services/device_private_event_service.dart';
 import 'package:zapstore/services/device_private_sync_service.dart';
 import 'package:zapstore/services/device_state_service.dart';
+import 'package:zapstore/services/event_verifier.dart';
 import 'package:zapstore/services/app_catalog_relay_service.dart';
 import 'package:zapstore/utils/debug_utils.dart';
 import 'package:zapstore/utils/extensions.dart';
@@ -77,6 +78,7 @@ void main() {
     _providerContainer = ProviderContainer(
       overrides: [
         storageNotifierProvider.overrideWith(PurplebaseStorageNotifier.new),
+        zapstoreVerifierOverride,
         packageManagerProvider.overrideWith(
           (ref) => Platform.isAndroid
               ? AndroidPackageManager(ref)

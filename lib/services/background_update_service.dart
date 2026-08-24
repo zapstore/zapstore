@@ -14,6 +14,7 @@ import 'package:purplebase/purplebase.dart';
 import 'package:workmanager/workmanager.dart';
 import 'package:zapstore/services/background_auto_update_executor.dart';
 import 'package:zapstore/services/background_native_installer.dart';
+import 'package:zapstore/services/event_verifier.dart';
 import 'package:zapstore/services/log_service.dart';
 import 'package:zapstore/services/package_manager/background_package_manager.dart';
 import 'package:zapstore/services/package_manager/dummy_package_manager.dart';
@@ -242,6 +243,7 @@ Future<bool> _checkForUpdatesInBackground(Set<String>? appCatalogRelays) async {
     final container = ProviderContainer(
       overrides: [
         storageNotifierProvider.overrideWith(PurplebaseStorageNotifier.new),
+        zapstoreVerifierOverride,
         packageManagerProvider.overrideWith(
           (ref) => Platform.isAndroid
               ? BackgroundPackageManager(ref)
