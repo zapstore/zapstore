@@ -277,6 +277,7 @@ class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
         installedIds: installedIds,
         platform: ref.read(packageManagerProvider.notifier).platform,
         subscriptionPrefix: 'app-updates-poll',
+        installed: pmState.installed,
       ),
       processDeletions(
         storage: storage,
@@ -321,6 +322,7 @@ class UpdatePollerNotifier extends StateNotifier<UpdatePollerState> {
         installedIds: installedIds,
         platform: ref.read(packageManagerProvider.notifier).platform,
         subscriptionPrefix: 'app-updates-local',
+        installed: pmState.installed,
         localOnly: true,
       );
       state = state.copyWith(

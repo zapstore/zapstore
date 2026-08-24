@@ -277,6 +277,7 @@ Future<bool> _checkForUpdatesInBackground(Set<String>? appCatalogRelays) async {
         installedIds: pmState.installed.keys.toSet(),
         platform: packageManager.platform,
         subscriptionPrefix: 'app-bg',
+        installed: pmState.installed,
       );
 
       final updatableInstallables = <String, Installable>{};

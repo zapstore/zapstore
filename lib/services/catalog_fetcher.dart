@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:models/models.dart';
+import 'package:zapstore/services/package_manager/package_manager.dart';
+import 'package:zapstore/utils/extensions.dart';
 
 /// Relay hard limit for filters in a single REQ message.
 const kMaxFiltersPerReq = 50;
@@ -33,14 +35,21 @@ class CatalogResult {
 /// 3. Loads related Apps and Profiles in the background after new events arrive.
 ///
 /// Pass [localOnly] = true to skip the remote phase (cheap local re-derivation).
+///
+/// [installed] carries the packages currently on the device. Their signing
+/// certificates decide which candidate wins when several publishers claim the
+/// same app identifier — see [selectBetterInstallable].
 Future<CatalogResult> fetchCatalog({
   required StorageNotifier storage,
   required Set<String> installedIds,
   required String platform,
   required String subscriptionPrefix,
+  Map<String, PackageInfo> installed = const {},
   bool localOnly = false,
 }) async {
   if (installedIds.isEmpty) return CatalogResult.empty;
+
+  final installedCertificateHashes = certificateHashesByApp(installed);
 
   // ── Phase 1: local baseline ──────────────────────────────────────────
   final localAssets = await storage.query(
@@ -57,7 +66,7 @@ Future<CatalogResult> fetchCatalog({
   for (final a in localAssets) {
     final id = a.appIdentifier;
     if (id.isEmpty) continue;
-    _mergeInstallable(installableByApp, id, a);
+    _mergeInstallable(installableByApp, id, a, installedCertificateHashes);
     final prev = newestTimestamp[id];
     if (prev == null || a.createdAt.isAfter(prev)) {
       newestTimestamp[id] = a.createdAt;
@@ -74,6 +83,7 @@ Future<CatalogResult> fetchCatalog({
       uncoveredIds: uncoveredIds,
       platform: platform,
       subscriptionPrefix: '$subscriptionPrefix-local-legacy',
+      installedCertificateHashes: installedCertificateHashes,
     );
     installableByApp.addAll(legacyResult.installableByApp);
     newestTimestamp.addAll(legacyResult.timestamps);
@@ -101,7 +111,7 @@ Future<CatalogResult> fetchCatalog({
   for (final a in newAssets) {
     final id = a.appIdentifier;
     if (id.isEmpty) continue;
-    _mergeInstallable(installableByApp, id, a);
+    _mergeInstallable(installableByApp, id, a, installedCertificateHashes);
     // Track 3063 coverage so we know which apps are asset-covered
     assetCoveredIds.add(id);
   }
@@ -116,9 +126,10 @@ Future<CatalogResult> fetchCatalog({
       legacyIds: legacyIds,
       platform: platform,
       subscriptionPrefix: '$subscriptionPrefix-legacy',
+      installedCertificateHashes: installedCertificateHashes,
     );
     legacyResult.installableByApp.forEach((id, candidate) {
-      _mergeInstallable(installableByApp, id, candidate);
+      _mergeInstallable(installableByApp, id, candidate, installedCertificateHashes);
     });
   }
 
@@ -194,6 +205,7 @@ Future<_LegacyBaseline> _localLegacyBaseline({
   required Set<String> uncoveredIds,
   required String platform,
   required String subscriptionPrefix,
+  required Map<String, Set<String>> installedCertificateHashes,
 }) async {
   final installableByApp = <String, Installable>{};
   final timestamps = <String, DateTime>{};
@@ -239,7 +251,7 @@ Future<_LegacyBaseline> _localLegacyBaseline({
   for (final m in metadatas) {
     final id = m.appIdentifier;
     if (id.isEmpty) continue;
-    _mergeInstallable(installableByApp, id, m);
+    _mergeInstallable(installableByApp, id, m, installedCertificateHashes);
     final prev = timestamps[id];
     if (prev == null || m.createdAt.isAfter(prev)) {
       timestamps[id] = m.createdAt;
@@ -257,6 +269,7 @@ Future<_LegacyBaseline> _remoteLegacyChain({
   required Set<String> legacyIds,
   required String platform,
   required String subscriptionPrefix,
+  required Map<String, Set<String>> installedCertificateHashes,
 }) async {
   const source = RemoteSource(relays: 'AppCatalog', stream: false);
   final installableByApp = <String, Installable>{};
@@ -302,7 +315,7 @@ Future<_LegacyBaseline> _remoteLegacyChain({
   for (final m in metadatas) {
     final id = m.appIdentifier;
     if (id.isEmpty) continue;
-    _mergeInstallable(installableByApp, id, m);
+    _mergeInstallable(installableByApp, id, m, installedCertificateHashes);
   }
 
   return _LegacyBaseline(installableByApp, const {});
@@ -340,16 +353,100 @@ Future<CatalogResult> _buildResult({
   );
 }
 
+/// Signing certificate hashes of each installed package, keyed by app id.
+///
+/// Packages whose certificates could not be read are omitted, so they fall back
+/// to version-code ordering instead of being treated as "declares nothing".
+Map<String, Set<String>> certificateHashesByApp(
+  Map<String, PackageInfo> installed,
+) => {
+  for (final entry in installed.entries)
+    if (entry.value.signatureHashes.isNotEmpty)
+      entry.key: entry.value.signatureHashes.toSet(),
+};
+
+/// How a candidate's declared signing certificate relates to the certificate
+/// the installed app is signed with.
+///
+/// Declaration order is the preference order: [matching] beats [undeclared],
+/// which beats [mismatching].
+enum CandidateCertificateTrust { matching, undeclared, mismatching }
+
+/// Ranks [candidate] against the certificate hashes of the installed app.
+///
+/// Returns [CandidateCertificateTrust.undeclared] when either side declares
+/// nothing, so legacy metadata without `apk_certificate_hash` keeps working.
+CandidateCertificateTrust certificateTrustFor(
+  Installable candidate,
+  Set<String> installedCertificateHashes,
+) {
+  if (installedCertificateHashes.isEmpty) {
+    return CandidateCertificateTrust.undeclared;
+  }
+  final declared = candidate.certificateHashes;
+  if (declared.isEmpty) return CandidateCertificateTrust.undeclared;
+
+  final installed = installedCertificateHashes
+      .map((hash) => hash.toLowerCase())
+      .toSet();
+  final matches = declared.any(
+    (hash) => installed.contains(hash.toLowerCase()),
+  );
+  return matches
+      ? CandidateCertificateTrust.matching
+      : CandidateCertificateTrust.mismatching;
+}
+
+/// Picks the better of two candidates for the same installed app.
+///
+/// Version code alone is not a safe ordering: the catalogue is permissionless,
+/// so anyone can publish an asset carrying another app's identifier with an
+/// arbitrarily high version code and displace the publisher's release. Android
+/// refuses to update an installed app with an APK signed by a different
+/// certificate, so such a candidate can never install — it must not hide one
+/// that can.
+///
+/// Certificate trust is therefore compared first, and the highest version code
+/// only decides within the same tier, which is the previous behaviour.
+Installable selectBetterInstallable(
+  Installable existing,
+  Installable candidate,
+  Set<String> installedCertificateHashes,
+) {
+  final existingTrust = certificateTrustFor(
+    existing,
+    installedCertificateHashes,
+  );
+  final candidateTrust = certificateTrustFor(
+    candidate,
+    installedCertificateHashes,
+  );
+
+  if (candidateTrust != existingTrust) {
+    return candidateTrust.index < existingTrust.index ? candidate : existing;
+  }
+
+  return (candidate.versionCode ?? 0) > (existing.versionCode ?? 0)
+      ? candidate
+      : existing;
+}
+
 void _mergeInstallable(
   Map<String, Installable> map,
   String id,
   Installable candidate,
+  Map<String, Set<String>> installedCertificateHashes,
 ) {
   final existing = map[id];
-  if (existing == null ||
-      (candidate.versionCode ?? 0) > (existing.versionCode ?? 0)) {
+  if (existing == null) {
     map[id] = candidate;
+    return;
   }
+  map[id] = selectBetterInstallable(
+    existing,
+    candidate,
+    installedCertificateHashes[id] ?? const {},
+  );
 }
 
 class _LegacyBaseline {
