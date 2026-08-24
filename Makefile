@@ -5,6 +5,8 @@ AVDMANAGER ?= $(ANDROID_SDK_ROOT)/cmdline-tools/latest/bin/avdmanager
 EMULATOR ?= $(ANDROID_SDK_ROOT)/emulator/emulator
 AVD_NAME ?= Pixel_9
 SYSTEM_IMAGE ?= system-images;android-35;google_apis;arm64-v8a
+AVD_HOME ?= $(HOME)/.android/avd
+AVD_CONFIG ?= $(AVD_HOME)/$(AVD_NAME).avd/config.ini
 PACKAGE ?= dev.zapstore.beta
 ACTIVITY ?= dev.zapstore.app.MainActivity
 
@@ -41,5 +43,12 @@ emulator:
 	@if ! $(AVDMANAGER) list avd -c | tr -d '\r' | awk '$$0 == "$(AVD_NAME)" { found=1 } END { exit !found }'; then \
 		echo "Creating Android Virtual Device $(AVD_NAME)..."; \
 		echo no | $(AVDMANAGER) create avd -n "$(AVD_NAME)" -k "$(SYSTEM_IMAGE)" -d pixel_9 --force; \
+	fi
+	@if [ -f "$(AVD_CONFIG)" ]; then \
+		if grep -qE '^hw\.keyboard[[:space:]]*=[[:space:]]*no' "$(AVD_CONFIG)"; then \
+			sed -i '' 's/^hw\.keyboard[[:space:]]*=[[:space:]]*no/hw.keyboard = yes/' "$(AVD_CONFIG)"; \
+		elif ! grep -qE '^hw\.keyboard' "$(AVD_CONFIG)"; then \
+			echo 'hw.keyboard = yes' >> "$(AVD_CONFIG)"; \
+		fi; \
 	fi
 	$(EMULATOR) -avd "$(AVD_NAME)"
