@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
 import 'package:zapstore/services/log_service.dart';
+import 'package:zapstore/utils/download_source.dart';
 import 'package:zapstore/services/package_manager/device_capabilities.dart';
 import 'package:zapstore/services/package_manager/dummy_package_manager.dart';
 import 'package:zapstore/services/package_manager/install_operation.dart';
@@ -701,18 +702,6 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
   // DOWNLOAD INTERNALS
   // ═══════════════════════════════════════════════════════════════════════════
 
-  /// Returns the effective download URL for [target].
-  ///
-  /// If the first URL is already on cdn.zapstore.dev it is used as-is.
-  /// Otherwise we route through the CDN redirect endpoint so that downloads
-  /// are tracked regardless of the original host (e.g. GitHub releases).
-  String? _resolveDownloadUrl(Installable target) {
-    final first = target.urls.firstOrNull;
-    if (first == null || first.isEmpty) return null;
-    if (Uri.tryParse(first)?.host == 'cdn.zapstore.dev') return first;
-    return 'https://cdn.zapstore.dev/${target.hash}?redirect=true';
-  }
-
   Future<void> _startDownloadTask(
     String appId,
     Installable target,
@@ -983,7 +972,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
           continue;
         }
 
-        final downloadUrl = _resolveDownloadUrl(op.target);
+        final downloadUrl = resolveDownloadUrl(op.target);
         if (downloadUrl == null) {
           setOperation(
             appId,
@@ -1308,7 +1297,7 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
   bool _tryCdnRetry(String appId, Installable target) {
     if (cdnRetriedApps.contains(appId)) return false;
     cdnRetriedApps.add(appId);
-    final cdnUrl = 'https://cdn.zapstore.dev/${target.hash}';
+    final cdnUrl = 'https://$kZapstoreCdnHost/${target.hash}';
     unawaited(_startDownloadTask(appId, target, cdnUrl, isCdnRetry: true));
     return true;
   }

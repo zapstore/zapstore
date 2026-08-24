@@ -1,4 +1,3 @@
-import 'package:collection/collection.dart';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
@@ -9,6 +8,7 @@ import 'package:zapstore/services/c1_proof_verification.dart';
 import 'package:zapstore/services/background_native_installer.dart';
 import 'package:zapstore/services/background_pending_install_store.dart';
 import 'package:zapstore/services/log_service.dart';
+import 'package:zapstore/utils/download_source.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/utils/extensions.dart';
 
@@ -126,13 +126,6 @@ class BackgroundAutoUpdateExecutor {
       readyAppIds: readyAppIds,
       failedAppIds: failedAppIds,
     );
-  }
-
-  static String? resolveDownloadUrl(Installable target) {
-    final first = target.urls.firstOrNull;
-    if (first == null || first.isEmpty) return null;
-    if (Uri.tryParse(first)?.host == 'cdn.zapstore.dev') return first;
-    return 'https://cdn.zapstore.dev/${target.hash}?redirect=true';
   }
 
   static Future<String?> _downloadApk(String appId, Installable target) async {
