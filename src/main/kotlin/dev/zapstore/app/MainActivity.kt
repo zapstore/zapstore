@@ -80,6 +80,9 @@ class MainActivity : ComponentActivity() {
                                 onSearchQueryChanged = viewModel::onSearchQueryChanged,
                                 onSearchSubmitted = viewModel::submitSearch,
                                 onSearchCleared = viewModel::clearSearch,
+                                onNotificationsClick = {
+                                    navController.navigate(NOTIFICATIONS_ROUTE)
+                                },
                                 onLoadMoreReleases = viewModel::loadMoreReleases,
                                 onStackClick = { stackId ->
                                     navController.navigate(stackRoute(stackId))
@@ -91,6 +94,10 @@ class MainActivity : ComponentActivity() {
                                     navController.navigate(profileRoute(pubkey))
                                 },
                             )
+                        }
+
+                        composable(NOTIFICATIONS_ROUTE) {
+                            NotificationsScreen()
                         }
 
                         composable(
@@ -193,6 +200,7 @@ private const val STACK_ROUTE = "stack/{$STACK_ID_ARGUMENT}"
 private const val APP_ROUTE =
     "app/{$APP_IDENTIFIER_ARGUMENT}?$APP_AUTHOR_ARGUMENT={$APP_AUTHOR_ARGUMENT}"
 private const val PROFILE_ROUTE = "profile/{$PROFILE_PUBKEY_ARGUMENT}"
+private const val NOTIFICATIONS_ROUTE = "notifications"
 private const val NAVIGATION_TRANSITION_DURATION = 150
 
 private fun stackRoute(stackId: String): String =

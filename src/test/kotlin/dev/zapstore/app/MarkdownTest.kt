@@ -20,7 +20,7 @@ class MarkdownTest {
             """.trimIndent(),
         )
 
-        assertEquals("Heading\n•  one\n1.  two\nbold italic code", result.text)
+        assertEquals("Heading\n\n•  one\n1.  two\nbold italic code", result.text)
         assertTrue(result.spanStyles.any { it.item.fontWeight == FontWeight.ExtraBold })
         assertTrue(result.spanStyles.any { it.item.fontWeight == FontWeight.Bold })
         assertTrue(result.spanStyles.any { it.item.fontStyle == FontStyle.Italic })
@@ -38,5 +38,25 @@ class MarkdownTest {
         assertTrue(result.text.contains("site"))
         assertTrue(result.text.contains("phone"))
         assertFalse(result.text.contains("tel:123"))
+    }
+
+    @Test
+    fun `collapses blank lines between list items and pads headers`() {
+        val result = ZapMarkdown.parse(
+            """
+            intro
+
+            # Heading
+
+            - one
+
+            - two
+
+
+            last
+            """.trimIndent(),
+        )
+
+        assertEquals("intro\n\nHeading\n\n•  one\n•  two\n\nlast", result.text)
     }
 }

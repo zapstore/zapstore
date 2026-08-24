@@ -1,6 +1,7 @@
 package dev.zapstore.app
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -20,6 +21,7 @@ class ScreensTest {
     fun homeSearchAndStackCallbacksAreWired() {
         var submitted = false
         var cleared = false
+        var notificationsOpened = false
         var openedStack: String? = null
         val stack = StackInfo(
             event(
@@ -40,6 +42,7 @@ class ScreensTest {
                     onSearchQueryChanged = {},
                     onSearchSubmitted = { submitted = true },
                     onSearchCleared = { cleared = true },
+                    onNotificationsClick = { notificationsOpened = true },
                     onStackClick = { openedStack = it },
                     onAppClick = { _, _ -> },
                 )
@@ -48,10 +51,13 @@ class ScreensTest {
 
         composeRule.onNodeWithTag("searchField").performImeAction()
         composeRule.onNodeWithText("×").performClick()
+        composeRule.onNodeWithTag("searchField").assertIsFocused()
+        composeRule.onNodeWithTag("notificationsButton").performClick()
         composeRule.onNodeWithTag("stack:stack-id").performClick()
 
         assertTrue(submitted)
         assertTrue(cleared)
+        assertTrue(notificationsOpened)
         assertEquals("stack-id", openedStack)
     }
 
@@ -110,6 +116,12 @@ class ScreensTest {
 
     @Test
     fun releaseFeedShowsItsLoadingFooter() {
+        val app = AppInfo(
+            event(
+                id = "release-id",
+                kind = Catalog.appKind,
+            ),
+        )
         val release = ReleaseInfo(
             event(
                 id = "release-id",
@@ -123,7 +135,7 @@ class ScreensTest {
                 HomeScreen(
                     state = HomeUiState(
                         releaseFeed = ReleaseFeedUiState(
-                            entries = listOf(ReleaseFeedEntry(release)),
+                            entries = listOf(ReleaseFeedEntry(app, release)),
                             initialLoading = false,
                             loadingMore = true,
                         ),
@@ -137,7 +149,7 @@ class ScreensTest {
             }
         }
 
-        composeRule.onNodeWithTag("release:release-id").assertIsDisplayed()
+        composeRule.onNodeWithTag("app:release-id").assertIsDisplayed()
         composeRule.onNodeWithTag("releaseLoading").assertIsDisplayed()
     }
 }

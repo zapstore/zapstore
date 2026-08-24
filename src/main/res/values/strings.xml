@@ -2,6 +2,7 @@
     <string name="app_name">Zapstore</string>
     <string name="search_apps">Search apps</string>
     <string name="clear_search">Clear search</string>
+    <string name="close">Close</string>
     <string name="notifications">Notifications</string>
     <string name="no_notifications">You are all caught up.</string>
     <string name="curated_stacks">Curated stacks</string>
@@ -22,6 +23,8 @@
     <string name="published_by">Published by · %1$s…</string>
     <string name="app_by_author">by %1$s</string>
     <string name="latest_release">Latest release</string>
+    <string name="support">Support</string>
+    <string name="zap_summary">%1$s sats · %2$d zaps</string>
     <string name="read_more">Read more</string>
     <string name="version">Version:</string>
     <string name="source">Source</string>
