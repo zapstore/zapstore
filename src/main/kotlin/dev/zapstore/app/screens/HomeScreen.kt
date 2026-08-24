@@ -71,13 +71,13 @@ fun HomeScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(ZapBackground)
+            .background(ZapBackgroundGradient)
             .windowInsetsPadding(WindowInsets.safeDrawing),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 20.dp, top = 8.dp, end = 12.dp, bottom = 12.dp),
+                .padding(start = 16.dp, top = 8.dp, end = 8.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             OutlinedTextField(
@@ -110,7 +110,7 @@ fun HomeScreen(
                     .weight(1f)
                     .focusRequester(searchFocusRequester)
                     .testTag("searchField"),
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(12.dp),
             )
             Box(contentAlignment = Alignment.TopEnd) {
                 IconButton(
@@ -138,7 +138,7 @@ fun HomeScreen(
 
         LazyColumn(
             modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 32.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             state = listState,
         ) {

@@ -26,22 +26,23 @@ fun InfoRow(
             .padding(vertical = 10.dp),
     ) {
         StatusText(label, Modifier.weight(1f))
-        Text(
-            text = value,
-            color = if (link?.let(::isHttpUrl) == true) ZapPrimary else ZapText,
-            style = MaterialTheme.typography.bodyMedium,
-            maxLines = 1,
-            overflow = TextOverflow.MiddleEllipsis,
-            modifier = Modifier
-                .weight(1f)
-                .then(
-                    if (link?.let(::isHttpUrl) == true) {
-                        Modifier.clickable { onOpenUrl(link) }
-                    } else {
-                        Modifier
-                    },
-                ),
-        )
+        if (link?.let(::isHttpUrl) == true) {
+            Text(
+                text = value,
+                color = ZapPrimary,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.MiddleEllipsis,
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable { onOpenUrl(link) },
+            )
+        } else {
+            EvidenceText(
+                value = value,
+                modifier = Modifier.weight(1f),
+            )
+        }
     }
 }
 

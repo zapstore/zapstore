@@ -1,6 +1,7 @@
 package dev.zapstore.app
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -36,12 +37,13 @@ fun AppIcon(
     title: String,
     iconUrl: String?,
     modifier: Modifier = Modifier,
-    cornerRadius: Dp = 16.dp,
+    cornerRadius: Dp = 14.dp,
 ) {
     val shape = RoundedCornerShape(cornerRadius)
     Box(
         modifier = modifier
-            .clip(shape),
+            .clip(shape)
+            .background(ZapIconBackground),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -76,16 +78,18 @@ fun AppCard(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .background(ZapSurface)
+            .clip(RoundedCornerShape(20.dp))
+            .background(ZapSurface.copy(alpha = 0.6f))
+            .border(1.dp, ZapOutline.copy(alpha = 0.2f), RoundedCornerShape(20.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(16.dp),
     ) {
         Row(verticalAlignment = Alignment.Top) {
             AppIcon(
                 title = app.name,
                 iconUrl = app.iconUrl,
-                modifier = Modifier.size(52.dp),
+                modifier = Modifier.size(56.dp),
+                cornerRadius = 14.dp,
             )
             Spacer(modifier.width(12.dp))
             Column(modifier.weight(1f)) {
@@ -156,10 +160,10 @@ fun VersionPill(
 ) {
     Text(
         text = version,
-        color = MaterialTheme.colorScheme.onPrimary,
+        color = ZapActionForeground,
         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
         modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(999.dp))
             .background(ZapPrimary)
             .padding(horizontal = 10.dp, vertical = 4.dp),
     )
@@ -175,10 +179,11 @@ fun StackCard(
     Column(
         modifier = modifier
             .width(176.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .background(ZapSurface)
+            .clip(RoundedCornerShape(20.dp))
+            .background(ZapSurface.copy(alpha = 0.6f))
+            .border(1.dp, ZapOutline.copy(alpha = 0.2f), RoundedCornerShape(20.dp))
             .clickable(onClick = onClick)
-            .padding(14.dp),
+            .padding(16.dp),
     ) {
         Text(
             text = stack.name,

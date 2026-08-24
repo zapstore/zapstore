@@ -1,6 +1,7 @@
 package dev.zapstore.app
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -58,7 +59,7 @@ fun ProfileScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(ZapBackground)
+            .background(ZapBackgroundGradient)
             .navigationBarsPadding(),
         state = listState,
         contentPadding = PaddingValues(bottom = 36.dp),
@@ -111,7 +112,7 @@ fun ProfileScreen(
                 Row(
                     modifier = Modifier
                         .align(Alignment.BottomStart)
-                        .padding(20.dp),
+                        .padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     ProfileAvatar(
@@ -142,7 +143,7 @@ fun ProfileScreen(
                     style = MaterialTheme.typography.bodyLarge,
                     onOpenUrl = onOpenUrl,
                     collapsible = true,
-                    modifier = Modifier.padding(horizontal = 20.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp),
                 )
             }
         }
@@ -151,9 +152,10 @@ fun ProfileScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(ZapSurface)
+                    .padding(horizontal = 16.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(ZapSurface.copy(alpha = 0.8f))
+                    .border(1.dp, ZapOutline.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
                     .padding(horizontal = 16.dp, vertical = 8.dp),
             ) {
                 profile.website?.let {
@@ -172,7 +174,7 @@ fun ProfileScreen(
             emptyMessage = noProfileApps,
             repository = repository,
             onAppClick = onAppClick,
-            modifier = Modifier.padding(horizontal = 20.dp),
+            modifier = Modifier.padding(horizontal = 16.dp),
         )
         state.error?.let { error -> item { StatusText(error) } }
     }

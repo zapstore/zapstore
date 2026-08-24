@@ -1,6 +1,7 @@
 package dev.zapstore.app
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -95,14 +96,14 @@ fun AppDetailScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(ZapBackground),
+            .background(ZapBackgroundGradient),
     ) {
     LazyColumn(
         state = listState,
         modifier = Modifier
             .fillMaxSize()
             .windowInsetsPadding(WindowInsets.safeDrawing),
-        contentPadding = PaddingValues(start = 20.dp, top = 4.dp, end = 20.dp, bottom = 36.dp),
+        contentPadding = PaddingValues(start = 16.dp, top = 4.dp, end = 16.dp, bottom = 36.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         val app = state.app
@@ -278,7 +279,7 @@ private fun CollapsingAppHeader(
             verticalAlignment = Alignment.Top,
             modifier = Modifier
                 .onSizeChanged { onBigContentMeasured(it.height) }
-                .padding(horizontal = 20.dp),
+                .padding(horizontal = 16.dp),
         ) {
             AppIcon(
                 title = app.name,
@@ -396,8 +397,9 @@ private fun ZapSummaryCard(summary: ZapSummaryUiState) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(ZapSurface)
+            .clip(RoundedCornerShape(16.dp))
+            .background(ZapSurface.copy(alpha = 0.8f))
+            .border(1.dp, ZapOutline.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
             .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
         Text(
@@ -438,8 +440,9 @@ private fun VersionRow(release: ReleaseInfo) {
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(12.dp))
             .background(ZapSurfaceVariant)
+            .border(1.dp, ZapOutline.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
             .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
         StatusText(stringResource(R.string.version))
@@ -447,7 +450,7 @@ private fun VersionRow(release: ReleaseInfo) {
         Text(
             text = release.version,
             style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.SemiBold,
         )
         Spacer(Modifier.width(6.dp))
         StatusText("(${formatDate(release.event.createdAt)})")
@@ -467,8 +470,9 @@ private fun AppInfoCard(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(ZapSurface)
+            .clip(RoundedCornerShape(16.dp))
+            .background(ZapSurface.copy(alpha = 0.8f))
+            .border(1.dp, ZapOutline.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
         InfoRow(

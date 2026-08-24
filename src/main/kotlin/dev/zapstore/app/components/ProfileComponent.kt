@@ -63,11 +63,11 @@ fun ProfileComponent(
             .testTag("profile:$pubkey")
             .then(onClick?.let { Modifier.clickable(onClick = it) } ?: Modifier),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Box(
             modifier = Modifier
-                .size(36.dp)
+                .size(40.dp)
                 .clip(CircleShape)
                 .background(ZapSurfaceVariant),
             contentAlignment = Alignment.Center,
@@ -78,7 +78,7 @@ fun ProfileComponent(
                 pictureUrl = profile?.picture,
                 contentDescription = stringResource(R.string.profile_avatar_description, displayName),
                 modifier = Modifier
-                    .size(36.dp)
+                .size(40.dp)
                     .clip(CircleShape),
             )
         }

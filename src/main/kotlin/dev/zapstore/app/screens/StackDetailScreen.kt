@@ -30,9 +30,9 @@ fun StackDetailScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(ZapBackground)
+            .background(ZapBackgroundGradient)
             .windowInsetsPadding(WindowInsets.safeDrawing),
-        contentPadding = PaddingValues(start = 20.dp, top = 4.dp, end = 20.dp, bottom = 36.dp),
+        contentPadding = PaddingValues(start = 16.dp, top = 4.dp, end = 16.dp, bottom = 36.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         val stack = state.stack
