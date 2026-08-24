@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import kotlin.time.Duration
@@ -302,6 +303,67 @@ class ViewModelsTest {
     }
 
     @Test
+    fun `app detail zap receipts resolve the app author outbox`() = runTest {
+        var outboxAuthors: List<String>? = null
+        var outboxRelays: Set<String>? = null
+        val appFlow = MutableSharedFlow<QueryState>()
+        val repository = FakeCatalogRepository(
+            localQuery = { filter ->
+                if (filter.kinds == listOf(Catalog.appKind)) appFlow else emptyFlow()
+            },
+            outboxQuery = { _, authors, relays ->
+                outboxAuthors = authors
+                outboxRelays = relays
+                emptyFlow()
+            },
+        )
+        AppDetailViewModel(
+            repository,
+            SavedStateHandle(mapOf(APP_IDENTIFIER_ARGUMENT to "dev.example.app")),
+        )
+        runCurrent()
+        appFlow.emit(queryState(event(kind = Catalog.appKind, pubKey = "7".repeat(64))))
+        runCurrent()
+
+        assertEquals(listOf("7".repeat(64)), outboxAuthors)
+        assertEquals(Catalog.defaultZapRelays, outboxRelays)
+    }
+
+    @Test
+    fun `app detail zap and asset queries are bounded`() = runTest {
+        val filters = mutableListOf<Filter>()
+        val appFlow = MutableSharedFlow<QueryState>()
+        val repository = FakeCatalogRepository(
+            localQuery = { filter ->
+                filters += filter
+                if (filter.kinds == listOf(Catalog.appKind)) appFlow else emptyFlow()
+            },
+        )
+        AppDetailViewModel(
+            repository,
+            SavedStateHandle(mapOf(APP_IDENTIFIER_ARGUMENT to "dev.example.app")),
+        )
+        runCurrent()
+
+        appFlow.emit(
+            queryState(
+                event(
+                    kind = Catalog.appKind,
+                    tags = arrayOf(arrayOf("d", "dev.example.app")),
+                ),
+            ),
+        )
+        runCurrent()
+
+        val zapFilters = filters.filter { it.kinds == listOf(Catalog.zapReceiptKind) }
+        val assetFilters = filters.filter { it.kinds == listOf(Catalog.assetKind) }
+        assertTrue(zapFilters.isNotEmpty())
+        assertTrue(assetFilters.isNotEmpty())
+        assertTrue(zapFilters.all { it.limit != null })
+        assertTrue(assetFilters.all { it.limit != null })
+    }
+
+    @Test
     fun `profile release feed filters apps by profile pubkey`() = runTest {
         val filters = mutableListOf<Filter>()
         val pubkey = "b".repeat(64)
@@ -339,6 +401,7 @@ private class FakeCatalogRepository(
     private val remoteQuery: (Filter) -> Flow<QueryState> = { emptyFlow() },
     private val localQueries: ((List<Filter>) -> Flow<QueryState>)? = null,
     private val remoteQueries: ((List<Filter>) -> Flow<QueryState>)? = null,
+    private val outboxQuery: ((List<Filter>, List<String>, Set<String>) -> Flow<QueryState>)? = null,
 ) : CatalogRepository {
     override fun query(
         filters: List<Filter>,
@@ -351,6 +414,15 @@ private class FakeCatalogRepository(
         -> localQueries?.invoke(filters) ?: filters.singleOrNull()?.let(localQuery) ?: emptyFlow()
         QueryType.Remote -> remoteQueries?.invoke(filters) ?: filters.singleOrNull()?.let(remoteQuery) ?: emptyFlow()
     }
+
+    override fun queryWithOutbox(
+        filters: List<Filter>,
+        authors: List<String>,
+        cachedFor: Duration?,
+        relays: Set<String>,
+        unionWithFallback: Boolean,
+    ): Flow<QueryState> = outboxQuery?.invoke(filters, authors, relays)
+        ?: super.queryWithOutbox(filters, authors, cachedFor, relays, unionWithFallback)
 
     override fun refreshConnections() = Unit
 }

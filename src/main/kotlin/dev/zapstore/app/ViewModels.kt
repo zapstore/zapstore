@@ -7,6 +7,7 @@ import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.lifecycle.viewModelScope
+import com.vitorpamplona.quartz.lightning.LnInvoiceUtil
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import dev.zapstore.purplequartz.QuerySync
 import kotlinx.coroutines.Job
@@ -434,8 +435,16 @@ class StackDetailViewModel(
 data class AppDetailUiState(
     val app: AppInfo? = null,
     val release: ReleaseInfo? = null,
+    val zapSummary: ZapSummaryUiState = ZapSummaryUiState(),
     val appLoading: Boolean = true,
     val releaseLoading: Boolean = true,
+    val error: String? = null,
+)
+
+data class ZapSummaryUiState(
+    val zapCount: Int = 0,
+    val totalSats: Long = 0,
+    val isLoading: Boolean = true,
     val error: String? = null,
 )
 
@@ -493,6 +502,10 @@ class AppDetailViewModel(
     private val author = savedStateHandle.get<String>(APP_AUTHOR_ARGUMENT)?.takeIf(String::isNotBlank)
     private val _uiState = MutableStateFlow(AppDetailUiState())
     val uiState: StateFlow<AppDetailUiState> = _uiState.asStateFlow()
+    private var zapAssetJob: Job? = null
+    private var zapReceiptJob: Job? = null
+    private var zapAddress: String? = null
+    private var zapAssetIds: Set<String> = emptySet()
 
     init {
         observeApp()
@@ -518,7 +531,96 @@ class AppDetailViewModel(
                         error = state.error?.message ?: it.error,
                     )
                 }
+                app?.let(::observeZaps)
             }
+        }
+    }
+
+    private fun observeZaps(app: AppInfo) {
+        if (app.address == zapAddress) return
+        zapAddress = app.address
+        zapAssetIds = emptySet()
+        startZapReceiptQuery(app)
+
+        zapAssetJob?.cancel()
+        zapAssetJob = viewModelScope.launch {
+            repository.query(
+                Filter(
+                    authors = listOf(app.event.pubKey),
+                    kinds = listOf(Catalog.assetKind),
+                    tags = mapOf("i" to listOf(app.identifier)),
+                    limit = ASSET_LOOKUP_LIMIT,
+                ),
+                type = QueryType.LocalAndRemote,
+                relays = Catalog.defaultZapRelays,
+            ).collect { state ->
+                val nextAssetIds = state.items
+                    .asSequence()
+                    .filter { it.kind == Catalog.assetKind }
+                    .map { it.id }
+                    .toSet()
+                if (nextAssetIds != zapAssetIds) {
+                    zapAssetIds = nextAssetIds
+                    startZapReceiptQuery(app)
+                }
+            }
+        }
+    }
+
+    private fun startZapReceiptQuery(app: AppInfo) {
+        zapReceiptJob?.cancel()
+        _uiState.update { it.copy(zapSummary = it.zapSummary.copy(isLoading = true, error = null)) }
+        zapReceiptJob = viewModelScope.launch {
+            repository.queryWithOutbox(
+                zapFilters(app),
+                authors = listOf(app.event.pubKey),
+                relays = Catalog.defaultZapRelays,
+            ).collect { state ->
+                val receipts = state.items
+                    .asSequence()
+                    .filter { it.kind == Catalog.zapReceiptKind }
+                    .filter { receipt ->
+                        app.address in receipt.tagValues("a") ||
+                            receipt.tagValues("e").any(zapAssetIds::contains)
+                    }
+                    .distinctBy { it.id }
+                    .toList()
+                _uiState.update {
+                    it.copy(
+                        zapSummary = ZapSummaryUiState(
+                            zapCount = receipts.size,
+                            totalSats = receipts.sumOf { receipt ->
+                                receipt.tagValue("bolt11")
+                                    ?.let { invoice ->
+                                        runCatching { LnInvoiceUtil.getAmountInSats(invoice).toLong() }.getOrDefault(0)
+                                    }
+                                    ?: 0
+                            },
+                            isLoading = state.sync.isLoading,
+                            error = state.error?.message,
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    private fun zapFilters(app: AppInfo): List<Filter> = buildList {
+        add(
+            Filter(
+                kinds = listOf(Catalog.zapReceiptKind),
+                tags = mapOf("a" to listOf(app.address)),
+                limit = ZAP_RECEIPT_LIMIT,
+            ),
+        )
+        zapAssetIds.takeIf(Set<String>::isNotEmpty)?.let { assetIds ->
+            add(
+                Filter(
+                    kinds = listOf(Catalog.zapReceiptKind),
+                    tags = mapOf("e" to assetIds.toList()),
+                    limit = ZAP_RECEIPT_LIMIT,
+                ),
+            )
         }
     }
 
@@ -542,6 +644,12 @@ class AppDetailViewModel(
                 }
             }
         }
+    }
+
+    private companion object {
+        /** Caps the zap summary to the newest receipts per filter; the summary is a recent-activity signal, not a ledger. */
+        const val ZAP_RECEIPT_LIMIT = 500
+        const val ASSET_LOOKUP_LIMIT = 500
     }
 }
 

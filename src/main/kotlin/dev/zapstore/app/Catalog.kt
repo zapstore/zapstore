@@ -5,7 +5,9 @@ import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.normalizeRelayUrl
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.okhttp.BasicOkHttpWebSocket
+import dev.zapstore.purplequartz.OutboxRouter
 import dev.zapstore.purplequartz.PurpleQuartz
+import dev.zapstore.purplequartz.PurpleQuartzConfig
 import dev.zapstore.purplequartz.QueryState
 import dev.zapstore.purplequartz.QuerySource
 import dev.zapstore.purplequartz.RemoteMode
@@ -13,9 +15,16 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.shareIn
 import okhttp3.OkHttpClient
 import org.json.JSONObject
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.days
+import kotlin.time.Duration.Companion.hours
 
 object Catalog {
     const val relay = "wss://relay.zapstore.dev"
@@ -25,11 +34,20 @@ object Catalog {
     const val appKind = 32_267
     const val appStackKind = 30_267
     const val profileKind = 0
+    const val relayListKind = 10_002
+    const val zapReceiptKind = 9_735
     const val communityPubkey = "acfeaea6e51420e8068fac446ca9d17d7a9ef6a5d20d93894e50fee3d4902a84"
     val releaseKinds = listOf(releaseKind, assetKind)
+    val defaultRelays = setOf(
+        "wss://relay.primal.net",
+        "wss://relay.damus.io",
+        "wss://nos.lol",
+    )
+    val defaultZapRelays = defaultRelays + relay
 }
 
 val PROFILE_RELAYS = setOf(Catalog.relay, Catalog.profileRelay)
+internal val PROFILE_CACHE_DURATION = 6.hours
 
 interface CatalogRepository {
     fun query(
@@ -46,7 +64,39 @@ interface CatalogRepository {
         relays: Set<String> = setOf(Catalog.relay),
     ): Flow<QueryState>
 
+    /**
+     * Local-first query whose remote side expands onto the [authors]' NIP-65 read
+     * relays once resolved. [relays] is the fallback set used until (and unless)
+     * resolution lands; [unionWithFallback] controls whether resolved relays are
+     * added to the fallback set or replace it.
+     */
+    fun queryWithOutbox(
+        filters: List<Filter>,
+        authors: List<String>,
+        cachedFor: Duration? = null,
+        relays: Set<String>,
+        unionWithFallback: Boolean = true,
+    ): Flow<QueryState> = query(filters, QueryType.LocalAndRemote, cachedFor, relays)
+
+    /**
+     * Latest kind-0 metadata for [pubkey]. Implementations may share and cache the
+     * upstream session so a feed of rows costs at most one query per author.
+     */
+    fun profile(pubkey: String): Flow<ProfileInfo?> = queryWithOutbox(
+        listOf(Filter(authors = listOf(pubkey), kinds = listOf(Catalog.profileKind), limit = 1)),
+        authors = listOf(pubkey),
+        cachedFor = PROFILE_CACHE_DURATION,
+        relays = PROFILE_RELAYS,
+        unionWithFallback = false,
+    ).map { state -> state.items.maxByOrNull(Event::createdAt)?.let(::ProfileInfo) }
+
     fun refreshConnections()
+
+    /**
+     * Enables or suspends all relay traffic for app foreground/background.
+     * Local data remains fully queryable while suspended.
+     */
+    fun setRelayTrafficEnabled(enabled: Boolean) = Unit
 }
 
 enum class QueryType {
@@ -58,14 +108,48 @@ enum class QueryType {
 class PurpleQuartzCatalogRepository(context: Context) : CatalogRepository {
     private val applicationContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val profileFlows = ConcurrentHashMap<String, Flow<ProfileInfo?>>()
     private var client: PurpleQuartz? = null
+    private var outboxRouter: OutboxRouter? = null
 
     private fun client(): PurpleQuartz =
         client ?: PurpleQuartz.create(
             applicationContext,
             BasicOkHttpWebSocket.Builder { OkHttpClient() },
             scope,
+            config = PurpleQuartzConfig(
+                // Zap receipts are the unbounded firehose. Addressable catalog kinds are
+                // bounded by supersession; assets back the release feed and stay.
+                pruneRules = mapOf(Catalog.zapReceiptKind to 90.days),
+            ),
         ).also { client = it }
+
+    private fun router(): OutboxRouter =
+        outboxRouter ?: OutboxRouter(
+            client(),
+            bootstrapRelays = Catalog.defaultZapRelays.map(String::normalizeRelayUrl).toSet(),
+        ).also { outboxRouter = it }
+
+    override fun queryWithOutbox(
+        filters: List<Filter>,
+        authors: List<String>,
+        cachedFor: Duration?,
+        relays: Set<String>,
+        unionWithFallback: Boolean,
+    ): Flow<QueryState> = router().queryWithOutbox(
+        filters,
+        authors,
+        fallbackRelays = relays.map(String::normalizeRelayUrl).toSet(),
+        cachedFor = cachedFor,
+        unionWithFallback = unionWithFallback,
+    )
+
+    override fun profile(pubkey: String): Flow<ProfileInfo?> =
+        profileFlows.getOrPut(pubkey) {
+            super<CatalogRepository>.profile(pubkey)
+                .distinctUntilChanged()
+                .shareIn(scope, SharingStarted.WhileSubscribed(PROFILE_SESSION_GRACE_MILLIS), replay = 1)
+        }
 
     override fun query(
         filters: List<Filter>,
@@ -95,6 +179,15 @@ class PurpleQuartzCatalogRepository(context: Context) : CatalogRepository {
 
     override fun refreshConnections() {
         client?.refreshConnections()
+    }
+
+    override fun setRelayTrafficEnabled(enabled: Boolean) {
+        client?.setRelayTrafficEnabled(enabled)
+    }
+
+    private companion object {
+        /** Keeps a profile session warm briefly after the last row leaves the screen. */
+        const val PROFILE_SESSION_GRACE_MILLIS = 5 * 60 * 1000L
     }
 }
 
