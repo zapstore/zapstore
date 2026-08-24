@@ -15,12 +15,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,24 +34,39 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.lerp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil3.compose.AsyncImage
 import java.text.DateFormat
 import java.text.NumberFormat
 import java.util.Date
+
+private val BigIconSize = 84.dp
+private val SmallIconSize = 26.dp
+private val SmallHeaderHeight = 32.dp
 
 @Composable
 fun AppDetailScreen(
@@ -60,11 +77,30 @@ fun AppDetailScreen(
     modifier: Modifier = Modifier,
 ) {
     var selectedScreenshot by remember { mutableStateOf<Int?>(null) }
+    val listState = rememberLazyListState()
+    val density = LocalDensity.current
+    val smallHeaderHeightPx = with(density) { SmallHeaderHeight.toPx() }
+    var bigHeaderHeightPx by remember { mutableIntStateOf(with(density) { BigIconSize.roundToPx() }) }
+    // 0f = big header fully expanded, 1f = collapsed into the compact top row
+    val headerCollapseProgress by remember {
+        derivedStateOf {
+            val range = bigHeaderHeightPx - smallHeaderHeightPx
+            if (range <= 0f) return@derivedStateOf 0f
+            if (listState.firstVisibleItemIndex > 0) return@derivedStateOf 1f
+            (listState.firstVisibleItemScrollOffset / range).coerceIn(0f, 1f)
+        }
+    }
+    val bigHeaderHeight = with(density) { bigHeaderHeightPx.toDp() }
 
-    LazyColumn(
+    Box(
         modifier = modifier
             .fillMaxSize()
-            .background(ZapBackground)
+            .background(ZapBackground),
+    ) {
+    LazyColumn(
+        state = listState,
+        modifier = Modifier
+            .fillMaxSize()
             .windowInsetsPadding(WindowInsets.safeDrawing),
         contentPadding = PaddingValues(start = 20.dp, top = 4.dp, end = 20.dp, bottom = 36.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -94,30 +130,8 @@ fun AppDetailScreen(
             return@LazyColumn
         }
 
-        item {
-            val authorName = rememberProfileDisplayName(app.event.pubKey, repository)
-            Row(verticalAlignment = Alignment.Top) {
-                AppIcon(
-                    title = app.name,
-                    iconUrl = app.iconUrl,
-                    modifier = Modifier.size(84.dp),
-                )
-                Spacer(modifier.width(16.dp))
-                Column(modifier.weight(1f)) {
-                    AppNameWithByline(
-                        name = app.name,
-                        authorName = authorName,
-                        nameStyle = MaterialTheme.typography.displaySmall,
-                        onAuthorClick = { onProfileClick(app.event.pubKey) },
-                        authorTestTag = "profile:${app.event.pubKey}",
-                    )
-                    state.release?.let { release ->
-                        Spacer(modifier.height(10.dp))
-                        VersionPill(version = release.version)
-                    }
-                }
-            }
-        }
+        // Reserves the space occupied by the collapsing header overlay
+        item { Spacer(Modifier.height(bigHeaderHeight)) }
 
         if (app.screenshots.isNotEmpty()) {
             item {
@@ -211,6 +225,20 @@ fun AppDetailScreen(
     }
 
     state.app?.let { app ->
+        CollapsingAppHeader(
+            app = app,
+            release = state.release,
+            authorName = rememberProfileDisplayName(app.event.pubKey, repository),
+            progress = headerCollapseProgress,
+            bigContentHeight = bigHeaderHeight,
+            onBigContentMeasured = { if (headerCollapseProgress == 0f) bigHeaderHeightPx = it },
+            onProfileClick = { onProfileClick(app.event.pubKey) },
+            modifier = Modifier.align(Alignment.TopCenter),
+        )
+    }
+    }
+
+    state.app?.let { app ->
         selectedScreenshot?.let { initialPage ->
             ScreenshotCarousel(
                 screenshots = app.screenshots,
@@ -219,6 +247,82 @@ fun AppDetailScreen(
                 onDismiss = { selectedScreenshot = null },
             )
         }
+    }
+}
+
+@Composable
+private fun CollapsingAppHeader(
+    app: AppInfo,
+    release: ReleaseInfo?,
+    authorName: String,
+    progress: Float,
+    bigContentHeight: Dp,
+    onBigContentMeasured: (Int) -> Unit,
+    onProfileClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val backgroundAlpha = (progress * 1.5f).coerceIn(0f, 1f)
+    val secondaryAlpha = (1f - progress * 2f).coerceIn(0f, 1f)
+    val nameStyle = MaterialTheme.typography.displaySmall
+    val compactNameStyle = MaterialTheme.typography.titleMedium
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(ZapBackground.copy(alpha = backgroundAlpha))
+            .windowInsetsPadding(WindowInsets.statusBars)
+            .padding(top = 4.dp)
+            .height(lerp(bigContentHeight, SmallHeaderHeight, progress))
+            .clipToBounds(),
+    ) {
+        Row(
+            verticalAlignment = Alignment.Top,
+            modifier = Modifier
+                .onSizeChanged { onBigContentMeasured(it.height) }
+                .padding(horizontal = 20.dp),
+        ) {
+            AppIcon(
+                title = app.name,
+                iconUrl = app.iconUrl,
+                modifier = Modifier.size(lerp(BigIconSize, SmallIconSize, progress)),
+                cornerRadius = lerp(16.dp, 7.dp, progress),
+            )
+            Spacer(Modifier.width(lerp(16.dp, 10.dp, progress)))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = app.name,
+                    style = nameStyle.copy(
+                        fontSize = lerp(nameStyle.fontSize, compactNameStyle.fontSize, progress),
+                        lineHeight = lerp(nameStyle.lineHeight, compactNameStyle.lineHeight, progress),
+                    ),
+                    maxLines = if (progress < 0.5f) 2 else 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = stringResource(R.string.app_by_author, authorName),
+                    color = ZapMuted,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontSize = (nameStyle.fontSize.value * 0.72f).sp,
+                        fontWeight = FontWeight.Normal,
+                        fontFamily = InterFontFamily,
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .testTag("profile:${app.event.pubKey}")
+                        .graphicsLayer { alpha = secondaryAlpha }
+                        .clickable(onClick = onProfileClick),
+                )
+                if (release != null) {
+                    Spacer(Modifier.height(10.dp))
+                    VersionPill(
+                        version = release.version,
+                        modifier = Modifier.graphicsLayer { alpha = secondaryAlpha },
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        HorizontalDivider(color = ZapOutline.copy(alpha = progress))
     }
 }
 
