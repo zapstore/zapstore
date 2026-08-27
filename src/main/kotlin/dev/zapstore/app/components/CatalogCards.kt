@@ -3,6 +3,7 @@ package dev.zapstore.app
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,7 +25,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -73,11 +73,8 @@ fun AppCard(
     release: ReleaseInfo? = null,
     onProfileClick: (() -> Unit)? = null,
 ) {
-    val authorName = if (app.hasVerifiedC1) {
-        rememberProfileDisplayName(app.event.pubKey, repository)
-    } else {
-        null
-    }
+    val authorProfile = rememberProfile(app.event.pubKey, repository)
+    val authorName = profileDisplayName(authorProfile, app.event.pubKey)
 
     Column(
         modifier = modifier
@@ -88,34 +85,26 @@ fun AppCard(
             .clickable(onClick = onClick)
             .padding(16.dp),
     ) {
-        Row(verticalAlignment = Alignment.Top) {
-            AppIcon(
-                title = app.name,
-                iconUrl = app.iconUrl,
-                modifier = Modifier.size(56.dp),
-                cornerRadius = 14.dp,
-            )
-            Spacer(modifier.width(12.dp))
-            Column(modifier.weight(1f)) {
-                if (authorName != null) {
+        BoxWithConstraints {
+            val iconSize = (maxWidth * 0.21f).coerceIn(50.dp, 68.dp)
+            Row(verticalAlignment = Alignment.Top) {
+                AppIcon(
+                    title = app.name,
+                    iconUrl = app.iconUrl,
+                    modifier = Modifier.size(iconSize),
+                    cornerRadius = 14.dp,
+                )
+                Spacer(modifier.width(14.dp))
+                Column(modifier.weight(1f)) {
                     AppNameWithByline(
                         name = app.name,
                         authorName = authorName,
-                        nameStyle = MaterialTheme.typography.titleMedium,
+                        authorProfile = authorProfile,
+                        authorPubkey = app.event.pubKey,
+                        version = release?.version,
                         onAuthorClick = onProfileClick,
                         authorTestTag = "profile:${app.event.pubKey}",
                     )
-                } else {
-                    Text(
-                        text = app.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                release?.let {
-                    Spacer(Modifier.height(8.dp))
-                    VersionPill(version = it.version)
                 }
             }
         }
@@ -125,7 +114,7 @@ fun AppCard(
                 text = ZapMarkdown.parse(app.summary).text,
                 color = ZapMuted,
                 style = MaterialTheme.typography.bodyMedium,
-                maxLines = 3,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
         }
@@ -136,33 +125,66 @@ fun AppCard(
 fun AppNameWithByline(
     name: String,
     authorName: String,
-    nameStyle: TextStyle,
+    authorProfile: ProfileInfo?,
+    authorPubkey: String,
+    version: String?,
     modifier: Modifier = Modifier,
     onAuthorClick: (() -> Unit)? = null,
     authorTestTag: String? = null,
 ) {
-    val bylineSize = (nameStyle.fontSize.value * 0.72f).sp
     Column(modifier = modifier) {
         Text(
             text = name,
-            style = nameStyle,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            text = stringResource(R.string.app_by_author, authorName),
-            color = ZapMuted,
-            style = MaterialTheme.typography.bodySmall.copy(
-                fontSize = bylineSize,
-                fontWeight = FontWeight.Normal,
-                fontFamily = InterFontFamily,
+            style = MaterialTheme.typography.titleMedium.copy(
+                fontSize = 19.sp,
+                lineHeight = 23.sp,
             ),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier
-                .then(authorTestTag?.let { Modifier.testTag(it) } ?: Modifier)
-                .then(onAuthorClick?.let { Modifier.clickable(onClick = it) } ?: Modifier),
         )
+        Spacer(Modifier.height(8.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            version?.let { VersionPill(version = it) }
+            Row(
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .then(authorTestTag?.let { Modifier.testTag(it) } ?: Modifier)
+                    .then(onAuthorClick?.let { Modifier.clickable(onClick = it) } ?: Modifier),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.app_by_author, ""),
+                    color = ZapMuted,
+                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Normal),
+                )
+                Box(
+                    modifier = Modifier
+                        .size(17.dp)
+                        .clip(RoundedCornerShape(50)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    ProfileImage(
+                        pubkey = authorPubkey,
+                        pictureUrl = authorProfile?.picture,
+                        profileVersion = authorProfile?.event?.id,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+                Text(
+                    text = authorName,
+                    color = ZapMuted,
+                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+            }
+        }
     }
 }
 
@@ -174,11 +196,11 @@ fun VersionPill(
     Text(
         text = version,
         color = ZapActionForeground,
-        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
         modifier = modifier
-            .clip(RoundedCornerShape(999.dp))
-            .background(ZapPrimary)
-            .padding(horizontal = 10.dp, vertical = 4.dp),
+            .clip(RoundedCornerShape(8.dp))
+            .background(ZapVersionPill)
+            .padding(horizontal = 9.dp, vertical = 5.dp),
     )
 }
 

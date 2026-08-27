@@ -30,6 +30,7 @@ val ZapWarning = Color(0xFFFFB338)
 val ZapDanger = Color(0xFFFF4778)
 val ZapFocus = Color(0xFF8280FF)
 val ZapIconBackground = Color(0xFF161C27)
+val ZapVersionPill = Color(0xFF213A60)
 val ZapBackgroundGradient = Brush.linearGradient(
     colors = listOf(
         ZapBackground,
