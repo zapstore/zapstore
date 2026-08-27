@@ -119,6 +119,7 @@ fun ProfileScreen(
                         pubkey = state.pubkey,
                         name = profile.displayName ?: profile.name ?: state.pubkey,
                         pictureUrl = profile.picture,
+                        profileVersion = profile.event.id,
                         size = 84.dp,
                     )
                     Spacer(Modifier.width(16.dp))
@@ -186,6 +187,7 @@ private fun ProfileAvatar(
     pubkey: String,
     name: String,
     pictureUrl: String?,
+    profileVersion: String,
     size: androidx.compose.ui.unit.Dp,
 ) {
     Box(
@@ -195,14 +197,10 @@ private fun ProfileAvatar(
             .background(ZapSurfaceVariant),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = name.take(1).uppercase(),
-            style = MaterialTheme.typography.headlineMedium,
-            color = ZapMuted,
-        )
         ProfileImage(
             pubkey = pubkey,
             pictureUrl = pictureUrl,
+            profileVersion = profileVersion,
             contentDescription = stringResource(R.string.profile_avatar_description, name),
             modifier = Modifier
                 .fillMaxSize()

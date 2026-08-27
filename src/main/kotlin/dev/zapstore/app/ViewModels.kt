@@ -9,7 +9,8 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.lifecycle.viewModelScope
 import com.vitorpamplona.quartz.lightning.LnInvoiceUtil
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
-import dev.zapstore.purplequartz.QuerySync
+import dev.zapstore.purplequartz.QueryPhase
+import dev.zapstore.purplequartz.RemoteMode
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -68,6 +69,9 @@ private class ReleaseFeedLoader(
     private val boundaryEventIds = mutableSetOf<String>()
     private var releaseLookupKeys: Set<String> = emptySet()
     private var releaseJob: Job? = null
+    private var verificationAuthors: Set<String> = emptySet()
+    private var verificationLookupAuthors: Set<String> = emptySet()
+    private var verificationJob: Job? = null
     private var requestInFlight = false
     private var state = ReleaseFeedUiState()
 
@@ -93,7 +97,6 @@ private class ReleaseFeedLoader(
                     limit = pageLimit,
                     until = pageUntil,
                 ),
-                type = QueryType.LocalAndRemote,
             ).takeWhile { queryState ->
                 val page = queryState.items
                     .filter { it.kind == Catalog.appKind }
@@ -112,7 +115,7 @@ private class ReleaseFeedLoader(
                 }
                 publishEntries()
 
-                val terminal = !queryState.sync.isLoading || queryState.error != null
+                val terminal = !queryState.phase.isLoading || queryState.error != null
                 if (!terminal && appsByAddress.isNotEmpty()) {
                     updateState(state.copy(initialLoading = false, loadingMore = true))
                 } else if (terminal) {
@@ -157,12 +160,44 @@ private class ReleaseFeedLoader(
             )
             .map { app ->
                 ReleaseFeedEntry(
-                    app = app,
+                    app = app.copy(hasVerifiedC1 = app.event.pubKey in verificationAuthors),
                     release = releasesByApp[app.address],
                 )
             }
         updateState(state.copy(entries = entries))
         observeReleases(entries.map(ReleaseFeedEntry::app))
+        observeVerification(appsByAddress.values.toList())
+    }
+
+    private fun observeVerification(apps: List<AppInfo>) {
+        val authors = apps.map(AppInfo::event).map { it.pubKey }.toSet()
+        if (authors == verificationLookupAuthors) return
+        verificationLookupAuthors = authors
+        verificationJob?.cancel()
+        if (authors.isEmpty()) {
+            verificationAuthors = emptySet()
+            publishEntries()
+            return
+        }
+
+        verificationJob = scope.launch {
+            verificationAuthors = repository.verifiedApps(apps).map { it.event.pubKey }.toSet()
+            val visibleEntries = appsByAddress.values
+                .sortedWith(
+                    compareByDescending<AppInfo> {
+                        releasesByApp[it.address]?.event?.createdAt ?: Long.MIN_VALUE
+                    }.thenByDescending { it.event.createdAt }
+                        .thenBy { it.address },
+                )
+                .map { app ->
+                    ReleaseFeedEntry(
+                        app = app.copy(hasVerifiedC1 = app.event.pubKey in verificationAuthors),
+                        release = releasesByApp[app.address],
+                    )
+                }
+            updateState(state.copy(entries = visibleEntries))
+            observeReleases(visibleEntries.map(ReleaseFeedEntry::app))
+        }
     }
 
     private fun observeReleases(apps: List<AppInfo>) {
@@ -184,7 +219,6 @@ private class ReleaseFeedLoader(
         releaseJob = scope.launch {
             repository.query(
                 releaseFilters,
-                type = QueryType.LocalAndRemote,
             ).collect { queryState ->
                 queryState.items
                     .filter { it.kind in Catalog.releaseKinds }
@@ -280,7 +314,7 @@ class HomeViewModel(
         searchJob = viewModelScope.launch {
             repository.query(
                 Filter(kinds = listOf(Catalog.appKind), search = query, limit = 20),
-                type = QueryType.Remote,
+                options = catalogQueryOptions(),
             ).collect { state ->
                 val apps = state.items.map(::AppInfo).distinctBy(AppInfo::address)
                 _uiState.update {
@@ -288,11 +322,11 @@ class HomeViewModel(
                         submittedSearchQuery = query,
                         searchResults = apps,
                         searchMessage = state.error?.message ?: when {
-                            apps.isEmpty() && state.sync.isLoading -> "Searching relay.zapstore.dev…"
+                            apps.isEmpty() && state.phase.isLoading -> "Searching relay.zapstore.dev…"
                             apps.isEmpty() -> "No apps found for “$query”."
                             else -> "${apps.size} results for “$query”"
                         },
-                        isSearching = apps.isEmpty() && state.sync.isLoading,
+                        isSearching = apps.isEmpty() && state.phase.isLoading,
                     )
                 }
             }
@@ -309,13 +343,13 @@ class HomeViewModel(
                     kinds = listOf(Catalog.appStackKind),
                     limit = 20,
                 ),
-                type = QueryType.LocalAndRemote,
+                options = catalogQueryOptions(remoteMode = RemoteMode.Stream),
             ).collect { state ->
                 val stacks = state.items.map(::StackInfo).sortedByDescending { it.event.createdAt }
                 _uiState.update {
                     it.copy(
                         stacks = stacks,
-                        stacksLoading = stacks.isEmpty() && state.sync.isLoading,
+                        stacksLoading = stacks.isEmpty() && state.phase.isLoading,
                         stacksError = state.error?.message,
                     )
                 }
@@ -344,10 +378,10 @@ class HomeViewModel(
                     tags = mapOf("d" to coordinates.map(AppCoordinate::identifier).distinct()),
                     limit = coordinates.size * 2,
                 ),
-                type = QueryType.LocalAndRemote,
             ).collect { state ->
+                val apps = state.items.map(::AppInfo).associateBy(AppInfo::address)
                 _uiState.update {
-                    it.copy(stackApps = state.items.map(::AppInfo).associateBy(AppInfo::address))
+                    it.copy(stackApps = apps)
                 }
             }
         }
@@ -382,13 +416,12 @@ class StackDetailViewModel(
         viewModelScope.launch {
             repository.query(
                 Filter(ids = listOf(stackId), kinds = listOf(Catalog.appStackKind), limit = 1),
-                type = QueryType.LocalAndRemote,
             ).collect { state ->
                 val stack = state.items.firstOrNull()?.let(::StackInfo)
                 _uiState.update {
                     it.copy(
                         stack = stack,
-                        stackLoading = stack == null && state.sync.isLoading,
+                        stackLoading = stack == null && state.phase.isLoading,
                         error = state.error?.message,
                     )
                 }
@@ -417,13 +450,12 @@ class StackDetailViewModel(
                     tags = mapOf("d" to coordinates.map(AppCoordinate::identifier).distinct()),
                     limit = coordinates.size * 2,
                 ),
-                type = QueryType.LocalAndRemote,
             ).collect { state ->
-                val apps = state.items.map(::AppInfo).associateBy(AppInfo::address)
+                val apps = state.items.map(::AppInfo).associateBy(AppInfo::address).values.toList()
                 _uiState.update {
                     it.copy(
-                        appsByAddress = apps,
-                        appsLoading = apps.isEmpty() && state.sync.isLoading,
+                        appsByAddress = apps.associateBy(AppInfo::address),
+                        appsLoading = apps.isEmpty() && state.phase.isLoading,
                         error = state.error?.message ?: it.error,
                     )
                 }
@@ -474,16 +506,21 @@ class ProfileViewModel(
 
     private fun observeProfile() {
         viewModelScope.launch {
-            repository.query(
-                Filter(authors = listOf(pubkey), kinds = listOf(Catalog.profileKind), limit = 1),
-                type = QueryType.LocalAndRemote,
+            repository.queryWithOutbox(
+                filters = listOf(
+                    Filter(authors = listOf(pubkey), kinds = listOf(Catalog.profileKind), limit = 1),
+                ),
+                authors = listOf(pubkey),
+                cachedFor = PROFILE_CACHE_DURATION,
                 relays = PROFILE_RELAYS,
+                remoteMode = RemoteMode.OneShot(),
+                unionWithFallback = false,
             ).collect { state ->
                 val profile = state.items.maxByOrNull { it.createdAt }?.let(::ProfileInfo)
                 _uiState.update {
                     it.copy(
                         profile = profile,
-                        profileLoading = profile == null && state.sync.isLoading,
+                        profileLoading = profile == null && state.phase.isLoading,
                         error = state.error?.message,
                     )
                 }
@@ -521,13 +558,13 @@ class AppDetailViewModel(
                     tags = mapOf("d" to listOf(identifier)),
                     limit = 3,
                 ),
-                type = QueryType.LocalAndRemote,
+                options = catalogQueryOptions(remoteMode = RemoteMode.Stream),
             ).collect { state ->
                 val app = state.items.firstOrNull()?.let(::AppInfo)
                 _uiState.update {
                     it.copy(
                         app = app,
-                        appLoading = app == null && state.sync.isLoading,
+                        appLoading = app == null && state.phase.isLoading,
                         error = state.error?.message ?: it.error,
                     )
                 }
@@ -551,8 +588,10 @@ class AppDetailViewModel(
                     tags = mapOf("i" to listOf(app.identifier)),
                     limit = ASSET_LOOKUP_LIMIT,
                 ),
-                type = QueryType.LocalAndRemote,
-                relays = Catalog.defaultZapRelays,
+                options = catalogQueryOptions(
+                    remoteMode = RemoteMode.Stream,
+                    relays = Catalog.defaultZapRelays,
+                ),
             ).collect { state ->
                 val nextAssetIds = state.items
                     .asSequence()
@@ -596,7 +635,7 @@ class AppDetailViewModel(
                                     }
                                     ?: 0
                             },
-                            isLoading = state.sync.isLoading,
+                            isLoading = state.phase.isLoading,
                             error = state.error?.message,
                         ),
                     )
@@ -632,13 +671,12 @@ class AppDetailViewModel(
                     tags = mapOf("i" to listOf(identifier)),
                     limit = 10,
                 ),
-                type = QueryType.LocalAndRemote,
             ).collect { state ->
                 val release = state.items.map(::ReleaseInfo).maxByOrNull { it.event.createdAt }
                 _uiState.update {
                     it.copy(
                         release = release,
-                        releaseLoading = release == null && state.sync.isLoading,
+                        releaseLoading = release == null && state.phase.isLoading,
                         error = state.error?.message ?: it.error,
                     )
                 }
@@ -669,5 +707,5 @@ fun profileViewModelFactory(repository: CatalogRepository): ViewModelProvider.Fa
     initializer { ProfileViewModel(repository, createSavedStateHandle()) }
 }
 
-private val QuerySync.isLoading: Boolean
-    get() = this == QuerySync.Connecting || this == QuerySync.CatchingUp
+private val QueryPhase.isLoading: Boolean
+    get() = this == QueryPhase.Connecting || this == QueryPhase.CatchingUp

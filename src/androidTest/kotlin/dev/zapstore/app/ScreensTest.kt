@@ -96,7 +96,7 @@ class ScreensTest {
     @Test
     fun appProfileCallbackIsWired() {
         var openedProfile: String? = null
-        val app = AppInfo(event(kind = Catalog.appKind))
+        val app = AppInfo(event(kind = Catalog.appKind), hasVerifiedC1 = true)
 
         composeRule.setContent {
             ZapstoreTheme {

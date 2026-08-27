@@ -3,8 +3,11 @@ package dev.zapstore.app
 import androidx.lifecycle.SavedStateHandle
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
+import dev.zapstore.purplequartz.QueryOptions
 import dev.zapstore.purplequartz.QueryState
-import dev.zapstore.purplequartz.QuerySync
+import dev.zapstore.purplequartz.QueryPhase
+import dev.zapstore.purplequartz.RemoteMode
+import dev.zapstore.purplequartz.SourceMode
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -16,6 +19,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.days
+import kotlin.time.Duration.Companion.seconds
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ViewModelsTest {
@@ -23,11 +28,81 @@ class ViewModelsTest {
     val mainDispatcherRule = MainDispatcherRule()
 
     @Test
-    fun `home search maps results and cancels the previous query`() = runTest {
-        val remoteFlows = mutableListOf<MutableSharedFlow<QueryState>>()
+    fun `catalog defaults to brief one-shot freshness and profiles use one day`() {
+        val options = catalogQueryOptions()
+        assertEquals(SourceMode.LocalAndRemote, options.sourceMode)
+        assertTrue(options.remoteMode is RemoteMode.OneShot)
+        assertEquals(30.seconds, options.cachedFor)
+        assertEquals(1.days, PROFILE_CACHE_DURATION)
+
+        val forced = catalogQueryOptions(cachedFor = null)
+        assertEquals(null, forced.cachedFor)
+    }
+
+    @Test
+    fun `C1 author is verified only when current proof matches an asset`() {
+        val pubkey = "1".repeat(64)
+        val hash = "a".repeat(64)
+        val asset = event(
+            pubKey = pubkey,
+            kind = Catalog.assetKind,
+            tags = arrayOf(arrayOf("apk_certificate_hash", hash)),
+        )
+        val proof = event(
+            pubKey = pubkey,
+            kind = Catalog.c1Kind,
+            tags = arrayOf(
+                arrayOf("d", hash),
+                arrayOf("signature", "signature"),
+                arrayOf("expiry", "1800000000"),
+            ),
+        )
+
+        assertEquals(setOf(pubkey), verifiedAppAuthors(listOf(asset), listOf(proof), now = 1750000000))
+        assertTrue(verifiedAppAuthors(listOf(asset), emptyList(), now = 1750000000).isEmpty())
+    }
+
+    @Test
+    fun `newer revoked C1 replaces older active proof`() {
+        val pubkey = "1".repeat(64)
+        val hash = "a".repeat(64)
+        val asset = event(
+            pubKey = pubkey,
+            kind = Catalog.assetKind,
+            tags = arrayOf(arrayOf("apk_certificate_hash", hash)),
+        )
+        val oldProof = event(
+            id = "f".repeat(64),
+            pubKey = pubkey,
+            kind = Catalog.c1Kind,
+            createdAt = 1_750_000_000,
+            tags = arrayOf(
+                arrayOf("d", hash),
+                arrayOf("signature", "signature"),
+                arrayOf("expiry", "1800000000"),
+            ),
+        )
+        val revokedProof = event(
+            id = "e".repeat(64),
+            pubKey = pubkey,
+            createdAt = 1_750_000_001,
+            kind = Catalog.c1Kind,
+            tags = arrayOf(arrayOf("d", hash), arrayOf("revoked", "retired")),
+        )
+
+        assertTrue(verifiedAppAuthors(listOf(asset), listOf(oldProof, revokedProof), now = 1750000000).isEmpty())
+    }
+
+    @Test
+    fun `home search reads local results and cancels the previous query`() = runTest {
+        val localFlows = mutableListOf<MutableSharedFlow<QueryState>>()
         val repository = FakeCatalogRepository(
-            remoteQuery = {
-                MutableSharedFlow<QueryState>().also(remoteFlows::add)
+            localQuery = { filter ->
+                if (filter.search != null) {
+                    MutableSharedFlow<QueryState>().also(localFlows::add)
+                } else {
+                    emptyFlow()
+                }
             },
         )
         val viewModel = HomeViewModel(repository, SavedStateHandle())
@@ -36,15 +111,15 @@ class ViewModelsTest {
         viewModel.onSearchQueryChanged("first")
         viewModel.submitSearch()
         runCurrent()
-        assertEquals(1, remoteFlows.single().subscriptionCount.value)
+        assertEquals(1, localFlows.single().subscriptionCount.value)
 
         viewModel.onSearchQueryChanged("second")
         viewModel.submitSearch()
         runCurrent()
-        assertEquals(0, remoteFlows.first().subscriptionCount.value)
-        assertEquals(1, remoteFlows.last().subscriptionCount.value)
+        assertEquals(0, localFlows.first().subscriptionCount.value)
+        assertEquals(1, localFlows.last().subscriptionCount.value)
 
-        remoteFlows.last().emit(
+        localFlows.last().emit(
             queryState(
                 event(
                     kind = Catalog.appKind,
@@ -403,16 +478,16 @@ private class FakeCatalogRepository(
     private val remoteQueries: ((List<Filter>) -> Flow<QueryState>)? = null,
     private val outboxQuery: ((List<Filter>, List<String>, Set<String>) -> Flow<QueryState>)? = null,
 ) : CatalogRepository {
+    override suspend fun verifiedApps(apps: List<AppInfo>): List<AppInfo> = apps
+
     override fun query(
         filters: List<Filter>,
-        type: QueryType,
-        cachedFor: Duration?,
-        relays: Set<String>,
-    ): Flow<QueryState> = when (type) {
-        QueryType.Local,
-        QueryType.LocalAndRemote,
+        options: QueryOptions,
+    ): Flow<QueryState> = when (options.sourceMode) {
+        SourceMode.Local,
+        SourceMode.LocalAndRemote,
         -> localQueries?.invoke(filters) ?: filters.singleOrNull()?.let(localQuery) ?: emptyFlow()
-        QueryType.Remote -> remoteQueries?.invoke(filters) ?: filters.singleOrNull()?.let(remoteQuery) ?: emptyFlow()
+        SourceMode.Remote -> remoteQueries?.invoke(filters) ?: filters.singleOrNull()?.let(remoteQuery) ?: emptyFlow()
     }
 
     override fun queryWithOutbox(
@@ -420,9 +495,10 @@ private class FakeCatalogRepository(
         authors: List<String>,
         cachedFor: Duration?,
         relays: Set<String>,
+        remoteMode: RemoteMode,
         unionWithFallback: Boolean,
     ): Flow<QueryState> = outboxQuery?.invoke(filters, authors, relays)
-        ?: super.queryWithOutbox(filters, authors, cachedFor, relays, unionWithFallback)
+        ?: super.queryWithOutbox(filters, authors, cachedFor, relays, remoteMode, unionWithFallback)
 
     override fun refreshConnections() = Unit
 }
@@ -430,7 +506,7 @@ private class FakeCatalogRepository(
 private fun queryState(vararg events: Event): QueryState =
     QueryState(
         items = events.toList(),
-        sync = QuerySync.Complete,
+        phase = QueryPhase.Complete,
     )
 
 private fun event(

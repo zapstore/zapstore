@@ -7,9 +7,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -18,12 +21,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil3.SingletonImageLoader
 import coil3.compose.AsyncImage
+import coil3.compose.LocalPlatformContext
+import coil3.memory.MemoryCache
+import coil3.request.CachePolicy
+import coil3.request.ImageRequest
+import dev.zapstore.app.PROFILE_CACHE_DURATION
 import kotlinx.coroutines.flow.collect
 
 @Composable
@@ -72,10 +82,10 @@ fun ProfileComponent(
                 .background(ZapSurfaceVariant),
             contentAlignment = Alignment.Center,
         ) {
-            Text("•", color = ZapMuted, style = MaterialTheme.typography.titleLarge)
             ProfileImage(
                 pubkey = pubkey,
                 pictureUrl = profile?.picture,
+                profileVersion = profile?.event?.id,
                 contentDescription = stringResource(R.string.profile_avatar_description, displayName),
                 modifier = Modifier
                 .size(40.dp)
@@ -95,27 +105,76 @@ fun ProfileComponent(
 fun ProfileImage(
     pubkey: String,
     pictureUrl: String?,
+    profileVersion: String? = null,
     contentDescription: String?,
     modifier: Modifier = Modifier,
 ) {
     val cdnUrl = remember(pubkey) {
         profileCdnUrl(pubkey)?.let { cdnImageUrl(it, CdnImageVariant.IconSmall) }
     }
-    var useFallback by remember(pubkey, pictureUrl) { mutableStateOf(cdnUrl == null) }
+    var useFallback by remember(pubkey) { mutableStateOf(cdnUrl == null) }
     val fallbackUrl = pictureUrl?.takeIf(::isHttpUrl)
     val imageUrl = if (useFallback) fallbackUrl else cdnUrl
+    var imageLoaded by remember(imageUrl) { mutableStateOf(false) }
+    val imageAlpha by animateFloatAsState(
+        targetValue = if (imageLoaded) 1f else 0f,
+        animationSpec = tween(durationMillis = 600),
+        label = "profile icon fade",
+    )
+    val context = LocalPlatformContext.current
+    var previousProfileVersion by remember(pubkey) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(profileVersion) {
+        if (profileVersion != null &&
+            previousProfileVersion != null &&
+            previousProfileVersion != profileVersion
+        ) {
+            evictProfileIconCache(
+                context = context,
+                urls = listOfNotNull(cdnUrl, fallbackUrl),
+            )
+        }
+        if (profileVersion != null) previousProfileVersion = profileVersion
+    }
 
     imageUrl?.let { url ->
+        val request = remember(url) {
+            ImageRequest.Builder(context)
+                .data(url)
+                .memoryCacheKey(profileIconCacheKey(url))
+                .diskCacheKey(profileIconCacheKey(url))
+                .memoryCachePolicy(CachePolicy.ENABLED)
+                .diskCachePolicy(CachePolicy.ENABLED)
+                .build()
+        }
         AsyncImage(
-            model = url,
+            model = request,
             contentDescription = contentDescription,
             contentScale = ContentScale.Crop,
+            onLoading = { imageLoaded = false },
+            onSuccess = { imageLoaded = true },
             onError = {
+                imageLoaded = false
                 if (!useFallback && fallbackUrl != null) useFallback = true
             },
-            modifier = modifier,
+            modifier = modifier.alpha(imageAlpha),
         )
     }
+}
+
+private fun evictProfileIconCache(context: android.content.Context, urls: List<String>) {
+    val imageLoader = SingletonImageLoader.get(context)
+    urls.forEach { url ->
+        val cacheKey = profileIconCacheKey(url)
+        imageLoader.memoryCache?.remove(MemoryCache.Key(cacheKey))
+        imageLoader.diskCache?.remove(cacheKey)
+    }
+}
+
+internal fun profileIconCacheKey(url: String, nowMillis: Long = System.currentTimeMillis()): String {
+    val cachePeriod = PROFILE_CACHE_DURATION.inWholeMilliseconds
+    val period = nowMillis / cachePeriod
+    return "profile-icon:$period:$url"
 }
 
 private val BECH32_CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"

@@ -255,7 +255,7 @@ fun AppDetailScreen(
 private fun CollapsingAppHeader(
     app: AppInfo,
     release: ReleaseInfo?,
-    authorName: String,
+    authorName: String?,
     progress: Float,
     bigContentHeight: Dp,
     onBigContentMeasured: (Int) -> Unit,
@@ -298,21 +298,23 @@ private fun CollapsingAppHeader(
                     maxLines = if (progress < 0.5f) 2 else 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    text = stringResource(R.string.app_by_author, authorName),
-                    color = ZapMuted,
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontSize = (nameStyle.fontSize.value * 0.72f).sp,
-                        fontWeight = FontWeight.Normal,
-                        fontFamily = InterFontFamily,
-                    ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .testTag("profile:${app.event.pubKey}")
-                        .graphicsLayer { alpha = secondaryAlpha }
-                        .clickable(onClick = onProfileClick),
-                )
+                authorName?.let {
+                    Text(
+                        text = stringResource(R.string.app_by_author, it),
+                        color = ZapMuted,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontSize = (nameStyle.fontSize.value * 0.72f).sp,
+                            fontWeight = FontWeight.Normal,
+                            fontFamily = InterFontFamily,
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .testTag("profile:${app.event.pubKey}")
+                            .graphicsLayer { alpha = secondaryAlpha }
+                            .clickable(onClick = onProfileClick),
+                    )
+                }
                 if (release != null) {
                     Spacer(Modifier.height(10.dp))
                     VersionPill(

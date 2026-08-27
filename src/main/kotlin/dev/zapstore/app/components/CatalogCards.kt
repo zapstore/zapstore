@@ -73,7 +73,11 @@ fun AppCard(
     release: ReleaseInfo? = null,
     onProfileClick: (() -> Unit)? = null,
 ) {
-    val authorName = rememberProfileDisplayName(app.event.pubKey, repository)
+    val authorName = if (app.hasVerifiedC1) {
+        rememberProfileDisplayName(app.event.pubKey, repository)
+    } else {
+        null
+    }
 
     Column(
         modifier = modifier
@@ -93,13 +97,22 @@ fun AppCard(
             )
             Spacer(modifier.width(12.dp))
             Column(modifier.weight(1f)) {
-                AppNameWithByline(
-                    name = app.name,
-                    authorName = authorName,
-                    nameStyle = MaterialTheme.typography.titleMedium,
-                    onAuthorClick = onProfileClick,
-                    authorTestTag = "profile:${app.event.pubKey}",
-                )
+                if (authorName != null) {
+                    AppNameWithByline(
+                        name = app.name,
+                        authorName = authorName,
+                        nameStyle = MaterialTheme.typography.titleMedium,
+                        onAuthorClick = onProfileClick,
+                        authorTestTag = "profile:${app.event.pubKey}",
+                    )
+                } else {
+                    Text(
+                        text = app.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 release?.let {
                     Spacer(Modifier.height(8.dp))
                     VersionPill(version = it.version)

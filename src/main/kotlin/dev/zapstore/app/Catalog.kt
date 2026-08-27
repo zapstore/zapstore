@@ -8,9 +8,11 @@ import com.vitorpamplona.quartz.nip01Core.relay.sockets.okhttp.BasicOkHttpWebSoc
 import dev.zapstore.purplequartz.OutboxRouter
 import dev.zapstore.purplequartz.PurpleQuartz
 import dev.zapstore.purplequartz.PurpleQuartzConfig
+import dev.zapstore.purplequartz.QueryOptions
+import dev.zapstore.purplequartz.QueryPhase
 import dev.zapstore.purplequartz.QueryState
-import dev.zapstore.purplequartz.QuerySource
 import dev.zapstore.purplequartz.RemoteMode
+import dev.zapstore.purplequartz.SourceMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -19,17 +21,19 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.shareIn
+import kotlinx.coroutines.flow.first
 import okhttp3.OkHttpClient
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Duration.Companion.days
-import kotlin.time.Duration.Companion.hours
 
 object Catalog {
     const val relay = "wss://relay.zapstore.dev"
     const val profileRelay = "wss://relay.vertexlab.io"
     const val assetKind = 3_063
+    const val c1Kind = 30_509
     const val releaseKind = 30_063
     const val appKind = 32_267
     const val appStackKind = 30_267
@@ -47,21 +51,31 @@ object Catalog {
 }
 
 val PROFILE_RELAYS = setOf(Catalog.relay, Catalog.profileRelay)
-internal val PROFILE_CACHE_DURATION = 6.hours
+internal val DEFAULT_CACHE_DURATION = 30.seconds
+internal val PROFILE_CACHE_DURATION = 1.days
+private const val VERIFIED_ASSET_AND_C1_LIMIT = 500
+
+fun catalogQueryOptions(
+    sourceMode: SourceMode = SourceMode.LocalAndRemote,
+    remoteMode: RemoteMode? = if (sourceMode == SourceMode.Local) null else RemoteMode.OneShot(),
+    cachedFor: Duration? = if (sourceMode == SourceMode.LocalAndRemote) DEFAULT_CACHE_DURATION else null,
+    relays: Set<String> = setOf(Catalog.relay),
+): QueryOptions = QueryOptions(
+    sourceMode = sourceMode,
+    remoteMode = remoteMode,
+    relays = if (sourceMode == SourceMode.Local) emptySet() else relays.map(String::normalizeRelayUrl).toSet(),
+    cachedFor = cachedFor,
+)
 
 interface CatalogRepository {
     fun query(
         filter: Filter,
-        type: QueryType,
-        cachedFor: Duration? = null,
-        relays: Set<String> = setOf(Catalog.relay),
-    ): Flow<QueryState> = query(listOf(filter), type, cachedFor, relays)
+        options: QueryOptions = catalogQueryOptions(),
+    ): Flow<QueryState> = query(listOf(filter), options)
 
     fun query(
         filters: List<Filter>,
-        type: QueryType,
-        cachedFor: Duration? = null,
-        relays: Set<String> = setOf(Catalog.relay),
+        options: QueryOptions = catalogQueryOptions(),
     ): Flow<QueryState>
 
     /**
@@ -75,8 +89,43 @@ interface CatalogRepository {
         authors: List<String>,
         cachedFor: Duration? = null,
         relays: Set<String>,
+        remoteMode: RemoteMode = RemoteMode.Stream,
         unionWithFallback: Boolean = true,
-    ): Flow<QueryState> = query(filters, QueryType.LocalAndRemote, cachedFor, relays)
+    ): Flow<QueryState> = query(
+        filters,
+        catalogQueryOptions(
+            remoteMode = remoteMode,
+            cachedFor = cachedFor,
+            relays = relays,
+        ),
+    )
+
+    /**
+     * Filters app rows using C1 proofs and the relay's APK verification.
+     * The relay is trusted for the certificate-to-APK association; the client
+     * enforces proof lifecycle and certificate-hash matching.
+     */
+    suspend fun verifiedApps(apps: List<AppInfo>): List<AppInfo> {
+        if (apps.isEmpty()) return emptyList()
+        val authors = apps.map { it.event.pubKey }.toSet()
+        val filters = apps.map { app ->
+            Filter(
+                kinds = listOf(Catalog.assetKind),
+                tags = mapOf("i" to listOf(app.identifier)),
+                limit = VERIFIED_ASSET_AND_C1_LIMIT,
+            )
+        } + Filter(
+            authors = authors.toList(),
+            kinds = listOf(Catalog.c1Kind),
+            limit = VERIFIED_ASSET_AND_C1_LIMIT,
+        )
+        val state = query(
+            filters,
+            catalogQueryOptions(remoteMode = RemoteMode.OneShot()),
+        ).first { it.phase.isTerminal }
+        val verifiedAuthors = verifiedAppAuthors(state.items, state.items, authors)
+        return apps.map { it.copy(hasVerifiedC1 = it.event.pubKey in verifiedAuthors) }
+    }
 
     /**
      * Latest kind-0 metadata for [pubkey]. Implementations may share and cache the
@@ -87,6 +136,7 @@ interface CatalogRepository {
         authors = listOf(pubkey),
         cachedFor = PROFILE_CACHE_DURATION,
         relays = PROFILE_RELAYS,
+        remoteMode = RemoteMode.OneShot(),
         unionWithFallback = false,
     ).map { state -> state.items.maxByOrNull(Event::createdAt)?.let(::ProfileInfo) }
 
@@ -99,18 +149,14 @@ interface CatalogRepository {
     fun setRelayTrafficEnabled(enabled: Boolean) = Unit
 }
 
-enum class QueryType {
-    Local,
-    LocalAndRemote,
-    Remote,
-}
-
 class PurpleQuartzCatalogRepository(context: Context) : CatalogRepository {
     private val applicationContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val profileFlows = ConcurrentHashMap<String, Flow<ProfileInfo?>>()
     private var client: PurpleQuartz? = null
     private var outboxRouter: OutboxRouter? = null
+    @Volatile
+    private var relayTrafficEnabled = true
 
     private fun client(): PurpleQuartz =
         client ?: PurpleQuartz.create(
@@ -122,7 +168,10 @@ class PurpleQuartzCatalogRepository(context: Context) : CatalogRepository {
                 // bounded by supersession; assets back the release feed and stay.
                 pruneRules = mapOf(Catalog.zapReceiptKind to 90.days),
             ),
-        ).also { client = it }
+        ).also {
+            client = it
+            if (!relayTrafficEnabled) it.setRelayTrafficEnabled(false)
+        }
 
     private fun router(): OutboxRouter =
         outboxRouter ?: OutboxRouter(
@@ -135,12 +184,14 @@ class PurpleQuartzCatalogRepository(context: Context) : CatalogRepository {
         authors: List<String>,
         cachedFor: Duration?,
         relays: Set<String>,
+        remoteMode: RemoteMode,
         unionWithFallback: Boolean,
     ): Flow<QueryState> = router().queryWithOutbox(
         filters,
         authors,
         fallbackRelays = relays.map(String::normalizeRelayUrl).toSet(),
         cachedFor = cachedFor,
+        remoteMode = remoteMode,
         unionWithFallback = unionWithFallback,
     )
 
@@ -153,35 +204,15 @@ class PurpleQuartzCatalogRepository(context: Context) : CatalogRepository {
 
     override fun query(
         filters: List<Filter>,
-        type: QueryType,
-        cachedFor: Duration?,
-        relays: Set<String>,
-    ): Flow<QueryState> {
-        require(type == QueryType.LocalAndRemote || cachedFor == null) {
-            "cachedFor is supported only for local-and-remote queries"
-        }
-
-        val source = when (type) {
-            QueryType.Local -> QuerySource.Local
-            QueryType.LocalAndRemote -> QuerySource.LocalAndRemote(
-                relays = relays.map(String::normalizeRelayUrl).toSet(),
-                mode = RemoteMode.Stream,
-                cachedFor = cachedFor,
-            )
-            QueryType.Remote -> QuerySource.Remote(
-                relays = setOf(Catalog.relay.normalizeRelayUrl()),
-                mode = RemoteMode.OneShot(),
-            )
-        }
-
-        return client().query(filters = filters, source = source)
-    }
+        options: QueryOptions,
+    ): Flow<QueryState> = client().query(filters = filters, options = options)
 
     override fun refreshConnections() {
         client?.refreshConnections()
     }
 
     override fun setRelayTrafficEnabled(enabled: Boolean) {
+        relayTrafficEnabled = enabled
         client?.setRelayTrafficEnabled(enabled)
     }
 
@@ -191,7 +222,10 @@ class PurpleQuartzCatalogRepository(context: Context) : CatalogRepository {
     }
 }
 
-data class AppInfo(val event: Event) {
+data class AppInfo(
+    val event: Event,
+    val hasVerifiedC1: Boolean = false,
+) {
     val identifier: String get() = event.tagValue("d") ?: event.id
     val name: String get() = event.tagValue("name") ?: identifier
     val summary: String get() = event.tagValue("summary") ?: event.content
@@ -202,6 +236,65 @@ data class AppInfo(val event: Event) {
     val license: String? get() = event.tagValue("license")
     val address: String get() = "${Catalog.appKind}:${event.pubKey}:$identifier"
 }
+
+/**
+ * C1 proofs are APK-verified by the catalog relay. The client still checks the
+ * proof's lifecycle and matches its certificate hash to a fetched asset.
+ */
+fun verifiedAppAuthors(
+    assets: Iterable<Event>,
+    proofs: Iterable<Event>,
+    appAuthors: Set<String> = emptySet(),
+    now: Long = System.currentTimeMillis() / 1_000,
+): Set<String> {
+    val currentProofs = proofs
+        .filter { it.kind == Catalog.c1Kind }
+        .groupBy { it.pubKey to it.tagValue("d") }
+        .mapNotNull { (key, events) ->
+            key.second?.let {
+                val newestTimestamp = events.maxOf(Event::createdAt)
+                key to events
+                    .filter { event -> event.createdAt == newestTimestamp }
+                    .minByOrNull(Event::id)
+            }
+        }
+        .mapNotNull { (key, event) -> event?.let { key to it } }
+        .toMap()
+        .filterValues { it.isWellFormedC1() && it.isActiveC1(now) }
+
+    return assets
+        .filter { it.kind == Catalog.assetKind }
+        .mapNotNull { asset ->
+            val hash = asset.tagValue("apk_certificate_hash") ?: return@mapNotNull null
+            currentProofs.entries
+                .firstOrNull { (key, proof) ->
+                    key.second == hash &&
+                        (asset.pubKey == proof.pubKey ||
+                            proof.tagValue("delegation") == asset.pubKey) &&
+                        (appAuthors.isEmpty() || proof.pubKey in appAuthors)
+                }
+                ?.key?.first
+        }
+        .toSet()
+}
+
+private fun Event.isWellFormedC1(): Boolean {
+    if (tags.count { it.firstOrNull() == "d" } != 1) return false
+    if (tags.count { it.firstOrNull() == "signature" } != 1) return false
+    if (tags.count { it.firstOrNull() == "expiry" } != 1) return false
+    if (tags.count { it.firstOrNull() == "cert" } > 1) return false
+    if (tags.count { it.firstOrNull() == "delegation" } > 1) return false
+
+    val hash = tagValue("d") ?: return false
+    if (!Regex("[0-9a-f]{64}").matches(hash)) return false
+    if (tagValue("signature").isNullOrBlank()) return false
+    val expiry = tagValue("expiry")?.toLongOrNull() ?: return false
+    return expiry > createdAt
+}
+
+private fun Event.isActiveC1(now: Long): Boolean =
+    !tags.any { it.firstOrNull() == "revoked" } &&
+        tagValue("expiry")!!.toLong() > now
 
 data class ReleaseInfo(val event: Event) {
     val appIdentifier: String?
@@ -251,3 +344,9 @@ fun String.toAppCoordinate(): AppCoordinate? {
     return parts.takeIf { it.size == 3 && it[0] == Catalog.appKind.toString() }
         ?.let { (_, author, identifier) -> AppCoordinate(author, identifier) }
 }
+
+private val QueryPhase.isTerminal: Boolean
+    get() = this == QueryPhase.Cached ||
+        this == QueryPhase.Complete ||
+        this == QueryPhase.TimedOut ||
+        this == QueryPhase.Failed
