@@ -31,3 +31,6 @@ captures/
 # Signing
 *.jks
 *.keystore
+
+.cursor/
+*.md
