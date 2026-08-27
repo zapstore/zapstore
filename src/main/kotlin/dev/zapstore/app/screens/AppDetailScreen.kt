@@ -37,7 +37,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -46,18 +45,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.lerp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil3.compose.AsyncImage
@@ -79,19 +72,13 @@ fun AppDetailScreen(
 ) {
     var selectedScreenshot by remember { mutableStateOf<Int?>(null) }
     val listState = rememberLazyListState()
-    val density = LocalDensity.current
-    val smallHeaderHeightPx = with(density) { SmallHeaderHeight.toPx() }
-    var bigHeaderHeightPx by remember { mutableIntStateOf(with(density) { BigIconSize.roundToPx() }) }
-    // 0f = big header fully expanded, 1f = collapsed into the compact top row
-    val headerCollapseProgress by remember {
+    val app = state.app
+    val authorProfile = app?.let { rememberProfile(it.event.pubKey, repository) }
+    val showCompactHeader by remember {
         derivedStateOf {
-            val range = bigHeaderHeightPx - smallHeaderHeightPx
-            if (range <= 0f) return@derivedStateOf 0f
-            if (listState.firstVisibleItemIndex > 0) return@derivedStateOf 1f
-            (listState.firstVisibleItemScrollOffset / range).coerceIn(0f, 1f)
+            listState.firstVisibleItemIndex > 0
         }
     }
-    val bigHeaderHeight = with(density) { bigHeaderHeightPx.toDp() }
 
     Box(
         modifier = modifier
@@ -106,20 +93,19 @@ fun AppDetailScreen(
         contentPadding = PaddingValues(start = 16.dp, top = 4.dp, end = 16.dp, bottom = 36.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        val app = state.app
         if (app == null) {
             item {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(100.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(ZapSurfaceVariant),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (state.appLoading) {
-                        LoadingIndicator()
-                    } else {
+                if (state.appLoading) {
+                    AppDetailSkeleton()
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(100.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(ZapSurfaceVariant),
+                        contentAlignment = Alignment.Center,
+                    ) {
                         Text(
                             text = stringResource(R.string.app_not_found),
                             color = ZapMuted,
@@ -131,8 +117,15 @@ fun AppDetailScreen(
             return@LazyColumn
         }
 
-        // Reserves the space occupied by the collapsing header overlay
-        item { Spacer(Modifier.height(bigHeaderHeight)) }
+        item {
+            RegularAppHeader(
+                app = app,
+                release = state.release,
+                repository = repository,
+                authorProfile = authorProfile,
+                onProfileClick = { onProfileClick(app.event.pubKey) },
+            )
+        }
 
         if (app.screenshots.isNotEmpty()) {
             item {
@@ -202,14 +195,19 @@ fun AppDetailScreen(
                     )
                 }
             }
-        } ?: item {
-            Box(
-                Modifier
-                    .width(220.dp)
-                    .height(32.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(ZapSurfaceVariant),
-            )
+        } ?: run {
+            item {
+                Box(
+                    Modifier
+                        .width(220.dp)
+                        .height(32.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(ZapSurfaceVariant),
+                )
+            }
+            item {
+                ReleaseNotesSkeleton()
+            }
         }
 
         item {
@@ -218,6 +216,7 @@ fun AppDetailScreen(
                 release = state.release,
                 onOpenUrl = onOpenUrl,
                 repository = repository,
+                authorProfile = authorProfile,
                 onProfileClick = { onProfileClick(app.event.pubKey) },
                 modifier = Modifier.padding(top = 8.dp),
             )
@@ -225,17 +224,16 @@ fun AppDetailScreen(
         state.error?.let { error -> item { StatusText(error) } }
     }
 
-    state.app?.let { app ->
-        CollapsingAppHeader(
-            app = app,
-            release = state.release,
-            authorName = rememberProfileDisplayName(app.event.pubKey, repository),
-            progress = headerCollapseProgress,
-            bigContentHeight = bigHeaderHeight,
-            onBigContentMeasured = { if (headerCollapseProgress == 0f) bigHeaderHeightPx = it },
-            onProfileClick = { onProfileClick(app.event.pubKey) },
-            modifier = Modifier.align(Alignment.TopCenter),
-        )
+    if (showCompactHeader) {
+        state.app?.let { app ->
+            CompactAppHeader(
+                app = app,
+                repository = repository,
+                authorProfile = authorProfile,
+                onProfileClick = { onProfileClick(app.event.pubKey) },
+                modifier = Modifier.align(Alignment.TopCenter),
+            )
+        }
     }
     }
 
@@ -252,80 +250,175 @@ fun AppDetailScreen(
 }
 
 @Composable
-private fun CollapsingAppHeader(
-    app: AppInfo,
-    release: ReleaseInfo?,
-    authorName: String?,
-    progress: Float,
-    bigContentHeight: Dp,
-    onBigContentMeasured: (Int) -> Unit,
-    onProfileClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val backgroundAlpha = (progress * 1.5f).coerceIn(0f, 1f)
-    val secondaryAlpha = (1f - progress * 2f).coerceIn(0f, 1f)
-    val nameStyle = MaterialTheme.typography.displaySmall
-    val compactNameStyle = MaterialTheme.typography.titleMedium
+private fun AppDetailSkeleton() {
     Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(ZapBackground.copy(alpha = backgroundAlpha))
-            .windowInsetsPadding(WindowInsets.statusBars)
-            .padding(top = 4.dp)
-            .height(lerp(bigContentHeight, SmallHeaderHeight, progress))
-            .clipToBounds(),
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Row(
             verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            SkeletonBlock(74.dp, 74.dp, 16.dp)
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                SkeletonBlock(width = 190.dp, height = 22.dp, cornerRadius = 6.dp)
+                SkeletonBlock(width = 140.dp, height = 16.dp, cornerRadius = 6.dp)
+            }
+        }
+        SkeletonBlock(
+            width = 160.dp,
+            height = 18.dp,
+            cornerRadius = 6.dp,
+        )
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            items(4) {
+                SkeletonBlock(
+                    width = 120.dp,
+                    height = 200.dp,
+                    cornerRadius = 16.dp,
+                )
+            }
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SkeletonBlock(width = Dp.Infinity, height = 16.dp, cornerRadius = 5.dp)
+            SkeletonBlock(width = Dp.Infinity, height = 16.dp, cornerRadius = 5.dp)
+            SkeletonBlock(width = 180.dp, height = 16.dp, cornerRadius = 5.dp)
+        }
+        SkeletonBlock(width = 220.dp, height = 32.dp, cornerRadius = 8.dp)
+        ReleaseNotesSkeleton()
+        Column(
             modifier = Modifier
-                .onSizeChanged { onBigContentMeasured(it.height) }
-                .padding(horizontal = 16.dp),
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(ZapSurface.copy(alpha = 0.8f))
+                .border(1.dp, ZapOutline.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
+            repeat(4) {
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    SkeletonBlock(width = 0.dp, height = 16.dp, cornerRadius = 5.dp, modifier = Modifier.weight(1f))
+                    SkeletonBlock(width = 80.dp, height = 16.dp, cornerRadius = 5.dp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReleaseNotesSkeleton() {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.padding(vertical = 4.dp),
+    ) {
+        SkeletonBlock(width = Dp.Infinity, height = 16.dp, cornerRadius = 5.dp)
+        SkeletonBlock(width = Dp.Infinity, height = 16.dp, cornerRadius = 5.dp)
+        SkeletonBlock(width = 200.dp, height = 16.dp, cornerRadius = 5.dp)
+    }
+}
+
+@Composable
+private fun SkeletonBlock(
+    width: Dp,
+    height: Dp,
+    cornerRadius: Dp,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .then(if (width == Dp.Infinity) Modifier.fillMaxWidth() else Modifier.width(width))
+            .height(height)
+            .clip(RoundedCornerShape(cornerRadius))
+            .background(ZapSurfaceVariant),
+    )
+}
+
+@Composable
+private fun RegularAppHeader(
+    app: AppInfo,
+    release: ReleaseInfo?,
+    repository: CatalogRepository?,
+    authorProfile: ProfileInfo?,
+    onProfileClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             AppIcon(
                 title = app.name,
                 iconUrl = app.iconUrl,
-                modifier = Modifier.size(lerp(BigIconSize, SmallIconSize, progress)),
-                cornerRadius = lerp(16.dp, 7.dp, progress),
+                modifier = Modifier.size(BigIconSize),
+                cornerRadius = 16.dp,
             )
-            Spacer(Modifier.width(lerp(16.dp, 10.dp, progress)))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = app.name,
-                    style = nameStyle.copy(
-                        fontSize = lerp(nameStyle.fontSize, compactNameStyle.fontSize, progress),
-                        lineHeight = lerp(nameStyle.lineHeight, compactNameStyle.lineHeight, progress),
-                    ),
-                    maxLines = if (progress < 0.5f) 2 else 1,
+                    style = MaterialTheme.typography.displaySmall,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                authorName?.let {
-                    Text(
-                        text = stringResource(R.string.app_by_author, it),
-                        color = ZapMuted,
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontSize = (nameStyle.fontSize.value * 0.72f).sp,
-                            fontWeight = FontWeight.Normal,
-                            fontFamily = InterFontFamily,
-                        ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .testTag("profile:${app.event.pubKey}")
-                            .graphicsLayer { alpha = secondaryAlpha }
-                            .clickable(onClick = onProfileClick),
-                    )
-                }
-                if (release != null) {
-                    Spacer(Modifier.height(10.dp))
-                    VersionPill(
-                        version = release.version,
-                        modifier = Modifier.graphicsLayer { alpha = secondaryAlpha },
+                Row(
+                    modifier = Modifier.padding(top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    release?.let { VersionPill(version = it.version) }
+                    AppAuthorByline(
+                        pubkey = app.event.pubKey,
+                        repository = repository,
+                            profile = authorProfile,
+                        onClick = onProfileClick,
                     )
                 }
             }
         }
-        Spacer(Modifier.weight(1f))
-        HorizontalDivider(color = ZapOutline.copy(alpha = progress))
+    }
+}
+
+@Composable
+private fun CompactAppHeader(
+    app: AppInfo,
+    repository: CatalogRepository?,
+    authorProfile: ProfileInfo?,
+    onProfileClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(ZapBackground)
+            .windowInsetsPadding(WindowInsets.statusBars)
+            .height(SmallHeaderHeight)
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        AppIcon(
+            title = app.name,
+            iconUrl = app.iconUrl,
+            modifier = Modifier.size(SmallIconSize),
+            cornerRadius = 7.dp,
+        )
+        Text(
+            text = app.name,
+            style = MaterialTheme.typography.titleMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        AppAuthorByline(
+            pubkey = app.event.pubKey,
+            repository = repository,
+            profile = authorProfile,
+            onClick = onProfileClick,
+        )
     }
 }
 
@@ -466,16 +559,17 @@ private fun AppInfoCard(
     release: ReleaseInfo?,
     onOpenUrl: (String) -> Unit,
     repository: CatalogRepository?,
+    authorProfile: ProfileInfo?,
     onProfileClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(12.dp))
             .background(ZapSurface.copy(alpha = 0.8f))
-            .border(1.dp, ZapOutline.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .border(1.dp, ZapOutline.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+            .padding(16.dp),
     ) {
         InfoRow(
             label = stringResource(R.string.source),
@@ -493,13 +587,20 @@ private fun AppInfoCard(
                 .fillMaxWidth()
                 .padding(vertical = 10.dp),
         ) {
-            StatusText(stringResource(R.string.author), Modifier.weight(1f))
-            ProfileComponent(
-                pubkey = app.event.pubKey,
-                repository = repository,
+            StatusText(stringResource(R.string.author))
+            Spacer(Modifier.weight(1f))
+            Box(
                 modifier = Modifier.weight(1f),
-                onClick = onProfileClick,
-            )
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                AppAuthorByline(
+                    pubkey = app.event.pubKey,
+                    repository = repository,
+                    profile = authorProfile,
+                    showBy = false,
+                    onClick = onProfileClick,
+                )
+            }
         }
         release?.let {
             InfoRow(
