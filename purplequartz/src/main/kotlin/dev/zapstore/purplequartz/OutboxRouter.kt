@@ -19,7 +19,7 @@ import kotlin.time.Duration.Companion.seconds
  *
  * Resolution is local-first: kind-10002 relay lists are read from the local
  * store and only fetched from [bootstrapRelays] when the TTL'd freshness cache
- * ([QuerySource.LocalAndRemote.cachedFor]) reports a miss or staleness. A fetch
+ * ([QueryOptions.cachedFor]) reports a miss or staleness. A fetch
  * that cannot complete within [resolveTimeout] resolves to whatever the local
  * store holds.
  */
@@ -40,8 +40,12 @@ class OutboxRouter(
     suspend fun resolveReadRelays(pubkey: String): Set<NormalizedRelayUrl> {
         val state = client.query(
             Filter(authors = listOf(pubkey), kinds = listOf(RELAY_LIST_KIND), limit = 1),
-            QuerySource.LocalAndRemote(bootstrapRelays, RemoteMode.OneShot(resolveTimeout), cachedFor = cacheDuration),
-        ).first { it.sync.isTerminal }
+            QueryOptions.localAndRemote(
+                relays = bootstrapRelays,
+                remoteMode = RemoteMode.OneShot(resolveTimeout),
+                cachedFor = cacheDuration,
+            ),
+        ).first { it.phase.isTerminal }
         return state.items.maxByOrNull(Event::createdAt)?.readRelayUrls().orEmpty()
     }
 
@@ -58,18 +62,23 @@ class OutboxRouter(
         authors: List<String>,
         fallbackRelays: Set<NormalizedRelayUrl>,
         cachedFor: Duration? = null,
+        remoteMode: RemoteMode = RemoteMode.Stream,
         unionWithFallback: Boolean = true,
     ): Flow<QueryState> = channelFlow {
-        fun source(relays: Set<NormalizedRelayUrl>) =
-            QuerySource.LocalAndRemote(relays = relays, mode = RemoteMode.Stream, cachedFor = cachedFor)
+        fun options(relays: Set<NormalizedRelayUrl>) =
+            QueryOptions.localAndRemote(
+                relays = relays,
+                remoteMode = remoteMode,
+                cachedFor = cachedFor,
+            )
 
         if (authors.isEmpty()) {
-            client.query(filters, source(fallbackRelays)).collect { send(it) }
+            client.query(filters, options(fallbackRelays)).collect { send(it) }
             return@channelFlow
         }
 
         val fallbackJob = launch {
-            client.query(filters, source(fallbackRelays)).collect { send(it) }
+            client.query(filters, options(fallbackRelays)).collect { send(it) }
         }
         val resolved = authors
             .map { async { resolveReadRelays(it) } }
@@ -85,15 +94,18 @@ class OutboxRouter(
         } else {
             fallbackJob.cancel()
             fallbackJob.join()
-            client.query(filters, source(expanded)).collect { send(it) }
+            client.query(filters, options(expanded)).collect { send(it) }
         }
     }
 
     companion object {
         const val RELAY_LIST_KIND = 10_002
 
-        private val QuerySync.isTerminal: Boolean
-            get() = this == QuerySync.Complete || this == QuerySync.TimedOut || this == QuerySync.Failed
+        private val QueryPhase.isTerminal: Boolean
+            get() = this == QueryPhase.Cached ||
+                this == QueryPhase.Complete ||
+                this == QueryPhase.TimedOut ||
+                this == QueryPhase.Failed
 
         private fun Event.readRelayUrls(): Set<NormalizedRelayUrl> =
             tags.asSequence()

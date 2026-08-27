@@ -38,6 +38,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.onSubscription
@@ -64,9 +65,11 @@ class PurpleQuartz private constructor(
 ) : AutoCloseable {
     private val closed = AtomicBoolean(false)
     private val networkCallbackRegistered = AtomicBoolean(false)
+    private val relayTrafficEnabled = AtomicBoolean(true)
     private val sessions = mutableSetOf<QuerySession>()
     private val sessionsLock = Any()
     private val refreshLock = Any()
+    private val relayTrafficLock = Any()
     private val closeResult = CompletableDeferred<Result<Unit>>()
 
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
@@ -118,25 +121,26 @@ class PurpleQuartz private constructor(
         (store.inner as? EventStore)?.optimize()
     }
 
-    fun query(filter: Filter, source: QuerySource = QuerySource.Local): Flow<QueryState> = query(listOf(filter), source)
+    fun query(filter: Filter, options: QueryOptions = QueryOptions.local()): Flow<QueryState> =
+        query(listOf(filter), options)
 
-    fun query(filters: List<Filter>, source: QuerySource = QuerySource.Local): Flow<QueryState> = callbackFlow {
+    fun query(filters: List<Filter>, options: QueryOptions = QueryOptions.local()): Flow<QueryState> = callbackFlow {
         if (closed.get()) {
-            trySend(QueryState(emptyList(), QuerySync.Failed, error = QueryError.Lifecycle("PurpleQuartz is closed")))
+            trySend(QueryState(emptyList(), QueryPhase.Failed, error = QueryError.Lifecycle("PurpleQuartz is closed")))
             close()
             return@callbackFlow
         }
         if (filters.isEmpty()) {
-            trySend(QueryState(emptyList(), QuerySync.Failed, error = QueryError.InvalidQuery("At least one filter is required")))
+            trySend(QueryState(emptyList(), QueryPhase.Failed, error = QueryError.InvalidQuery("At least one filter is required")))
             close()
             return@callbackFlow
         }
 
         val snapshot = filters.map(::copyFilter)
-        val session = QuerySession(snapshot, source, this)
+        val session = QuerySession(snapshot, options, this)
         synchronized(sessionsLock) {
             if (closed.get()) {
-                trySend(QueryState(emptyList(), QuerySync.Failed, error = QueryError.Lifecycle("PurpleQuartz is closed")))
+                trySend(QueryState(emptyList(), QueryPhase.Failed, error = QueryError.Lifecycle("PurpleQuartz is closed")))
                 close()
                 return@callbackFlow
             }
@@ -147,7 +151,7 @@ class PurpleQuartz private constructor(
             session.stop()
             synchronized(sessionsLock) { sessions -= session }
         }
-    }
+    }.buffer(Channel.CONFLATED)
 
     override fun close() {
         if (closed.compareAndSet(false, true)) {
@@ -178,10 +182,22 @@ class PurpleQuartz private constructor(
     fun setRelayTrafficEnabled(enabled: Boolean) {
         if (closed.get()) return
         if (enabled) {
-            client.connect()
-            client.reconnect(onlyIfChanged = true, ignoreRetryDelays = true)
+            synchronized(relayTrafficLock) {
+                relayTrafficEnabled.set(true)
+                client.connect()
+            }
+            synchronized(sessionsLock) { sessions.toList() }
+                .forEach(QuerySession::resumeDeferredRemote)
+            synchronized(relayTrafficLock) {
+                if (relayTrafficEnabled.get()) {
+                    client.reconnect(onlyIfChanged = true, ignoreRetryDelays = true)
+                }
+            }
         } else {
-            client.disconnect()
+            synchronized(relayTrafficLock) {
+                relayTrafficEnabled.set(false)
+                client.disconnect()
+            }
         }
     }
 
@@ -243,7 +259,7 @@ class PurpleQuartz private constructor(
 
     private inner class QuerySession(
         private val filters: List<Filter>,
-        private val source: QuerySource,
+        private val options: QueryOptions,
         private val producer: kotlinx.coroutines.channels.ProducerScope<QueryState>,
     ) {
         private val stopped = AtomicBoolean(false)
@@ -253,23 +269,16 @@ class PurpleQuartz private constructor(
         private val remoteStarted = AtomicBoolean(false)
         private val remoteSubscribed = AtomicBoolean(false)
         private val remoteDeferred = AtomicBoolean(false)
+        private val trafficDeferred = AtomicBoolean(false)
         private val stateMutex = Mutex()
         private val emitMutex = Mutex()
         private val batchMutex = Mutex()
         private val flushIoMutex = Mutex()
         private val subId = newSubId()
-        private val relays = when (source) {
-            QuerySource.Local -> emptySet()
-            is QuerySource.LocalAndRemote -> source.relays.toSet()
-            is QuerySource.Remote -> source.relays.toSet()
-        }
-        private val mode = when (source) {
-            is QuerySource.LocalAndRemote -> source.mode
-            is QuerySource.Remote -> source.mode
-            QuerySource.Local -> null
-        }
-        private val cachedFor = (source as? QuerySource.LocalAndRemote)?.cachedFor
-        private val queryFingerprint = if (source is QuerySource.LocalAndRemote) {
+        private val relays = options.relays.toSet()
+        private val mode = options.remoteMode
+        private val cachedFor = options.cachedFor
+        private val queryFingerprint = if (options.sourceMode == SourceMode.LocalAndRemote) {
             runCatching { QueryFingerprint.create(filters, relays) }.getOrNull()
         } else {
             null
@@ -280,14 +289,17 @@ class PurpleQuartz private constructor(
         private var items: List<Event> = emptyList()
         private var error: QueryError? = null
         @Volatile
-        private var lastState = QueryState(emptyList(), QuerySync.Connecting, relayStates.toMap())
-        private val seenRemoteIds = HashSet<String>()
+        private var lastState = QueryState(emptyList(), QueryPhase.Connecting, relayStates.toMap())
+        private var emittedPhase: QueryPhase? = null
+        private val remoteItemsById = LinkedHashMap<String, Event>()
+        private val remoteMatchesSinceBarrier = AtomicBoolean(false)
         private val messages = Channel<Inbound>(config.ingestionCapacity)
         private var observerJob: Job? = null
         private var workerJob: Job? = null
         private var timeoutJob: Job? = null
         private var remoteDelayJob: Job? = null
         private var flushJob: Job? = null
+        private var remotePublishJob: Job? = null
         private val pendingInserts = ArrayList<Event>()
         @Volatile
         private var emittedIds: List<String> = emptyList()
@@ -335,33 +347,33 @@ class PurpleQuartz private constructor(
         }
 
         fun start() {
-            when (source) {
-                QuerySource.Local -> startLocalOnly()
-                is QuerySource.LocalAndRemote -> startLocalAndRemote()
-                is QuerySource.Remote -> startRemoteOnly()
+            when (options.sourceMode) {
+                SourceMode.Local -> startLocalOnly()
+                SourceMode.LocalAndRemote -> startLocalAndRemote()
+                SourceMode.Remote -> startRemoteOnly()
             }
         }
 
         private fun startLocalOnly() {
-            observerJob = startObserver(initialSync = { QuerySync.LocalOnly })
+            observerJob = startObserver(initialPhase = { QueryPhase.LocalOnly })
         }
 
         private fun startLocalAndRemote() {
             observerJob = startObserver(
-                initialSync = {
-                    val fresh = cachedFor?.let(::freshness)?.isFresh == true
+                initialPhase = { localItems ->
+                    val fresh = localItems.isNotEmpty() && cachedFor?.let(::freshness)?.isFresh == true
                     remoteDeferred.set(fresh)
                     if (!fresh) prepareRemote()
                     when {
-                        !fresh -> QuerySync.Connecting
-                        mode is RemoteMode.OneShot -> QuerySync.Complete
-                        else -> QuerySync.Cached
+                        !fresh -> QueryPhase.Connecting
+                        else -> QueryPhase.Cached
                     }
                 },
-                afterSeed = { seedSync ->
-                    when (seedSync) {
-                        QuerySync.Complete -> finish()
-                        QuerySync.Cached -> scheduleRemoteAfterCache()
+                afterSeed = { seedPhase ->
+                    when (seedPhase) {
+                        QueryPhase.Cached -> {
+                            if (mode is RemoteMode.OneShot) finish() else scheduleRemoteAfterCache()
+                        }
                         else -> startRemote()
                     }
                 },
@@ -385,7 +397,7 @@ class PurpleQuartz private constructor(
                         }
                         if (!stopped.get() && shouldStart) {
                             prepareRemote()
-                            emitState(QuerySync.Connecting)
+                            emitState(QueryPhase.Connecting)
                             startRemote()
                         }
                     }
@@ -407,7 +419,8 @@ class PurpleQuartz private constructor(
         }
 
         private fun recordRefresh() {
-            if (source !is QuerySource.LocalAndRemote) return
+            if (options.sourceMode != SourceMode.LocalAndRemote) return
+            if (!remoteMatchesSinceBarrier.getAndSet(false)) return
             val fingerprint = queryFingerprint ?: return
             synchronized(refreshLock) {
                 runCatching { refreshCache.recordRefresh(fingerprint, clock.now()) }
@@ -418,7 +431,7 @@ class PurpleQuartz private constructor(
             scope.launch {
                 stateMutex.withLock {
                     prepareRemote()
-                    emitState(QuerySync.Connecting)
+                    emitState(QueryPhase.Connecting)
                     startRemote()
                 }
             }
@@ -431,27 +444,43 @@ class PurpleQuartz private constructor(
          * visible id set actually changes (plus in-place updates of visible replaceables).
          */
         private fun startObserver(
-            initialSync: () -> QuerySync,
-            afterSeed: ((QuerySync) -> Unit)? = null,
+            initialPhase: (List<Event>) -> QueryPhase,
+            afterSeed: ((QueryPhase) -> Unit)? = null,
         ): Job =
             scope.launch(start = CoroutineStart.UNDISPATCHED) {
                 val projection = EventStoreProjection<Event>(store, filters)
                 try {
                     store.changes
                         .onSubscription {
-                            val seedSync = initialSync()
                             projection.seed()
+                            val seededItems = projection.snapshotItems()
+                            val seedPhase = initialPhase(seededItems)
                             stateMutex.withLock {
-                                publishLocked(projection.snapshotItems(), seedSync, force = true)
+                                publishLocked(seededItems, seedPhase, force = true)
                             }
-                            afterSeed?.invoke(seedSync)
+                            afterSeed?.invoke(seedPhase)
+                            if (stopped.get()) throw CancellationException("query completed from cache")
                         }
                         .collect { change ->
                             if (stopped.get()) throw CancellationException("query session stopped")
                             val applied = projection.apply(change)
-                            if (!applied && !change.isVisibleInPlaceUpdate()) return@collect
+                            val inPlaceUpdate = change.isVisibleInPlaceUpdate()
+                            if (!applied && !inPlaceUpdate) return@collect
                             val fresh = projection.snapshotItems()
-                            stateMutex.withLock { publishLocked(fresh, sync()) }
+                            stateMutex.withLock {
+                                if (
+                                    fresh.isEmpty() &&
+                                    options.sourceMode == SourceMode.LocalAndRemote &&
+                                    remoteDeferred.compareAndSet(true, false)
+                                ) {
+                                    remoteDelayJob?.cancel()
+                                    prepareRemote()
+                                    publishLocked(fresh, QueryPhase.Connecting)
+                                    startRemote()
+                                } else {
+                                    publishLocked(fresh, sync(), force = inPlaceUpdate)
+                                }
+                            }
                         }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -466,53 +495,70 @@ class PurpleQuartz private constructor(
             return address in emittedAddresses
         }
 
-        private suspend fun publishLocked(fresh: List<Event>, sync: QuerySync, force: Boolean = false) {
+        private suspend fun publishLocked(fresh: List<Event>, phase: QueryPhase, force: Boolean = false) {
             val ids = fresh.map { it.id }
             if (!force && ids == emittedIds) return
             emittedIds = ids
             emittedAddresses = fresh.mapNotNullTo(HashSet(), Companion::addressOf)
             items = fresh
-            emitState(sync)
+            emitState(phase)
         }
 
         private fun startRemote() {
-            if (stopped.get() || !remoteStarted.compareAndSet(false, true)) return
-            prepareRemote()
-            workerJob = scope.launch {
-                try {
-                    for (message in messages) {
-                        val outcome = stateMutex.withLock {
-                            if (!stopped.get()) processLocked(message) else IngestOutcome()
-                        }
-                        outcome.batch?.let { flushBatch(it) }
-                        if (outcome.eoseAccepted) {
-                            flushPendingAndWait()
-                            stateMutex.withLock {
-                                if (!stopped.get()) postEoseLocked(message as Inbound.Eose)
+            synchronized(relayTrafficLock) {
+                if (stopped.get()) return
+                prepareRemote()
+                if (!relayTrafficEnabled.get()) {
+                    trafficDeferred.set(true)
+                    return
+                }
+                if (!remoteStarted.compareAndSet(false, true)) return
+                trafficDeferred.set(false)
+                workerJob = scope.launch {
+                    try {
+                        for (message in messages) {
+                            val outcome = stateMutex.withLock {
+                                if (!stopped.get()) processLocked(message) else IngestOutcome()
+                            }
+                            outcome.batch?.let { flushBatch(it) }
+                            if (outcome.eoseAccepted) {
+                                flushPendingAndWait()
+                                stateMutex.withLock {
+                                    if (!stopped.get()) postEoseLocked(message as Inbound.Eose)
+                                }
                             }
                         }
+                    } finally {
+                        flushPendingAndWait()
                     }
-                } finally {
-                    flushPendingAndWait()
+                }
+                try {
+                    remoteSubscribed.set(true)
+                    client.addConnectionListener(connectionListener)
+                    // Generation 1 has already been allocated in relayStates before this call.
+                    client.subscribe(subId, relays.associateWith { filters }, subscriptionListener)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Throwable) {
+                    fail(QueryError.IncompatibleDependency("Unable to start the Quartz subscription"))
+                    return
+                }
+                val oneShot = mode as? RemoteMode.OneShot
+                if (oneShot != null) {
+                    val timeout = oneShot.timeout ?: config.oneShotTimeout
+                    timeoutJob = scope.launch {
+                        delay(timeout)
+                        timeout(timeout)
+                    }
                 }
             }
-            try {
-                remoteSubscribed.set(true)
-                client.addConnectionListener(connectionListener)
-                // Generation 1 has already been allocated in relayStates before this call.
-                client.subscribe(subId, relays.associateWith { filters }, subscriptionListener)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Throwable) {
-                fail(QueryError.IncompatibleDependency("Unable to start the Quartz subscription"))
-                return
-            }
-            val oneShot = mode as? RemoteMode.OneShot
-            if (oneShot != null) {
-                val timeout = oneShot.timeout ?: config.oneShotTimeout
-                timeoutJob = scope.launch {
-                    delay(timeout)
-                    timeout(timeout)
+        }
+
+        fun resumeDeferredRemote() {
+            if (!trafficDeferred.compareAndSet(true, false) || stopped.get()) return
+            scope.launch {
+                stateMutex.withLock {
+                    if (!stopped.get()) startRemote()
                 }
             }
         }
@@ -568,9 +614,13 @@ class PurpleQuartz private constructor(
                 }
                 is Inbound.Closed -> {
                     updateRelay(message.relay) {
-                        it.copy(connection = RelayConnectionState.Closed, lastError = message.message)
+                        it.copy(connection = RelayConnectionState.Closed, eose = true, lastError = message.message)
                     }
-                    fail(QueryError.RelayFailure(message.relay, message.message))
+                    if (relayStates.values.all { it.connection == RelayConnectionState.Closed }) {
+                        fail(QueryError.RelayFailure(message.relay, message.message))
+                    } else {
+                        emitState(sync())
+                    }
                     IngestOutcome()
                 }
                 is Inbound.EventReceived -> IngestOutcome(batch = ingestLocked(message.relay, message.event))
@@ -584,13 +634,14 @@ class PurpleQuartz private constructor(
 
         private suspend fun postEoseLocked(message: Inbound.Eose) {
             if (timeoutRequested.get()) return
+            snapshotRemoteItemsLocked()
             error = null
             val allRelaysCaughtUp = relayStates.values.all { it.eose }
             if (allRelaysCaughtUp) {
                 if (mode is RemoteMode.OneShot) {
-                    if (source is QuerySource.LocalAndRemote) {
-                        try {
-                            terminalRequeryLocked(QuerySync.Complete)
+                    if (options.sourceMode == SourceMode.LocalAndRemote) {
+                        val fresh = try {
+                            withStoreOperation { store.query<Event>(filters) }
                         } catch (cancelled: CancellationException) {
                             throw cancelled
                         } catch (_: Throwable) {
@@ -598,18 +649,34 @@ class PurpleQuartz private constructor(
                             return
                         }
                         recordRefresh()
+                        try {
+                            publishLocked(fresh, QueryPhase.Complete, force = true)
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Throwable) {
+                            fail(QueryError.UnsupportedLocalProjection("Local store projection failed"))
+                            return
+                        }
                     } else {
-                        emitState(QuerySync.Complete)
+                        emitState(QueryPhase.Complete)
                     }
                     finish()
                 } else {
-                    recordRefresh()
-                    if (source is QuerySource.LocalAndRemote) {
+                    if (options.sourceMode == SourceMode.LocalAndRemote) {
                         // EOSE is a sync barrier: the final ingest batch was just flushed,
                         // but the observer coroutine may not have applied it yet. Requery
                         // so the terminal-at-EOSE state cannot lag the store.
+                        val fresh = try {
+                            withStoreOperation { store.query<Event>(filters) }
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Throwable) {
+                            fail(QueryError.UnsupportedLocalProjection("Local store projection failed"))
+                            return
+                        }
+                        recordRefresh()
                         try {
-                            terminalRequeryLocked(sync())
+                            publishLocked(fresh, sync(), force = true)
                         } catch (cancelled: CancellationException) {
                             throw cancelled
                         } catch (_: Throwable) {
@@ -623,11 +690,6 @@ class PurpleQuartz private constructor(
             } else {
                 emitState(sync())
             }
-        }
-
-        private suspend fun terminalRequeryLocked(sync: QuerySync) {
-            val fresh = withStoreOperation { store.query<Event>(filters) }
-            publishLocked(fresh, sync, force = true)
         }
 
         private suspend fun ingestLocked(relay: NormalizedRelayUrl, event: Event): List<Event>? {
@@ -653,10 +715,11 @@ class PurpleQuartz private constructor(
             }
             if (event.isExpired()) return null
 
-            if (source is QuerySource.Remote && seenRemoteIds.add(event.id)) {
-                items = items + event
+            remoteMatchesSinceBarrier.set(true)
+            if (options.sourceMode == SourceMode.Remote && event.id !in remoteItemsById) {
+                remoteItemsById[event.id] = event
                 error = null
-                emitState(sync())
+                scheduleRemotePublish()
             }
             if (event.kind.isEphemeral()) return null
 
@@ -678,6 +741,24 @@ class PurpleQuartz private constructor(
                 val batch = drainPendingInserts()
                 if (batch != null) flushBatch(batch)
             }
+        }
+
+        private fun scheduleRemotePublish() {
+            if (stopped.get() || remotePublishJob?.isActive == true) return
+            remotePublishJob = scope.launch {
+                delay(REMOTE_EMIT_INTERVAL_MILLIS)
+                stateMutex.withLock {
+                    if (!stopped.get() && snapshotRemoteItemsLocked()) emitState(sync())
+                }
+            }
+        }
+
+        private fun snapshotRemoteItemsLocked(): Boolean {
+            if (options.sourceMode != SourceMode.Remote || remoteItemsById.size == items.size) return false
+            remotePublishJob?.cancel()
+            remotePublishJob = null
+            items = remoteItemsById.values.toList()
+            return true
         }
 
         private fun drainPendingInsertsLocked(): List<Event>? {
@@ -702,21 +783,21 @@ class PurpleQuartz private constructor(
             val rejected = when {
                 outcomes == null -> batch
                 else -> batch.filterIndexed { index, _ ->
-                    outcomes[index] is IEventStore.InsertOutcome.Rejected
+                    outcomes.getOrNull(index) is IEventStore.InsertOutcome.Rejected
                 }
             }
-            var genuinelyMissing: Event? = null
-            for (event in rejected) {
-                // Quartz may reject after a concurrent duplicate commit. A direct exact-ID
-                // filter distinguishes that expected outcome from a genuine failed insert.
-                val existing = runCatching {
-                    withStoreOperation { store.query<Event>(Filter(ids = listOf(event.id))) }
-                }.getOrDefault(emptyList())
-                if (existing.none { it.id == event.id } && !event.isExpired()) {
-                    genuinelyMissing = event
-                    break
+            val relevantRejected = rejected.filterNot(Event::isExpired)
+            // Quartz may reject after concurrent duplicate commits. Verify the whole
+            // rejected set in bounded chunks instead of issuing one query per event.
+            val existingIds = relevantRejected
+                .map(Event::id)
+                .chunked(REJECTED_ID_QUERY_CHUNK_SIZE)
+                .flatMapTo(HashSet()) { ids ->
+                    runCatching {
+                        withStoreOperation { store.query<Event>(Filter(ids = ids)) }
+                    }.getOrDefault(emptyList()).map(Event::id)
                 }
-            }
+            val genuinelyMissing = relevantRejected.firstOrNull { it.id !in existingIds }
             if (genuinelyMissing != null) {
                 fail(QueryError.PersistenceFailure(validatedId(genuinelyMissing.id), "Unable to persist relay event"))
             } else {
@@ -730,20 +811,28 @@ class PurpleQuartz private constructor(
             flushIoMutex.withLock { }
         }
 
-        private fun sync(): QuerySync = when {
-            remoteDeferred.get() -> QuerySync.Cached
-            relays.isEmpty() -> QuerySync.LocalOnly
-            relayStates.values.any { it.connection != RelayConnectionState.Connected } -> QuerySync.Connecting
-            relayStates.values.any { !it.eose } -> QuerySync.CatchingUp
-            mode is RemoteMode.Stream -> QuerySync.Live
-            else -> QuerySync.Complete
+        private fun sync(): QueryPhase = when {
+            remoteDeferred.get() -> QueryPhase.Cached
+            relays.isEmpty() -> QueryPhase.LocalOnly
+            relayStates.values
+                .filter { it.connection != RelayConnectionState.Closed }
+                .any { it.connection != RelayConnectionState.Connected } -> QueryPhase.Connecting
+            relayStates.values
+                .filter { it.connection != RelayConnectionState.Closed }
+                .any { !it.eose } -> QueryPhase.CatchingUp
+            mode is RemoteMode.Stream -> QueryPhase.Live
+            else -> QueryPhase.Complete
         }
 
-        private suspend fun emitState(sync: QuerySync) {
+        private suspend fun emitState(phase: QueryPhase) {
             emitMutex.withLock {
                 if (!stopped.get()) {
+                    check(isLegalPhaseTransition(emittedPhase, phase)) {
+                        "Illegal query phase transition: $emittedPhase -> $phase"
+                    }
+                    emittedPhase = phase
                     val visibleRelays = if (remoteDeferred.get()) emptyMap() else relayStates.toMap()
-                    val state = QueryState(items, sync, visibleRelays, error)
+                    val state = QueryState(items, phase, visibleRelays, error)
                     lastState = state
                     producer.send(state)
                 }
@@ -766,8 +855,9 @@ class PurpleQuartz private constructor(
                 workerJob?.join()
                 stateMutex.withLock {
                     if (!stopped.get()) {
+                        snapshotRemoteItemsLocked()
                         error = QueryError.Timeout(duration, "Remote query timed out")
-                        emitState(QuerySync.TimedOut)
+                        emitState(QueryPhase.TimedOut)
                         finish()
                     }
                 }
@@ -780,8 +870,13 @@ class PurpleQuartz private constructor(
             cleanup()
             scope.launch {
                 stateMutex.withLock {
+                    snapshotRemoteItemsLocked()
                     error = queryError
-                    val state = QueryState(items, QuerySync.Failed, relayStates.toMap(), error)
+                    check(isLegalPhaseTransition(emittedPhase, QueryPhase.Failed)) {
+                        "Illegal query phase transition: $emittedPhase -> ${QueryPhase.Failed}"
+                    }
+                    emittedPhase = QueryPhase.Failed
+                    val state = QueryState(items, QueryPhase.Failed, relayStates.toMap(), error)
                     lastState = state
                     producer.send(state)
                     producer.close()
@@ -806,7 +901,7 @@ class PurpleQuartz private constructor(
             acceptingCallbacks.set(false)
             cleanup()
             val terminal = lastState.copy(
-                sync = QuerySync.Failed,
+                phase = QueryPhase.Failed,
                 error = QueryError.Lifecycle("PurpleQuartz is closed"),
             )
             lastState = terminal
@@ -818,8 +913,10 @@ class PurpleQuartz private constructor(
             acceptingCallbacks.set(false)
             timeoutJob?.cancel()
             remoteDelayJob?.cancel()
+            trafficDeferred.set(false)
             observerJob?.cancel()
             flushJob?.cancel()
+            remotePublishJob?.cancel()
             messages.close()
             workerJob?.cancel()
             unsubscribeRemote()
@@ -954,5 +1051,7 @@ class PurpleQuartz private constructor(
 
         private val SYSTEM_CLOCK = EpochMillisClock(System::currentTimeMillis)
         private const val CACHE_RECHECK_INTERVAL_MILLIS = 60_000L
+        private const val REMOTE_EMIT_INTERVAL_MILLIS = 16L
+        private const val REJECTED_ID_QUERY_CHUNK_SIZE = 500
     }
 }

@@ -131,6 +131,108 @@ class ObservationTest {
         purpleQuartz.close()
     }
 
+    @Test
+    fun `remote burst is coalesced and complete state contains every event`() = runBlocking {
+        val client = MultiSubClient()
+        val purpleQuartz = PurpleQuartz.createForTesting(
+            RecordingEventStore(),
+            client,
+            this,
+            config = PurpleQuartzConfig(ingestBatchSize = 1_000, ingestFlushInterval = 10.seconds),
+            eventVerifier = { true },
+        )
+        val states = CopyOnWriteArrayList<QueryState>()
+        val collection = launch {
+            purpleQuartz.query(
+                Filter(kinds = listOf(1)),
+                QueryOptions.remote(setOf(relay), RemoteMode.OneShot(5.seconds)),
+            ).collect(states::add)
+        }
+
+        client.awaitSubscriptions(1)
+        client.started(relay)
+        val events = (0 until 500).map { signedEvent(content = "burst-$it") }
+        events.forEach { client.event(relay, it) }
+        client.eose(relay)
+
+        val complete = awaitState(states) { it.phase == QueryPhase.Complete }
+        assertEquals(events.map(Event::id), complete.items.map(Event::id))
+        assertTrue("burst snapshots were not coalesced", states.size < events.size / 2)
+
+        withTimeout(2.seconds) { collection.join() }
+        purpleQuartz.close()
+    }
+
+    @Test
+    fun `duplicate batch rejection is verified with one id query`() = runBlocking {
+        val client = MultiSubClient()
+        val store = RecordingEventStore(rejectBatchInserts = true)
+        val events = (0 until 100).map { signedEvent(content = "duplicate-$it") }
+        events.forEach { store.insert(it) }
+        val purpleQuartz = PurpleQuartz.createForTesting(
+            store,
+            client,
+            this,
+            config = PurpleQuartzConfig(ingestBatchSize = 100, ingestFlushInterval = 10.seconds),
+            eventVerifier = { true },
+        )
+        val states = CopyOnWriteArrayList<QueryState>()
+        val collection = launch {
+            purpleQuartz.query(
+                Filter(kinds = listOf(1)),
+                QueryOptions.remote(setOf(relay), RemoteMode.OneShot(5.seconds)),
+            ).collect(states::add)
+        }
+
+        client.awaitSubscriptions(1)
+        client.started(relay)
+        events.forEach { client.event(relay, it) }
+        client.eose(relay)
+
+        awaitState(states) { it.phase == QueryPhase.Complete }
+        assertEquals(1, store.queryCalls.get())
+
+        withTimeout(2.seconds) { collection.join() }
+        purpleQuartz.close()
+    }
+
+    @Test
+    fun `slow local collector cannot block remote persistence`() = runBlocking {
+        val client = MultiSubClient()
+        val purpleQuartz = PurpleQuartz.createForTesting(
+            RecordingEventStore(),
+            client,
+            this,
+            config = PurpleQuartzConfig(ingestBatchSize = 500, ingestFlushInterval = 10.seconds),
+            eventVerifier = { true },
+        )
+        val slowCollection = launch {
+            purpleQuartz.query(Filter(kinds = listOf(1))).collect {
+                delay(100)
+            }
+        }
+        val remoteStates = CopyOnWriteArrayList<QueryState>()
+        val remoteCollection = launch {
+            purpleQuartz.query(
+                Filter(kinds = listOf(1)),
+                QueryOptions.remote(setOf(relay), RemoteMode.OneShot(5.seconds)),
+            ).collect(remoteStates::add)
+        }
+
+        client.awaitSubscriptions(1)
+        client.started(relay)
+        repeat(400) { client.event(relay, signedEvent(content = "write-$it")) }
+        client.eose(relay)
+
+        val complete = awaitState(remoteStates) { it.phase == QueryPhase.Complete }
+        assertEquals(400, complete.items.size)
+
+        withTimeout(2.seconds) { remoteCollection.join() }
+        slowCollection.cancel()
+        slowCollection.join()
+        purpleQuartz.close()
+    }
+
     private fun kotlinx.coroutines.CoroutineScope.collect(
         purpleQuartz: PurpleQuartz,
         filter: Filter,
@@ -213,9 +315,12 @@ private class MultiSubClient : INostrClient by EmptyNostrClient() {
     }
 }
 
-private class RecordingEventStore : IEventStore {
+private class RecordingEventStore(
+    private val rejectBatchInserts: Boolean = false,
+) : IEventStore {
     override val relay: NormalizedRelayUrl? = null
     val batches = CopyOnWriteArrayList<List<String>>()
+    val queryCalls = AtomicInteger()
     private val events = mutableListOf<Event>()
 
     override suspend fun insert(event: Event) {
@@ -226,6 +331,7 @@ private class RecordingEventStore : IEventStore {
 
     override suspend fun batchInsert(events: List<Event>): List<IEventStore.InsertOutcome> {
         batches += events.map { it.id }
+        if (rejectBatchInserts) return events.map { IEventStore.InsertOutcome.Rejected("duplicate") }
         return events.map { event ->
             synchronized(this.events) {
                 if (this.events.none { it.id == event.id }) this.events += event
@@ -245,14 +351,18 @@ private class RecordingEventStore : IEventStore {
     }
 
     @Suppress("UNCHECKED_CAST")
-    override suspend fun <T : Event> query(filter: Filter): List<T> =
-        synchronized(events) { events.filter(filter::match).map { it as T } }
+    override suspend fun <T : Event> query(filter: Filter): List<T> {
+        queryCalls.incrementAndGet()
+        return synchronized(events) { events.filter(filter::match).map { it as T } }
+    }
 
     @Suppress("UNCHECKED_CAST")
-    override suspend fun <T : Event> query(filters: List<Filter>): List<T> =
-        synchronized(events) {
+    override suspend fun <T : Event> query(filters: List<Filter>): List<T> {
+        queryCalls.incrementAndGet()
+        return synchronized(events) {
             events.filter { event -> filters.any { it.match(event) } }.map { it as T }
         }
+    }
 
     override suspend fun <T : Event> query(filter: Filter, onEach: (T) -> Unit) {
         query<T>(filter).forEach(onEach)

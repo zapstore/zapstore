@@ -35,7 +35,7 @@ class QueryInvariantTest {
     private val eventSequence = AtomicInteger()
 
     @Test
-    fun `successful empty one-shot is cached across facades and expires`() = runBlocking {
+    fun `successful empty one-shot is not cached across facades`() = runBlocking {
         val cache = InMemoryQueryRefreshCache()
         val clock = MutableEpochClock(1_000)
         val filter = Filter(kinds = listOf(1))
@@ -74,13 +74,6 @@ class QueryInvariantTest {
             refreshCache = cache,
             clock = clock,
         )
-        val cachedStates = second.query(filter, source).toList()
-
-        assertEquals(listOf(QuerySync.Complete), cachedStates.map(QueryState::sync))
-        assertTrue(cachedStates.single().relays.isEmpty())
-        assertTrue(secondClient.requests.isEmpty())
-
-        clock.advance(6.hours.inWholeMilliseconds)
         val staleCollection = launch { second.query(filter, source).collect { } }
         secondClient.awaitSubscription()
         assertEquals(1, secondClient.requests.size)
@@ -88,6 +81,69 @@ class QueryInvariantTest {
         staleCollection.cancel()
         staleCollection.join()
         second.close()
+    }
+
+    @Test
+    fun `fresh one-shot completes from a non-empty local projection`() = runBlocking {
+        val cache = InMemoryQueryRefreshCache()
+        val clock = MutableEpochClock(10_000)
+        val filter = Filter(kinds = listOf(1))
+        val options = QueryOptions.localAndRemote(
+            relays = setOf(relay),
+            remoteMode = RemoteMode.OneShot(5.seconds),
+            cachedFor = 1.hours,
+        )
+        cache.recordRefresh(QueryFingerprint.create(listOf(filter), setOf(relay)), clock.now())
+        val store = ControlledEventStore()
+        val event = signedEvent(content = "persisted")
+        store.insert(event)
+        val client = ControlledClient()
+        val purpleQuartz = PurpleQuartz.createForTesting(
+            store,
+            client,
+            this,
+            eventVerifier = { true },
+            refreshCache = cache,
+            clock = clock,
+        )
+
+        val states = purpleQuartz.query(filter, options).toList()
+
+        assertEquals(listOf(QueryPhase.Cached), states.map(QueryState::phase))
+        assertEquals(listOf(event.id), states.single().items.map(Event::id))
+        assertTrue(client.requests.isEmpty())
+        purpleQuartz.close()
+    }
+
+    @Test
+    fun `freshness marker is ignored when local projection is empty`() = runBlocking {
+        val cache = InMemoryQueryRefreshCache()
+        val clock = MutableEpochClock(10_000)
+        val filter = Filter(kinds = listOf(1))
+        val options = QueryOptions.localAndRemote(
+            relays = setOf(relay),
+            remoteMode = RemoteMode.Stream,
+            cachedFor = 1.hours,
+        )
+        cache.recordRefresh(QueryFingerprint.create(listOf(filter), setOf(relay)), clock.now())
+        val client = ControlledClient()
+        val purpleQuartz = PurpleQuartz.createForTesting(
+            ControlledEventStore(),
+            client,
+            this,
+            eventVerifier = { true },
+            refreshCache = cache,
+            clock = clock,
+        )
+        val states = CopyOnWriteArrayList<QueryState>()
+        val collection = launch { purpleQuartz.query(filter, options).collect(states::add) }
+
+        client.awaitSubscription()
+        assertTrue(states.none { it.phase == QueryPhase.Cached })
+
+        collection.cancel()
+        collection.join()
+        purpleQuartz.close()
     }
 
     @Test
@@ -102,8 +158,10 @@ class QueryInvariantTest {
         val fingerprint = QueryFingerprint.create(listOf(filter), setOf(relay))
         cache.recordRefresh(fingerprint, System.currentTimeMillis())
         val client = ControlledClient()
+        val store = ControlledEventStore()
+        store.insert(signedEvent(content = "cached"))
         val purpleQuartz = PurpleQuartz.createForTesting(
-            ControlledEventStore(),
+            store,
             client,
             this,
             eventVerifier = { true },
@@ -237,6 +295,47 @@ class QueryInvariantTest {
         }
         assertEquals(RelayConnectionState.Connected, reconnected.relays.getValue(relay).connection)
         assertTrue(reconnected.relays.getValue(relay).eose)
+
+        collection.cancel()
+        collection.join()
+        purpleQuartz.close()
+    }
+
+    @Test
+    fun `local and remote stream preserves items through disconnect and reconnect`() = runBlocking {
+        val client = ControlledClient()
+        val purpleQuartz = PurpleQuartz.createForTesting(
+            ControlledEventStore(),
+            client,
+            this,
+            eventVerifier = { true },
+        )
+        val options = QueryOptions.localAndRemote(setOf(relay), RemoteMode.Stream)
+        val states = CopyOnWriteArrayList<QueryState>()
+        val collection = launch {
+            purpleQuartz.query(Filter(kinds = listOf(1)), options).collect(states::add)
+        }
+
+        client.awaitSubscription()
+        client.started(relay)
+        val event = signedEvent(content = "offline-survivor")
+        client.event(relay, event)
+        client.eose(relay)
+        awaitState(states) { it.phase == QueryPhase.Live && it.items.any { item -> item.id == event.id } }
+
+        client.disconnected(relay)
+        val disconnected = awaitState(states) {
+            it.phase == QueryPhase.Connecting && it.items.any { item -> item.id == event.id }
+        }
+        assertEquals(listOf(event.id), disconnected.items.map(Event::id))
+
+        client.connecting(relay)
+        client.started(relay)
+        client.eose(relay)
+        val reconnected = awaitState(states) {
+            it.phase == QueryPhase.Live && it.relays[relay]?.generation == 2L
+        }
+        assertEquals(listOf(event.id), reconnected.items.map(Event::id))
 
         collection.cancel()
         collection.join()
@@ -421,6 +520,38 @@ class QueryInvariantTest {
         assertTrue(failed.error is QueryError.RelayFailure)
         assertEquals(RelayConnectionState.Closed, failed.relays.getValue(relay).connection)
         withTimeout(2.seconds) { collection.join() }
+        purpleQuartz.close()
+    }
+
+    @Test
+    fun `one closed relay does not terminate a healthy multi-relay stream`() = runBlocking {
+        val otherRelay = "wss://other.example".normalizeRelayUrl()
+        val client = ControlledClient()
+        val purpleQuartz = PurpleQuartz.createForTesting(
+            ControlledEventStore(),
+            client,
+            this,
+            eventVerifier = { true },
+        )
+        val states = CopyOnWriteArrayList<QueryState>()
+        val options = QueryOptions.remote(setOf(relay, otherRelay), RemoteMode.Stream)
+        val collection = launch {
+            purpleQuartz.query(Filter(kinds = listOf(1)), options).collect(states::add)
+        }
+
+        client.awaitSubscription()
+        client.started(relay)
+        client.started(otherRelay)
+        client.closed(relay)
+        client.eose(otherRelay)
+
+        val live = awaitState(states) { it.phase == QueryPhase.Live }
+        assertEquals(RelayConnectionState.Closed, live.relays.getValue(relay).connection)
+        assertEquals(RelayConnectionState.Connected, live.relays.getValue(otherRelay).connection)
+        assertTrue(collection.isActive)
+
+        collection.cancel()
+        collection.join()
         purpleQuartz.close()
     }
 

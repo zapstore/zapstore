@@ -9,6 +9,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.normalizeRelayUrl
 import com.vitorpamplona.quartz.nip01Core.store.FtsReindexProgress
 import com.vitorpamplona.quartz.nip01Core.store.IEventStore
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
@@ -29,7 +30,7 @@ class QueryWiringTest {
 
         val states = purpleQuartz.query(Filter(kinds = listOf(1))).take(1).toList()
 
-        assertEquals(listOf(QuerySync.LocalOnly), states.map { it.sync })
+        assertEquals(listOf(QueryPhase.LocalOnly), states.map { it.phase })
         assertTrue(states.single().items.isEmpty())
         assertTrue(client.requests.isEmpty())
         purpleQuartz.close()
@@ -47,7 +48,7 @@ class QueryWiringTest {
         val collection = launch {
             purpleQuartz.query(
                 Filter(kinds = listOf(1)),
-                QuerySource.Remote(relays),
+                QueryOptions.remote(relays, RemoteMode.Stream),
             ).collect { }
         }
         withTimeout(1_000) {
@@ -83,6 +84,42 @@ class QueryWiringTest {
 
         assertEquals(listOf(false, true), client.traffic)
         assertEquals(listOf(ReconnectCall(true, true)), client.reconnectCalls)
+        purpleQuartz.close()
+    }
+
+    @Test
+    fun `local and remote query seeds persisted rows while relay traffic is suspended`() = runBlocking {
+        val client = RecordingClient()
+        val store = MemoryEventStore()
+        val event = testEvent("offline")
+        store.insert(event)
+        val purpleQuartz = PurpleQuartz.createForTesting(store, client, this)
+        val relay = "wss://offline.example".normalizeRelayUrl()
+        purpleQuartz.setRelayTrafficEnabled(false)
+        val states = CopyOnWriteArrayList<QueryState>()
+        val collection = launch {
+            purpleQuartz.query(
+                Filter(kinds = listOf(1)),
+                QueryOptions.localAndRemote(setOf(relay), RemoteMode.Stream),
+            ).collect(states::add)
+        }
+        val state = withTimeout(1_000) {
+            while (states.isEmpty()) delay(10)
+            states.first()
+        }
+
+        assertEquals(QueryPhase.Connecting, state.phase)
+        assertEquals(listOf(event.id), state.items.map(Event::id))
+        assertEquals(false, client.isActive())
+        assertTrue(client.requests.isEmpty())
+
+        purpleQuartz.setRelayTrafficEnabled(true)
+        withTimeout(1_000) {
+            while (client.requests.isEmpty()) delay(10)
+        }
+        assertEquals(1, client.requests.size)
+
+        collection.cancelAndJoin()
         purpleQuartz.close()
     }
 
@@ -122,6 +159,16 @@ private class RecordingClient : INostrClient by EmptyNostrClient() {
 private data class ReconnectCall(
     val onlyIfChanged: Boolean,
     val ignoreRetryDelays: Boolean,
+)
+
+private fun testEvent(content: String): Event = Event(
+    id = content.padEnd(64, '0'),
+    pubKey = "1".repeat(64),
+    createdAt = 1_750_000_000,
+    kind = 1,
+    tags = emptyArray(),
+    content = content,
+    sig = "2".repeat(128),
 )
 
 private class MemoryEventStore : IEventStore {

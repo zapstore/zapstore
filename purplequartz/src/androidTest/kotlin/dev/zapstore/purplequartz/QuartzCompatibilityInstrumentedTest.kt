@@ -100,6 +100,47 @@ class QuartzCompatibilityInstrumentedTest {
     }
 
     @Test
+    fun facadeRecreationReadsPersistedRowsWithoutNetwork() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "purplequartz-offline-${UUID.randomUUID()}.db"
+        val path = context.getDatabasePath(databaseName).absolutePath
+        val event = knownValidEvent()
+        context.deleteDatabase(databaseName)
+        EventStore(dbName = path, relay = null).also { store ->
+            try {
+                store.insert(event)
+            } finally {
+                store.close()
+            }
+        }
+        val okHttpClient = OkHttpClient()
+
+        try {
+            repeat(2) {
+                val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+                val purpleQuartz = PurpleQuartz.create(
+                    context = context,
+                    websocketBuilder = BasicOkHttpWebSocket.Builder { okHttpClient },
+                    parentScope = scope,
+                    config = PurpleQuartzConfig(databaseName = databaseName),
+                )
+                try {
+                    val state = purpleQuartz.query(Filter(ids = listOf(event.id))).first()
+                    assertEquals(QueryPhase.LocalOnly, state.phase)
+                    assertEquals(listOf(event.id), state.items.map(Event::id))
+                } finally {
+                    purpleQuartz.close()
+                    scope.cancel()
+                }
+            }
+        } finally {
+            okHttpClient.dispatcher.executorService.shutdown()
+            okHttpClient.connectionPool.evictAll()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
     fun api29ConsumerConstructsQueriesAllSourcesAndCloses() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val databaseName = "purplequartz-consumer-${UUID.randomUUID()}.db"
@@ -114,20 +155,24 @@ class QuartzCompatibilityInstrumentedTest {
         )
 
         try {
-            assertEquals(QuerySync.LocalOnly, purpleQuartz.query(Filter(kinds = listOf(1))).first().sync)
+            assertEquals(QueryPhase.LocalOnly, purpleQuartz.query(Filter(kinds = listOf(1))).first().phase)
             assertEquals(
-                QuerySync.Connecting,
+                QueryPhase.Connecting,
                 purpleQuartz.query(
                     Filter(kinds = listOf(1)),
-                    QuerySource.LocalAndRemote(setOf(relay), cachedFor = 6.hours),
-                ).take(1).toList().single().sync,
+                    QueryOptions.localAndRemote(
+                        relays = setOf(relay),
+                        remoteMode = RemoteMode.Stream,
+                        cachedFor = 6.hours,
+                    ),
+                ).take(1).toList().single().phase,
             )
             assertEquals(
-                QuerySync.Connecting,
+                QueryPhase.Connecting,
                 purpleQuartz.query(
                     Filter(kinds = listOf(1)),
-                    QuerySource.Remote(setOf(relay)),
-                ).take(1).toList().single().sync,
+                    QueryOptions.remote(setOf(relay), RemoteMode.Stream),
+                ).take(1).toList().single().phase,
             )
         } finally {
             purpleQuartz.close()

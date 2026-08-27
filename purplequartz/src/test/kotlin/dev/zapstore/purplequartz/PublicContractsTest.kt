@@ -32,16 +32,29 @@ class PublicContractsTest {
     }
 
     @Test
-    fun `remote sources require at least one normalized relay`() {
-        assertFails { QuerySource.Remote(emptySet()) }
-        assertFails { QuerySource.LocalAndRemote(emptySet()) }
+    fun `query options enforce complementary source and remote modes`() {
+        assertFails { QueryOptions(SourceMode.Remote, RemoteMode.Stream) }
+        assertFails { QueryOptions(SourceMode.LocalAndRemote, RemoteMode.Stream) }
+        assertFails { QueryOptions(SourceMode.Remote) }
+        assertFails { QueryOptions(SourceMode.Local, RemoteMode.Stream) }
+        assertFails { QueryOptions(SourceMode.Local, relays = setOf("wss://relay.example".normalizeRelayUrl())) }
         assertFails { RemoteMode.OneShot(0.milliseconds) }
 
         val relay = "wss://relay.example".normalizeRelayUrl()
-        assertFails { QuerySource.LocalAndRemote(setOf(relay), cachedFor = 0.milliseconds) }
-        assertFails { QuerySource.LocalAndRemote(setOf(relay), cachedFor = Duration.INFINITE) }
-        assertTrue(QuerySource.Remote(setOf(relay)).relays.contains(relay))
-        assertTrue(QuerySource.LocalAndRemote(setOf(relay), cachedFor = 6.hours).relays.contains(relay))
+        assertFails {
+            QueryOptions.localAndRemote(setOf(relay), RemoteMode.Stream, cachedFor = 0.milliseconds)
+        }
+        assertFails {
+            QueryOptions.localAndRemote(setOf(relay), RemoteMode.Stream, cachedFor = Duration.INFINITE)
+        }
+        assertFails {
+            QueryOptions(SourceMode.Remote, RemoteMode.Stream, setOf(relay), cachedFor = 6.hours)
+        }
+        assertTrue(QueryOptions.remote(setOf(relay), RemoteMode.Stream).relays.contains(relay))
+        assertTrue(
+            QueryOptions.localAndRemote(setOf(relay), RemoteMode.Stream, cachedFor = 6.hours)
+                .relays.contains(relay),
+        )
     }
 
     @Test
@@ -69,6 +82,18 @@ class PublicContractsTest {
         assertPublicType<IEventStore>()
         assertPublicType<ObservableEventStore>()
         assertPublicType<EventStore>()
+    }
+
+    @Test
+    fun `query phases reject transitions out of terminal states`() {
+        assertTrue(isLegalPhaseTransition(null, QueryPhase.Connecting))
+        assertTrue(isLegalPhaseTransition(QueryPhase.Connecting, QueryPhase.CatchingUp))
+        assertTrue(isLegalPhaseTransition(QueryPhase.CatchingUp, QueryPhase.Live))
+        assertTrue(isLegalPhaseTransition(QueryPhase.Live, QueryPhase.Connecting))
+        assertTrue(isLegalPhaseTransition(QueryPhase.Cached, QueryPhase.Connecting))
+        assertTrue(!isLegalPhaseTransition(QueryPhase.Complete, QueryPhase.Live))
+        assertTrue(!isLegalPhaseTransition(QueryPhase.TimedOut, QueryPhase.Connecting))
+        assertTrue(!isLegalPhaseTransition(QueryPhase.Failed, QueryPhase.Connecting))
     }
 
     private inline fun <reified T> assertPublicType() {
