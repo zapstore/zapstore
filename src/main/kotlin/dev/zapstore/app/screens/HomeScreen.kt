@@ -11,23 +11,19 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -36,10 +32,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -71,7 +67,7 @@ fun HomeScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(ZapBackgroundGradient)
+            .background(ZapCanvas)
             .windowInsetsPadding(WindowInsets.safeDrawing),
     ) {
         Row(
@@ -80,28 +76,36 @@ fun HomeScreen(
                 .padding(start = 16.dp, top = 8.dp, end = 8.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            OutlinedTextField(
+            ZapSearchField(
                 value = state.searchQuery,
                 onValueChange = onSearchQueryChanged,
-                placeholder = { Text(stringResource(R.string.search_apps)) },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { onSearchSubmitted() }),
+                onSearch = onSearchSubmitted,
+                placeholder = stringResource(R.string.search_apps),
+                leadingIcon = {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_search),
+                        contentDescription = null,
+                        tint = ZapTextTertiary,
+                        modifier = Modifier.size(18.dp),
+                    )
+                },
                 trailingIcon = {
                     if (state.searchQuery.isNotEmpty()) {
                         val clearDescription = stringResource(R.string.clear_search)
-                        TextButton(
+                        IconButton(
                             onClick = {
                                 onSearchCleared()
                                 searchFocusRequester.requestFocus()
                             },
-                            modifier = Modifier.semantics {
-                                contentDescription = clearDescription
-                            },
+                            modifier = Modifier
+                                .size(ZapSize.control)
+                                .semantics { contentDescription = clearDescription },
                         ) {
-                            Text(
-                                text = "×",
-                                style = MaterialTheme.typography.titleLarge,
+                            Icon(
+                                painter = painterResource(R.drawable.ic_close),
+                                contentDescription = null,
+                                tint = ZapTextTertiary,
+                                modifier = Modifier.size(16.dp),
                             )
                         }
                     }
@@ -110,7 +114,6 @@ fun HomeScreen(
                     .weight(1f)
                     .focusRequester(searchFocusRequester)
                     .testTag("searchField"),
-                shape = RoundedCornerShape(12.dp),
             )
             Box(contentAlignment = Alignment.TopEnd) {
                 IconButton(

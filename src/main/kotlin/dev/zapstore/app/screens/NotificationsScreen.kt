@@ -20,7 +20,7 @@ fun NotificationsScreen(modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(ZapBackgroundGradient)
+            .background(ZapCanvas)
             .windowInsetsPadding(WindowInsets.safeDrawing)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),

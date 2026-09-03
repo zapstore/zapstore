@@ -27,8 +27,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.HorizontalDivider
@@ -46,6 +44,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -73,7 +72,9 @@ fun AppDetailScreen(
     var selectedScreenshot by remember { mutableStateOf<Int?>(null) }
     val listState = rememberLazyListState()
     val app = state.app
-    val authorProfile = app?.let { rememberProfile(it.event.pubKey, repository) }
+    val authorPubkey = app?.let { rememberAppAuthor(it, repository) }
+    val c1AuthorPubkey = app?.let { rememberC1Author(it, repository) }
+    val authorProfile = authorPubkey?.let { rememberProfile(it, repository) }
     val showCompactHeader by remember {
         derivedStateOf {
             listState.firstVisibleItemIndex > 0
@@ -83,7 +84,7 @@ fun AppDetailScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(ZapBackgroundGradient),
+            .background(ZapCanvas),
     ) {
     LazyColumn(
         state = listState,
@@ -103,12 +104,12 @@ fun AppDetailScreen(
                             .fillMaxWidth()
                             .height(100.dp)
                             .clip(RoundedCornerShape(16.dp))
-                            .background(ZapSurfaceVariant),
+                            .background(ZapSurface2),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
                             text = stringResource(R.string.app_not_found),
-                            color = ZapMuted,
+                            color = ZapTextSecondary,
                         )
                     }
                 }
@@ -122,8 +123,9 @@ fun AppDetailScreen(
                 app = app,
                 release = state.release,
                 repository = repository,
+                authorPubkey = authorPubkey,
                 authorProfile = authorProfile,
-                onProfileClick = { onProfileClick(app.event.pubKey) },
+                onProfileClick = { authorPubkey?.let(onProfileClick) },
             )
         }
 
@@ -139,7 +141,7 @@ fun AppDetailScreen(
                                 .width(120.dp)
                                 .height(200.dp)
                                 .clip(RoundedCornerShape(16.dp))
-                                .background(ZapIconBackground)
+                                .background(ZapSurface3)
                                 .clickable {
                                     selectedScreenshot = app.screenshots.indexOf(url)
                                 },
@@ -154,7 +156,7 @@ fun AppDetailScreen(
             item {
                 MarkdownText(
                     value = description,
-                    color = ZapMuted,
+                    color = ZapTextSecondary,
                     style = MaterialTheme.typography.bodyLarge,
                     onOpenUrl = onOpenUrl,
                     collapsible = true,
@@ -171,14 +173,14 @@ fun AppDetailScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.padding(top = 8.dp),
             ) {
-                HorizontalDivider(Modifier.weight(1f), color = ZapOutline)
+                HorizontalDivider(Modifier.weight(1f), color = ZapLine)
                 Text(
                     text = stringResource(R.string.latest_release).uppercase(),
                     style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
-                HorizontalDivider(Modifier.weight(1f), color = ZapOutline)
+                HorizontalDivider(Modifier.weight(1f), color = ZapLine)
             }
         }
 
@@ -188,7 +190,7 @@ fun AppDetailScreen(
                 item {
                     MarkdownText(
                         value = release.notes,
-                        color = ZapMuted,
+                        color = ZapTextSecondary,
                         style = MaterialTheme.typography.bodyLarge,
                         onOpenUrl = onOpenUrl,
                         collapsible = true,
@@ -202,7 +204,7 @@ fun AppDetailScreen(
                         .width(220.dp)
                         .height(32.dp)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(ZapSurfaceVariant),
+                        .background(ZapSurface2),
                 )
             }
             item {
@@ -216,8 +218,10 @@ fun AppDetailScreen(
                 release = state.release,
                 onOpenUrl = onOpenUrl,
                 repository = repository,
+                authorPubkey = authorPubkey,
+                c1AuthorPubkey = c1AuthorPubkey,
                 authorProfile = authorProfile,
-                onProfileClick = { onProfileClick(app.event.pubKey) },
+                onProfileClick = { authorPubkey?.let(onProfileClick) },
                 modifier = Modifier.padding(top = 8.dp),
             )
         }
@@ -229,8 +233,9 @@ fun AppDetailScreen(
             CompactAppHeader(
                 app = app,
                 repository = repository,
+                authorPubkey = authorPubkey,
                 authorProfile = authorProfile,
-                onProfileClick = { onProfileClick(app.event.pubKey) },
+                onProfileClick = { authorPubkey?.let(onProfileClick) },
                 modifier = Modifier.align(Alignment.TopCenter),
             )
         }
@@ -293,8 +298,8 @@ private fun AppDetailSkeleton() {
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(16.dp))
-                .background(ZapSurface.copy(alpha = 0.8f))
-                .border(1.dp, ZapOutline.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
+                .background(ZapSurface1)
+                .border(1.dp, ZapLine, RoundedCornerShape(16.dp))
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
@@ -332,7 +337,7 @@ private fun SkeletonBlock(
             .then(if (width == Dp.Infinity) Modifier.fillMaxWidth() else Modifier.width(width))
             .height(height)
             .clip(RoundedCornerShape(cornerRadius))
-            .background(ZapSurfaceVariant),
+            .background(ZapSurface2),
     )
 }
 
@@ -341,44 +346,32 @@ private fun RegularAppHeader(
     app: AppInfo,
     release: ReleaseInfo?,
     repository: CatalogRepository?,
+    authorPubkey: String?,
     authorProfile: ProfileInfo?,
     onProfileClick: () -> Unit,
 ) {
-    Column(
+    // Reuses the same icon+title+version+byline block as the search/home AppCard, so the
+    // header reads as the same component, just bigger — not a bespoke hero layout.
+    val authorName = authorPubkey?.let { profileDisplayName(authorProfile, it) }
+    Row(
         modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3),
     ) {
-        Row(
-            verticalAlignment = Alignment.Top,
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            AppIcon(
-                title = app.name,
-                iconUrl = app.iconUrl,
-                modifier = Modifier.size(BigIconSize),
-                cornerRadius = 16.dp,
-            )
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = app.name,
-                    style = MaterialTheme.typography.displaySmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Row(
-                    modifier = Modifier.padding(top = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    release?.let { VersionPill(version = it.version) }
-                    AppAuthorByline(
-                        pubkey = app.event.pubKey,
-                        repository = repository,
-                            profile = authorProfile,
-                        onClick = onProfileClick,
-                    )
-                }
-            }
-        }
+        AppIcon(
+            title = app.name,
+            iconUrl = app.iconUrl,
+            size = BigIconSize,
+        )
+        AppNameWithByline(
+            name = app.name,
+            authorName = authorName,
+            authorProfile = authorProfile,
+            authorPubkey = authorPubkey,
+            version = release?.version,
+            onAuthorClick = onProfileClick,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 
@@ -386,6 +379,7 @@ private fun RegularAppHeader(
 private fun CompactAppHeader(
     app: AppInfo,
     repository: CatalogRepository?,
+    authorPubkey: String?,
     authorProfile: ProfileInfo?,
     onProfileClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -393,7 +387,7 @@ private fun CompactAppHeader(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .background(ZapBackground)
+            .background(ZapCanvas)
             .windowInsetsPadding(WindowInsets.statusBars)
             .height(SmallHeaderHeight)
             .padding(horizontal = 16.dp),
@@ -403,22 +397,23 @@ private fun CompactAppHeader(
         AppIcon(
             title = app.name,
             iconUrl = app.iconUrl,
-            modifier = Modifier.size(SmallIconSize),
-            cornerRadius = 7.dp,
+            size = SmallIconSize,
         )
         Text(
             text = app.name,
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Black),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f, fill = false),
         )
-        AppAuthorByline(
-            pubkey = app.event.pubKey,
-            repository = repository,
-            profile = authorProfile,
-            onClick = onProfileClick,
-        )
+        authorPubkey?.let { pubkey ->
+            AppAuthorByline(
+                pubkey = pubkey,
+                repository = repository,
+                profile = authorProfile,
+                onClick = onProfileClick,
+            )
+        }
     }
 }
 
@@ -469,7 +464,7 @@ private fun ScreenshotCarousel(
                     .padding(top = 12.dp, end = 8.dp),
             ) {
                 Icon(
-                    imageVector = Icons.Default.Close,
+                    painter = painterResource(R.drawable.ic_close),
                     contentDescription = stringResource(R.string.close),
                     tint = Color.White,
                 )
@@ -493,15 +488,15 @@ private fun ZapSummaryCard(summary: ZapSummaryUiState) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(ZapSurface.copy(alpha = 0.8f))
-            .border(1.dp, ZapOutline.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
+            .background(ZapSurface1)
+            .border(1.dp, ZapLine, RoundedCornerShape(16.dp))
             .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
         Text(
             text = stringResource(R.string.support).uppercase(),
             style = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.Bold,
-            color = ZapMuted,
+            color = ZapTextSecondary,
         )
         Spacer(Modifier.height(4.dp))
         if (summary.isLoading && summary.zapCount == 0) {
@@ -510,7 +505,7 @@ private fun ZapSummaryCard(summary: ZapSummaryUiState) {
                     .width(148.dp)
                     .height(24.dp)
                     .clip(RoundedCornerShape(6.dp))
-                    .background(ZapSurfaceVariant),
+                    .background(ZapSurface2),
             )
         } else if (summary.zapCount == 0) {
             StatusText(summary.error.orEmpty())
@@ -535,10 +530,10 @@ private fun VersionRow(release: ReleaseInfo) {
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(ZapSurfaceVariant)
-            .border(1.dp, ZapOutline.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .clip(RoundedCornerShape(ZapRadius.md))
+            .background(ZapSurface2)
+            .border(1.dp, ZapLine, RoundedCornerShape(ZapRadius.md))
+            .padding(horizontal = ZapSpacing.space3, vertical = ZapSpacing.space2),
     ) {
         StatusText(stringResource(R.string.version))
         Spacer(Modifier.width(6.dp))
@@ -559,6 +554,8 @@ private fun AppInfoCard(
     release: ReleaseInfo?,
     onOpenUrl: (String) -> Unit,
     repository: CatalogRepository?,
+    authorPubkey: String?,
+    c1AuthorPubkey: String?,
     authorProfile: ProfileInfo?,
     onProfileClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -566,10 +563,10 @@ private fun AppInfoCard(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(ZapSurface.copy(alpha = 0.8f))
-            .border(1.dp, ZapOutline.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
-            .padding(16.dp),
+            .clip(RoundedCornerShape(ZapRadius.md))
+            .background(ZapSurface1)
+            .border(1.dp, ZapLine, RoundedCornerShape(ZapRadius.md))
+            .padding(ZapSpacing.space4),
     ) {
         InfoRow(
             label = stringResource(R.string.source),
@@ -581,6 +578,7 @@ private fun AppInfoCard(
             InfoRow(stringResource(R.string.license), it, onOpenUrl = onOpenUrl)
         }
         InfoRow(stringResource(R.string.app_id), app.identifier, onOpenUrl = onOpenUrl)
+        authorPubkey?.let { pubkey ->
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
@@ -594,12 +592,34 @@ private fun AppInfoCard(
                 contentAlignment = Alignment.CenterEnd,
             ) {
                 AppAuthorByline(
-                    pubkey = app.event.pubKey,
+                    pubkey = pubkey,
                     repository = repository,
                     profile = authorProfile,
                     showBy = false,
                     onClick = onProfileClick,
                 )
+            }
+        }
+        }
+        c1AuthorPubkey?.let { pubkey ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 10.dp),
+            ) {
+                StatusText("C1 author")
+                Spacer(Modifier.weight(1f))
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.CenterEnd,
+                ) {
+                    AppAuthorByline(
+                        pubkey = pubkey,
+                        repository = repository,
+                        showBy = false,
+                    )
+                }
             }
         }
         release?.let {

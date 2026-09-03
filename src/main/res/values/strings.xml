@@ -18,7 +18,6 @@
     <string name="no_stack_apps">No apps found in this stack.</string>
     <string name="app_not_found">App not found.</string>
     <string name="profile_not_found">Profile not found.</string>
-    <string name="profile_apps">Apps by this profile</string>
     <string name="no_profile_apps">No apps published by this profile.</string>
     <string name="published_by">Published by · %1$s…</string>
     <string name="app_by_author">by %1$s</string>
@@ -34,10 +33,10 @@
     <string name="release_date">Release date</string>
     <string name="website">Website</string>
     <string name="nip05">NIP-05</string>
-    <string name="public_key">Public key</string>
+    <string name="npub">Npub</string>
     <string name="not_available">Not available</string>
+    <string name="copy">Copy</string>
     <string name="app_icon_description">%1$s icon</string>
     <string name="screenshot_description">%1$s screenshot</string>
     <string name="profile_avatar_description">%1$s avatar</string>
-    <string name="profile_banner_description">Profile banner</string>
 </resources>

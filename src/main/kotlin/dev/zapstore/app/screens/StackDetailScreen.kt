@@ -30,7 +30,7 @@ fun StackDetailScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(ZapBackgroundGradient)
+            .background(ZapCanvas)
             .windowInsetsPadding(WindowInsets.safeDrawing),
         contentPadding = PaddingValues(start = 16.dp, top = 4.dp, end = 16.dp, bottom = 36.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
