@@ -18,10 +18,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
+import okhttp3.Request
 import okhttp3.OkHttpClient
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
@@ -140,6 +145,15 @@ interface CatalogRepository {
         unionWithFallback = false,
     ).map { state -> state.items.maxByOrNull(Event::createdAt)?.let(::ProfileInfo) }
 
+    /**
+     * Resolves the public identity behind an app. A C1 proof takes precedence over
+     * the kind-32267 signer; an app signed by the catalog relay has no byline.
+     */
+    fun appAuthor(app: AppInfo): Flow<String?> = flow { emit(app.event.pubKey) }
+
+    /** The author of the app's relay-validated C1 proof, if present. */
+    fun c1Author(app: AppInfo): Flow<String?> = flow { emit(null) }
+
     fun refreshConnections()
 
     /**
@@ -153,10 +167,19 @@ class PurpleQuartzCatalogRepository(context: Context) : CatalogRepository {
     private val applicationContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val profileFlows = ConcurrentHashMap<String, Flow<ProfileInfo?>>()
+    private val appAuthorFlows = ConcurrentHashMap<String, Flow<String?>>()
+    private val c1AuthorFlows = ConcurrentHashMap<String, Flow<String?>>()
+    private val relaySigner = MutableStateFlow<String?>(null)
     private var client: PurpleQuartz? = null
     private var outboxRouter: OutboxRouter? = null
     @Volatile
     private var relayTrafficEnabled = true
+
+    init {
+        scope.launch(Dispatchers.IO) {
+            relaySigner.value = fetchRelaySigner()
+        }
+    }
 
     private fun client(): PurpleQuartz =
         client ?: PurpleQuartz.create(
@@ -202,6 +225,20 @@ class PurpleQuartzCatalogRepository(context: Context) : CatalogRepository {
                 .shareIn(scope, SharingStarted.WhileSubscribed(PROFILE_SESSION_GRACE_MILLIS), replay = 1)
         }
 
+    override fun appAuthor(app: AppInfo): Flow<String?> =
+        appAuthorFlows.getOrPut(app.address) {
+            combine(c1Author(app), relaySigner) { c1Author, relayPubkey ->
+                val author = c1Author ?: app.event.pubKey
+                author.takeUnless { it == relayPubkey }
+            }.distinctUntilChanged()
+        }
+
+    override fun c1Author(app: AppInfo): Flow<String?> =
+        c1AuthorFlows.getOrPut(app.address) {
+            flow { emit(resolveC1Author(app)) }
+                .shareIn(scope, SharingStarted.WhileSubscribed(PROFILE_SESSION_GRACE_MILLIS), replay = 1)
+        }
+
     override fun query(
         filters: List<Filter>,
         options: QueryOptions,
@@ -215,6 +252,43 @@ class PurpleQuartzCatalogRepository(context: Context) : CatalogRepository {
         relayTrafficEnabled = enabled
         client?.setRelayTrafficEnabled(enabled)
     }
+
+    private suspend fun resolveC1Author(app: AppInfo): String? {
+        return query(
+            listOf(
+                Filter(
+                    authors = listOf(app.event.pubKey),
+                    kinds = listOf(Catalog.c1Kind),
+                    limit = VERIFIED_ASSET_AND_C1_LIMIT,
+                ),
+            ),
+            catalogQueryOptions(remoteMode = RemoteMode.OneShot()),
+        ).first { it.phase.isTerminal }.items
+            .asSequence()
+            .filter { it.kind == Catalog.c1Kind }
+            .sortedWith(compareByDescending<Event> { it.createdAt }.thenBy(Event::id))
+            .firstOrNull()
+            ?.pubKey
+    }
+
+    private fun fetchRelaySigner(): String? = runCatching {
+        val informationUrl = Catalog.relay
+            .replaceFirst("wss://", "https://")
+            .replaceFirst("ws://", "http://")
+        OkHttpClient().newCall(
+            Request.Builder()
+                .url(informationUrl)
+                .header("Accept", "application/nostr+json")
+                .build(),
+        ).execute().use { response ->
+            response.takeIf { it.isSuccessful }
+                ?.body
+                ?.string()
+                ?.let(::JSONObject)
+                ?.optString("pubkey")
+                ?.takeIf { Regex("[0-9a-f]{64}").matches(it) }
+        }
+    }.getOrNull()
 
     private companion object {
         /** Keeps a profile session warm briefly after the last row leaves the screen. */
