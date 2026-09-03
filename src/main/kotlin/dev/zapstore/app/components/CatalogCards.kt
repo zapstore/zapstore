@@ -36,14 +36,16 @@ import coil3.compose.AsyncImage
 fun AppIcon(
     title: String,
     iconUrl: String?,
+    size: Dp,
     modifier: Modifier = Modifier,
-    cornerRadius: Dp = 14.dp,
+    cornerRadius: Dp = size * ZapRadius.appTileFraction,
 ) {
     val shape = RoundedCornerShape(cornerRadius)
     Box(
         modifier = modifier
+            .size(size)
             .clip(shape)
-            .background(ZapIconBackground),
+            .background(ZapSurface3),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -72,18 +74,20 @@ fun AppCard(
     modifier: Modifier = Modifier,
     release: ReleaseInfo? = null,
     onProfileClick: (() -> Unit)? = null,
+    showAuthor: Boolean = true,
 ) {
-    val authorProfile = rememberProfile(app.event.pubKey, repository)
-    val authorName = profileDisplayName(authorProfile, app.event.pubKey)
+    val authorPubkey = rememberAppAuthor(app, repository)
+    val authorProfile = authorPubkey?.let { rememberProfile(it, repository) }
+    val authorName = authorPubkey?.let { profileDisplayName(authorProfile, it) }
 
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(ZapSurface.copy(alpha = 0.6f))
-            .border(1.dp, ZapOutline.copy(alpha = 0.2f), RoundedCornerShape(20.dp))
+            .clip(RoundedCornerShape(ZapRadius.lg))
+            .background(ZapSurface1)
+            .border(1.dp, ZapLine, RoundedCornerShape(ZapRadius.lg))
             .clickable(onClick = onClick)
-            .padding(16.dp),
+            .padding(ZapSpacing.space4),
     ) {
         BoxWithConstraints {
             val iconSize = (maxWidth * 0.21f).coerceIn(50.dp, 68.dp)
@@ -91,28 +95,28 @@ fun AppCard(
                 AppIcon(
                     title = app.name,
                     iconUrl = app.iconUrl,
-                    modifier = Modifier.size(iconSize),
-                    cornerRadius = 14.dp,
+                    size = iconSize,
                 )
-                Spacer(modifier.width(14.dp))
-                Column(modifier.weight(1f)) {
+                Spacer(Modifier.width(ZapSpacing.space3))
+                Column(Modifier.weight(1f)) {
                     AppNameWithByline(
                         name = app.name,
                         authorName = authorName,
                         authorProfile = authorProfile,
-                        authorPubkey = app.event.pubKey,
+                        authorPubkey = authorPubkey,
                         version = release?.version,
                         onAuthorClick = onProfileClick,
-                        authorTestTag = "profile:${app.event.pubKey}",
+                        authorTestTag = authorPubkey?.let { "profile:$it" },
+                        showAuthor = showAuthor,
                     )
                 }
             }
         }
         if (app.summary.isNotBlank()) {
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(ZapSpacing.space2))
             Text(
                 text = ZapMarkdown.parse(app.summary).text,
-                color = ZapMuted,
+                color = ZapTextSecondary,
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -124,13 +128,14 @@ fun AppCard(
 @Composable
 fun AppNameWithByline(
     name: String,
-    authorName: String,
+    authorName: String?,
     authorProfile: ProfileInfo?,
-    authorPubkey: String,
+    authorPubkey: String?,
     version: String?,
     modifier: Modifier = Modifier,
     onAuthorClick: (() -> Unit)? = null,
     authorTestTag: String? = null,
+    showAuthor: Boolean = true,
 ) {
     Column(modifier = modifier) {
         Text(
@@ -138,6 +143,7 @@ fun AppNameWithByline(
             style = MaterialTheme.typography.titleMedium.copy(
                 fontSize = 19.sp,
                 lineHeight = 23.sp,
+                fontWeight = FontWeight.Black,
             ),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -148,41 +154,45 @@ fun AppNameWithByline(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             version?.let { VersionPill(version = it) }
-            Row(
-                modifier = Modifier
-                    .weight(1f, fill = false)
-                    .then(authorTestTag?.let { Modifier.testTag(it) } ?: Modifier)
-                    .then(onAuthorClick?.let { Modifier.clickable(onClick = it) } ?: Modifier),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.app_by_author, ""),
-                    color = ZapMuted,
-                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Normal),
-                )
-                Box(
+            if (showAuthor) {
+                authorPubkey?.let { pubkey ->
+                Row(
                     modifier = Modifier
-                        .size(17.dp)
-                        .clip(RoundedCornerShape(50)),
-                    contentAlignment = Alignment.Center,
+                        .weight(1f, fill = false)
+                        .then(authorTestTag?.let { Modifier.testTag(it) } ?: Modifier)
+                        .then(onAuthorClick?.let { Modifier.clickable(onClick = it) } ?: Modifier),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    ProfileImage(
-                        pubkey = authorPubkey,
-                        pictureUrl = authorProfile?.picture,
-                        profileVersion = authorProfile?.event?.id,
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
+                    Text(
+                        text = stringResource(R.string.app_by_author, ""),
+                        color = ZapTextSecondary,
+                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Normal),
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(17.dp)
+                            .clip(RoundedCornerShape(50)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        ProfileImage(
+                            pubkey = pubkey,
+                            pictureUrl = authorProfile?.picture,
+                            profileVersion = authorProfile?.event?.id,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                    Text(
+                        text = authorName.orEmpty(),
+                        color = ZapTextSecondary,
+                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
                     )
                 }
-                Text(
-                    text = authorName,
-                    color = ZapMuted,
-                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
+                }
             }
         }
     }
@@ -195,12 +205,12 @@ fun VersionPill(
 ) {
     Text(
         text = version,
-        color = ZapActionForeground,
-        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+        color = ZapTextSecondary,
+        style = MaterialTheme.typography.labelMedium,
         modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(ZapVersionPill)
-            .padding(horizontal = 9.dp, vertical = 5.dp),
+            .clip(RoundedCornerShape(ZapRadius.full))
+            .background(ZapVersionPillBackground)
+            .padding(horizontal = 10.dp, vertical = 5.dp),
     )
 }
 
@@ -214,11 +224,11 @@ fun StackCard(
     Column(
         modifier = modifier
             .width(176.dp)
-            .clip(RoundedCornerShape(20.dp))
-            .background(ZapSurface.copy(alpha = 0.6f))
-            .border(1.dp, ZapOutline.copy(alpha = 0.2f), RoundedCornerShape(20.dp))
+            .clip(RoundedCornerShape(ZapRadius.lg))
+            .background(ZapSurface1)
+            .border(1.dp, ZapLine, RoundedCornerShape(ZapRadius.lg))
             .clickable(onClick = onClick)
-            .padding(16.dp),
+            .padding(ZapSpacing.space4),
     ) {
         Text(
             text = stack.name,
@@ -228,20 +238,19 @@ fun StackCard(
         )
         Text(
             text = stack.description.ifBlank { "${stack.appAddresses.size} apps" },
-            color = ZapMuted,
+            color = ZapTextSecondary,
             style = MaterialTheme.typography.bodySmall,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-        Spacer(modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Spacer(Modifier.height(ZapSpacing.space3))
+        Row(horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space1 + 2.dp)) {
             stack.appAddresses.take(3).forEach { address ->
                 val app = appsByAddress[address]
                 AppIcon(
                     title = app?.name ?: "?",
                     iconUrl = app?.iconUrl,
-                    modifier = Modifier.size(34.dp),
-                    cornerRadius = 10.dp,
+                    size = 34.dp,
                 )
             }
         }

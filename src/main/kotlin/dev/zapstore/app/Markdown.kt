@@ -86,7 +86,7 @@ object ZapMarkdown {
                     val level = match.groupValues[1].length
                     withStyle(
                         SpanStyle(
-                            fontFamily = InterDisplayFontFamily,
+                            fontFamily = FigtreeFontFamily,
                             fontWeight = FontWeight.ExtraBold,
                             fontSize = headingSize(level),
                         ),
@@ -130,7 +130,7 @@ object ZapMarkdown {
                                 url = url,
                                 styles = TextLinkStyles(
                                     style = SpanStyle(
-                                        color = ZapPrimary,
+                                        color = ZapActionText,
                                         textDecoration = TextDecoration.Underline,
                                     ),
                                 ),
@@ -155,7 +155,7 @@ object ZapMarkdown {
                     withStyle(
                         SpanStyle(
                             fontFamily = FontFamily.Monospace,
-                            background = ZapSurfaceVariant,
+                            background = ZapSurface2,
                         ),
                     ) {
                         append(match.groupValues[3])
@@ -199,7 +199,7 @@ fun MarkdownText(
     onOpenUrl: ((String) -> Unit)? = null,
     collapsible: Boolean = false,
     collapsedMaxHeight: Dp = 140.dp,
-    fadeColor: Color = ZapBackground,
+    fadeColor: Color = ZapCanvas,
     modifier: Modifier = Modifier,
 ) {
     val annotated = remember(value, onOpenUrl) {
@@ -262,7 +262,7 @@ fun MarkdownText(
             ) {
                 Text(
                     text = stringResource(R.string.read_more),
-                    color = ZapText,
+                    color = ZapTextPrimary,
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium,
@@ -271,7 +271,7 @@ fun MarkdownText(
                     modifier = Modifier
                         .padding(bottom = 2.dp)
                         .clip(RoundedCornerShape(999.dp))
-                        .background(ZapSurfaceVariant)
+                        .background(ZapSurface2)
                         .clickable { expanded = true }
                         .padding(horizontal = 10.dp, vertical = 3.dp),
                 )

@@ -15,18 +15,21 @@ import androidx.compose.ui.unit.dp
 
 fun LazyListScope.releaseFeed(
     state: ReleaseFeedUiState,
-    title: String,
     emptyMessage: String,
     repository: CatalogRepository?,
     onAppClick: (identifier: String, author: String) -> Unit,
     onProfileClick: (String) -> Unit = {},
     modifier: Modifier,
+    title: String? = null,
+    showAuthor: Boolean = true,
 ) {
-    item {
-        SectionTitle(
-            value = title,
-            modifier = modifier.padding(top = 4.dp),
-        )
+    title?.let {
+        item {
+            SectionTitle(
+                value = it,
+                modifier = modifier.padding(top = 4.dp),
+            )
+        }
     }
     when {
         state.entries.isEmpty() && state.initialLoading -> item {
@@ -48,6 +51,7 @@ fun LazyListScope.releaseFeed(
                     onProfileClick = { onProfileClick(app.event.pubKey) },
                     repository = repository,
                     modifier = modifier.testTag("app:${app.event.id}"),
+                    showAuthor = showAuthor,
                 )
             }
             if (state.loadingMore) {

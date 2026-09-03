@@ -77,7 +77,7 @@ fun ProfileComponent(
             modifier = Modifier
                 .size(40.dp)
                 .clip(CircleShape)
-                .background(ZapSurfaceVariant),
+                .background(ZapSurface2),
             contentAlignment = Alignment.Center,
         ) {
             ProfileImage(
@@ -124,7 +124,7 @@ fun AppAuthorByline(
         if (showBy) {
             Text(
                 text = stringResource(R.string.app_by_author, ""),
-                color = ZapMuted,
+                color = ZapTextSecondary,
                 style = MaterialTheme.typography.bodySmall,
             )
         }
@@ -139,12 +139,44 @@ fun AppAuthorByline(
         )
         Text(
             text = displayName,
-            color = ZapMuted,
+            color = ZapTextSecondary,
             style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
     }
+}
+
+@Composable
+fun rememberAppAuthor(
+    app: AppInfo,
+    repository: CatalogRepository?,
+): String? {
+    val author by produceState<String?>(
+        initialValue = app.event.pubKey,
+        key1 = app.address,
+        key2 = repository,
+    ) {
+        if (repository == null) return@produceState
+        repository.appAuthor(app).collect { value = it }
+    }
+    return author
+}
+
+@Composable
+fun rememberC1Author(
+    app: AppInfo,
+    repository: CatalogRepository?,
+): String? {
+    val author by produceState<String?>(
+        initialValue = null,
+        key1 = app.address,
+        key2 = repository,
+    ) {
+        if (repository == null) return@produceState
+        repository.c1Author(app).collect { value = it }
+    }
+    return author
 }
 
 private fun shortProfileName(value: String): String =
@@ -230,7 +262,7 @@ private val BECH32_GENERATOR = longArrayOf(
     0x2a1462b3L,
 )
 
-private fun String.toNpub(): String {
+internal fun String.toNpub(): String {
     if (length != 64 || any { it.digitToIntOrNull(16) == null }) return this
     val bytes = chunked(2).map { it.toInt(16) }
     val data = convertBits(bytes, 8, 5, true)
