@@ -1,6 +1,7 @@
 # Project-specific
 reference/
 .android-sdk/
+src/main/assets/catalog.db
 
 # OS
 .DS_Store

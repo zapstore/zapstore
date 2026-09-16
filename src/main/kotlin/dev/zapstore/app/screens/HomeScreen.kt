@@ -18,8 +18,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -45,8 +43,10 @@ fun HomeScreen(
     onSearchQueryChanged: (String) -> Unit,
     onSearchSubmitted: () -> Unit,
     onSearchCleared: () -> Unit,
-    onNotificationsClick: () -> Unit = {},
-    notificationCount: Int = 0,
+    onUpdatesClick: () -> Unit = {},
+    updateCount: Int = 0,
+    databaseRowCount: Long = 0,
+    catalogError: String? = null,
     onStackClick: (String) -> Unit,
     onAppClick: (identifier: String, author: String) -> Unit,
     onProfileClick: (String) -> Unit = {},
@@ -70,6 +70,18 @@ fun HomeScreen(
             .background(ZapCanvas)
             .windowInsetsPadding(WindowInsets.safeDrawing),
     ) {
+        Text(
+            text = buildString {
+                append(stringResource(R.string.database_rows, databaseRowCount))
+                if (!catalogError.isNullOrBlank()) {
+                    append(" · ")
+                    append(catalogError)
+                }
+            },
+            color = ZapTextTertiary,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(start = 16.dp, top = 4.dp),
+        )
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -117,25 +129,28 @@ fun HomeScreen(
             )
             Box(contentAlignment = Alignment.TopEnd) {
                 IconButton(
-                    onClick = onNotificationsClick,
-                    modifier = Modifier.testTag("notificationsButton"),
+                    onClick = onUpdatesClick,
+                    modifier = Modifier.testTag("updatesButton"),
                 ) {
                     Icon(
-                        imageVector = Icons.Filled.Notifications,
-                        contentDescription = stringResource(R.string.notifications),
+                        painter = painterResource(R.drawable.ic_launcher),
+                        contentDescription = stringResource(R.string.updates),
+                        modifier = Modifier.size(24.dp),
                     )
                 }
-                Text(
-                    text = notificationCount.toString(),
-                    color = MaterialTheme.colorScheme.onError,
-                    style = MaterialTheme.typography.labelSmall,
-                    modifier = Modifier
-                        .padding(top = 4.dp, end = 2.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.error)
-                        .padding(horizontal = 4.dp, vertical = 1.dp)
-                        .testTag("notificationBadge"),
-                )
+                if (updateCount > 0) {
+                    Text(
+                        text = updateCount.toString(),
+                        color = MaterialTheme.colorScheme.onError,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier
+                            .padding(top = 4.dp, end = 2.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.error)
+                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                            .testTag("updatesBadge"),
+                    )
+                }
             }
         }
 

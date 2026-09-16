@@ -227,10 +227,7 @@ private class ReleaseFeedLoader(
                         val identifier = release.appIdentifier ?: return@forEach
                         val address = "${Catalog.appKind}:${release.event.pubKey}:$identifier"
                         if (address in appsByAddress) {
-                            val existing = releasesByApp[address]
-                            if (existing == null || existing.event.createdAt < release.event.createdAt) {
-                                releasesByApp[address] = release
-                            }
+                            releasesByApp[address] = preferredRelease(releasesByApp[address], release)
                         }
                     }
                 publishEntries()
@@ -396,6 +393,7 @@ class HomeViewModel(
 data class StackDetailUiState(
     val stack: StackInfo? = null,
     val appsByAddress: Map<String, AppInfo> = emptyMap(),
+    val releasesByAddress: Map<String, ReleaseInfo> = emptyMap(),
     val stackLoading: Boolean = true,
     val appsLoading: Boolean = false,
     val error: String? = null,
@@ -410,7 +408,9 @@ class StackDetailViewModel(
     val uiState: StateFlow<StackDetailUiState> = _uiState.asStateFlow()
 
     private var appsJob: Job? = null
+    private var releasesJob: Job? = null
     private var appAddresses: List<String> = emptyList()
+    private var releaseLookupKeys: Set<String> = emptySet()
 
     init {
         viewModelScope.launch {
@@ -435,13 +435,19 @@ class StackDetailViewModel(
         if (addresses == appAddresses) return
         appAddresses = addresses
         appsJob?.cancel()
+        releasesJob?.cancel()
+        releaseLookupKeys = emptySet()
         val coordinates = addresses.mapNotNull(String::toAppCoordinate)
         if (coordinates.isEmpty()) {
-            _uiState.update { it.copy(appsByAddress = emptyMap(), appsLoading = false) }
+            _uiState.update {
+                it.copy(appsByAddress = emptyMap(), releasesByAddress = emptyMap(), appsLoading = false)
+            }
             return
         }
 
-        _uiState.update { it.copy(appsByAddress = emptyMap(), appsLoading = true) }
+        _uiState.update {
+            it.copy(appsByAddress = emptyMap(), releasesByAddress = emptyMap(), appsLoading = true)
+        }
         appsJob = viewModelScope.launch {
             repository.query(
                 Filter(
@@ -459,6 +465,40 @@ class StackDetailViewModel(
                         error = state.error?.message ?: it.error,
                     )
                 }
+                observeReleases(apps)
+            }
+        }
+    }
+
+    private fun observeReleases(apps: List<AppInfo>) {
+        val lookupKeys = apps.map(AppInfo::address).toSet()
+        if (lookupKeys == releaseLookupKeys) return
+        releaseLookupKeys = lookupKeys
+        releasesJob?.cancel()
+        if (apps.isEmpty()) {
+            _uiState.update { it.copy(releasesByAddress = emptyMap()) }
+            return
+        }
+        val releaseFilters = apps.map { app ->
+            Filter(
+                authors = listOf(app.event.pubKey),
+                kinds = Catalog.releaseKinds,
+                tags = mapOf("i" to listOf(app.identifier)),
+                limit = 1,
+            )
+        }
+        releasesJob = viewModelScope.launch {
+            repository.query(releaseFilters).collect { queryState ->
+                val releases = linkedMapOf<String, ReleaseInfo>()
+                queryState.items
+                    .filter { it.kind in Catalog.releaseKinds }
+                    .map(::ReleaseInfo)
+                    .forEach { release ->
+                        val identifier = release.appIdentifier ?: return@forEach
+                        val address = "${Catalog.appKind}:${release.event.pubKey}:$identifier"
+                        releases[address] = preferredRelease(releases[address], release)
+                    }
+                _uiState.update { it.copy(releasesByAddress = releases) }
             }
         }
     }
@@ -667,12 +707,16 @@ class AppDetailViewModel(
         viewModelScope.launch {
             repository.query(
                 Filter(
-                    kinds = listOf(Catalog.releaseKind),
+                    authors = author?.let(::listOf),
+                    kinds = Catalog.releaseKinds,
                     tags = mapOf("i" to listOf(identifier)),
                     limit = 10,
                 ),
             ).collect { state ->
-                val release = state.items.map(::ReleaseInfo).maxByOrNull { it.event.createdAt }
+                val release = state.items
+                    .filter { it.kind in Catalog.releaseKinds }
+                    .map(::ReleaseInfo)
+                    .reduceOrNull(::preferredRelease)
                 _uiState.update {
                     it.copy(
                         release = release,
@@ -691,8 +735,28 @@ class AppDetailViewModel(
     }
 }
 
+class UpdatesViewModel(
+    private val catalogSync: dev.zapstore.app.catalogsync.CatalogSyncRepository,
+) : ViewModel() {
+    val uiState = catalogSync.state
+
+    init {
+        catalogSync.refreshUpdates()
+    }
+
+    fun sync() {
+        viewModelScope.launch { catalogSync.sync() }
+    }
+}
+
 fun homeViewModelFactory(repository: CatalogRepository): ViewModelProvider.Factory = viewModelFactory {
     initializer { HomeViewModel(repository, createSavedStateHandle()) }
+}
+
+fun updatesViewModelFactory(
+    catalogSync: dev.zapstore.app.catalogsync.CatalogSyncRepository,
+): ViewModelProvider.Factory = viewModelFactory {
+    initializer { UpdatesViewModel(catalogSync) }
 }
 
 fun stackDetailViewModelFactory(repository: CatalogRepository): ViewModelProvider.Factory = viewModelFactory {

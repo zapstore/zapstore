@@ -30,9 +30,16 @@ class ViewModelsTest {
     @Test
     fun `catalog defaults to brief one-shot freshness and profiles use one day`() {
         val options = catalogQueryOptions()
-        assertEquals(SourceMode.LocalAndRemote, options.sourceMode)
-        assertTrue(options.remoteMode is RemoteMode.OneShot)
-        assertEquals(30.seconds, options.cachedFor)
+        if (Catalog.catalogLocalOnly) {
+            assertEquals(SourceMode.Local, options.sourceMode)
+            assertEquals(null, options.remoteMode)
+            assertEquals(null, options.cachedFor)
+            assertTrue(options.relays.isEmpty())
+        } else {
+            assertEquals(SourceMode.LocalAndRemote, options.sourceMode)
+            assertTrue(options.remoteMode is RemoteMode.OneShot)
+            assertEquals(30.seconds, options.cachedFor)
+        }
         assertEquals(1.days, PROFILE_CACHE_DURATION)
 
         val forced = catalogQueryOptions(cachedFor = null)
@@ -378,6 +385,74 @@ class ViewModelsTest {
     }
 
     @Test
+    fun `standalone 3063 carries release notes and defaults channel to main`() {
+        val release = ReleaseInfo(
+            event(
+                kind = Catalog.assetKind,
+                tags = arrayOf(
+                    arrayOf("i", "dev.example.app"),
+                    arrayOf("version", "1.2.3"),
+                ),
+                content = "Fixed a crash",
+            ),
+        )
+
+        assertEquals("dev.example.app", release.appIdentifier)
+        assertEquals("1.2.3", release.version)
+        assertEquals("Fixed a crash", release.notes)
+        assertEquals("main", release.channel)
+    }
+
+    @Test
+    fun `30063 outranks a 3063 with the same created at`() {
+        val grouped = ReleaseInfo(
+            event(
+                id = "bb",
+                kind = Catalog.releaseKind,
+                createdAt = 100,
+                tags = arrayOf(arrayOf("i", "dev.example.app"), arrayOf("version", "1.0")),
+                content = "Grouped notes",
+            ),
+        )
+        val asset = ReleaseInfo(
+            event(
+                id = "aa",
+                kind = Catalog.assetKind,
+                createdAt = 100,
+                tags = arrayOf(arrayOf("i", "dev.example.app"), arrayOf("version", "1.0")),
+                content = "Asset notes",
+            ),
+        )
+
+        assertEquals(grouped, preferredRelease(asset, grouped))
+        assertEquals(grouped, preferredRelease(grouped, asset))
+        assertEquals(true, grouped.outranks(asset))
+    }
+
+    @Test
+    fun `30063 outranks a newer 3063 for the same version`() {
+        val grouped = ReleaseInfo(
+            event(
+                id = "rel",
+                kind = Catalog.releaseKind,
+                createdAt = 100,
+                tags = arrayOf(arrayOf("i", "dev.example.app"), arrayOf("version", "1.0")),
+            ),
+        )
+        val asset = ReleaseInfo(
+            event(
+                id = "asset",
+                kind = Catalog.assetKind,
+                createdAt = 200,
+                tags = arrayOf(arrayOf("i", "dev.example.app"), arrayOf("version", "1.0")),
+            ),
+        )
+
+        assertEquals(grouped, preferredRelease(asset, grouped))
+        assertEquals(false, asset.outranks(grouped))
+    }
+
+    @Test
     fun `app detail zap receipts resolve the app author outbox`() = runTest {
         var outboxAuthors: List<String>? = null
         var outboxRelays: Set<String>? = null
@@ -402,6 +477,31 @@ class ViewModelsTest {
 
         assertEquals(listOf("7".repeat(64)), outboxAuthors)
         assertEquals(Catalog.defaultZapRelays, outboxRelays)
+    }
+
+    @Test
+    fun `app detail loads latest release from release and asset kinds`() = runTest {
+        val filters = mutableListOf<Filter>()
+        AppDetailViewModel(
+            FakeCatalogRepository(
+                localQuery = { filter ->
+                    filters += filter
+                    emptyFlow()
+                },
+            ),
+            SavedStateHandle(
+                mapOf(
+                    APP_IDENTIFIER_ARGUMENT to "dev.example.app",
+                    APP_AUTHOR_ARGUMENT to "a".repeat(64),
+                ),
+            ),
+        )
+        runCurrent()
+
+        val releaseFilter = filters.single { Catalog.releaseKind in it.kinds.orEmpty() }
+        assertEquals(Catalog.releaseKinds, releaseFilter.kinds)
+        assertEquals(mapOf("i" to listOf("dev.example.app")), releaseFilter.tags)
+        assertEquals(listOf("a".repeat(64)), releaseFilter.authors)
     }
 
     @Test
@@ -515,12 +615,13 @@ private fun event(
     kind: Int,
     createdAt: Long = 1_750_000_000,
     tags: Array<Array<String>> = emptyArray(),
+    content: String = "",
 ): Event = Event(
     id = id,
     pubKey = pubKey,
     createdAt = createdAt,
     kind = kind,
     tags = tags,
-    content = "",
+    content = content,
     sig = "2".repeat(128),
 )

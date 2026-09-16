@@ -5,6 +5,8 @@ import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.normalizeRelayUrl
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.okhttp.BasicOkHttpWebSocket
+import com.vitorpamplona.quartz.nip01Core.store.IEventStore
+import dev.zapstore.app.catalogsync.CatalogSchema
 import dev.zapstore.iolite.OutboxRouter
 import dev.zapstore.iolite.Iolite
 import dev.zapstore.iolite.IoliteConfig
@@ -35,6 +37,10 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Duration.Companion.days
 
 object Catalog {
+    const val updatesUrl = "http://127.0.0.1:3336"
+    /** Temporary: browse the compact catalog only. Flip false to restore relays. */
+    const val catalogLocalOnly = true
+    const val catalogRelayPubkey = "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
     const val relay = "wss://relay.zapstore.dev"
     const val profileRelay = "wss://relay.vertexlab.io"
     const val assetKind = 3_063
@@ -61,16 +67,26 @@ internal val PROFILE_CACHE_DURATION = 1.days
 private const val VERIFIED_ASSET_AND_C1_LIMIT = 500
 
 fun catalogQueryOptions(
-    sourceMode: SourceMode = SourceMode.LocalAndRemote,
+    sourceMode: SourceMode = if (Catalog.catalogLocalOnly) SourceMode.Local else SourceMode.LocalAndRemote,
     remoteMode: RemoteMode? = if (sourceMode == SourceMode.Local) null else RemoteMode.OneShot(),
     cachedFor: Duration? = if (sourceMode == SourceMode.LocalAndRemote) DEFAULT_CACHE_DURATION else null,
     relays: Set<String> = setOf(Catalog.relay),
-): QueryOptions = QueryOptions(
-    sourceMode = sourceMode,
-    remoteMode = remoteMode,
-    relays = if (sourceMode == SourceMode.Local) emptySet() else relays.map(String::normalizeRelayUrl).toSet(),
-    cachedFor = cachedFor,
-)
+): QueryOptions {
+    if (Catalog.catalogLocalOnly) {
+        return QueryOptions(
+            sourceMode = SourceMode.Local,
+            remoteMode = null,
+            relays = emptySet(),
+            cachedFor = null,
+        )
+    }
+    return QueryOptions(
+        sourceMode = sourceMode,
+        remoteMode = remoteMode,
+        relays = if (sourceMode == SourceMode.Local) emptySet() else relays.map(String::normalizeRelayUrl).toSet(),
+        cachedFor = cachedFor,
+    )
+}
 
 interface CatalogRepository {
     fun query(
@@ -161,9 +177,14 @@ interface CatalogRepository {
      * Local data remains fully queryable while suspended.
      */
     fun setRelayTrafficEnabled(enabled: Boolean) = Unit
+
+    fun purpleQuartz(): Iolite? = null
 }
 
-class IoliteCatalogRepository(context: Context) : CatalogRepository {
+class IoliteCatalogRepository(
+    context: Context,
+    private val eventStoreFactory: ((String) -> IEventStore)? = null,
+) : CatalogRepository {
     private val applicationContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val profileFlows = ConcurrentHashMap<String, Flow<ProfileInfo?>>()
@@ -187,10 +208,14 @@ class IoliteCatalogRepository(context: Context) : CatalogRepository {
             BasicOkHttpWebSocket.Builder { OkHttpClient() },
             scope,
             config = IoliteConfig(
+                databaseName = CatalogSchema.DATABASE_NAME,
                 // Zap receipts are the unbounded firehose. Addressable catalog kinds are
                 // bounded by supersession; assets back the release feed and stay.
                 pruneRules = mapOf(Catalog.zapReceiptKind to 90.days),
             ),
+            eventStore = eventStoreFactory ?: { path ->
+                com.vitorpamplona.quartz.nip01Core.store.sqlite.EventStore(dbName = path, relay = null)
+            },
         ).also {
             client = it
             if (!relayTrafficEnabled) it.setRelayTrafficEnabled(false)
@@ -209,14 +234,17 @@ class IoliteCatalogRepository(context: Context) : CatalogRepository {
         relays: Set<String>,
         remoteMode: RemoteMode,
         unionWithFallback: Boolean,
-    ): Flow<QueryState> = router().queryWithOutbox(
-        filters,
-        authors,
-        fallbackRelays = relays.map(String::normalizeRelayUrl).toSet(),
-        cachedFor = cachedFor,
-        remoteMode = remoteMode,
-        unionWithFallback = unionWithFallback,
-    )
+    ): Flow<QueryState> {
+        if (Catalog.catalogLocalOnly) return query(filters, catalogQueryOptions())
+        return router().queryWithOutbox(
+            filters,
+            authors,
+            fallbackRelays = relays.map(String::normalizeRelayUrl).toSet(),
+            cachedFor = cachedFor,
+            remoteMode = remoteMode,
+            unionWithFallback = unionWithFallback,
+        )
+    }
 
     override fun profile(pubkey: String): Flow<ProfileInfo?> =
         profileFlows.getOrPut(pubkey) {
@@ -252,6 +280,8 @@ class IoliteCatalogRepository(context: Context) : CatalogRepository {
         relayTrafficEnabled = enabled
         client?.setRelayTrafficEnabled(enabled)
     }
+
+    override fun purpleQuartz(): Iolite? = client()
 
     private suspend fun resolveC1Author(app: AppInfo): String? {
         return query(
@@ -378,8 +408,21 @@ data class ReleaseInfo(val event: Event) {
                 ?.takeIf(String::isNotBlank)
     val version: String get() = event.tagValue("version") ?: "Unknown version"
     val channel: String? get() = event.tagValue("c")
+        ?: "main".takeIf { event.kind == Catalog.assetKind }
     val notes: String get() = event.content
+
+    fun outranks(other: ReleaseInfo): Boolean {
+        if (version == other.version && event.kind != other.event.kind) {
+            return event.kind == Catalog.releaseKind
+        }
+        if (event.createdAt != other.event.createdAt) return event.createdAt > other.event.createdAt
+        if (event.kind != other.event.kind) return event.kind == Catalog.releaseKind
+        return event.id < other.event.id
+    }
 }
+
+fun preferredRelease(current: ReleaseInfo?, candidate: ReleaseInfo): ReleaseInfo =
+    if (current == null || candidate.outranks(current)) candidate else current
 
 data class StackInfo(val event: Event) {
     val identifier: String get() = event.tagValue("d") ?: event.id

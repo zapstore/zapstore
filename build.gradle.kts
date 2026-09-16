@@ -44,9 +44,13 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
     implementation(libs.okhttp)
+    implementation(libs.sqlite)
+    implementation(libs.sqlite.bundled)
 
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
+    testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(libs.sqlite.bundled)
 
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.androidx.test.junit)

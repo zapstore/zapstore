@@ -25,8 +25,10 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 
 class MainActivity : ComponentActivity() {
+    private val zapstore: ZapstoreApplication
+        get() = getApplication() as ZapstoreApplication
     private val repository: CatalogRepository
-        get() = (application as ZapstoreApplication).catalogRepository
+        get() = zapstore.catalogRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -74,15 +76,19 @@ class MainActivity : ComponentActivity() {
                                 factory = homeViewModelFactory(repository),
                             )
                             val state by viewModel.uiState.collectAsStateWithLifecycle()
+                            val syncState by zapstore.catalogSyncRepository.state.collectAsStateWithLifecycle()
                             HomeScreen(
                                 state = state,
                                 repository = repository,
                                 onSearchQueryChanged = viewModel::onSearchQueryChanged,
                                 onSearchSubmitted = viewModel::submitSearch,
                                 onSearchCleared = viewModel::clearSearch,
-                                onNotificationsClick = {
-                                    navController.navigate(NOTIFICATIONS_ROUTE)
+                                onUpdatesClick = {
+                                    navController.navigate(UPDATES_ROUTE)
                                 },
+                                updateCount = syncState.availableUpdates.size,
+                                databaseRowCount = syncState.eventRowCount,
+                                catalogError = syncState.error,
                                 onLoadMoreReleases = viewModel::loadMoreReleases,
                                 onStackClick = { stackId ->
                                     navController.navigate(stackRoute(stackId))
@@ -96,8 +102,18 @@ class MainActivity : ComponentActivity() {
                             )
                         }
 
-                        composable(NOTIFICATIONS_ROUTE) {
-                            NotificationsScreen()
+                        composable(UPDATES_ROUTE) {
+                            val viewModel: UpdatesViewModel = viewModel(
+                                factory = updatesViewModelFactory(zapstore.catalogSyncRepository),
+                            )
+                            val state by viewModel.uiState.collectAsStateWithLifecycle()
+                            UpdatesScreen(
+                                state = state,
+                                onSync = viewModel::sync,
+                                onAppClick = { identifier, author ->
+                                    navController.navigate(appRoute(identifier, author))
+                                },
+                            )
                         }
 
                         composable(
@@ -200,7 +216,7 @@ private const val STACK_ROUTE = "stack/{$STACK_ID_ARGUMENT}"
 private const val APP_ROUTE =
     "app/{$APP_IDENTIFIER_ARGUMENT}?$APP_AUTHOR_ARGUMENT={$APP_AUTHOR_ARGUMENT}"
 private const val PROFILE_ROUTE = "profile/{$PROFILE_PUBKEY_ARGUMENT}"
-private const val NOTIFICATIONS_ROUTE = "notifications"
+private const val UPDATES_ROUTE = "updates"
 private const val NAVIGATION_TRANSITION_DURATION = 150
 
 private fun stackRoute(stackId: String): String =

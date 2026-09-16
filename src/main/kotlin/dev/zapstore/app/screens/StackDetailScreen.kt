@@ -15,7 +15,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 
@@ -52,20 +51,10 @@ fun StackDetailScreen(
         }
 
         item {
-            Text(
-                text = stack.name,
-                style = MaterialTheme.typography.displaySmall,
-            )
-        }
-        item {
-            StatusText(
-                stack.description.ifBlank {
-                    pluralStringResource(
-                        R.plurals.curated_apps,
-                        stack.appAddresses.size,
-                        stack.appAddresses.size,
-                    )
-                },
+            StackCard(
+                stack = stack,
+                appsByAddress = state.appsByAddress,
+                modifier = Modifier.testTag("stack:${stack.event.id}"),
             )
         }
         item {
@@ -80,6 +69,7 @@ fun StackDetailScreen(
         ) { app ->
             AppCard(
                 app = app,
+                release = state.releasesByAddress[app.address],
                 onClick = { onAppClick(app.identifier, app.event.pubKey) },
                 onProfileClick = { onProfileClick(app.event.pubKey) },
                 repository = repository,

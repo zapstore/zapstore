@@ -21,7 +21,7 @@ class ScreensTest {
     fun homeSearchAndStackCallbacksAreWired() {
         var submitted = false
         var cleared = false
-        var notificationsOpened = false
+        var updatesOpened = false
         var openedStack: String? = null
         val stack = StackInfo(
             event(
@@ -42,7 +42,7 @@ class ScreensTest {
                     onSearchQueryChanged = {},
                     onSearchSubmitted = { submitted = true },
                     onSearchCleared = { cleared = true },
-                    onNotificationsClick = { notificationsOpened = true },
+                    onUpdatesClick = { updatesOpened = true },
                     onStackClick = { openedStack = it },
                     onAppClick = { _, _ -> },
                 )
@@ -52,12 +52,12 @@ class ScreensTest {
         composeRule.onNodeWithTag("searchField").performImeAction()
         composeRule.onNodeWithText("×").performClick()
         composeRule.onNodeWithTag("searchField").assertIsFocused()
-        composeRule.onNodeWithTag("notificationsButton").performClick()
+        composeRule.onNodeWithTag("updatesButton").performClick()
         composeRule.onNodeWithTag("stack:stack-id").performClick()
 
         assertTrue(submitted)
         assertTrue(cleared)
-        assertTrue(notificationsOpened)
+        assertTrue(updatesOpened)
         assertEquals("stack-id", openedStack)
     }
 

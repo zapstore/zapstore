@@ -174,6 +174,16 @@ class Iolite private constructor(
     }
 
     /**
+     * Reloads every active local projection from the store. Use after a catalog
+     * delta or snapshot commits so screens see the new epoch without thousands
+     * of per-row store-change events.
+     */
+    fun invalidateLocalProjections() {
+        if (closed.get()) return
+        synchronized(sessionsLock) { sessions.toList() }.forEach(QuerySession::reseedLocal)
+    }
+
+    /**
      * Enables or suspends all relay traffic for app foreground/background.
      * Suspending closes every relay socket and stops the keep-alive reconnector;
      * local data remains fully queryable. Re-enabling re-dials stale connections
@@ -352,6 +362,12 @@ class Iolite private constructor(
                 SourceMode.LocalAndRemote -> startLocalAndRemote()
                 SourceMode.Remote -> startRemoteOnly()
             }
+        }
+
+        fun reseedLocal() {
+            if (stopped.get() || options.sourceMode == SourceMode.Remote) return
+            observerJob?.cancel()
+            observerJob = startObserver(initialPhase = { lastState.phase })
         }
 
         private fun startLocalOnly() {
@@ -937,6 +953,7 @@ class Iolite private constructor(
             websocketBuilder: WebsocketBuilder,
             parentScope: CoroutineScope,
             config: IoliteConfig = IoliteConfig(),
+            eventStore: (path: String) -> IEventStore = { path -> EventStore(dbName = path, relay = null) },
         ): Iolite {
             config.validate()
             val parentJob = requireActiveParentJob(parentScope)
@@ -953,7 +970,7 @@ class Iolite private constructor(
             var store: ObservableEventStore? = null
             var client: INostrClient? = null
             try {
-                store = ObservableEventStore(EventStore(dbName = path, relay = null))
+                store = ObservableEventStore(eventStore(path))
                 val refreshCache = SharedPreferencesQueryRefreshCache.create(
                     context = appContext,
                     databasePath = path,
@@ -983,8 +1000,8 @@ class Iolite private constructor(
         }
 
         /**
-         * Test-only construction seam. It is internal so consumers cannot replace the
-         * canonical Quartz-backed store or client in production.
+         * Test construction seam. Production code should pass [eventStore] to [create]
+         * instead of calling this.
          */
         internal fun createForTesting(
             eventStore: IEventStore,
