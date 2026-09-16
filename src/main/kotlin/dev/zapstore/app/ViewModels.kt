@@ -9,8 +9,8 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.lifecycle.viewModelScope
 import com.vitorpamplona.quartz.lightning.LnInvoiceUtil
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
-import dev.zapstore.purplequartz.QueryPhase
-import dev.zapstore.purplequartz.RemoteMode
+import dev.zapstore.iolite.QueryPhase
+import dev.zapstore.iolite.RemoteMode
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

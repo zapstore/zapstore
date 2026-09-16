@@ -8,7 +8,7 @@
 
 It combines app discovery, publisher identity, direct APK distribution, and social trust signals into a different model for Android app distribution.
 
-This repo is the [Kotlin](https://kotlinlang.org) / [Jetpack Compose](https://developer.android.com/compose) client for [Zapstore](https://zapstore.dev). Catalog listings, curated stacks, releases, and publisher profiles sync from Nostr relays through the local `purplequartz` module.
+This repo is the [Kotlin](https://kotlinlang.org) / [Jetpack Compose](https://developer.android.com/compose) client for [Zapstore](https://zapstore.dev). Catalog listings, curated stacks, releases, and publisher profiles sync from Nostr relays through the local `iolite` module.
 
 ## Get the app
 
@@ -43,7 +43,7 @@ Or call Gradle directly:
 ./gradlew test
 ```
 
-`./gradlew test` runs unit tests for the app and `purplequartz`. Instrumented UI tests need a connected device or emulator:
+`./gradlew test` runs unit tests for the app and `iolite`. Instrumented UI tests need a connected device or emulator:
 
 ```bash
 ./gradlew connectedDebugAndroidTest
@@ -52,7 +52,7 @@ Or call Gradle directly:
 ## Layout
 
 - `src/main/kotlin/dev/zapstore/app/` — Compose UI, navigation, view models, and catalog wiring
-- `purplequartz/` — local-first Nostr client (SQLite event store, relay sessions, outbox routing) on top of [Quartz](https://github.com/vitorpamplona/amethyst)
+- `iolite/` — local-first Nostr client (SQLite event store, relay sessions, outbox routing) on top of [Quartz](https://github.com/vitorpamplona/amethyst)
 
 ## Contributing
 

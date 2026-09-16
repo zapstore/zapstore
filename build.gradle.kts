@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "dev.zapstore.app"
-    compileSdk = providers.gradleProperty("purplequartz.compileSdk").orElse("37").get().toInt()
+    compileSdk = providers.gradleProperty("iolite.compileSdk").orElse("37").get().toInt()
 
     defaultConfig {
         applicationId = "dev.zapstore.beta"
@@ -28,7 +28,7 @@ kotlin {
 }
 
 dependencies {
-    implementation(project(":purplequartz"))
+    implementation(project(":iolite"))
     implementation(platform(libs.compose.bom))
     implementation(libs.activity.compose)
     implementation(libs.compose.foundation)

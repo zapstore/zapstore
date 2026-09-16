@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "zapstore"
-include(":purplequartz")
+include(":iolite")

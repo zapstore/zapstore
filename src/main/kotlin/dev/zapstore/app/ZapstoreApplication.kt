@@ -7,7 +7,7 @@ import androidx.lifecycle.ProcessLifecycleOwner
 
 class ZapstoreApplication : Application() {
     val catalogRepository: CatalogRepository by lazy {
-        PurpleQuartzCatalogRepository(this)
+        IoliteCatalogRepository(this)
     }
 
     override fun onCreate() {

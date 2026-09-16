@@ -5,14 +5,14 @@ import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.normalizeRelayUrl
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.okhttp.BasicOkHttpWebSocket
-import dev.zapstore.purplequartz.OutboxRouter
-import dev.zapstore.purplequartz.PurpleQuartz
-import dev.zapstore.purplequartz.PurpleQuartzConfig
-import dev.zapstore.purplequartz.QueryOptions
-import dev.zapstore.purplequartz.QueryPhase
-import dev.zapstore.purplequartz.QueryState
-import dev.zapstore.purplequartz.RemoteMode
-import dev.zapstore.purplequartz.SourceMode
+import dev.zapstore.iolite.OutboxRouter
+import dev.zapstore.iolite.Iolite
+import dev.zapstore.iolite.IoliteConfig
+import dev.zapstore.iolite.QueryOptions
+import dev.zapstore.iolite.QueryPhase
+import dev.zapstore.iolite.QueryState
+import dev.zapstore.iolite.RemoteMode
+import dev.zapstore.iolite.SourceMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -163,14 +163,14 @@ interface CatalogRepository {
     fun setRelayTrafficEnabled(enabled: Boolean) = Unit
 }
 
-class PurpleQuartzCatalogRepository(context: Context) : CatalogRepository {
+class IoliteCatalogRepository(context: Context) : CatalogRepository {
     private val applicationContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val profileFlows = ConcurrentHashMap<String, Flow<ProfileInfo?>>()
     private val appAuthorFlows = ConcurrentHashMap<String, Flow<String?>>()
     private val c1AuthorFlows = ConcurrentHashMap<String, Flow<String?>>()
     private val relaySigner = MutableStateFlow<String?>(null)
-    private var client: PurpleQuartz? = null
+    private var client: Iolite? = null
     private var outboxRouter: OutboxRouter? = null
     @Volatile
     private var relayTrafficEnabled = true
@@ -181,12 +181,12 @@ class PurpleQuartzCatalogRepository(context: Context) : CatalogRepository {
         }
     }
 
-    private fun client(): PurpleQuartz =
-        client ?: PurpleQuartz.create(
+    private fun client(): Iolite =
+        client ?: Iolite.create(
             applicationContext,
             BasicOkHttpWebSocket.Builder { OkHttpClient() },
             scope,
-            config = PurpleQuartzConfig(
+            config = IoliteConfig(
                 // Zap receipts are the unbounded firehose. Addressable catalog kinds are
                 // bounded by supersession; assets back the release feed and stay.
                 pruneRules = mapOf(Catalog.zapReceiptKind to 90.days),

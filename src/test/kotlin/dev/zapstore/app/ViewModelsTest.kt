@@ -3,11 +3,11 @@ package dev.zapstore.app
 import androidx.lifecycle.SavedStateHandle
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
-import dev.zapstore.purplequartz.QueryOptions
-import dev.zapstore.purplequartz.QueryState
-import dev.zapstore.purplequartz.QueryPhase
-import dev.zapstore.purplequartz.RemoteMode
-import dev.zapstore.purplequartz.SourceMode
+import dev.zapstore.iolite.QueryOptions
+import dev.zapstore.iolite.QueryState
+import dev.zapstore.iolite.QueryPhase
+import dev.zapstore.iolite.RemoteMode
+import dev.zapstore.iolite.SourceMode
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
