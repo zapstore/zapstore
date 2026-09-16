@@ -89,29 +89,17 @@ fun AppCard(
             .clickable(onClick = onClick)
             .padding(ZapSpacing.space4),
     ) {
-        BoxWithConstraints {
-            val iconSize = (maxWidth * 0.21f).coerceIn(50.dp, 68.dp)
-            Row(verticalAlignment = Alignment.Top) {
-                AppIcon(
-                    title = app.name,
-                    iconUrl = app.iconUrl,
-                    size = iconSize,
-                )
-                Spacer(Modifier.width(ZapSpacing.space3))
-                Column(Modifier.weight(1f)) {
-                    AppNameWithByline(
-                        name = app.name,
-                        authorName = authorName,
-                        authorProfile = authorProfile,
-                        authorPubkey = authorPubkey,
-                        version = release?.version,
-                        onAuthorClick = onProfileClick,
-                        authorTestTag = authorPubkey?.let { "profile:$it" },
-                        showAuthor = showAuthor,
-                    )
-                }
-            }
-        }
+        AppIdentityRow(
+            name = app.name,
+            iconUrl = app.iconUrl,
+            authorName = authorName,
+            authorProfile = authorProfile,
+            authorPubkey = authorPubkey,
+            version = release?.version,
+            onAuthorClick = onProfileClick,
+            authorTestTag = authorPubkey?.let { "profile:$it" },
+            showAuthor = showAuthor,
+        )
         if (app.summary.isNotBlank()) {
             Spacer(Modifier.height(ZapSpacing.space2))
             Text(
@@ -120,6 +108,43 @@ fun AppCard(
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+fun AppIdentityRow(
+    name: String,
+    iconUrl: String?,
+    authorName: String?,
+    authorProfile: ProfileInfo?,
+    authorPubkey: String?,
+    version: String?,
+    modifier: Modifier = Modifier,
+    onAuthorClick: (() -> Unit)? = null,
+    authorTestTag: String? = null,
+    showAuthor: Boolean = true,
+) {
+    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+        val iconSize = (maxWidth * 0.21f).coerceIn(50.dp, 68.dp)
+        Row(verticalAlignment = Alignment.Top) {
+            AppIcon(
+                title = name,
+                iconUrl = iconUrl,
+                size = iconSize,
+            )
+            Spacer(Modifier.width(ZapSpacing.space3))
+            AppNameWithByline(
+                name = name,
+                authorName = authorName,
+                authorProfile = authorProfile,
+                authorPubkey = authorPubkey,
+                version = version,
+                onAuthorClick = onAuthorClick,
+                authorTestTag = authorTestTag,
+                showAuthor = showAuthor,
+                modifier = Modifier.weight(1f),
             )
         }
     }
@@ -137,18 +162,20 @@ fun AppNameWithByline(
     authorTestTag: String? = null,
     showAuthor: Boolean = true,
 ) {
-    Column(modifier = modifier) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
         Text(
             text = name,
             style = MaterialTheme.typography.titleMedium.copy(
-                fontSize = 19.sp,
-                lineHeight = 23.sp,
+                fontSize = 23.sp,
+                lineHeight = 28.sp,
                 fontWeight = FontWeight.Black,
             ),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        Spacer(Modifier.height(8.dp))
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -218,8 +245,8 @@ fun VersionPill(
 fun StackCard(
     stack: StackInfo,
     appsByAddress: Map<String, AppInfo>,
-    onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
 ) {
     Column(
         modifier = modifier
@@ -227,7 +254,7 @@ fun StackCard(
             .clip(RoundedCornerShape(ZapRadius.lg))
             .background(ZapSurface1)
             .border(1.dp, ZapLine, RoundedCornerShape(ZapRadius.lg))
-            .clickable(onClick = onClick)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(ZapSpacing.space4),
     ) {
         Text(

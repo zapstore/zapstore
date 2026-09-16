@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -97,16 +98,21 @@ object ZapRadius {
 }
 
 // ---- Type ----
-// One workhorse grotesque (Figtree) carries everything; hierarchy comes from size and weight.
+// One workhorse grotesque (Wix Madefor Text) carries everything; hierarchy comes from size and weight.
 
-val FigtreeFontFamily = FontFamily(
-    Font(R.font.figtree_light, FontWeight.Light),
-    Font(R.font.figtree_regular, FontWeight.Normal),
-    Font(R.font.figtree_medium, FontWeight.Medium),
-    Font(R.font.figtree_semibold, FontWeight.SemiBold),
-    Font(R.font.figtree_bold, FontWeight.Bold),
-    Font(R.font.figtree_extra_bold, FontWeight.ExtraBold),
-    Font(R.font.figtree_black, FontWeight.Black),
+private val ZapLetterSpacing = (-0.016).em
+
+val WixMadeforTextFontFamily = FontFamily(
+    Font(R.font.wix_madefor_text_regular, FontWeight.Normal),
+    Font(R.font.wix_madefor_text_italic, FontWeight.Normal, FontStyle.Italic),
+    Font(R.font.wix_madefor_text_medium, FontWeight.Medium),
+    Font(R.font.wix_madefor_text_medium_italic, FontWeight.Medium, FontStyle.Italic),
+    Font(R.font.wix_madefor_text_semibold, FontWeight.SemiBold),
+    Font(R.font.wix_madefor_text_semibold_italic, FontWeight.SemiBold, FontStyle.Italic),
+    Font(R.font.wix_madefor_text_bold, FontWeight.Bold),
+    Font(R.font.wix_madefor_text_bold_italic, FontWeight.Bold, FontStyle.Italic),
+    Font(R.font.wix_madefor_text_extrabold, FontWeight.ExtraBold),
+    Font(R.font.wix_madefor_text_extrabold_italic, FontWeight.ExtraBold, FontStyle.Italic),
 )
 
 private val ZapColorScheme = darkColorScheme(
@@ -137,85 +143,91 @@ private val ZapColorScheme = darkColorScheme(
 private val ZapTypography = Typography(
     // Display — hero headline only.
     displayLarge = Typography().displayLarge.copy(
-        fontFamily = FigtreeFontFamily,
+        fontFamily = WixMadeforTextFontFamily,
         fontWeight = FontWeight.SemiBold,
         fontSize = 36.sp,
         lineHeight = 38.sp,
-        letterSpacing = (-0.04).em,
+        letterSpacing = ZapLetterSpacing,
     ),
     // Heading 1 — section and screen titles.
     displaySmall = Typography().displaySmall.copy(
-        fontFamily = FigtreeFontFamily,
+        fontFamily = WixMadeforTextFontFamily,
         fontWeight = FontWeight.SemiBold,
         fontSize = 26.sp,
         lineHeight = 30.sp,
-        letterSpacing = (-0.025).em,
+        letterSpacing = ZapLetterSpacing,
     ),
     // Heading 2 — sheet titles, welcome card.
     headlineSmall = Typography().headlineSmall.copy(
-        fontFamily = FigtreeFontFamily,
+        fontFamily = WixMadeforTextFontFamily,
         fontWeight = FontWeight.SemiBold,
         fontSize = 22.sp,
         lineHeight = 28.sp,
-        letterSpacing = (-0.015).em,
+        letterSpacing = ZapLetterSpacing,
     ),
     titleLarge = Typography().titleLarge.copy(
-        fontFamily = FigtreeFontFamily,
+        fontFamily = WixMadeforTextFontFamily,
         fontWeight = FontWeight.SemiBold,
         fontSize = 22.sp,
         lineHeight = 28.sp,
-        letterSpacing = (-0.015).em,
+        letterSpacing = ZapLetterSpacing,
     ),
     // Heading 3 — app names in detail heads and rows.
     titleMedium = Typography().titleMedium.copy(
-        fontFamily = FigtreeFontFamily,
+        fontFamily = WixMadeforTextFontFamily,
         fontWeight = FontWeight.SemiBold,
         fontSize = 17.sp,
         lineHeight = 24.sp,
+        letterSpacing = ZapLetterSpacing,
     ),
     // Body — 16sp on Android.
     bodyLarge = Typography().bodyLarge.copy(
-        fontFamily = FigtreeFontFamily,
+        fontFamily = WixMadeforTextFontFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 16.sp,
         lineHeight = 24.sp,
+        letterSpacing = ZapLetterSpacing,
     ),
     // Body small — descriptions in rows and cards.
     bodyMedium = Typography().bodyMedium.copy(
-        fontFamily = FigtreeFontFamily,
+        fontFamily = WixMadeforTextFontFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 15.sp,
         lineHeight = 22.sp,
+        letterSpacing = ZapLetterSpacing,
     ),
     // Caption — timestamps, secondary facts.
     bodySmall = Typography().bodySmall.copy(
-        fontFamily = FigtreeFontFamily,
+        fontFamily = WixMadeforTextFontFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 13.sp,
         lineHeight = 18.sp,
+        letterSpacing = ZapLetterSpacing,
     ),
     // Button label — 14sp/600.
     labelLarge = Typography().labelLarge.copy(
-        fontFamily = FigtreeFontFamily,
+        fontFamily = WixMadeforTextFontFamily,
         fontWeight = FontWeight.SemiBold,
         fontSize = 14.sp,
         lineHeight = 20.sp,
+        letterSpacing = ZapLetterSpacing,
     ),
     // Evidence — verifiable values (versions, hashes, package IDs); tabular figures.
     labelMedium = Typography().labelMedium.copy(
-        fontFamily = FigtreeFontFamily,
+        fontFamily = WixMadeforTextFontFamily,
         fontWeight = FontWeight.Medium,
         fontSize = 13.sp,
         lineHeight = 17.sp,
+        letterSpacing = ZapLetterSpacing,
         fontFeatureSettings = "tnum",
     ),
     // Label — list-group headers, table headers, nav groups. Uppercase at call sites.
     labelSmall = Typography().labelSmall.copy(
-        fontFamily = FigtreeFontFamily,
+        fontFamily = WixMadeforTextFontFamily,
         fontWeight = FontWeight.SemiBold,
         fontSize = 11.sp,
         lineHeight = 16.sp,
-        letterSpacing = 0.08.em,
+        letterSpacing = ZapLetterSpacing,
     ),
 )
 

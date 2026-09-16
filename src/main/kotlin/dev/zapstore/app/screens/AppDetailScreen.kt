@@ -57,7 +57,6 @@ import java.text.DateFormat
 import java.text.NumberFormat
 import java.util.Date
 
-private val BigIconSize = 84.dp
 private val SmallIconSize = 26.dp
 private val SmallHeaderHeight = 32.dp
 
@@ -350,29 +349,16 @@ private fun RegularAppHeader(
     authorProfile: ProfileInfo?,
     onProfileClick: () -> Unit,
 ) {
-    // Reuses the same icon+title+version+byline block as the search/home AppCard, so the
-    // header reads as the same component, just bigger — not a bespoke hero layout.
     val authorName = authorPubkey?.let { profileDisplayName(authorProfile, it) }
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.Top,
-        horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3),
-    ) {
-        AppIcon(
-            title = app.name,
-            iconUrl = app.iconUrl,
-            size = BigIconSize,
-        )
-        AppNameWithByline(
-            name = app.name,
-            authorName = authorName,
-            authorProfile = authorProfile,
-            authorPubkey = authorPubkey,
-            version = release?.version,
-            onAuthorClick = onProfileClick,
-            modifier = Modifier.weight(1f),
-        )
-    }
+    AppIdentityRow(
+        name = app.name,
+        iconUrl = app.iconUrl,
+        authorName = authorName,
+        authorProfile = authorProfile,
+        authorPubkey = authorPubkey,
+        version = release?.version,
+        onAuthorClick = onProfileClick,
+    )
 }
 
 @Composable
