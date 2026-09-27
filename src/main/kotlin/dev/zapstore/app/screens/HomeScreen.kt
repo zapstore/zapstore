@@ -1,4 +1,4 @@
-package dev.zapstore.app
+package dev.zapstore.app.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -23,6 +23,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,53 +36,51 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import dev.zapstore.app.R
+import dev.zapstore.app.ZapCanvas
+import dev.zapstore.app.ZapSize
+import dev.zapstore.app.ZapTextTertiary
+import dev.zapstore.app.components.AppCard
+import dev.zapstore.app.components.LoadMoreWhenNearEnd
+import dev.zapstore.app.components.LoadingIndicator
+import dev.zapstore.app.components.SectionTitle
+import dev.zapstore.app.components.StackCard
+import dev.zapstore.app.components.StatusText
+import dev.zapstore.app.components.ZapSearchField
+import dev.zapstore.app.components.appList
+import dev.zapstore.iolite.AppRecord
+import dev.zapstore.iolite.StackRecord
 
 @Composable
 fun HomeScreen(
     state: HomeUiState,
-    repository: CatalogRepository? = null,
     onSearchQueryChanged: (String) -> Unit,
     onSearchSubmitted: () -> Unit,
     onSearchCleared: () -> Unit,
-    onUpdatesClick: () -> Unit = {},
-    updateCount: Int = 0,
-    databaseRowCount: Long = 0,
-    catalogError: String? = null,
-    onStackClick: (String) -> Unit,
-    onAppClick: (identifier: String, author: String) -> Unit,
-    onProfileClick: (String) -> Unit = {},
-    onLoadMoreReleases: () -> Unit = {},
+    onAppClick: (AppRecord) -> Unit,
+    onStackClick: (StackRecord) -> Unit,
     modifier: Modifier = Modifier,
+    onProfileClick: (String) -> Unit = {},
+    onUpdatesClick: () -> Unit = {},
+    onSettingsClick: () -> Unit = {},
+    updateCount: Int = 0,
+    onLoadMore: () -> Unit = {},
 ) {
     val listState = rememberLazyListState()
     val searchFocusRequester = remember { FocusRequester() }
     val latestReleases = stringResource(R.string.latest_releases)
     val noReleases = stringResource(R.string.no_releases)
-    LoadMoreReleasesWhenNearEnd(
-        listState = listState,
-        entries = state.releaseFeed.entries,
-        loading = state.releaseFeed.loadingMore,
-        canLoadMore = state.releaseFeed.canLoadMore,
-        onLoadMore = onLoadMoreReleases,
-    )
+    LoadMoreWhenNearEnd(listState, state.feed, onLoadMore)
+    LaunchedEffect(state.submittedQuery) {
+        listState.scrollToItem(0)
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(ZapCanvas)
             .windowInsetsPadding(WindowInsets.safeDrawing),
     ) {
-        Text(
-            text = buildString {
-                append(stringResource(R.string.database_rows, databaseRowCount))
-                if (!catalogError.isNullOrBlank()) {
-                    append(" · ")
-                    append(catalogError)
-                }
-            },
-            color = ZapTextTertiary,
-            style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.padding(start = 16.dp, top = 4.dp),
-        )
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -111,7 +110,8 @@ fun HomeScreen(
                             },
                             modifier = Modifier
                                 .size(ZapSize.control)
-                                .semantics { contentDescription = clearDescription },
+                                .semantics { contentDescription = clearDescription }
+                                .testTag("clearSearch"),
                         ) {
                             Icon(
                                 painter = painterResource(R.drawable.ic_close),
@@ -128,10 +128,7 @@ fun HomeScreen(
                     .testTag("searchField"),
             )
             Box(contentAlignment = Alignment.TopEnd) {
-                IconButton(
-                    onClick = onUpdatesClick,
-                    modifier = Modifier.testTag("updatesButton"),
-                ) {
+                IconButton(onClick = onUpdatesClick, modifier = Modifier.testTag("updatesButton")) {
                     Icon(
                         painter = painterResource(R.drawable.ic_launcher),
                         contentDescription = stringResource(R.string.updates),
@@ -152,67 +149,71 @@ fun HomeScreen(
                     )
                 }
             }
+            IconButton(onClick = onSettingsClick, modifier = Modifier.testTag("settingsButton")) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_more),
+                    contentDescription = stringResource(R.string.settings),
+                    tint = ZapTextTertiary,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
         }
 
         LazyColumn(
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .testTag("homeList"),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             state = listState,
         ) {
-            state.searchMessage?.let { message ->
-                item { StatusText(message, Modifier.testTag("searchStatus")) }
-            }
-            items(state.searchResults, key = { it.address }) { app ->
-                AppCard(
-                    app = app,
-                    onClick = { onAppClick(app.identifier, app.event.pubKey) },
-                    onProfileClick = { onProfileClick(app.event.pubKey) },
-                    repository = repository,
-                    modifier = Modifier.testTag("searchResult:${app.address}"),
-                )
+            state.searchResults?.let { results ->
+                item {
+                    StatusText(
+                        value = stringResource(R.string.search_results, results.size, state.searchDurationMillis ?: 0L),
+                        modifier = Modifier.testTag("searchStatus"),
+                    )
+                }
+                items(results, key = { "search:${it.appId}" }) { app ->
+                    AppCard(
+                        app = app,
+                        author = app.authorPubkey?.let(state.profiles::get),
+                        onClick = { onAppClick(app) },
+                        onAuthorClick = onProfileClick,
+                        modifier = Modifier.testTag("searchResult:${app.appId}"),
+                    )
+                }
             }
 
-            item {
-                SectionTitle(
-                    value = stringResource(R.string.curated_stacks),
-                    modifier = Modifier.padding(top = 16.dp),
-                )
-            }
+            item { SectionTitle(stringResource(R.string.curated_stacks), Modifier.padding(top = 16.dp)) }
             item {
                 when {
-                    state.stacks.isNotEmpty() -> {
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            contentPadding = PaddingValues(end = 8.dp),
-                        ) {
-                            items(state.stacks, key = { it.event.id }) { stack ->
-                                StackCard(
-                                    stack = stack,
-                                    appsByAddress = state.stackApps,
-                                    onClick = { onStackClick(stack.event.id) },
-                                    modifier = Modifier.testTag("stack:${stack.event.id}"),
-                                )
-                            }
+                    state.stacks.isNotEmpty() -> LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        contentPadding = PaddingValues(end = 8.dp),
+                    ) {
+                        items(state.stacks, key = { it.eventId }) { stack ->
+                            StackCard(
+                                stack = stack,
+                                apps = state.stackApps,
+                                onClick = { onStackClick(stack) },
+                                modifier = Modifier.testTag("stack:${stack.identifier}"),
+                            )
                         }
                     }
-
                     state.stacksLoading -> LoadingIndicator(Modifier.padding(vertical = 12.dp))
                     state.stacksError != null -> StatusText(state.stacksError)
                     else -> StatusText(stringResource(R.string.no_stacks))
                 }
             }
 
-            releaseFeed(
-                state = state.releaseFeed,
+            appList(
+                state = state.feed,
                 title = latestReleases,
                 emptyMessage = noReleases,
-                repository = repository,
                 onAppClick = onAppClick,
-                onProfileClick = onProfileClick,
-                modifier = Modifier,
+                onAuthorClick = onProfileClick,
             )
         }
     }
 }
-

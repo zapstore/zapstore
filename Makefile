@@ -1,12 +1,6 @@
 GRADLE ?= ./gradlew
 ANDROID_SDK_ROOT ?= $(ANDROID_HOME)
 ADB ?= $(ANDROID_SDK_ROOT)/platform-tools/adb
-AVDMANAGER ?= $(ANDROID_SDK_ROOT)/cmdline-tools/latest/bin/avdmanager
-EMULATOR ?= $(ANDROID_SDK_ROOT)/emulator/emulator
-AVD_NAME ?= Pixel_9
-SYSTEM_IMAGE ?= system-images;android-35;google_apis;arm64-v8a
-AVD_HOME ?= $(HOME)/.android/avd
-AVD_CONFIG ?= $(AVD_HOME)/$(AVD_NAME).avd/config.ini
 PACKAGE ?= dev.zapstore.beta
 ACTIVITY ?= dev.zapstore.app.MainActivity
 KEYSTORE ?= release.keystore
@@ -15,16 +9,33 @@ KEY_ALIAS ?=
 KEY_PASSWORD ?= $(KEYSTORE_PASSWORD)
 DEBUG_KEYSTORE ?= $(HOME)/.android/debug.keystore
 
-ZSP_CATALOG_DB ?= ../zsp/testdata/catalog/catalog.db
-ASSETS_CATALOG_DB := src/main/assets/catalog.db
+ASSETS_CATALOG_BUNDLE := src/main/assets/bundle-0-1.tar.zst
+RELAY_PORT := 3334
 
-.PHONY: build release install run deploy refresh emulator bundle-catalog
+.PHONY: build release install run run-release deploy refresh vendor unbundle-catalog
 
-bundle-catalog: $(ASSETS_CATALOG_DB)
+# Drop leftover seeds so a build without CATALOG_BUNDLE does not package them.
+unbundle-catalog:
+	rm -f "$(ASSETS_CATALOG_BUNDLE)" src/main/assets/catalog-delta.tar.zst
 
-$(ASSETS_CATALOG_DB): $(ZSP_CATALOG_DB)
+ifeq ($(CATALOG_BUNDLE),)
+build install release: unbundle-catalog
+else
+.PHONY: $(ASSETS_CATALOG_BUNDLE)
+$(ASSETS_CATALOG_BUNDLE):
+	@test -f "$(CATALOG_BUNDLE)" || { echo "CATALOG_BUNDLE not found: $(CATALOG_BUNDLE)" >&2; exit 1; }
 	@mkdir -p src/main/assets
-	cp "$(ZSP_CATALOG_DB)" "$@"
+	cp "$(CATALOG_BUNDLE)" "$@"
+
+build install release: $(ASSETS_CATALOG_BUNDLE)
+endif
+
+# Rebuild libarti_android.so into src/main/jniLibs/arm64-v8a.
+# Needs rustup, the cargo-ndk / NDK versions pinned under tools/arti-build/,
+# and a later commit of the produced .so files.
+vendor:
+	./tools/arti-build/build-arti.sh
+	$(GRADLE) verifyArtiAbis
 
 build:
 	$(GRADLE) assembleDebug
@@ -59,12 +70,18 @@ release:
 		-Pandroid.injected.signing.key.alias="$$alias" \
 		-Pandroid.injected.signing.key.password="$$keypass"
 
+run-release: release
+	@$(ADB) reverse tcp:$(RELAY_PORT) tcp:$(RELAY_PORT) || true
+	$(ADB) install -r --no-incremental build/outputs/apk/release/zapstore-release.apk
+	$(ADB) shell am force-stop $(PACKAGE)
+	$(ADB) shell am start -n $(PACKAGE)/$(ACTIVITY)
+
 install:
 	$(GRADLE) installDebug
+	$(ADB) shell pm clear $(PACKAGE)
 
 run: install
-	@$(ADB) reverse tcp:3334 tcp:3334 || true
-	@$(ADB) reverse tcp:3336 tcp:3336 || true
+	@$(ADB) reverse tcp:$(RELAY_PORT) tcp:$(RELAY_PORT) || true
 	@$(ADB) shell am force-stop $(PACKAGE)
 	@$(ADB) shell am start -n $(PACKAGE)/$(ACTIVITY)
 	@if [ -t 0 ]; then \
@@ -84,17 +101,3 @@ deploy: run
 refresh:
 	$(ADB) shell am force-stop $(PACKAGE)
 	$(ADB) shell am start -n $(PACKAGE)/$(ACTIVITY)
-
-emulator:
-	@if ! $(AVDMANAGER) list avd -c | tr -d '\r' | awk '$$0 == "$(AVD_NAME)" { found=1 } END { exit !found }'; then \
-		echo "Creating Android Virtual Device $(AVD_NAME)..."; \
-		echo no | $(AVDMANAGER) create avd -n "$(AVD_NAME)" -k "$(SYSTEM_IMAGE)" -d pixel_9 --force; \
-	fi
-	@if [ -f "$(AVD_CONFIG)" ]; then \
-		if grep -qE '^hw\.keyboard[[:space:]]*=[[:space:]]*no' "$(AVD_CONFIG)"; then \
-			sed -i '' 's/^hw\.keyboard[[:space:]]*=[[:space:]]*no/hw.keyboard = yes/' "$(AVD_CONFIG)"; \
-		elif ! grep -qE '^hw\.keyboard' "$(AVD_CONFIG)"; then \
-			echo 'hw.keyboard = yes' >> "$(AVD_CONFIG)"; \
-		fi; \
-	fi
-	$(EMULATOR) -avd "$(AVD_NAME)"

@@ -1,4 +1,4 @@
-package dev.zapstore.app
+package dev.zapstore.app.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -10,9 +10,11 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -24,14 +26,18 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -41,154 +47,150 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil3.compose.AsyncImage
+import dev.zapstore.app.CdnImageVariant
+import dev.zapstore.app.MarkdownText
+import dev.zapstore.app.R
+import dev.zapstore.app.ZapActionText
+import dev.zapstore.app.ZapCanvas
+import dev.zapstore.app.ZapLine
+import dev.zapstore.app.ZapRadius
+import dev.zapstore.app.ZapSpacing
+import dev.zapstore.app.ZapSurface1
+import dev.zapstore.app.ZapSurface2
+import dev.zapstore.app.ZapSurface3
+import dev.zapstore.app.ZapDanger
+import dev.zapstore.app.ZapTextSecondary
+import dev.zapstore.app.ZapVerified
+import dev.zapstore.app.ZapWarning
+import dev.zapstore.app.cdnImageUrl
+import dev.zapstore.app.components.AppIcon
+import dev.zapstore.app.components.AppIdentityRow
+import dev.zapstore.app.components.AuthorByline
+import dev.zapstore.app.components.InfoRow
+import dev.zapstore.app.components.ProfileImage
+import dev.zapstore.app.components.shortDisplayName
+import dev.zapstore.app.components.ParagraphSkeleton
+import dev.zapstore.app.components.SkeletonBlock
+import dev.zapstore.app.components.LoadingIndicator
+import dev.zapstore.app.components.StatusText
+import dev.zapstore.iolite.AppRecord
+import dev.zapstore.iolite.CommentRecord
+import dev.zapstore.iolite.ProfileRecord
 import java.text.DateFormat
 import java.text.NumberFormat
 import java.util.Date
 
-private val SmallIconSize = 26.dp
-private val SmallHeaderHeight = 32.dp
+private val CompactIconSize = 26.dp
+private val CompactHeaderHeight = 32.dp
 
 @Composable
 fun AppDetailScreen(
     state: AppDetailUiState,
     onOpenUrl: (String) -> Unit,
-    repository: CatalogRepository? = null,
-    onProfileClick: (String) -> Unit = {},
     modifier: Modifier = Modifier,
+    onProfileClick: (String) -> Unit = {},
+    onRetryComments: () -> Unit = {},
+    onSettingsClick: () -> Unit = {},
 ) {
     var selectedScreenshot by remember { mutableStateOf<Int?>(null) }
+    var showDeveloperDescription by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
+    val showCompactHeader by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 } }
     val app = state.app
-    val authorPubkey = app?.let { rememberAppAuthor(it, repository) }
-    val c1AuthorPubkey = app?.let { rememberC1Author(it, repository) }
-    val authorProfile = authorPubkey?.let { rememberProfile(it, repository) }
-    val showCompactHeader by remember {
-        derivedStateOf {
-            listState.firstVisibleItemIndex > 0
-        }
-    }
+    val comments = state.comments
+    val threaded = remember(comments.threads) { comments.threads.flattenComments() }
 
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(ZapCanvas),
     ) {
-    LazyColumn(
-        state = listState,
-        modifier = Modifier
-            .fillMaxSize()
-            .windowInsetsPadding(WindowInsets.safeDrawing),
-        contentPadding = PaddingValues(start = 16.dp, top = 4.dp, end = 16.dp, bottom = 36.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        if (app == null) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.safeDrawing),
+            contentPadding = PaddingValues(start = 16.dp, top = 4.dp, end = 16.dp, bottom = 36.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            if (app == null) {
+                item { if (state.loaded) NotFoundCard() else AppDetailSkeleton() }
+                return@LazyColumn
+            }
+
             item {
-                if (state.appLoading) {
-                    AppDetailSkeleton()
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(100.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(ZapSurface2),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = stringResource(R.string.app_not_found),
+                AppIdentityRow(
+                    name = app.name,
+                    iconUrl = app.iconUrl,
+                    iconFile = app.iconFile,
+                    version = app.version,
+                    authorPubkey = app.authorPubkey,
+                    author = state.author,
+                    onAuthorClick = onProfileClick,
+                )
+            }
+
+            if (app.screenshots.isNotEmpty()) {
+                item {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        items(app.screenshots.take(5), key = { it }) { url ->
+                            AsyncImage(
+                                model = cdnImageUrl(url, CdnImageVariant.ThumbnailSmall),
+                                contentDescription = stringResource(R.string.screenshot_description, app.name),
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .width(120.dp)
+                                    .height(200.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(ZapSurface3)
+                                    .clickable { selectedScreenshot = app.screenshots.indexOf(url) },
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (app.about.isNotBlank()) {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        MarkdownText(
+                            value = app.about,
                             color = ZapTextSecondary,
+                            style = MaterialTheme.typography.bodyLarge,
+                            onOpenUrl = onOpenUrl,
                         )
+                        if (app.description.isNotBlank()) {
+                            TextButton(
+                                onClick = { showDeveloperDescription = true },
+                                contentPadding = PaddingValues(0.dp),
+                                modifier = Modifier.testTag("developerDescription"),
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.see_developer_description),
+                                    color = ZapActionText,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                        }
                     }
                 }
-            }
-            state.error?.let { error -> item { StatusText(error) } }
-            return@LazyColumn
-        }
-
-        item {
-            RegularAppHeader(
-                app = app,
-                release = state.release,
-                repository = repository,
-                authorPubkey = authorPubkey,
-                authorProfile = authorProfile,
-                onProfileClick = { authorPubkey?.let(onProfileClick) },
-            )
-        }
-
-        if (app.screenshots.isNotEmpty()) {
-            item {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(app.screenshots.take(5), key = { it }) { url ->
-                        AsyncImage(
-                            model = cdnImageUrl(url, CdnImageVariant.ThumbnailSmall),
-                            contentDescription = stringResource(R.string.screenshot_description, app.name),
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .width(120.dp)
-                                .height(200.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(ZapSurface3)
-                                .clickable {
-                                    selectedScreenshot = app.screenshots.indexOf(url)
-                                },
-                        )
-                    }
-                }
-            }
-        }
-
-        val description = app.event.content.ifBlank { app.summary }
-        if (description.isNotBlank()) {
-            item {
-                MarkdownText(
-                    value = description,
-                    color = ZapTextSecondary,
-                    style = MaterialTheme.typography.bodyLarge,
-                    onOpenUrl = onOpenUrl,
-                    collapsible = true,
-                )
-            }
-        }
-
-        if (state.zapSummary.isLoading || state.zapSummary.zapCount > 0 || state.zapSummary.error != null) {
-            item { ZapSummaryCard(state.zapSummary) }
-        }
-
-        item {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(top = 8.dp),
-            ) {
-                HorizontalDivider(Modifier.weight(1f), color = ZapLine)
-                Text(
-                    text = stringResource(R.string.latest_release).uppercase(),
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-                HorizontalDivider(Modifier.weight(1f), color = ZapLine)
-            }
-        }
-
-        state.release?.let { release ->
-            item { VersionRow(release) }
-            if (release.notes.isNotBlank()) {
+            } else if (app.description.isNotBlank()) {
                 item {
                     MarkdownText(
-                        value = release.notes,
+                        value = app.description,
                         color = ZapTextSecondary,
                         style = MaterialTheme.typography.bodyLarge,
                         onOpenUrl = onOpenUrl,
@@ -196,52 +198,97 @@ fun AppDetailScreen(
                     )
                 }
             }
-        } ?: run {
+
+            if (app.security.isNotBlank() || app.factRows.isNotEmpty()) {
+                item { SectionDivider(stringResource(R.string.privacy_and_security)) }
+                if (app.factRows.isNotEmpty()) {
+                    item {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+                            verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("facts"),
+                        ) {
+                            app.factRows.forEach { fact ->
+                                FactPill(key = fact.key, yes = fact.yes)
+                            }
+                        }
+                    }
+                }
+                if (app.securityWarnings.isNotBlank()) {
+                    item {
+                        Text(
+                            text = app.securityWarnings,
+                            color = ZapWarning,
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    }
+                }
+                if (app.securityBody.isNotBlank()) {
+                    item {
+                        MarkdownText(
+                            value = app.securityBody,
+                            color = ZapTextSecondary,
+                            style = MaterialTheme.typography.bodyLarge,
+                            onOpenUrl = onOpenUrl,
+                        )
+                    }
+                }
+            }
+
+            if (state.zaps.loading || state.zaps.count > 0 || state.zaps.error != null) {
+                item { ZapSummaryCard(state.zaps) }
+            }
+
+            item { SectionDivider(stringResource(R.string.latest_release)) }
+            item { VersionRow(app, onOpenUrl) }
+
             item {
-                Box(
-                    Modifier
-                        .width(220.dp)
-                        .height(32.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(ZapSurface2),
+                AppInfoCard(
+                    app = app,
+                    author = state.author,
+                    onOpenUrl = onOpenUrl,
+                    onProfileClick = onProfileClick,
+                    modifier = Modifier.padding(top = 8.dp),
                 )
             }
-            item {
-                ReleaseNotesSkeleton()
+
+            item { SectionDivider(stringResource(R.string.comments)) }
+            when {
+                comments.loading && threaded.isEmpty() -> item {
+                    LoadingIndicator(Modifier.padding(vertical = 12.dp).testTag("commentsLoading"))
+                }
+                threaded.isEmpty() -> item {
+                    CommentsEmpty(
+                        error = comments.error,
+                        onRetry = onRetryComments,
+                        onSettings = onSettingsClick,
+                    )
+                }
+                else -> items(threaded, key = { it.comment.eventId }) { entry ->
+                    CommentRow(
+                        comment = entry.comment,
+                        author = comments.profiles[entry.comment.pubkey],
+                        depth = entry.depth,
+                        onOpenUrl = onOpenUrl,
+                        onAuthorClick = onProfileClick,
+                    )
+                }
             }
         }
 
-        item {
-            AppInfoCard(
-                app = app,
-                release = state.release,
-                onOpenUrl = onOpenUrl,
-                repository = repository,
-                authorPubkey = authorPubkey,
-                c1AuthorPubkey = c1AuthorPubkey,
-                authorProfile = authorProfile,
-                onProfileClick = { authorPubkey?.let(onProfileClick) },
-                modifier = Modifier.padding(top = 8.dp),
-            )
-        }
-        state.error?.let { error -> item { StatusText(error) } }
-    }
-
-    if (showCompactHeader) {
-        state.app?.let { app ->
+        if (showCompactHeader && app != null) {
             CompactAppHeader(
                 app = app,
-                repository = repository,
-                authorPubkey = authorPubkey,
-                authorProfile = authorProfile,
-                onProfileClick = { authorPubkey?.let(onProfileClick) },
+                author = state.author,
+                onProfileClick = onProfileClick,
                 modifier = Modifier.align(Alignment.TopCenter),
             )
         }
     }
-    }
 
-    state.app?.let { app ->
+    if (app != null) {
         selectedScreenshot?.let { initialPage ->
             ScreenshotCarousel(
                 screenshots = app.screenshots,
@@ -250,6 +297,111 @@ fun AppDetailScreen(
                 onDismiss = { selectedScreenshot = null },
             )
         }
+        if (showDeveloperDescription && app.description.isNotBlank()) {
+            MarkdownDialog(
+                title = stringResource(R.string.developer_description),
+                markdown = app.description,
+                onOpenUrl = onOpenUrl,
+                onDismiss = { showDeveloperDescription = false },
+            )
+        }
+    }
+}
+
+@Composable
+private fun NotFoundCard() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(100.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(ZapSurface2),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text = stringResource(R.string.app_not_found), color = ZapTextSecondary)
+    }
+}
+
+/** Yes is the good outcome for these. Every other fact is an antifeature or sensitive access. */
+private val desirableFactKeys = setOf(
+    "open_source",
+    "e2ee",
+    "offline_capable",
+    "self_hostable",
+)
+
+/** Ordinary device access. Presence is not a warning and absence is not a virtue. */
+private val neutralFactKeys = setOf("camera", "location")
+
+internal enum class FactTone { Positive, Negative, Neutral }
+
+internal fun factTone(key: String, yes: Boolean): FactTone {
+    if (key in neutralFactKeys) return FactTone.Neutral
+    val positive = if (key in desirableFactKeys) yes else !yes
+    return if (positive) FactTone.Positive else FactTone.Negative
+}
+
+internal fun factIsPositive(key: String, yes: Boolean): Boolean =
+    factTone(key, yes) == FactTone.Positive
+
+@Composable
+private fun FactPill(key: String, yes: Boolean) {
+    val label = factLabel(key)
+    val text = if (yes) label else stringResource(R.string.fact_no, factAbsentBody(label))
+    val fill = when (factTone(key, yes)) {
+        FactTone.Positive -> ZapVerified
+        FactTone.Negative -> ZapDanger
+        FactTone.Neutral -> ZapTextSecondary
+    }
+    Text(
+        text = text,
+        color = ZapCanvas,
+        style = MaterialTheme.typography.labelMedium.copy(
+            fontSize = 12.5.sp,
+            lineHeight = 16.sp,
+            fontWeight = FontWeight.Medium,
+        ),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .clip(RoundedCornerShape(ZapRadius.xs))
+            .background(fill)
+            .padding(horizontal = 8.dp, vertical = 3.dp)
+            .testTag("fact_$key"),
+    )
+}
+
+@Composable
+private fun factLabel(key: String): String = when (key) {
+    "gms" -> stringResource(R.string.fact_gms)
+    "fcm" -> stringResource(R.string.fact_fcm)
+    "open_source" -> stringResource(R.string.fact_open_source)
+    "e2ee" -> "E2EE"
+    else -> key.replace('_', ' ').replaceFirstChar { it.titlecase() }
+}
+
+/** Keeps brands and acronyms; lowercases a sentence-style label after "No". */
+internal fun factAbsentBody(label: String): String {
+    val letters = label.filter { it.isLetter() }
+    val acronym = letters.isNotEmpty() && letters.all { it.isUpperCase() }
+    val keepCase = acronym || label.startsWith("Google ") || label.startsWith("Firebase ")
+    return if (keepCase) label else label.replaceFirstChar { it.lowercase() }
+}
+
+@Composable
+private fun SectionDivider(title: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(top = 8.dp),
+    ) {
+        HorizontalDivider(Modifier.weight(1f), color = ZapLine)
+        Text(
+            text = title.uppercase(),
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
+        HorizontalDivider(Modifier.weight(1f), color = ZapLine)
     }
 }
 
@@ -259,115 +411,27 @@ private fun AppDetailSkeleton() {
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Row(
-            verticalAlignment = Alignment.Top,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
+        Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             SkeletonBlock(74.dp, 74.dp, 16.dp)
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 SkeletonBlock(width = 190.dp, height = 22.dp, cornerRadius = 6.dp)
                 SkeletonBlock(width = 140.dp, height = 16.dp, cornerRadius = 6.dp)
             }
         }
-        SkeletonBlock(
-            width = 160.dp,
-            height = 18.dp,
-            cornerRadius = 6.dp,
-        )
         LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(4) {
-                SkeletonBlock(
-                    width = 120.dp,
-                    height = 200.dp,
-                    cornerRadius = 16.dp,
-                )
-            }
+            items(4) { SkeletonBlock(width = 120.dp, height = 200.dp, cornerRadius = 16.dp) }
         }
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            SkeletonBlock(width = Dp.Infinity, height = 16.dp, cornerRadius = 5.dp)
-            SkeletonBlock(width = Dp.Infinity, height = 16.dp, cornerRadius = 5.dp)
-            SkeletonBlock(width = 180.dp, height = 16.dp, cornerRadius = 5.dp)
-        }
+        ParagraphSkeleton()
         SkeletonBlock(width = 220.dp, height = 32.dp, cornerRadius = 8.dp)
-        ReleaseNotesSkeleton()
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(ZapSurface1)
-                .border(1.dp, ZapLine, RoundedCornerShape(16.dp))
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp),
-        ) {
-            repeat(4) {
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    SkeletonBlock(width = 0.dp, height = 16.dp, cornerRadius = 5.dp, modifier = Modifier.weight(1f))
-                    SkeletonBlock(width = 80.dp, height = 16.dp, cornerRadius = 5.dp)
-                }
-            }
-        }
+        ParagraphSkeleton()
     }
-}
-
-@Composable
-private fun ReleaseNotesSkeleton() {
-    Column(
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.padding(vertical = 4.dp),
-    ) {
-        SkeletonBlock(width = Dp.Infinity, height = 16.dp, cornerRadius = 5.dp)
-        SkeletonBlock(width = Dp.Infinity, height = 16.dp, cornerRadius = 5.dp)
-        SkeletonBlock(width = 200.dp, height = 16.dp, cornerRadius = 5.dp)
-    }
-}
-
-@Composable
-private fun SkeletonBlock(
-    width: Dp,
-    height: Dp,
-    cornerRadius: Dp,
-    modifier: Modifier = Modifier,
-) {
-    Box(
-        modifier = modifier
-            .then(if (width == Dp.Infinity) Modifier.fillMaxWidth() else Modifier.width(width))
-            .height(height)
-            .clip(RoundedCornerShape(cornerRadius))
-            .background(ZapSurface2),
-    )
-}
-
-@Composable
-private fun RegularAppHeader(
-    app: AppInfo,
-    release: ReleaseInfo?,
-    repository: CatalogRepository?,
-    authorPubkey: String?,
-    authorProfile: ProfileInfo?,
-    onProfileClick: () -> Unit,
-) {
-    val authorName = authorPubkey?.let { profileDisplayName(authorProfile, it) }
-    AppIdentityRow(
-        name = app.name,
-        iconUrl = app.iconUrl,
-        authorName = authorName,
-        authorProfile = authorProfile,
-        authorPubkey = authorPubkey,
-        version = release?.version,
-        onAuthorClick = onProfileClick,
-    )
 }
 
 @Composable
 private fun CompactAppHeader(
-    app: AppInfo,
-    repository: CatalogRepository?,
-    authorPubkey: String?,
-    authorProfile: ProfileInfo?,
-    onProfileClick: () -> Unit,
+    app: AppRecord,
+    author: ProfileRecord?,
+    onProfileClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -375,16 +439,12 @@ private fun CompactAppHeader(
             .fillMaxWidth()
             .background(ZapCanvas)
             .windowInsetsPadding(WindowInsets.statusBars)
-            .height(SmallHeaderHeight)
+            .height(CompactHeaderHeight)
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        AppIcon(
-            title = app.name,
-            iconUrl = app.iconUrl,
-            size = SmallIconSize,
-        )
+        AppIcon(title = app.name, iconUrl = app.iconUrl, iconFile = app.iconFile, size = CompactIconSize)
         Text(
             text = app.name,
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Black),
@@ -392,13 +452,8 @@ private fun CompactAppHeader(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f, fill = false),
         )
-        authorPubkey?.let { pubkey ->
-            AppAuthorByline(
-                pubkey = pubkey,
-                repository = repository,
-                profile = authorProfile,
-                onClick = onProfileClick,
-            )
+        app.authorPubkey?.let { pubkey ->
+            AuthorByline(pubkey = pubkey, profile = author, onClick = { onProfileClick(pubkey) })
         }
     }
 }
@@ -412,10 +467,7 @@ private fun ScreenshotCarousel(
 ) {
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = false,
-        ),
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
         val pagerState = rememberPagerState(
             initialPage = initialPage.coerceIn(0, screenshots.lastIndex),
@@ -426,16 +478,10 @@ private fun ScreenshotCarousel(
                 .fillMaxSize()
                 .background(Color.Black),
         ) {
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier.fillMaxSize(),
-            ) { page ->
+            HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
                 AsyncImage(
                     model = cdnImageUrl(screenshots[page], CdnImageVariant.ThumbnailLarge),
-                    contentDescription = stringResource(
-                        R.string.screenshot_description,
-                        appName,
-                    ),
+                    contentDescription = stringResource(R.string.screenshot_description, appName),
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
                         .fillMaxSize()
@@ -467,9 +513,8 @@ private fun ScreenshotCarousel(
     }
 }
 
-
 @Composable
-private fun ZapSummaryCard(summary: ZapSummaryUiState) {
+private fun ZapSummaryCard(summary: ZapSummary) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -485,22 +530,14 @@ private fun ZapSummaryCard(summary: ZapSummaryUiState) {
             color = ZapTextSecondary,
         )
         Spacer(Modifier.height(4.dp))
-        if (summary.isLoading && summary.zapCount == 0) {
-            Box(
-                Modifier
-                    .width(148.dp)
-                    .height(24.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(ZapSurface2),
-            )
-        } else if (summary.zapCount == 0) {
-            StatusText(summary.error.orEmpty())
-        } else {
-            Text(
+        when {
+            summary.loading && summary.count == 0 -> SkeletonBlock(width = 148.dp, height = 24.dp, cornerRadius = 6.dp)
+            summary.count == 0 -> StatusText(summary.error.orEmpty())
+            else -> Text(
                 text = stringResource(
                     R.string.zap_summary,
                     NumberFormat.getInstance().format(summary.totalSats),
-                    summary.zapCount,
+                    summary.count,
                 ),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
@@ -509,9 +546,11 @@ private fun ZapSummaryCard(summary: ZapSummaryUiState) {
     }
 }
 
-
 @Composable
-private fun VersionRow(release: ReleaseInfo) {
+private fun VersionRow(app: AppRecord, onOpenUrl: (String) -> Unit) {
+    val notes = app.releaseNotes
+    val hasNotes = notes.isNotBlank()
+    var showNotes by remember { mutableStateOf(false) }
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -519,31 +558,113 @@ private fun VersionRow(release: ReleaseInfo) {
             .clip(RoundedCornerShape(ZapRadius.md))
             .background(ZapSurface2)
             .border(1.dp, ZapLine, RoundedCornerShape(ZapRadius.md))
-            .padding(horizontal = ZapSpacing.space3, vertical = ZapSpacing.space2),
+            .padding(
+                start = ZapSpacing.space3,
+                top = if (hasNotes) 0.dp else ZapSpacing.space2,
+                end = if (hasNotes) 0.dp else ZapSpacing.space3,
+                bottom = if (hasNotes) 0.dp else ZapSpacing.space2,
+            ),
     ) {
         StatusText(stringResource(R.string.version))
         Spacer(Modifier.width(6.dp))
         Text(
-            text = release.version,
+            text = app.version,
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
         )
         Spacer(Modifier.width(6.dp))
-        StatusText("(${formatDate(release.event.createdAt)})")
+        StatusText("(${formatDate(app.releasedAt)})")
+        if (hasNotes) {
+            IconButton(
+                onClick = { showNotes = true },
+                modifier = Modifier.testTag("releaseNotes"),
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_more),
+                    contentDescription = stringResource(R.string.release_notes),
+                    tint = ZapTextSecondary,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+        }
+    }
+    if (showNotes) {
+        MarkdownDialog(
+            title = stringResource(R.string.release_notes),
+            markdown = notes,
+            onOpenUrl = onOpenUrl,
+            onDismiss = { showNotes = false },
+        )
     }
 }
 
+@Composable
+private fun MarkdownDialog(
+    title: String,
+    markdown: String,
+    onOpenUrl: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.72f).dp
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = maxHeight)
+                .clip(RoundedCornerShape(ZapRadius.lg))
+                .background(ZapSurface1)
+                .border(1.dp, ZapLine, RoundedCornerShape(ZapRadius.lg)),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = ZapSpacing.space4, end = 4.dp),
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_close),
+                        contentDescription = stringResource(R.string.close),
+                        tint = ZapTextSecondary,
+                    )
+                }
+            }
+            Column(
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState())
+                    .padding(
+                        start = ZapSpacing.space4,
+                        end = ZapSpacing.space4,
+                        bottom = ZapSpacing.space4,
+                    ),
+            ) {
+                MarkdownText(
+                    value = markdown,
+                    color = ZapTextSecondary,
+                    style = MaterialTheme.typography.bodyLarge,
+                    onOpenUrl = onOpenUrl,
+                )
+            }
+        }
+    }
+}
 
 @Composable
 private fun AppInfoCard(
-    app: AppInfo,
-    release: ReleaseInfo?,
+    app: AppRecord,
+    author: ProfileRecord?,
     onOpenUrl: (String) -> Unit,
-    repository: CatalogRepository?,
-    authorPubkey: String?,
-    c1AuthorPubkey: String?,
-    authorProfile: ProfileInfo?,
-    onProfileClick: () -> Unit,
+    onProfileClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -560,65 +681,122 @@ private fun AppInfoCard(
             link = app.repository,
             onOpenUrl = onOpenUrl,
         )
-        app.license?.let {
-            InfoRow(stringResource(R.string.license), it, onOpenUrl = onOpenUrl)
-        }
-        InfoRow(stringResource(R.string.app_id), app.identifier, onOpenUrl = onOpenUrl)
-        authorPubkey?.let { pubkey ->
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 10.dp),
-        ) {
-            StatusText(stringResource(R.string.author))
-            Spacer(Modifier.weight(1f))
-            Box(
-                modifier = Modifier.weight(1f),
-                contentAlignment = Alignment.CenterEnd,
-            ) {
-                AppAuthorByline(
-                    pubkey = pubkey,
-                    repository = repository,
-                    profile = authorProfile,
-                    showBy = false,
-                    onClick = onProfileClick,
-                )
-            }
-        }
-        }
-        c1AuthorPubkey?.let { pubkey ->
+        app.website?.let { InfoRow(stringResource(R.string.website), it, link = it, onOpenUrl = onOpenUrl) }
+        app.license?.let { InfoRow(stringResource(R.string.license), it) }
+        InfoRow(stringResource(R.string.app_id), app.appId)
+        app.authorPubkey?.let { pubkey ->
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 10.dp),
             ) {
-                StatusText("C1 author")
+                StatusText(stringResource(if (app.isVerified) R.string.verified_author else R.string.author))
                 Spacer(Modifier.weight(1f))
-                Box(
-                    modifier = Modifier.weight(1f),
-                    contentAlignment = Alignment.CenterEnd,
-                ) {
-                    AppAuthorByline(
-                        pubkey = pubkey,
-                        repository = repository,
-                        showBy = false,
-                    )
+                AuthorByline(pubkey = pubkey, profile = author, showBy = false, onClick = { onProfileClick(pubkey) })
+            }
+        }
+        InfoRow(stringResource(R.string.release_date), formatDate(app.releasedAt))
+    }
+}
+
+@Composable
+private fun CommentsEmpty(
+    error: CommentsError?,
+    onRetry: () -> Unit,
+    onSettings: () -> Unit,
+) {
+    Column(
+        modifier = Modifier.testTag("commentsEmpty"),
+        verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+    ) {
+        StatusText(
+            stringResource(
+                when (error) {
+                    CommentsError.RelaysUnreachable -> R.string.comments_error_relays
+                    CommentsError.TimedOut -> R.string.comments_error_timeout
+                    null -> R.string.no_comments
+                },
+            ),
+        )
+        if (error != null) {
+            Row(horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2)) {
+                TextButton(onClick = onRetry, modifier = Modifier.testTag("commentsRetry")) {
+                    Text(stringResource(R.string.try_again))
+                }
+                TextButton(onClick = onSettings, modifier = Modifier.testTag("commentsNetworkSettings")) {
+                    Text(stringResource(R.string.network_settings))
                 }
             }
         }
-        release?.let {
-            InfoRow(
-                stringResource(R.string.release_date),
-                formatDate(it.event.createdAt),
+    }
+}
+
+@Composable
+private fun CommentRow(
+    comment: CommentRecord,
+    author: ProfileRecord?,
+    onOpenUrl: (String) -> Unit,
+    onAuthorClick: (String) -> Unit,
+    depth: Int = 0,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = ZapSpacing.space5 * depth)
+            .testTag("commentDepth:${comment.eventId}:$depth"),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(ZapRadius.md))
+                .background(ZapSurface1)
+                .border(1.dp, ZapLine, RoundedCornerShape(ZapRadius.md))
+                .padding(ZapSpacing.space3)
+                .testTag("comment:${comment.eventId}"),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onAuthorClick(comment.pubkey) }
+                    .testTag("profile:${comment.pubkey}"),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(ZapSurface3),
+                ) {
+                    ProfileImage(
+                        pubkey = comment.pubkey,
+                        pictureUrl = author?.picture,
+                        profileVersion = author?.eventId,
+                        contentDescription = stringResource(R.string.profile_avatar_description, shortDisplayName(comment.pubkey, author)),
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+                Text(
+                    text = shortDisplayName(comment.pubkey, author),
+                    color = ZapTextSecondary,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                StatusText(formatDate(comment.createdAt))
+            }
+            MarkdownText(
+                value = comment.content,
+                color = ZapTextSecondary,
+                style = MaterialTheme.typography.bodyMedium,
                 onOpenUrl = onOpenUrl,
             )
         }
     }
 }
 
-
 private fun formatDate(createdAt: Long): String =
     DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(createdAt * 1_000))
-

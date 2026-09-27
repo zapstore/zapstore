@@ -1,5 +1,6 @@
-package dev.zapstore.app
+package dev.zapstore.app.screens
 
+import android.content.ClipData
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -16,11 +17,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import android.content.ClipData
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -33,63 +32,44 @@ import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import dev.zapstore.app.MarkdownText
+import dev.zapstore.app.R
+import dev.zapstore.app.ZapCanvas
+import dev.zapstore.app.ZapLine
+import dev.zapstore.app.ZapSurface1
+import dev.zapstore.app.ZapSurface2
+import dev.zapstore.app.ZapTextSecondary
+import dev.zapstore.app.components.InfoRow
+import dev.zapstore.app.components.LoadingIndicator
+import dev.zapstore.app.components.ProfileImage
+import dev.zapstore.app.components.StatusText
+import dev.zapstore.app.components.appList
+import dev.zapstore.iolite.AppRecord
+import dev.zapstore.iolite.toNpub
 import kotlinx.coroutines.launch
 
 @Composable
 fun ProfileScreen(
     state: ProfileUiState,
     onOpenUrl: (String) -> Unit,
-    repository: CatalogRepository? = null,
-    onAppClick: (identifier: String, author: String) -> Unit = { _, _ -> },
-    onLoadMoreReleases: () -> Unit = {},
+    onAppClick: (AppRecord) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val listState = rememberLazyListState()
-    val noProfileApps = stringResource(R.string.no_profile_apps)
+    val noApps = stringResource(R.string.no_profile_apps)
     val clipboard = LocalClipboard.current
     val coroutineScope = rememberCoroutineScope()
-    LoadMoreReleasesWhenNearEnd(
-        listState = listState,
-        entries = state.releaseFeed.entries,
-        loading = state.releaseFeed.loadingMore,
-        canLoadMore = state.releaseFeed.canLoadMore,
-        onLoadMore = onLoadMoreReleases,
-    )
+    val npub = remember(state.pubkey) { state.pubkey.toNpub() }
+    val profile = state.profile
+    val title = profile?.displayNameOrNpub ?: npub
 
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
             .background(ZapCanvas)
             .navigationBarsPadding(),
-        state = listState,
         contentPadding = PaddingValues(bottom = 36.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        val profile = state.profile
-        if (profile == null) {
-            item {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(100.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(ZapSurface2),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (state.profileLoading) {
-                        LoadingIndicator()
-                    } else {
-                        Text(
-                            text = stringResource(R.string.profile_not_found),
-                            color = ZapTextSecondary,
-                        )
-                    }
-                }
-            }
-            state.error?.let { error -> item { StatusText(error) } }
-            return@LazyColumn
-        }
-
         item {
             Row(
                 modifier = Modifier
@@ -97,27 +77,37 @@ fun ProfileScreen(
                     .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                ProfileAvatar(
-                    pubkey = state.pubkey,
-                    name = profile.displayName ?: profile.name ?: state.pubkey,
-                    pictureUrl = profile.picture,
-                    profileVersion = profile.event.id,
-                    size = 84.dp,
-                )
+                Box(
+                    modifier = Modifier
+                        .size(84.dp)
+                        .clip(CircleShape)
+                        .background(ZapSurface2),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    ProfileImage(
+                        pubkey = state.pubkey,
+                        pictureUrl = profile?.picture,
+                        profileVersion = profile?.eventId,
+                        contentDescription = stringResource(R.string.profile_avatar_description, title),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(CircleShape),
+                    )
+                }
                 Spacer(Modifier.width(16.dp))
                 Column {
                     Text(
-                        text = profile.displayName ?: profile.name ?: state.pubkey,
+                        text = title,
                         style = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Black),
+                        maxLines = 2,
                     )
-                    profile.name?.takeIf { it != profile.displayName }?.let {
-                        StatusText("@$it")
-                    }
+                    profile?.name?.takeIf { it != profile.displayName }?.let { StatusText("@$it") }
+                    if (profile == null && state.profileLoading) LoadingIndicator(Modifier.padding(top = 8.dp))
                 }
             }
         }
 
-        profile.about?.takeIf(String::isNotBlank)?.let { about ->
+        profile?.about?.takeIf(String::isNotBlank)?.let { about ->
             item {
                 MarkdownText(
                     value = about,
@@ -130,18 +120,16 @@ fun ProfileScreen(
             }
         }
 
-        releaseFeed(
-            state = state.releaseFeed,
-            emptyMessage = noProfileApps,
-            repository = repository,
+        appList(
+            state = state.apps,
+            emptyMessage = noApps,
             onAppClick = onAppClick,
             modifier = Modifier.padding(horizontal = 16.dp),
             showAuthor = false,
         )
-        state.error?.let { error -> item { StatusText(error) } }
+        state.error?.let { item { StatusText(it, Modifier.padding(horizontal = 16.dp)) } }
 
         item {
-            val npub = remember(state.pubkey) { state.pubkey.toNpub() }
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -151,51 +139,16 @@ fun ProfileScreen(
                     .border(1.dp, ZapLine, RoundedCornerShape(16.dp))
                     .padding(horizontal = 16.dp, vertical = 8.dp),
             ) {
-                profile.website?.let {
-                    InfoRow(stringResource(R.string.website), it, link = it, onOpenUrl = onOpenUrl)
-                }
-                profile.nip05?.let {
-                    InfoRow(stringResource(R.string.nip05), it, onOpenUrl = onOpenUrl)
-                }
+                profile?.website?.let { InfoRow(stringResource(R.string.website), it, link = it, onOpenUrl = onOpenUrl) }
+                profile?.nip05?.let { InfoRow(stringResource(R.string.nip05), it) }
                 InfoRow(
                     label = stringResource(R.string.npub),
                     value = npub,
                     onCopy = {
-                        coroutineScope.launch {
-                            clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("npub", npub)))
-                        }
+                        coroutineScope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("npub", npub))) }
                     },
                 )
             }
         }
     }
 }
-
-
-@Composable
-private fun ProfileAvatar(
-    pubkey: String,
-    name: String,
-    pictureUrl: String?,
-    profileVersion: String,
-    size: androidx.compose.ui.unit.Dp,
-) {
-    Box(
-        modifier = Modifier
-            .size(size)
-            .clip(CircleShape)
-            .background(ZapSurface2),
-        contentAlignment = Alignment.Center,
-    ) {
-        ProfileImage(
-            pubkey = pubkey,
-            pictureUrl = pictureUrl,
-            profileVersion = profileVersion,
-            contentDescription = stringResource(R.string.profile_avatar_description, name),
-            modifier = Modifier
-                .fillMaxSize()
-                .clip(CircleShape),
-        )
-    }
-}
-

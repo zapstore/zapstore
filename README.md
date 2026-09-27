@@ -20,7 +20,7 @@ The production APK is still published from the [Flutter client](https://github.c
 
 - JDK **21**
 - Android SDK (compile / target API **37**, min SDK **29**)
-- A device or emulator for `make run`
+- An **arm64-v8a** device for `make run` (this is the only ABI the app ships).
 
 ## Build from source
 
@@ -28,14 +28,28 @@ The production APK is still published from the [Flutter client](https://github.c
 make build
 ```
 
-That runs `./gradlew assembleDebug`. The debug APK lands in `build/outputs/apk/debug/`.
+That runs `./gradlew assembleDebug`. The debug APK lands in `build/outputs/apk/debug/`. Set `CATALOG_BUNDLE` to a `tar.zst` seed and `make build`, `make run`, and `make release` copy it to `src/main/assets/bundle-0-1.tar.zst`. Without it, the APK ships no catalog bundle. First launch then requests `GET /deltas?from=0` from `wss://brelay.zapstore.dev` and imports that bundle.
+
+Tor uses a size-optimized `libarti_android.so` from `tools/arti-build` (Amethyst's JNI wrapper, zapstore package names). Rebuild the arm64-v8a library and commit it when bumping Arti:
 
 ```bash
-make emulator   # Pixel_9 AVD (created on first run)
-make run        # installDebug, launch, then press r to rebuild
+make vendor
 ```
 
-Or call Gradle directly:
+That needs rustup, `cargo-ndk` at the version in `tools/arti-build/CARGO_NDK_VERSION`, and the NDK revision in `tools/arti-build/ANDROID_NDK_VERSION`.
+
+```bash
+make run            # installDebug, launch, then press r to rebuild
+make run-release    # assembleRelease (R8), install, launch
+```
+
+`make install` clears app data and embeds `CATALOG_BUNDLE` when that path is set. `make build` only builds.
+
+The catalog relay URLs and signer come from that bundle's signed manifest, not from the build. `make run-release` reverses port 3334 so a bundle that lists `ws://127.0.0.1:3334` can reach a relay on the host.
+
+Release builds run R8 (minify + optimize + shrink resources, English locales only). Mapping lands in `build/outputs/mapping/release/`.
+
+Or call Gradle directly (a seed in `src/main/assets/` is packaged if present):
 
 ```bash
 ./gradlew assembleDebug
@@ -43,7 +57,7 @@ Or call Gradle directly:
 ./gradlew test
 ```
 
-`./gradlew test` runs unit tests for the app and `iolite`. Instrumented UI tests need a connected device or emulator:
+`./gradlew test` runs unit tests for the app and `iolite`. Instrumented UI tests need a connected device:
 
 ```bash
 ./gradlew connectedDebugAndroidTest
@@ -51,8 +65,13 @@ Or call Gradle directly:
 
 ## Layout
 
-- `src/main/kotlin/dev/zapstore/app/` — Compose UI, navigation, view models, and catalog wiring
-- `iolite/` — local-first Nostr client (SQLite event store, relay sessions, outbox routing) on top of [Quartz](https://github.com/vitorpamplona/amethyst)
+- `src/main/kotlin/dev/zapstore/app/` — `ZapstoreApplication` (singletons), `MainActivity` (routes), `AppConfig` (build-time endpoints and query options)
+  - `screens/` — one `*Screen.kt` + `*ViewModel.kt` per destination (Home, AppDetail, StackDetail, Profile, Updates, Settings)
+  - `components/` — shared UI on Iolite records (`AppCard`, `StackCard`, `AppList`, `ProfileImage`, primitives)
+  - `catalog/` — `CatalogSync` (foreground `GET /deltas`) and installed-package matching
+  - `transport/` — Tor/direct network runtime
+- `tools/arti-build/` — reproducible Arti JNI build; `make vendor` writes `src/main/jniLibs/arm64-v8a/libarti_android.so`
+- `iolite/` — local-first Nostr client: SQLite rows derived from verified events, relay sessions, typed queries
 
 ## Contributing
 

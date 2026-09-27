@@ -1,4 +1,10 @@
-package dev.zapstore.app
+package dev.zapstore.app.components
+
+import dev.zapstore.app.R
+import dev.zapstore.app.ZapActionText
+import dev.zapstore.app.ZapTextPrimary
+import dev.zapstore.app.ZapTextTertiary
+import dev.zapstore.app.isHttpUrl
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box

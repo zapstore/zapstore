@@ -1,4 +1,15 @@
-package dev.zapstore.app
+package dev.zapstore.app.components
+
+import dev.zapstore.app.ZapAction
+import dev.zapstore.app.ZapActionText
+import dev.zapstore.app.ZapLine
+import dev.zapstore.app.ZapRadius
+import dev.zapstore.app.ZapSize
+import dev.zapstore.app.ZapSpacing
+import dev.zapstore.app.ZapSurface1
+import dev.zapstore.app.ZapTextPrimary
+import dev.zapstore.app.ZapTextSecondary
+import dev.zapstore.app.ZapTextTertiary
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -25,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 
@@ -117,6 +129,7 @@ fun ZapSearchField(
     trailingIcon: (@Composable () -> Unit)? = null,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
+    val keyboardController = LocalSoftwareKeyboardController.current
     val shape = RoundedCornerShape(ZapRadius.full)
     val textStyle = MaterialTheme.typography.bodyMedium.copy(color = ZapTextPrimary)
 
@@ -132,7 +145,10 @@ fun ZapSearchField(
         textStyle = textStyle,
         cursorBrush = SolidColor(ZapActionText),
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-        keyboardActions = KeyboardActions(onSearch = { onSearch() }),
+        keyboardActions = KeyboardActions(onSearch = {
+            onSearch()
+            keyboardController?.hide()
+        }),
         interactionSource = interactionSource,
         decorationBox = { innerTextField ->
             Row(
@@ -170,6 +186,3 @@ fun LoadingIndicator(
         )
     }
 }
-
-fun isHttpUrl(value: String): Boolean =
-    value.startsWith("https://") || value.startsWith("http://")

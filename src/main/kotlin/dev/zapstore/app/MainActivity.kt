@@ -1,7 +1,6 @@
 package dev.zapstore.app
 
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -14,21 +13,34 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import dev.zapstore.app.screens.AppDetailScreen
+import dev.zapstore.app.screens.AppDetailViewModel
+import dev.zapstore.app.screens.HomeScreen
+import dev.zapstore.app.screens.HomeViewModel
+import dev.zapstore.app.screens.ProfileScreen
+import dev.zapstore.app.screens.ProfileViewModel
+import dev.zapstore.app.screens.Routes
+import dev.zapstore.app.screens.SettingsScreen
+import dev.zapstore.app.screens.SettingsViewModel
+import dev.zapstore.app.screens.StackDetailScreen
+import dev.zapstore.app.screens.StackDetailViewModel
+import dev.zapstore.app.screens.UpdatesScreen
+import dev.zapstore.app.screens.UpdatesViewModel
+import dev.zapstore.iolite.AppRecord
 
 class MainActivity : ComponentActivity() {
-    private val zapstore: ZapstoreApplication
-        get() = getApplication() as ZapstoreApplication
-    private val repository: CatalogRepository
-        get() = zapstore.catalogRepository
+    private val zapstore: ZapstoreApplication get() = application as ZapstoreApplication
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -36,170 +48,13 @@ class MainActivity : ComponentActivity() {
         setContent {
             ZapstoreTheme {
                 Surface(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .semantics { testTagsAsResourceId = true },
                     color = MaterialTheme.colorScheme.background,
                     contentColor = MaterialTheme.colorScheme.onBackground,
                 ) {
-                    val navController = rememberNavController()
-                    val context = LocalContext.current
-
-                    NavHost(
-                        navController = navController,
-                        startDestination = HOME_ROUTE,
-                        enterTransition = {
-                            slideIntoContainer(
-                                AnimatedContentTransitionScope.SlideDirection.Left,
-                                tween(NAVIGATION_TRANSITION_DURATION, easing = FastOutSlowInEasing),
-                            )
-                        },
-                        exitTransition = {
-                            slideOutOfContainer(
-                                AnimatedContentTransitionScope.SlideDirection.Left,
-                                tween(NAVIGATION_TRANSITION_DURATION, easing = FastOutSlowInEasing),
-                            )
-                        },
-                        popEnterTransition = {
-                            slideIntoContainer(
-                                AnimatedContentTransitionScope.SlideDirection.Right,
-                                tween(NAVIGATION_TRANSITION_DURATION, easing = FastOutSlowInEasing),
-                            )
-                        },
-                        popExitTransition = {
-                            slideOutOfContainer(
-                                AnimatedContentTransitionScope.SlideDirection.Right,
-                                tween(NAVIGATION_TRANSITION_DURATION, easing = FastOutSlowInEasing),
-                            )
-                        },
-                    ) {
-                        composable(HOME_ROUTE) {
-                            val viewModel: HomeViewModel = viewModel(
-                                factory = homeViewModelFactory(repository),
-                            )
-                            val state by viewModel.uiState.collectAsStateWithLifecycle()
-                            val syncState by zapstore.catalogSyncRepository.state.collectAsStateWithLifecycle()
-                            HomeScreen(
-                                state = state,
-                                repository = repository,
-                                onSearchQueryChanged = viewModel::onSearchQueryChanged,
-                                onSearchSubmitted = viewModel::submitSearch,
-                                onSearchCleared = viewModel::clearSearch,
-                                onUpdatesClick = {
-                                    navController.navigate(UPDATES_ROUTE)
-                                },
-                                updateCount = syncState.availableUpdates.size,
-                                databaseRowCount = syncState.eventRowCount,
-                                catalogError = syncState.error,
-                                onLoadMoreReleases = viewModel::loadMoreReleases,
-                                onStackClick = { stackId ->
-                                    navController.navigate(stackRoute(stackId))
-                                },
-                                onAppClick = { identifier, author ->
-                                    navController.navigate(appRoute(identifier, author))
-                                },
-                                onProfileClick = { pubkey ->
-                                    navController.navigate(profileRoute(pubkey))
-                                },
-                            )
-                        }
-
-                        composable(UPDATES_ROUTE) {
-                            val viewModel: UpdatesViewModel = viewModel(
-                                factory = updatesViewModelFactory(zapstore.catalogSyncRepository),
-                            )
-                            val state by viewModel.uiState.collectAsStateWithLifecycle()
-                            UpdatesScreen(
-                                state = state,
-                                onSync = viewModel::sync,
-                                onAppClick = { identifier, author ->
-                                    navController.navigate(appRoute(identifier, author))
-                                },
-                            )
-                        }
-
-                        composable(
-                            route = STACK_ROUTE,
-                            arguments = listOf(
-                                navArgument(STACK_ID_ARGUMENT) { type = NavType.StringType },
-                            ),
-                        ) {
-                            val viewModel: StackDetailViewModel = viewModel(
-                                factory = stackDetailViewModelFactory(repository),
-                            )
-                            val state by viewModel.uiState.collectAsStateWithLifecycle()
-                            StackDetailScreen(
-                                state = state,
-                                repository = repository,
-                                onAppClick = { identifier, author ->
-                                    navController.navigate(appRoute(identifier, author))
-                                },
-                                onProfileClick = { pubkey ->
-                                    navController.navigate(profileRoute(pubkey))
-                                },
-                            )
-                        }
-
-                        composable(
-                            route = APP_ROUTE,
-                            arguments = listOf(
-                                navArgument(APP_IDENTIFIER_ARGUMENT) { type = NavType.StringType },
-                                navArgument(APP_AUTHOR_ARGUMENT) {
-                                    type = NavType.StringType
-                                    nullable = true
-                                    defaultValue = null
-                                },
-                            ),
-                        ) {
-                            val viewModel: AppDetailViewModel = viewModel(
-                                factory = appDetailViewModelFactory(repository),
-                            )
-                            val state by viewModel.uiState.collectAsStateWithLifecycle()
-                            AppDetailScreen(
-                                state = state,
-                                onOpenUrl = { value ->
-                                    if (isHttpUrl(value)) {
-                                        runCatching {
-                                            context.startActivity(
-                                                Intent(Intent.ACTION_VIEW, value.toUri()),
-                                            )
-                                        }
-                                    }
-                                },
-                                repository = repository,
-                                onProfileClick = { pubkey ->
-                                    navController.navigate(profileRoute(pubkey))
-                                },
-                            )
-                        }
-
-                        composable(
-                            route = PROFILE_ROUTE,
-                            arguments = listOf(
-                                navArgument(PROFILE_PUBKEY_ARGUMENT) { type = NavType.StringType },
-                            ),
-                        ) {
-                            val viewModel: ProfileViewModel = viewModel(
-                                factory = profileViewModelFactory(repository),
-                            )
-                            val state by viewModel.uiState.collectAsStateWithLifecycle()
-                            ProfileScreen(
-                                state = state,
-                                repository = repository,
-                                onAppClick = { identifier, author ->
-                                    navController.navigate(appRoute(identifier, author))
-                                },
-                                onLoadMoreReleases = viewModel::loadMoreReleases,
-                                onOpenUrl = { value ->
-                                    if (isHttpUrl(value)) {
-                                        runCatching {
-                                            context.startActivity(
-                                                Intent(Intent.ACTION_VIEW, value.toUri()),
-                                            )
-                                        }
-                                    }
-                                },
-                            )
-                        }
-                    }
+                    ZapstoreNavHost(rememberNavController())
                 }
             }
         }
@@ -207,27 +62,117 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        repository.refreshConnections()
+        zapstore.iolite.refreshConnections()
+    }
+
+    @androidx.compose.runtime.Composable
+    private fun ZapstoreNavHost(navController: NavHostController) {
+        val iolite = zapstore.iolite
+        val openApp = { app: AppRecord -> navController.navigate(Routes.app(app.appId)) }
+        val openProfile = { pubkey: String -> navController.navigate(Routes.profile(pubkey)) }
+
+        NavHost(
+            navController = navController,
+            startDestination = Routes.HOME,
+            enterTransition = { slide(AnimatedContentTransitionScope.SlideDirection.Left) },
+            exitTransition = { slideOut(AnimatedContentTransitionScope.SlideDirection.Left) },
+            popEnterTransition = { slide(AnimatedContentTransitionScope.SlideDirection.Right) },
+            popExitTransition = { slideOut(AnimatedContentTransitionScope.SlideDirection.Right) },
+        ) {
+            composable(Routes.HOME) {
+                val viewModel: HomeViewModel = viewModel(factory = HomeViewModel.factory(iolite, zapstore.queryEncoder::encode))
+                val state by viewModel.uiState.collectAsStateWithLifecycle()
+                val updateCount by zapstore.catalogSync.updateCount.collectAsStateWithLifecycle(0)
+                HomeScreen(
+                    state = state,
+                    onSearchQueryChanged = viewModel::onSearchQueryChanged,
+                    onSearchSubmitted = viewModel::submitSearch,
+                    onSearchCleared = viewModel::clearSearch,
+                    onAppClick = openApp,
+                    onStackClick = { navController.navigate(Routes.stack(it.pubkey, it.identifier)) },
+                    onProfileClick = openProfile,
+                    onUpdatesClick = { navController.navigate(Routes.UPDATES) },
+                    onSettingsClick = { navController.navigate(Routes.SETTINGS) },
+                    updateCount = updateCount,
+                    onLoadMore = viewModel::loadMore,
+                )
+            }
+
+            composable(Routes.UPDATES) {
+                val viewModel: UpdatesViewModel = viewModel(factory = UpdatesViewModel.factory(zapstore.catalogSync))
+                val state by viewModel.uiState.collectAsStateWithLifecycle()
+                UpdatesScreen(state = state, onSync = viewModel::sync, onAppClick = openApp)
+            }
+
+            composable(Routes.SETTINGS) {
+                val viewModel: SettingsViewModel =
+                    viewModel(
+                        factory = SettingsViewModel.factory(
+                            iolite,
+                            zapstore.catalogSync,
+                            zapstore.network,
+                            applicationContext::localStorageBytes,
+                        ),
+                    )
+                val state by viewModel.uiState.collectAsStateWithLifecycle()
+                SettingsScreen(
+                    state = state,
+                    onNetworkModeChange = viewModel::setNetworkMode,
+                    onSync = viewModel::sync,
+                    onWipe = viewModel::wipe,
+                )
+            }
+
+            composable(
+                route = Routes.STACK,
+                arguments = listOf(
+                    navArgument(Routes.STACK_AUTHOR_ARG) { type = NavType.StringType },
+                    navArgument(Routes.STACK_ID_ARG) { type = NavType.StringType },
+                ),
+            ) {
+                val viewModel: StackDetailViewModel = viewModel(factory = StackDetailViewModel.factory(iolite))
+                val state by viewModel.uiState.collectAsStateWithLifecycle()
+                StackDetailScreen(state = state, onAppClick = openApp, onProfileClick = openProfile)
+            }
+
+            composable(
+                route = Routes.APP,
+                arguments = listOf(navArgument(Routes.APP_ID_ARG) { type = NavType.StringType }),
+            ) {
+                val viewModel: AppDetailViewModel = viewModel(factory = AppDetailViewModel.factory(iolite))
+                val state by viewModel.uiState.collectAsStateWithLifecycle()
+                AppDetailScreen(
+                    state = state,
+                    onOpenUrl = ::openUrl,
+                    onProfileClick = openProfile,
+                    onRetryComments = viewModel::retryComments,
+                    onSettingsClick = { navController.navigate(Routes.SETTINGS) },
+                )
+            }
+
+            composable(
+                route = Routes.PROFILE,
+                arguments = listOf(navArgument(Routes.PUBKEY_ARG) { type = NavType.StringType }),
+            ) {
+                val viewModel: ProfileViewModel = viewModel(factory = ProfileViewModel.factory(iolite))
+                val state by viewModel.uiState.collectAsStateWithLifecycle()
+                ProfileScreen(state = state, onOpenUrl = ::openUrl, onAppClick = openApp)
+            }
+        }
+    }
+
+    private fun openUrl(value: String) {
+        if (!isHttpUrl(value)) return
+        runCatching { startActivity(Intent(Intent.ACTION_VIEW, value.toUri())) }
+    }
+
+    private fun AnimatedContentTransitionScope<*>.slide(direction: AnimatedContentTransitionScope.SlideDirection) =
+        slideIntoContainer(direction, tween(NAVIGATION_TRANSITION_DURATION, easing = FastOutSlowInEasing))
+
+    private fun AnimatedContentTransitionScope<*>.slideOut(direction: AnimatedContentTransitionScope.SlideDirection) =
+        slideOutOfContainer(direction, tween(NAVIGATION_TRANSITION_DURATION, easing = FastOutSlowInEasing))
+
+    private companion object {
+        const val NAVIGATION_TRANSITION_DURATION = 150
     }
 }
-
-private const val HOME_ROUTE = "home"
-private const val STACK_ROUTE = "stack/{$STACK_ID_ARGUMENT}"
-private const val APP_ROUTE =
-    "app/{$APP_IDENTIFIER_ARGUMENT}?$APP_AUTHOR_ARGUMENT={$APP_AUTHOR_ARGUMENT}"
-private const val PROFILE_ROUTE = "profile/{$PROFILE_PUBKEY_ARGUMENT}"
-private const val UPDATES_ROUTE = "updates"
-private const val NAVIGATION_TRANSITION_DURATION = 150
-
-private fun stackRoute(stackId: String): String =
-    "stack/${Uri.encode(stackId)}"
-
-private fun appRoute(identifier: String, author: String?): String = buildString {
-    append("app/").append(Uri.encode(identifier))
-    author?.let {
-        append("?").append(APP_AUTHOR_ARGUMENT).append("=").append(Uri.encode(it))
-    }
-}
-
-private fun profileRoute(pubkey: String): String =
-    "profile/${Uri.encode(pubkey)}"

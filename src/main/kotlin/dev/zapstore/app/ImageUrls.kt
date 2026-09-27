@@ -15,7 +15,7 @@ enum class CdnImageVariant(
 
 fun profileCdnUrl(pubkey: String): String? {
     if (pubkey.length != 64 || pubkey.any { it.digitToIntOrNull(16) == null }) return null
-    return "https://$ZAPSTORE_CDN_HOST/p/${pubkey.lowercase()}.profile.webp"
+    return "https://$ZAPSTORE_CDN_HOST/${pubkey.lowercase()}.profile.webp"
 }
 
 /**
@@ -47,3 +47,5 @@ fun cdnImageUrl(
         .build()
         .toString()
 }
+
+fun isHttpUrl(value: String): Boolean = value.startsWith("https://") || value.startsWith("http://")

@@ -1,4 +1,4 @@
-package dev.zapstore.app
+package dev.zapstore.app.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -22,15 +22,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import dev.zapstore.app.catalogsync.CatalogSyncUiState
+import dev.zapstore.app.R
+import dev.zapstore.app.ZapCanvas
+import dev.zapstore.app.components.AppCard
+import dev.zapstore.app.components.LoadingIndicator
+import dev.zapstore.app.components.StatusText
+import dev.zapstore.iolite.AppRecord
 import java.text.DateFormat
 import java.util.Date
 
 @Composable
 fun UpdatesScreen(
-    state: CatalogSyncUiState,
+    state: UpdatesUiState,
     onSync: () -> Unit,
-    onAppClick: (identifier: String, author: String?) -> Unit = { _, _ -> },
+    onAppClick: (AppRecord) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -41,67 +46,52 @@ fun UpdatesScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(
-            text = stringResource(R.string.updates),
-            style = MaterialTheme.typography.displaySmall,
-        )
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                StatusText(stringResource(R.string.catalog_epoch, state.epoch))
-                state.lastSyncedAtMillis?.let { synced ->
+                Text(text = stringResource(R.string.updates), style = MaterialTheme.typography.displaySmall)
+                state.status.lastSyncedAtMillis?.let { synced ->
                     StatusText(
                         stringResource(
                             R.string.last_synced,
-                            DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
-                                .format(Date(synced)),
+                            DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(synced)),
                         ),
                     )
                 }
             }
             FilledTonalButton(
                 onClick = onSync,
-                enabled = !state.syncing,
+                enabled = !state.status.syncing,
                 modifier = Modifier.testTag("syncCatalog"),
             ) {
-                Text(stringResource(if (state.syncing) R.string.syncing else R.string.sync_now))
+                Text(stringResource(if (state.status.syncing) R.string.syncing else R.string.sync_now))
             }
         }
-        state.error?.let { StatusText(it, Modifier.testTag("updatesError")) }
-        if (state.syncing && state.availableUpdates.isEmpty()) {
-            LoadingIndicator()
-        }
+        state.status.error?.let { StatusText(it, Modifier.testTag("updatesError")) }
+
         LazyColumn(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(bottom = 24.dp),
         ) {
-            if (state.availableUpdates.isEmpty() && !state.syncing) {
+            if (state.updates.isEmpty()) {
                 item {
-                    StatusText(
-                        stringResource(R.string.no_updates),
-                        Modifier.testTag("noUpdates"),
-                    )
+                    if (!state.loaded || state.status.syncing) {
+                        LoadingIndicator()
+                    } else {
+                        StatusText(stringResource(R.string.no_updates), Modifier.testTag("noUpdates"))
+                    }
                 }
             }
-            items(state.availableUpdates, key = { it.appId }) { update ->
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("update:${update.appId}"),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    Text(update.name, style = MaterialTheme.typography.titleMedium)
-                    EvidenceText(update.appId, color = ZapTextSecondary)
+            items(state.updates, key = { it.app.appId }) { update ->
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.testTag("update:${update.app.appId}")) {
+                    AppCard(app = update.app, author = null, onClick = { onAppClick(update.app) }, showAuthor = false)
                     StatusText(
-                        stringResource(
-                            R.string.update_version,
-                            update.installedVersion,
-                            update.availableVersion,
-                        ),
+                        stringResource(R.string.update_version, update.installedVersion, update.app.version),
+                        Modifier.padding(horizontal = 4.dp),
                     )
                 }
             }
