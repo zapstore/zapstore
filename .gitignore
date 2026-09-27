@@ -1,7 +1,9 @@
 # Project-specific
 reference/
+.tools/
 .android-sdk/
 src/main/assets/catalog.db
+src/main/assets/bundle-0-1.tar.zst
 
 # OS
 .DS_Store
@@ -35,3 +37,4 @@ captures/
 
 .cursor/
 *.md
+!tools/arti-build/README.md
