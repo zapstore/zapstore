@@ -1,20 +1,38 @@
 package dev.zapstore.iolite
 
-import com.vitorpamplona.quartz.nip01Core.core.Event
-import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import kotlin.time.Duration
 
 enum class SourceMode {
+    /** SQLite only. Emits on every commit touching the observed tables. */
     Local,
+    /** SQLite first, then relays; re-emits after each commit. */
     LocalAndRemote,
+    /** Empty first, then relays; re-emits after each commit. */
     Remote,
+}
+
+sealed interface RemoteMode {
+    /** Ends 200 ms after the first EOSE, or at [timeout]. */
+    data class OneShot(val timeout: Duration? = null) : RemoteMode {
+        init {
+            require(timeout == null || (timeout.isFinite() && timeout.isPositive())) {
+                "One-shot timeout must be finite and positive"
+            }
+        }
+    }
+
+    /** Keeps the subscription open until the collector is cancelled. */
+    data object Stream : RemoteMode
 }
 
 data class QueryOptions(
     val sourceMode: SourceMode = SourceMode.Local,
     val remoteMode: RemoteMode? = null,
-    val relays: Set<NormalizedRelayUrl> = emptySet(),
+    val relays: Set<RelayUrl> = emptySet(),
+    /** Skip relay work when the same query completed within this duration. Local-and-remote only. */
     val cachedFor: Duration? = null,
+    /** Also query the NIP-65 read relays of the observed authors. */
+    val useAuthorRelays: Boolean = false,
 ) {
     init {
         when (sourceMode) {
@@ -22,6 +40,7 @@ data class QueryOptions(
                 require(remoteMode == null) { "Local queries cannot have a remote mode" }
                 require(relays.isEmpty()) { "Local queries cannot have relays" }
                 require(cachedFor == null) { "Local queries cannot be cached" }
+                require(!useAuthorRelays) { "Local queries cannot use author relays" }
             }
             SourceMode.LocalAndRemote,
             SourceMode.Remote,
@@ -38,42 +57,41 @@ data class QueryOptions(
         }
     }
 
+    val isRemote: Boolean get() = sourceMode != SourceMode.Local
+
     companion object {
         fun local(): QueryOptions = QueryOptions()
 
         fun localAndRemote(
-            relays: Set<NormalizedRelayUrl>,
+            relays: Set<RelayUrl>,
             remoteMode: RemoteMode,
             cachedFor: Duration? = null,
-        ): QueryOptions = QueryOptions(SourceMode.LocalAndRemote, remoteMode, relays, cachedFor)
+            useAuthorRelays: Boolean = false,
+        ): QueryOptions = QueryOptions(SourceMode.LocalAndRemote, remoteMode, relays, cachedFor, useAuthorRelays)
 
         fun remote(
-            relays: Set<NormalizedRelayUrl>,
+            relays: Set<RelayUrl>,
             remoteMode: RemoteMode,
-        ): QueryOptions = QueryOptions(SourceMode.Remote, remoteMode, relays)
+            useAuthorRelays: Boolean = false,
+        ): QueryOptions = QueryOptions(SourceMode.Remote, remoteMode, relays, useAuthorRelays = useAuthorRelays)
     }
 }
 
-sealed interface RemoteMode {
-    data class OneShot(
-        val timeout: Duration? = null,
-    ) : RemoteMode {
-        init {
-            require(timeout == null || (timeout.isFinite() && timeout.isPositive())) {
-                "One-shot timeout must be finite and positive"
-            }
-        }
-    }
-
-    data object Stream : RemoteMode
-}
-
-data class QueryState(
-    val items: List<Event>,
+/** One emission of a collected query: the current SQLite read plus relay progress. */
+data class QueryState<out T>(
+    val items: T,
     val phase: QueryPhase,
-    val relays: Map<NormalizedRelayUrl, RelayQueryState> = emptyMap(),
+    val relays: Map<RelayUrl, RelayQueryState> = emptyMap(),
     val error: QueryError? = null,
-)
+) {
+    /** True while the first remote request is still unfinished. */
+    val isLoading: Boolean get() = phase == QueryPhase.Connecting || phase == QueryPhase.CatchingUp
+
+    /** True once no further relay work will happen for this session. */
+    val isTerminal: Boolean get() = phase.isTerminal
+
+    fun <R> map(transform: (T) -> R): QueryState<R> = QueryState(transform(items), phase, relays, error)
+}
 
 sealed interface QueryPhase {
     data object LocalOnly : QueryPhase
@@ -84,6 +102,9 @@ sealed interface QueryPhase {
     data object Complete : QueryPhase
     data object TimedOut : QueryPhase
     data object Failed : QueryPhase
+
+    val isTerminal: Boolean
+        get() = this == LocalOnly || this == Cached || this == Complete || this == TimedOut || this == Failed
 }
 
 internal fun isLegalPhaseTransition(from: QueryPhase?, to: QueryPhase): Boolean = when {
@@ -123,40 +144,8 @@ enum class RelayConnectionState {
 sealed interface QueryError {
     val message: String
 
-    data class InvalidQuery(override val message: String) : QueryError
-    data class UnsupportedLocalProjection(override val message: String) : QueryError
-    data class RelayFailure(
-        val relay: NormalizedRelayUrl,
-        override val message: String,
-    ) : QueryError
-
-    data class VerificationRejected(
-        val relay: NormalizedRelayUrl,
-        val eventId: String?,
-        override val message: String,
-    ) : QueryError
-
-    data class ProtocolViolation(
-        val relay: NormalizedRelayUrl,
-        val eventId: String?,
-        override val message: String,
-    ) : QueryError
-
-    data class PersistenceFailure(
-        val eventId: String?,
-        override val message: String,
-    ) : QueryError
-
-    data class IngestionSaturated(
-        val relay: NormalizedRelayUrl,
-        override val message: String,
-    ) : QueryError
-
-    data class Timeout(
-        val duration: Duration,
-        override val message: String,
-    ) : QueryError
-
+    data class RelayFailure(val relay: RelayUrl, override val message: String) : QueryError
+    data class VerificationRejected(val relay: RelayUrl, val eventId: String?, override val message: String) : QueryError
+    data class Timeout(val duration: Duration, override val message: String) : QueryError
     data class IncompatibleDependency(override val message: String) : QueryError
-    data class Lifecycle(override val message: String) : QueryError
 }

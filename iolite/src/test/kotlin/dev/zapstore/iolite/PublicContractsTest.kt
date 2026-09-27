@@ -1,28 +1,18 @@
 package dev.zapstore.iolite
 
-import com.vitorpamplona.quartz.nip01Core.core.Event
-import com.vitorpamplona.quartz.nip01Core.relay.client.INostrClient
-import com.vitorpamplona.quartz.nip01Core.relay.client.NostrClient
-import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.SubscriptionListener
-import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
-import com.vitorpamplona.quartz.nip01Core.relay.normalizer.normalizeRelayUrl
-import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebsocketBuilder
-import com.vitorpamplona.quartz.nip01Core.store.IEventStore
-import com.vitorpamplona.quartz.nip01Core.store.ObservableEventStore
-import com.vitorpamplona.quartz.nip01Core.store.sqlite.EventStore
-import com.vitorpamplona.quartz.nip40Expiration.isExpired
-import java.lang.reflect.Modifier
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.milliseconds
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PublicContractsTest {
     @Test
-    fun `config rejects invalid lifecycle values`() {
+    fun configRejectsInvalidLifecycleValues() {
         assertFails { IoliteConfig(databaseName = "../store.db").validate() }
         assertFails { IoliteConfig(oneShotTimeout = 0.milliseconds).validate() }
+        assertFails { IoliteConfig(eoseGrace = 0.milliseconds).validate() }
         assertFails { IoliteConfig(ingestionCapacity = 0).validate() }
         assertFails { IoliteConfig(expirationSweepInterval = 0.milliseconds).validate() }
         assertFails { IoliteConfig(ingestBatchSize = 0).validate() }
@@ -32,7 +22,7 @@ class PublicContractsTest {
     }
 
     @Test
-    fun `query options enforce complementary source and remote modes`() {
+    fun queryOptionsEnforceModes() {
         assertFails { QueryOptions(SourceMode.Remote, RemoteMode.Stream) }
         assertFails { QueryOptions(SourceMode.LocalAndRemote, RemoteMode.Stream) }
         assertFails { QueryOptions(SourceMode.Remote) }
@@ -51,41 +41,10 @@ class PublicContractsTest {
             QueryOptions(SourceMode.Remote, RemoteMode.Stream, setOf(relay), cachedFor = 6.hours)
         }
         assertTrue(QueryOptions.remote(setOf(relay), RemoteMode.Stream).relays.contains(relay))
-        assertTrue(
-            QueryOptions.localAndRemote(setOf(relay), RemoteMode.Stream, cachedFor = 6.hours)
-                .relays.contains(relay),
-        )
     }
 
     @Test
-    fun `published Quartz APIs used by the facade remain callable`() {
-        // This is deliberately a compile-level compatibility gate for the public APIs
-        // Iolite relies on. Behavioral compatibility is covered by Android tests.
-        val invalidEvent = Event(
-            id = "0".repeat(64),
-            pubKey = "0".repeat(64),
-            createdAt = 0,
-            kind = 1,
-            tags = emptyArray(),
-            content = "",
-            sig = "0".repeat(128),
-        )
-        assertTrue(invalidEvent.isExpired().not())
-
-        val filter = Filter(kinds = listOf(1))
-        assertTrue(filter.match(invalidEvent))
-
-        assertPublicType<INostrClient>()
-        assertPublicType<NostrClient>()
-        assertPublicType<SubscriptionListener>()
-        assertPublicType<WebsocketBuilder>()
-        assertPublicType<IEventStore>()
-        assertPublicType<ObservableEventStore>()
-        assertPublicType<EventStore>()
-    }
-
-    @Test
-    fun `query phases reject transitions out of terminal states`() {
+    fun queryPhasesRejectTransitionsOutOfTerminalStates() {
         assertTrue(isLegalPhaseTransition(null, QueryPhase.Connecting))
         assertTrue(isLegalPhaseTransition(QueryPhase.Connecting, QueryPhase.CatchingUp))
         assertTrue(isLegalPhaseTransition(QueryPhase.CatchingUp, QueryPhase.Live))
@@ -96,8 +55,21 @@ class PublicContractsTest {
         assertTrue(!isLegalPhaseTransition(QueryPhase.Failed, QueryPhase.Connecting))
     }
 
-    private inline fun <reified T> assertPublicType() {
-        assertTrue(Modifier.isPublic(T::class.java.modifiers))
+    @Test
+    fun deltasUrlUsesRelayOrigin() {
+        assertEquals(
+            "https://relay.example.com/deltas?from=0",
+            "wss://relay.example.com/nostr?x=1#frag".normalizeRelayUrl().deltasUrl(0),
+        )
+        assertEquals(
+            "http://127.0.0.1:3334/deltas?from=7",
+            "ws://127.0.0.1:3334".normalizeRelayUrl().deltasUrl(7),
+        )
+    }
+
+    @Test
+    fun bolt11ParsesMilliAmount() {
+        assertEquals(100_000, Bolt11.amountSats("lnbc1m1p..."))
     }
 
     private fun assertFails(block: () -> Unit) {

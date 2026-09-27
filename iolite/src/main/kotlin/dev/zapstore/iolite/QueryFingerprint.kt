@@ -1,7 +1,5 @@
 package dev.zapstore.iolite
 
-import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
-import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import java.io.ByteArrayOutputStream
 import java.io.DataOutputStream
 import java.security.MessageDigest
@@ -11,7 +9,7 @@ internal object QueryFingerprint {
 
     fun create(
         filters: List<Filter>,
-        relays: Set<NormalizedRelayUrl>,
+        relays: Set<RelayUrl>,
     ): String {
         val encodedFilters = filters.map(::encodeFilter).sortedWith(::compareBytes)
         val canonical = ByteArrayOutputStream().use { bytes ->
@@ -38,7 +36,6 @@ internal object QueryFingerprint {
                 output.writeNullableStrings(filter.authors)
                 output.writeNullableInts(filter.kinds)
                 output.writeNullableStringMap(filter.tags)
-                output.writeNullableStringMap(filter.tagsAll)
                 output.writeNullableLong(filter.since)
                 output.writeNullableLong(filter.until)
                 output.writeNullableInt(filter.limit)
