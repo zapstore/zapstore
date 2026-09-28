@@ -71,9 +71,8 @@
     <string name="copy">Copy</string>
     <string name="privacy_and_security">Privacy and security</string>
     <string name="fact_no">No %1$s</string>
-    <string name="fact_gms">Google Play services</string>
+    <string name="fact_google_services">Google services</string>
     <string name="fact_open_source">Verified open source</string>
-    <string name="fact_fcm">Firebase Cloud Messaging</string>
     <string name="app_icon_description">%1$s icon</string>
     <string name="screenshot_description">%1$s screenshot</string>
     <string name="profile_avatar_description">%1$s avatar</string>

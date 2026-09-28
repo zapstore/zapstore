@@ -11,17 +11,18 @@ class CatalogArtifactsTest {
     @Test
     fun parsesFactCsvAndKeepsReason() {
         val rows = parseFactRows(
-            "fact,value,reason\n" +
-                "gms,no,\"no play services, com.google\"\n" +
-                "gms,yes,\n" +
-                "fcm,yes,\"uses, cloud\"\n",
+            "\"fact\",\"value\",\"reason\",\"permissions\"\n" +
+                "\"google_services\",\"no\",\"Play services\",\"\"\n" +
+                "\"google_services\",\"yes\",\"Firebase Cloud Messaging\",\"\"\n" +
+                "\"location\",\"yes\",\"the map screen\",\"ACCESS_BACKGROUND_LOCATION,ACCESS_FINE_LOCATION\"\n",
         )
         assertEquals(2, rows.size)
-        assertEquals("gms", rows[0].key)
+        assertEquals("google_services", rows[0].key)
         assertTrue(rows[0].yes)
-        assertEquals("no play services, com.google", rows[0].reason)
-        assertEquals("fcm", rows[1].key)
-        assertEquals("uses, cloud", rows[1].reason)
+        assertEquals("Firebase Cloud Messaging", rows[0].reason)
+        assertEquals("location", rows[1].key)
+        assertEquals("the map screen", rows[1].reason)
+        assertEquals("ACCESS_BACKGROUND_LOCATION,ACCESS_FINE_LOCATION", rows[1].permissions)
     }
 
     @Test

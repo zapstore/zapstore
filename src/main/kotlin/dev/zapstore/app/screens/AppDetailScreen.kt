@@ -373,8 +373,7 @@ private fun FactPill(key: String, yes: Boolean) {
 
 @Composable
 private fun factLabel(key: String): String = when (key) {
-    "gms" -> stringResource(R.string.fact_gms)
-    "fcm" -> stringResource(R.string.fact_fcm)
+    "google_services" -> stringResource(R.string.fact_google_services)
     "open_source" -> stringResource(R.string.fact_open_source)
     "e2ee" -> "E2EE"
     else -> key.replace('_', ' ').replaceFirstChar { it.titlecase() }

@@ -108,7 +108,7 @@ class AppRecord(
 
     /**
      * [facts] in file order, one row per key.
-     * The file is a CSV with columns fact, value, and reason.
+     * The file is a quoted CSV with columns fact, value, reason, and permissions.
      * The sheet repeats a key once per library. A yes wins over a no.
      */
     val factRows: List<AppFact>
@@ -129,6 +129,7 @@ internal fun parseFactRows(facts: String): List<AppFact> {
     val factIdx = header.indexOf("fact")
     val valueIdx = header.indexOf("value")
     val reasonIdx = header.indexOf("reason")
+    val permissionsIdx = header.indexOf("permissions")
     if (factIdx < 0 || valueIdx < 0) return emptyList()
     val rows = LinkedHashMap<String, AppFact>()
     for (record in table.drop(1)) {
@@ -140,11 +141,13 @@ internal fun parseFactRows(facts: String): List<AppFact> {
             else -> continue
         }
         val reason = if (reasonIdx < 0) "" else record.getOrNull(reasonIdx)?.trim().orEmpty()
+        val permissions = if (permissionsIdx < 0) "" else record.getOrNull(permissionsIdx)?.trim().orEmpty()
         val previous = rows[key]
         rows[key] = AppFact(
             key = key,
             yes = previous?.yes == true || yes,
             reason = reason.ifBlank { previous?.reason.orEmpty() },
+            permissions = permissions.ifBlank { previous?.permissions.orEmpty() },
         )
     }
     return rows.values.toList()
@@ -201,6 +204,7 @@ data class AppFact(
     val key: String,
     val yes: Boolean,
     val reason: String = "",
+    val permissions: String = "",
 )
 
 /** Kind 0 projection. `name`/`displayName` are already trimmed to non-blank. */

@@ -8,8 +8,8 @@ import org.junit.Test
 class FactPillTest {
     @Test
     fun antifeatureAbsenceIsPositiveAndPresenceIsNot() {
-        assertTrue(factIsPositive("gms", yes = false))
-        assertFalse(factIsPositive("gms", yes = true))
+        assertTrue(factIsPositive("google_services", yes = false))
+        assertFalse(factIsPositive("google_services", yes = true))
         assertFalse(factIsPositive("account_required", yes = true))
         assertTrue(factIsPositive("tracking", yes = false))
     }
