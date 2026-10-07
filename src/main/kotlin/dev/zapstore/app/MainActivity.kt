@@ -2,6 +2,7 @@ package dev.zapstore.app
 
 import android.content.Intent
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -62,7 +63,16 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        requestInstallPermission()
         zapstore.iolite.refreshConnections()
+    }
+
+    // Once per process. onResume runs again when the user leaves the settings screen.
+    private fun requestInstallPermission() {
+        if (BuildConfig.DEBUG || installPermissionPrompted || packageManager.canRequestPackageInstalls()) return
+        installPermissionPrompted = true
+        val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, "package:$packageName".toUri())
+        runCatching { startActivity(intent) }
     }
 
     @androidx.compose.runtime.Composable
@@ -174,5 +184,6 @@ class MainActivity : ComponentActivity() {
 
     private companion object {
         const val NAVIGATION_TRANSITION_DURATION = 150
+        var installPermissionPrompted = false
     }
 }
