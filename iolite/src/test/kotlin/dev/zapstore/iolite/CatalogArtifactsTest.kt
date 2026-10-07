@@ -9,20 +9,29 @@ import org.junit.Test
 
 class CatalogArtifactsTest {
     @Test
+    fun unknownOpenSourceIsNotARow() {
+        val rows = parseFactRows(
+            "\"open_source\",\"unknown\",\"\"\n" +
+                "\"offline_capable\",\"no\",\"\"\n",
+        )
+        assertEquals(1, rows.size)
+        assertEquals("offline_capable", rows[0].key)
+        assertFalse(rows[0].yes)
+    }
+
+    @Test
     fun parsesFactCsvAndKeepsReason() {
         val rows = parseFactRows(
-            "\"fact\",\"value\",\"reason\",\"permissions\"\n" +
-                "\"google_services\",\"no\",\"Play services\",\"\"\n" +
-                "\"google_services\",\"yes\",\"Firebase Cloud Messaging\",\"\"\n" +
-                "\"location\",\"yes\",\"the map screen\",\"ACCESS_BACKGROUND_LOCATION,ACCESS_FINE_LOCATION\"\n",
+            "\"google_services\",\"no\",\"Play services\"\n" +
+                "\"google_services\",\"yes\",\"Firebase Cloud Messaging\"\n" +
+                "\"location\",\"yes\",\"ACCESS_FINE_LOCATION. The map screen shows nearby stores.\"\n",
         )
         assertEquals(2, rows.size)
         assertEquals("google_services", rows[0].key)
         assertTrue(rows[0].yes)
         assertEquals("Firebase Cloud Messaging", rows[0].reason)
         assertEquals("location", rows[1].key)
-        assertEquals("the map screen", rows[1].reason)
-        assertEquals("ACCESS_BACKGROUND_LOCATION,ACCESS_FINE_LOCATION", rows[1].permissions)
+        assertEquals("ACCESS_FINE_LOCATION. The map screen shows nearby stores.", rows[1].reason)
     }
 
     @Test
@@ -72,7 +81,7 @@ class CatalogArtifactsTest {
     @Test
     fun keepsVectorAndAboutWhenALaterRecordOmitsThem() {
         val dir = File("build/tmp/catalog-artifacts-${System.nanoTime()}").apply { mkdirs() }
-        val store = IoliteStore(File(dir, "iolite.db").absolutePath)
+        val store = jdbcStore(File(dir, "iolite.db").absolutePath)
         store.insertFixtureCatalog()
         val catalog = store.catalog(1)!!
         val device = DeviceProfile(abis = listOf("arm64-v8a"), sdk = 34)
@@ -109,7 +118,7 @@ class CatalogArtifactsTest {
                             vector = ByteArray(VECTOR_DIMS) { 7 },
                             facts = "maps",
                             about = "first note",
-                            security = "Asks for location.\n⚠️ first",
+                            security = "Contacts leave the phone.\n---\nAsks for location.",
                         ),
                     ),
                     avatars = listOf(AvatarArtifact(pubkey, "face".toByteArray())),
@@ -117,8 +126,9 @@ class CatalogArtifactsTest {
             )
             val imported = store.apps().single()
             assertEquals("first note", imported.about)
-            assertEquals("Asks for location.\n⚠️ first", imported.security)
-            assertEquals("⚠️ first", imported.securityWarnings)
+            assertEquals("Contacts leave the phone.\n---\nAsks for location.", imported.security)
+            assertEquals("Contacts leave the phone.", imported.securityWarnings)
+            assertEquals("Asks for location.", imported.securityBody)
             assertEquals("one", imported.iconFile!!.readText())
             assertEquals("face", store.avatarFile(pubkey).readText())
             val vector = searchVector(store)
@@ -146,7 +156,7 @@ class CatalogArtifactsTest {
             )
             val kept = store.apps().single()
             assertEquals("first note", kept.about)
-            assertEquals("Asks for location.\n⚠️ first", kept.security)
+            assertEquals("Contacts leave the phone.\n---\nAsks for location.", kept.security)
             assertEquals("two", kept.iconFile!!.readText())
             assertArrayEquals(vector, searchVector(store))
             assertEquals("maps", searchFeatures(store))

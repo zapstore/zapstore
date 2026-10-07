@@ -20,7 +20,9 @@ sealed interface CatalogDelete {
 
 /**
  * Derives `apps` and `certificate_proofs` rows from verified catalog events (kinds 32267, 30063, 3063, 30509).
- * Each listing event writes its own columns. Sibling events are not required.
+ * Each listing event writes its own columns and can create the row alone.
+ * A missing sibling leaves those columns as stored. The name stays empty until kind 32267.
+ * A release with no `c` tag is channel `main`.
  */
 internal object ListingRows {
     val KINDS = setOf(Kinds.App, Kinds.Release, Kinds.Asset, Kinds.IdentityProof)
@@ -42,7 +44,9 @@ internal object ListingRows {
     fun persistListing(tx: Tx, catalog: CatalogRecord, appId: String, events: List<Event>, device: DeviceProfile, now: Long) {
         val db = tx.db
         val app = events.firstOrNull { it.kind == Kinds.App }
-        val release = events.firstOrNull { it.kind == Kinds.Release && it.tagValue("c") == "main" }
+        val releases = events.filter { it.kind == Kinds.Release }
+        val release = releases.firstOrNull { it.tagValue("c").isNullOrBlank() || it.tagValue("c") == "main" }
+            ?: releases.firstOrNull()
         val asset = events
             .filter { it.kind == Kinds.Asset && it.tagValue("i") == appId && assetMatchesDevice(it, device) }
             .maxWithOrNull(compareBy<Event> { it.tagValue("version_code")?.toLongOrNull() ?: -1 }.thenBy { it.id })
@@ -50,7 +54,6 @@ internal object ListingRows {
         val stored = storedListing(db, catalog.id, appId)
         val certificate = asset?.tagValue("apk_certificate_hash")?.takeIf { Hex.isHex(it, 64) }
             ?: stored?.certificate
-            ?: return
         val eventPubkey = app?.pubkey ?: stored?.eventPubkey ?: release?.pubkey ?: asset?.pubkey ?: return
         if (!Hex.isHex(eventPubkey, 64)) return
         val metadata = JSONObject(stored?.metadata ?: "{}").apply {
@@ -58,12 +61,20 @@ internal object ListingRows {
             if (release != null) putReleaseMetadata(release)
             if (asset != null) putAssetMetadata(asset)
         }
+        val version = asset?.tagValue("version")?.takeIf { it.isNotBlank() }
+            ?: stored?.version?.takeIf { it.isNotBlank() }
+            ?: release?.tagValue("version")?.takeIf { it.isNotBlank() }
+            ?: ""
+        val channel = when {
+            release == null -> stored?.channel ?: "main"
+            else -> release.tagValue("c")?.takeIf { it.isNotBlank() } ?: "main"
+        }
         db.prepare(
             """
             INSERT INTO apps (
                 id, catalog_id, app_id, variant_id, certificate_hash, app_event_created_at, pubkey, event_pubkey,
                 name, summary, repository, version, version_code, channel, metadata
-            ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'main', ?)
+            ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(catalog_id, app_id) DO UPDATE SET
                 certificate_hash = excluded.certificate_hash,
                 app_event_created_at = excluded.app_event_created_at,
@@ -78,31 +89,30 @@ internal object ListingRows {
                 metadata = excluded.metadata
             """.trimIndent(),
         ).use { statement ->
-            statement.bindBlob(1, identity(catalog.relayUrl.url, appId))
+            statement.bindBlob(1, appRowId(manifestPubkey(catalog), appId))
             statement.bindLong(2, catalog.id)
             statement.bindText(3, appId)
-            statement.bindBlob(4, Hex.decode(certificate))
+            statement.bindBlobOrNull(4, certificate?.let(Hex::decode))
             statement.bindLong(5, app?.createdAt ?: stored?.createdAt ?: 0)
-            statement.bindBlobOrNull(6, currentProofPubkey(db, catalog.id, certificate, now)?.let(Hex::decode))
+            statement.bindBlobOrNull(
+                6,
+                certificate?.let { currentProofPubkey(db, catalog.id, it, now) }?.let(Hex::decode),
+            )
             statement.bindBlob(7, Hex.decode(eventPubkey))
-            statement.bindText(8, app?.tagValue("name")?.takeIf { it.isNotBlank() } ?: stored?.name ?: appId)
+            statement.bindText(8, app?.tagValue("name")?.takeIf { it.isNotBlank() } ?: stored?.name ?: "")
             statement.bindText(9, if (app != null) app.tagValue("summary") ?: "" else stored?.summary ?: "")
             statement.bindTextOrNull(10, if (app != null) app.tagValue("repository") else stored?.repository)
-            statement.bindText(
-                11,
-                asset?.tagValue("version")?.takeIf { it.isNotBlank() }
-                    ?: stored?.version
-                    ?: "",
-            )
+            statement.bindText(11, version)
             statement.bindLong(12, asset?.tagValue("version_code")?.toLongOrNull() ?: stored?.versionCode ?: 0)
-            statement.bindText(13, metadata.toString())
+            statement.bindText(13, channel)
+            statement.bindText(14, metadata.toString())
             statement.step()
         }
         tx.touch(Table.Apps)
     }
 
     private data class StoredListing(
-        val certificate: String,
+        val certificate: String?,
         val createdAt: Long,
         val eventPubkey: String,
         val name: String,
@@ -110,6 +120,7 @@ internal object ListingRows {
         val repository: String?,
         val version: String,
         val versionCode: Long,
+        val channel: String?,
         val metadata: String,
     )
 
@@ -117,7 +128,7 @@ internal object ListingRows {
         db.prepare(
             """
             SELECT certificate_hash, app_event_created_at, event_pubkey, name, summary, repository,
-                version, version_code, metadata
+                version, version_code, channel, metadata
             FROM apps WHERE catalog_id = ? AND app_id = ?
             """.trimIndent(),
         ).use { statement ->
@@ -125,7 +136,7 @@ internal object ListingRows {
             statement.bindText(2, appId)
             if (!statement.step()) return null
             StoredListing(
-                certificate = Hex.encode(statement.getBlob(0)),
+                certificate = statement.blobHexOrNull(0),
                 createdAt = statement.getLong(1),
                 eventPubkey = Hex.encode(statement.getBlob(2)),
                 name = statement.getText(3),
@@ -133,7 +144,8 @@ internal object ListingRows {
                 repository = if (statement.isNull(5)) null else statement.getText(5),
                 version = statement.getText(6),
                 versionCode = statement.getLong(7),
-                metadata = statement.getText(8),
+                channel = statement.textOrNull(8),
+                metadata = statement.getText(9),
             )
         }
 
@@ -178,7 +190,7 @@ internal object ListingRows {
                 delegations = excluded.delegations
             """.trimIndent(),
         ).use { statement ->
-            statement.bindBlob(1, identity(catalog.relayUrl.url, hash, event.pubkey))
+            statement.bindBlob(1, proofRowId(manifestPubkey(catalog), Hex.decode(hash), Hex.decode(event.pubkey)))
             statement.bindLong(2, catalog.id)
             statement.bindBlob(3, Hex.decode(hash))
             statement.bindBlob(4, Hex.decode(event.pubkey))
@@ -239,12 +251,12 @@ internal object ListingRows {
         val rows = db.prepare("SELECT id, certificate_hash, pubkey FROM apps WHERE catalog_id = ?").use { apps ->
             apps.bindLong(1, catalogId)
             buildList {
-                while (apps.step()) add(Triple(apps.getBlob(0), Hex.encode(apps.getBlob(1)), apps.blobHexOrNull(2)))
+                while (apps.step()) add(Triple(apps.getBlob(0), apps.blobHexOrNull(1), apps.blobHexOrNull(2)))
             }
         }
         var changed = false
         for ((id, certificate, stored) in rows) {
-            val pubkey = currentProofPubkey(db, catalogId, certificate, now)
+            val pubkey = certificate?.let { currentProofPubkey(db, catalogId, it, now) }
             if (pubkey == stored) continue
             db.prepare("UPDATE apps SET pubkey = ? WHERE id = ?").use { update ->
                 update.bindBlobOrNull(1, pubkey?.let(Hex::decode))
@@ -270,8 +282,32 @@ internal object ListingRows {
             if (statement.step()) Hex.encode(statement.getBlob(0)) else null
         }
 
-    private fun identity(vararg parts: String): ByteArray =
-        Crypto.sha256(parts.joinToString("\u0000").toByteArray(Charsets.UTF_8))
+    /** SHA-256 of the raw manifest pubkey, a NUL, and the UTF-8 app id. */
+    fun appRowId(manifestPubkey: ByteArray, appId: String): ByteArray =
+        catalogIdentity(manifestPubkey, appId.toByteArray(Charsets.UTF_8))
+
+    /** SHA-256 of the raw manifest pubkey, certificate hash, and proof pubkey, separated by NULs. */
+    fun proofRowId(manifestPubkey: ByteArray, certificateHash: ByteArray, pubkey: ByteArray): ByteArray =
+        catalogIdentity(manifestPubkey, certificateHash, pubkey)
+
+    private fun manifestPubkey(catalog: CatalogRecord): ByteArray {
+        val hex = catalog.manifestPubkey ?: throw CatalogImportException("catalog manifest pubkey is missing")
+        if (!Hex.isHex(hex, 64)) throw CatalogImportException("catalog manifest pubkey is invalid")
+        return Hex.decode(hex)
+    }
+
+    private fun catalogIdentity(vararg parts: ByteArray): ByteArray {
+        var size = parts.size - 1
+        for (part in parts) size += part.size
+        val buffer = ByteArray(size)
+        var offset = 0
+        for (index in parts.indices) {
+            if (index > 0) buffer[offset++] = 0
+            parts[index].copyInto(buffer, offset)
+            offset += parts[index].size
+        }
+        return Crypto.sha256(buffer)
+    }
 
     // --- validation --------------------------------------------------------------------------------
 

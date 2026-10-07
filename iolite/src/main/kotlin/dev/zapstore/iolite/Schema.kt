@@ -1,7 +1,7 @@
 package dev.zapstore.iolite
 
 internal object Schema {
-    const val USER_VERSION = 1
+    const val USER_VERSION = 3
 
     const val APPS_SEARCH = """
         CREATE TABLE apps_search (
@@ -32,12 +32,13 @@ internal object Schema {
         """.trimIndent(),
         """
         CREATE TABLE apps (
+            -- SHA-256 of the raw manifest pubkey, a NUL, and the UTF-8 app id.
             id                          BLOB PRIMARY KEY,
             catalog_id                  INTEGER NOT NULL
                                             REFERENCES catalogs(id) ON DELETE CASCADE,
             app_id                      TEXT NOT NULL,
             variant_id                  BLOB,
-            certificate_hash            BLOB NOT NULL,
+            certificate_hash            BLOB,
             app_event_created_at        INTEGER NOT NULL,
             pubkey                      BLOB,
             event_pubkey                BLOB NOT NULL,
@@ -50,7 +51,9 @@ internal object Schema {
             metadata                    TEXT NOT NULL DEFAULT '{}',
             about                       TEXT NOT NULL DEFAULT '',
             security                    TEXT NOT NULL DEFAULT '',
-            facts                       TEXT NOT NULL DEFAULT ''
+            facts                       TEXT NOT NULL DEFAULT '',
+            -- Explicit fact values used by search. Bit order is FactBits in QueryParse.kt.
+            fact_bits                   INTEGER NOT NULL DEFAULT 0
         )
         """.trimIndent(),
         "CREATE UNIQUE INDEX apps_identity_idx ON apps(catalog_id, app_id)",
@@ -61,6 +64,7 @@ internal object Schema {
         "CREATE INDEX apps_version_idx ON apps(app_id, version_code DESC)",
         """
         CREATE TABLE certificate_proofs (
+            -- SHA-256 of the raw manifest pubkey, certificate hash, and proof pubkey, separated by NULs.
             id                  BLOB PRIMARY KEY,
             catalog_id          INTEGER NOT NULL
                                   REFERENCES catalogs(id) ON DELETE CASCADE,

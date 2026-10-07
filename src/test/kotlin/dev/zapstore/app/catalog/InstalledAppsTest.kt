@@ -28,6 +28,14 @@ class InstalledAppsTest {
     }
 
     @Test
+    fun `a listing without a certificate is not an update`() {
+        val installed = listOf(InstalledApp("dev.none", 1, "1", setOf("aa")))
+        val catalog = listOf(app("dev.none", "None", "9", 9, certificateHash = null))
+
+        assertEquals(emptyList<AvailableUpdate>(), availableUpdates(installed, catalog))
+    }
+
+    @Test
     fun `updates are sorted by app name`() {
         val installed = listOf(
             InstalledApp("dev.b", 1, "1", setOf("aa")),
@@ -42,7 +50,7 @@ class InstalledAppsTest {
     }
 }
 
-internal fun app(appId: String, name: String, version: String, versionCode: Long, certificateHash: String): AppRecord = AppRecord(
+internal fun app(appId: String, name: String, version: String, versionCode: Long, certificateHash: String?): AppRecord = AppRecord(
     id = appId.toByteArray(),
     catalogId = 1,
     appId = appId,

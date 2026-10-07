@@ -198,6 +198,7 @@ class RelayOutboxTest {
             signer = signer,
             writeRelays = writeRelays,
             nowMillis = nowMillis,
+            openConnection = ::JdbcSqliteConnection,
         )
         try {
             block(iolite)

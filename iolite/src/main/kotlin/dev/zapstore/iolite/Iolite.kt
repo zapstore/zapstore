@@ -1,6 +1,7 @@
 package dev.zapstore.iolite
 
 import android.content.Context
+import androidx.sqlite.SQLiteConnection
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -490,6 +491,7 @@ class Iolite private constructor(
             deviceSigner = deviceSigner,
             writeRelays = writeRelays,
             nowMillis = { System.currentTimeMillis() },
+            openConnection = ::openBundled,
         )
 
         fun createForTesting(
@@ -503,7 +505,27 @@ class Iolite private constructor(
             deviceSigner: LocalSigner? = signer as? LocalSigner,
             writeRelays: Set<RelayUrl> = emptySet(),
             nowMillis: () -> Long = { System.currentTimeMillis() },
-        ): Iolite = open(databasePath, parentScope, config, device, http, webSocket, signer, deviceSigner, writeRelays, nowMillis)
+        ): Iolite = open(
+            databasePath, parentScope, config, device, http, webSocket, signer, deviceSigner, writeRelays, nowMillis,
+            ::openBundled,
+        )
+
+        internal fun createForTesting(
+            databasePath: String,
+            parentScope: CoroutineScope,
+            config: IoliteConfig = IoliteConfig(),
+            device: DeviceProfile = DeviceProfile(abis = listOf("arm64-v8a"), sdk = 34),
+            http: HttpTransport? = null,
+            webSocket: WebSocketFactory? = null,
+            signer: Signer? = null,
+            deviceSigner: LocalSigner? = signer as? LocalSigner,
+            writeRelays: Set<RelayUrl> = emptySet(),
+            nowMillis: () -> Long = { System.currentTimeMillis() },
+            openConnection: (String) -> SQLiteConnection,
+        ): Iolite = open(
+            databasePath, parentScope, config, device, http, webSocket, signer, deviceSigner, writeRelays, nowMillis,
+            openConnection,
+        )
 
         private fun open(
             databasePath: String,
@@ -516,6 +538,7 @@ class Iolite private constructor(
             deviceSigner: LocalSigner?,
             writeRelays: Set<RelayUrl>,
             nowMillis: () -> Long,
+            openConnection: (String) -> SQLiteConnection,
         ): Iolite {
             config.validate()
             val parentJob = requireNotNull(parentScope.coroutineContext[Job]) { "parentScope must contain an active Job" }
@@ -528,7 +551,7 @@ class Iolite private constructor(
                 val job = SupervisorJob(parentJob)
                 val scope = CoroutineScope(parentScope.coroutineContext + job + Dispatchers.IO)
                 val nowSeconds = { nowMillis() / 1_000 }
-                val store = IoliteStore(databasePath)
+                val store = IoliteStore(databasePath, openConnection = openConnection)
                 try {
                     store.recomputeProofs(nowSeconds())
                 } catch (failure: Throwable) {

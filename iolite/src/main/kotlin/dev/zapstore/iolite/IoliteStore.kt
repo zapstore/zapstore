@@ -25,10 +25,19 @@ data class AppFilter(
     /**
      * Case-insensitive exact or prefix match on the name or app ID.
      * With [queryVector], listings are also ranked by vector similarity.
+     * Null when the query was only fact phrases.
      */
     val search: String? = null,
     /** leaf-ir-v1 query vector, [VECTOR_DIMS] int8 bytes. Ignored unless [search] is set. */
     val queryVector: ByteArray? = null,
+    /** Required fact bits. Unknown and the opposite value both fail. */
+    val hard: Int = 0,
+    /** Fact bits that raise a listing above a soft preference. A missing bit stays in the list. */
+    val boost: Int = 0,
+    /** Fact bits that raise a listing when set. */
+    val soft: Int = 0,
+    /** Fact bits that lower a listing when set. */
+    val penalty: Int = 0,
     val limit: Int? = null,
 )
 
@@ -49,7 +58,7 @@ class IoliteStore internal constructor(
     path: String,
     private val iconsDir: File = File(File(path).parentFile, "icons"),
     private val avatarsDir: File = File(File(path).parentFile, "avatars"),
-    openConnection: (String) -> SQLiteConnection = ::openBundledOrJdbc,
+    openConnection: (String) -> SQLiteConnection = ::openBundled,
 ) : AutoCloseable {
     private class Listener(val tables: Set<Table>, val notify: () -> Unit)
 
@@ -193,8 +202,8 @@ class IoliteStore internal constructor(
 
     /**
      * Writes the vector and about, security, and facts for apps that already have a listing row.
-     * A record that omits one of those keeps the value stored earlier.
-     * Icon and avatar bytes land on disk for Coil.
+     * A missing about, security, or facts member means that note did not change, and the stored text stays.
+     * A missing vector or icon does the same. Icon and avatar bytes land on disk for Coil.
      */
     private fun applyArtifacts(tx: Tx, catalog: CatalogRecord, artifacts: CatalogArtifact) {
         if (artifacts.apps.isEmpty() && artifacts.avatars.isEmpty()) return
@@ -220,12 +229,22 @@ class IoliteStore internal constructor(
                     statement.bindText(3, artifact.appId)
                     statement.step()
                 }
+                securityFactsCsv(security)?.let { facts ->
+                    db.prepare("UPDATE apps SET facts = ?, fact_bits = ? WHERE catalog_id = ? AND app_id = ?").use { statement ->
+                        statement.bindText(1, facts)
+                        statement.bindLong(2, factBits(facts).toLong())
+                        statement.bindLong(3, catalog.id)
+                        statement.bindText(4, artifact.appId)
+                        statement.step()
+                    }
+                }
             }
             artifact.facts?.let { facts ->
-                db.prepare("UPDATE apps SET facts = ? WHERE catalog_id = ? AND app_id = ?").use { statement ->
+                db.prepare("UPDATE apps SET facts = ?, fact_bits = ? WHERE catalog_id = ? AND app_id = ?").use { statement ->
                     statement.bindText(1, facts)
-                    statement.bindLong(2, catalog.id)
-                    statement.bindText(3, artifact.appId)
+                    statement.bindLong(2, factBits(facts).toLong())
+                    statement.bindLong(3, catalog.id)
+                    statement.bindText(4, artifact.appId)
                     statement.step()
                 }
             }
@@ -312,7 +331,7 @@ class IoliteStore internal constructor(
         db.prepare("$SELECT_CATALOG ORDER BY COALESCE(position, 999999), id").use { it.rows { toCatalog() } }
     }
 
-    /** Writes the catalog endpoint. [replaceIdentity] updates the stable catalog URL used in app ids. */
+    /** Writes the catalog endpoint. [replaceIdentity] replaces the canonical relay URL. */
     fun upsertCatalogRelays(catalogId: Long, relays: List<RelayUrl>, replaceIdentity: Boolean) {
         val canonical = relays.firstOrNull { !it.isOnion } ?: relays.first()
         val encoded = JSONArray().apply { relays.forEach { put(it.url) } }.toString()
@@ -379,15 +398,30 @@ class IoliteStore internal constructor(
             binds += { s, i -> s.bindBlob(i, bytes) }
             binds += { s, i -> s.bindBlob(i, bytes) }
         }
+        if (filter.hard != 0) {
+            where.append(" AND (a.fact_bits & ?) = ?")
+            val hard = filter.hard.toLong()
+            binds += { s, i -> s.bindLong(i, hard) }
+            binds += { s, i -> s.bindLong(i, hard) }
+        }
         val query = filter.search?.let(::normalizeSearchQuery)?.takeIf { it.isNotEmpty() }
-        if (query == null) {
+        val rankFacts = filter.boost != 0 || filter.soft != 0 || filter.penalty != 0
+        if (query == null && !rankFacts) {
             val limit = filter.limit?.let { " LIMIT $it" } ?: ""
             return@read db.prepare("$SELECT_VISIBLE_APP$where ORDER BY a.app_event_created_at DESC, a.app_id ASC$limit").use { statement ->
                 binds.forEachIndexed { index, bind -> bind(statement, index + 1) }
                 statement.rows { toApp(iconsDir) }
             }
         }
-        val ranker = SearchRanker(query, filter.queryVector, filter.limit)
+        val ranker = SearchRanker(
+            query = query.orEmpty(),
+            queryVector = if (query == null) null else filter.queryVector,
+            limit = filter.limit,
+            boost = filter.boost,
+            soft = filter.soft,
+            penalty = filter.penalty,
+            admitAll = filter.hard != 0 || query == null,
+        )
         db.prepare("$SELECT_SEARCH_KEY$where").use { statement ->
             binds.forEachIndexed { index, bind -> bind(statement, index + 1) }
             while (statement.step()) {
@@ -396,6 +430,7 @@ class IoliteStore internal constructor(
                     appId = statement.getText(1),
                     name = statement.getText(2),
                     docVector = if (statement.isNull(3)) null else statement.getBlob(3),
+                    factBits = statement.getLong(4).toInt(),
                 )
             }
         }
@@ -619,6 +654,9 @@ class IoliteStore internal constructor(
         private const val SELECT_CATALOG =
             "SELECT id, relay_url, position, is_private, manifest_pubkey, epoch, endpoints FROM catalogs"
 
+        /** A listing is shown once it has a name and the asset's certificate hash. */
+        private const val VISIBLE_LISTING = "a.name <> '' AND a.certificate_hash IS NOT NULL"
+
         /**
          * Visible listings: join the catalog for its manifest key, keep only selected catalogs, and for each
          * app ID keep the row whose catalog comes first in selection order.
@@ -630,30 +668,34 @@ class IoliteStore internal constructor(
             FROM apps a
             JOIN catalogs c ON c.id = a.catalog_id
             WHERE c.position IS NOT NULL
+              AND $VISIBLE_LISTING
               AND a.catalog_id = (
                   SELECT a2.catalog_id FROM apps a2 JOIN catalogs c2 ON c2.id = a2.catalog_id
                   WHERE a2.app_id = a.app_id AND c2.position IS NOT NULL
+                    AND a2.name <> '' AND a2.certificate_hash IS NOT NULL
                   ORDER BY c2.position ASC LIMIT 1
               )
         """.trimIndent()
 
         /** Columns [SearchRanker] needs. Full listings are loaded only for the ids it keeps. */
         private val SELECT_SEARCH_KEY = """
-            SELECT a.id, a.app_id, a.name, s.vector
+            SELECT a.id, a.app_id, a.name, s.vector, a.fact_bits
             FROM apps a
             JOIN catalogs c ON c.id = a.catalog_id
             LEFT JOIN apps_search s ON s.id = a.id
             WHERE c.position IS NOT NULL
+              AND $VISIBLE_LISTING
               AND a.catalog_id = (
                   SELECT a2.catalog_id FROM apps a2 JOIN catalogs c2 ON c2.id = a2.catalog_id
                   WHERE a2.app_id = a.app_id AND c2.position IS NOT NULL
+                    AND a2.name <> '' AND a2.certificate_hash IS NOT NULL
                   ORDER BY c2.position ASC LIMIT 1
               )
         """.trimIndent()
 
         fun open(
             path: String,
-            openConnection: (String) -> SQLiteConnection = ::openBundledOrJdbc,
+            openConnection: (String) -> SQLiteConnection = ::openBundled,
         ): SQLiteConnection {
             File(path).parentFile?.mkdirs()
             val connection = openConnection(path)
@@ -665,16 +707,19 @@ class IoliteStore internal constructor(
             }
             when (version) {
                 Schema.USER_VERSION -> Unit
-                0 -> {
-                    connection.execSQL("BEGIN IMMEDIATE")
-                    try {
-                        Schema.statements.forEach(connection::execSQL)
-                        connection.execSQL("PRAGMA user_version = ${Schema.USER_VERSION}")
-                        connection.execSQL("COMMIT")
-                    } catch (failure: Throwable) {
-                        runCatching { connection.execSQL("ROLLBACK") }
-                        throw failure
+                0 -> applySchema(connection) { Schema.statements.forEach(connection::execSQL) }
+                1 -> {
+                    connection.execSQL("PRAGMA foreign_keys = OFF")
+                    applySchema(connection) {
+                        addFactBits(connection)
+                        rehashCatalogIdentities(connection)
                     }
+                    connection.execSQL("PRAGMA foreign_keys = ON")
+                }
+                2 -> {
+                    connection.execSQL("PRAGMA foreign_keys = OFF")
+                    applySchema(connection) { rehashCatalogIdentities(connection) }
+                    connection.execSQL("PRAGMA foreign_keys = ON")
                 }
                 else -> error("unsupported Iolite schema version $version")
             }
@@ -683,15 +728,104 @@ class IoliteStore internal constructor(
             }
             return connection
         }
+
+        private fun applySchema(connection: SQLiteConnection, migrate: () -> Unit) {
+            connection.execSQL("BEGIN IMMEDIATE")
+            try {
+                migrate()
+                connection.execSQL("PRAGMA user_version = ${Schema.USER_VERSION}")
+                connection.execSQL("COMMIT")
+            } catch (failure: Throwable) {
+                runCatching { connection.execSQL("ROLLBACK") }
+                throw failure
+            }
+        }
+
+        private fun rehashCatalogIdentities(connection: SQLiteConnection) {
+            val keys = HashMap<Long, ByteArray>()
+            connection.prepare("SELECT id, manifest_pubkey FROM catalogs WHERE manifest_pubkey IS NOT NULL").use { statement ->
+                while (statement.step()) {
+                    val pubkey = statement.getBlob(1).copyOf()
+                    if (pubkey.size == 32) keys[statement.getLong(0)] = pubkey
+                }
+            }
+            val apps = connection.prepare("SELECT rowid, id, catalog_id, app_id FROM apps").use { statement ->
+                buildList {
+                    while (statement.step()) {
+                        add(IdRow(statement.getLong(0), statement.getBlob(1).copyOf(), statement.getLong(2), statement.getText(3)))
+                    }
+                }
+            }
+            for (app in apps) {
+                val key = keys[app.catalogId] ?: continue
+                val newId = ListingRows.appRowId(key, app.appId)
+                if (newId.contentEquals(app.oldId)) continue
+                connection.prepare("UPDATE apps_search SET id = ? WHERE id = ?").use { statement ->
+                    statement.bindBlob(1, newId)
+                    statement.bindBlob(2, app.oldId)
+                    statement.step()
+                }
+                connection.prepare("UPDATE app_variants SET app_id = ? WHERE app_id = ?").use { statement ->
+                    statement.bindBlob(1, newId)
+                    statement.bindBlob(2, app.oldId)
+                    statement.step()
+                }
+                connection.prepare("UPDATE apps SET id = ? WHERE rowid = ?").use { statement ->
+                    statement.bindBlob(1, newId)
+                    statement.bindLong(2, app.rowId)
+                    statement.step()
+                }
+            }
+            val proofs = connection.prepare(
+                "SELECT rowid, catalog_id, certificate_hash, pubkey FROM certificate_proofs",
+            ).use { statement ->
+                buildList {
+                    while (statement.step()) {
+                        add(ProofRow(statement.getLong(0), statement.getLong(1), statement.getBlob(2).copyOf(), statement.getBlob(3).copyOf()))
+                    }
+                }
+            }
+            for (proof in proofs) {
+                val key = keys[proof.catalogId] ?: continue
+                val newId = ListingRows.proofRowId(key, proof.certificate, proof.pubkey)
+                connection.prepare("UPDATE certificate_proofs SET id = ? WHERE rowid = ?").use { statement ->
+                    statement.bindBlob(1, newId)
+                    statement.bindLong(2, proof.rowId)
+                    statement.step()
+                }
+            }
+        }
+
+        private data class IdRow(val rowId: Long, val oldId: ByteArray, val catalogId: Long, val appId: String)
+
+        private data class ProofRow(
+            val rowId: Long,
+            val catalogId: Long,
+            val certificate: ByteArray,
+            val pubkey: ByteArray,
+        )
+
+        private fun addFactBits(connection: SQLiteConnection) {
+            connection.execSQL("ALTER TABLE apps ADD COLUMN fact_bits INTEGER NOT NULL DEFAULT 0")
+            val rows = connection.prepare("SELECT rowid, facts FROM apps WHERE facts <> ''").use { statement ->
+                buildList {
+                    while (statement.step()) add(statement.getLong(0) to statement.getText(1))
+                }
+            }
+            for ((rowId, facts) in rows) {
+                val bits = factBits(facts)
+                if (bits == 0) continue
+                connection.prepare("UPDATE apps SET fact_bits = ? WHERE rowid = ?").use { statement ->
+                    statement.bindLong(1, bits.toLong())
+                    statement.bindLong(2, rowId)
+                    statement.step()
+                }
+            }
+        }
     }
 }
 
-internal fun openBundledOrJdbc(path: String): SQLiteConnection {
-    if (runCatching { Class.forName("org.sqlite.JDBC") }.isSuccess) {
-        return JdbcSqliteConnection(path)
-    }
-    return BundledSQLiteDriver().open(path)
-}
+internal fun openBundled(path: String): SQLiteConnection = BundledSQLiteDriver().open(path)
 
 private fun SQLiteStatement.toCatalog(): CatalogRecord {
     val relayUrl = getText(1).normalizeRelayUrl()
@@ -727,7 +861,7 @@ private fun SQLiteStatement.toApp(iconsDir: File): AppRecord = AppRecord(
     id = getBlob(0),
     catalogId = getLong(1),
     appId = getText(2),
-    certificateHash = Hex.encode(getBlob(3)),
+    certificateHash = blobHexOrNull(3),
     createdAt = getLong(4),
     proofPubkey = blobHexOrNull(5),
     eventPubkey = Hex.encode(getBlob(6)),

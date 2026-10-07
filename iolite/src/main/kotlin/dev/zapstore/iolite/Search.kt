@@ -20,6 +20,12 @@ internal const val PREFIX_BOOST = 80_645
 /** Larger than any int8 dot, so an exact name or app ID stays above semantic hits. */
 internal const val EXACT_BOOST = 20_000_000
 
+/** About cosine 0.10. Reorders neighbors and stays under [PREFIX_BOOST]. */
+internal const val FACT_SCORE = 18_000
+
+/** About cosine 0.30. Stronger than [FACT_SCORE] and still under [PREFIX_BOOST]. */
+internal const val HARD_FACT_SCORE = 54_000
+
 /** Trimmed, whitespace-collapsed, lowercased, and cut to [MAX_QUERY_BYTES]. */
 fun normalizeSearchQuery(query: String): String {
     val folded = foldSearchText(query)
@@ -48,18 +54,27 @@ internal fun foldSearchText(value: String): String {
 }
 
 /**
- * Exact and prefix name or app-ID hits stay in the list without a vector.
+ * Exact and prefix name or app-ID hits stay in the list without an vector.
  * Other listings are included only when [queryVector] clears [MIN_VECTOR_DOT].
+ * [admitAll] keeps every row, used when a hard fact filter already chose the set.
  * Keeps ids only, and at most [limit] of them, so the caller can load full rows for the survivors.
  */
-internal class SearchRanker(private val query: String, queryVector: ByteArray?, private val limit: Int?) {
+internal class SearchRanker(
+    private val query: String,
+    queryVector: ByteArray?,
+    private val limit: Int?,
+    private val boost: Int = 0,
+    private val soft: Int = 0,
+    private val penalty: Int = 0,
+    private val admitAll: Boolean = false,
+) {
     private val vector = queryVector?.takeIf { it.size == VECTOR_DIMS }
     private val kept = ArrayList<Ranked>()
     private val worstFirst = limit?.takeIf { it > 0 }?.let { PriorityQueue(it, dropFirst) }
 
-    fun consider(id: ByteArray, appId: String, name: String, docVector: ByteArray?) {
+    fun consider(id: ByteArray, appId: String, name: String, docVector: ByteArray?, factBits: Int) {
         if (limit == 0) return
-        val score = score(name, appId, docVector) ?: return
+        val score = score(name, appId, docVector, factBits) ?: return
         val heap = worstFirst
         if (heap == null) {
             kept += Ranked(id, appId, score)
@@ -82,15 +97,20 @@ internal class SearchRanker(private val query: String, queryVector: ByteArray?, 
         return ranked.map { it.id }
     }
 
-    private fun score(name: String, appId: String, docVector: ByteArray?): Int? {
-        val boost = textBoost(query, name, appId)
+    private fun score(name: String, appId: String, docVector: ByteArray?, factBits: Int): Int? {
+        val text = textBoost(query, name, appId)
         val dot = vector?.let { left ->
             docVector?.takeIf { it.size == VECTOR_DIMS }?.let { vectorDot(left, it) }
         }
-        if (boost == 0 && (dot == null || dot < MIN_VECTOR_DOT)) return null
-        return boost + (dot ?: 0)
+        if (!admitAll && text == 0 && (dot == null || dot < MIN_VECTOR_DOT)) return null
+        return text + (dot ?: 0) + factScore(factBits, boost, soft, penalty)
     }
 }
+
+internal fun factScore(bits: Int, boost: Int, soft: Int, penalty: Int): Int =
+    (bits and boost).countOneBits() * HARD_FACT_SCORE +
+        (bits and soft).countOneBits() * FACT_SCORE -
+        (bits and penalty).countOneBits() * FACT_SCORE
 
 private class Ranked(val id: ByteArray, val appId: String, val score: Int)
 

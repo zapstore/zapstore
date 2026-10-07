@@ -202,7 +202,7 @@ class IoliteContractsTest {
     @Test
     fun proofExpiryClearsAppPubkey() {
         val dir = File("build/tmp/iolite-c1-${System.nanoTime()}").apply { mkdirs() }
-        val store = IoliteStore(File(dir, "iolite.db").absolutePath)
+        val store = jdbcStore(File(dir, "iolite.db").absolutePath)
         store.insertFixtureCatalog()
         val appId = ByteArray(32) { 1 }
         val cert = ByteArray(32) { 2 }
@@ -248,7 +248,7 @@ class IoliteContractsTest {
     @Test
     fun appSearchMatchesNameAndAppIdPrefix() {
         val dir = File("build/tmp/iolite-search-${System.nanoTime()}").apply { mkdirs() }
-        val store = IoliteStore(File(dir, "iolite.db").absolutePath)
+        val store = jdbcStore(File(dir, "iolite.db").absolutePath)
         store.insertFixtureCatalog()
         insertApp(store, 1, "com.example.app", "Zapstore", vector = null)
         assertEquals(listOf("com.example.app"), store.apps(AppFilter(search = "zap")).map { it.appId })
@@ -261,7 +261,7 @@ class IoliteContractsTest {
     @Test
     fun appSearchRanksVectors() {
         val dir = File("build/tmp/iolite-search-vec-${System.nanoTime()}").apply { mkdirs() }
-        val store = IoliteStore(File(dir, "iolite.db").absolutePath)
+        val store = jdbcStore(File(dir, "iolite.db").absolutePath)
         store.insertFixtureCatalog()
         val close = ByteArray(VECTOR_DIMS) { 20 }
         val far = ByteArray(VECTOR_DIMS) { 1 }
@@ -282,9 +282,67 @@ class IoliteContractsTest {
     }
 
     @Test
+    fun hardFactFilterDropsUnknownAndKeepsWeakVectors() {
+        val dir = File("build/tmp/iolite-search-hard-${System.nanoTime()}").apply { mkdirs() }
+        val store = jdbcStore(File(dir, "iolite.db").absolutePath)
+        store.insertFixtureCatalog()
+        val opposite = ByteArray(VECTOR_DIMS) { -20 }
+        val close = ByteArray(VECTOR_DIMS) { 20 }
+        insertApp(store, 1, "app.closed", "Closed", close)
+        insertApp(store, 2, "app.foss", "Noise", opposite)
+        setFactBits(store, "app.foss", FACT_OPEN_SOURCE)
+        assertEquals(listOf("app.foss"), store.apps(AppFilter(hard = FACT_OPEN_SOURCE)).map { it.appId })
+        val vector = ByteArray(VECTOR_DIMS) { 20 }
+        assertEquals(
+            listOf("app.foss"),
+            store.apps(AppFilter(search = "nope", queryVector = vector, hard = FACT_OPEN_SOURCE)).map { it.appId },
+        )
+        store.close()
+    }
+
+    @Test
+    fun softAndPenaltyReorderNameMatches() {
+        val dir = File("build/tmp/iolite-search-soft-${System.nanoTime()}").apply { mkdirs() }
+        val store = jdbcStore(File(dir, "iolite.db").absolutePath)
+        store.insertFixtureCatalog()
+        insertApp(store, 1, "app.map", "Map", vector = null)
+        insertApp(store, 2, "app.maple", "Maple", vector = null)
+        setFactBits(store, "app.maple", FACT_OFFLINE or FACT_GOOGLE)
+        assertEquals(
+            listOf("app.maple", "app.map"),
+            store.apps(AppFilter(search = "ma", soft = FACT_OFFLINE)).map { it.appId },
+        )
+        assertEquals(
+            listOf("app.map", "app.maple"),
+            store.apps(AppFilter(search = "ma", penalty = FACT_GOOGLE)).map { it.appId },
+        )
+        store.close()
+    }
+
+    @Test
+    fun hardBoostRaisesOfflineAndKeepsTheRest() {
+        val dir = File("build/tmp/iolite-search-boost-${System.nanoTime()}").apply { mkdirs() }
+        val store = jdbcStore(File(dir, "iolite.db").absolutePath)
+        store.insertFixtureCatalog()
+        val query = ByteArray(VECTOR_DIMS) { 20 }
+        insertApp(store, 1, "app.near", "Near", ByteArray(VECTOR_DIMS) { 20 })
+        insertApp(store, 2, "app.far", "Far", ByteArray(VECTOR_DIMS) { 18 })
+        setFactBits(store, "app.far", FACT_OFFLINE)
+        assertEquals(
+            listOf("app.near", "app.far"),
+            store.apps(AppFilter(search = "zz", queryVector = query, soft = FACT_OFFLINE)).map { it.appId },
+        )
+        assertEquals(
+            listOf("app.far", "app.near"),
+            store.apps(AppFilter(search = "zz", queryVector = query, boost = FACT_OFFLINE)).map { it.appId },
+        )
+        store.close()
+    }
+
+    @Test
     fun appLimitReturnsNewestRows() {
         val dir = File("build/tmp/iolite-limit-${System.nanoTime()}").apply { mkdirs() }
-        val store = IoliteStore(File(dir, "iolite.db").absolutePath)
+        val store = jdbcStore(File(dir, "iolite.db").absolutePath)
         store.insertFixtureCatalog()
         val pubkey = Hex.decode(LocalSigner(SECRET).publicKey)
         store.write { tx ->
@@ -319,7 +377,7 @@ class IoliteContractsTest {
         val dir = File("build/tmp/iolite-wal-${System.nanoTime()}").apply { mkdirs() }
         val db = File(dir, "iolite.db")
         val wal = File("${db.path}-wal")
-        val store = IoliteStore(db.absolutePath)
+        val store = jdbcStore(db.absolutePath)
         store.insertFixtureCatalog()
         val pubkey = Hex.decode(LocalSigner(SECRET).publicKey)
         store.write { tx ->
@@ -356,7 +414,7 @@ class IoliteContractsTest {
     @Test
     fun ingestBatchCommitsTogether() {
         val dir = File("build/tmp/iolite-batch-${System.nanoTime()}").apply { mkdirs() }
-        val store = IoliteStore(File(dir, "iolite.db").absolutePath)
+        val store = jdbcStore(File(dir, "iolite.db").absolutePath)
         val signer = LocalSigner(SECRET)
         val device = DeviceProfile(listOf("arm64-v8a"), 34)
         val first = runBlocking { signer.sign(1, Kinds.Profile, emptyList(), """{"name":"Ada"}""") }
@@ -384,12 +442,23 @@ class IoliteContractsTest {
             http = http,
             signer = signer,
             nowMillis = nowMillis,
+            openConnection = ::JdbcSqliteConnection,
         )
         try {
             block(iolite)
         } finally {
             iolite.close()
             scope.coroutineContext.job.cancel()
+        }
+    }
+
+    private fun setFactBits(store: IoliteStore, appId: String, bits: Int) {
+        store.write { tx ->
+            tx.db.prepare("UPDATE apps SET fact_bits = ? WHERE app_id = ?").use { statement ->
+                statement.bindLong(1, bits.toLong())
+                statement.bindText(2, appId)
+                statement.step()
+            }
         }
     }
 

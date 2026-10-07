@@ -43,8 +43,9 @@ fun availableUpdates(installed: List<InstalledApp>, apps: List<AppRecord>): List
     val byAppId = apps.associateBy(AppRecord::appId)
     return installed.mapNotNull { package_ ->
         val app = byAppId[package_.packageId] ?: return@mapNotNull null
+        val certificate = app.certificateHash ?: return@mapNotNull null
         if (app.versionCode <= package_.versionCode) return@mapNotNull null
-        if (app.certificateHash !in package_.certificateHashes) return@mapNotNull null
+        if (certificate !in package_.certificateHashes) return@mapNotNull null
         AvailableUpdate(app, package_.versionName, package_.versionCode)
     }.sortedBy { it.app.name.lowercase() }
 }
