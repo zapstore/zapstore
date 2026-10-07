@@ -117,6 +117,8 @@ class ScreensTest {
 
         composeRule.onNodeWithTag("app:dev.zap").assertIsDisplayed()
         composeRule.onNodeWithTag("appListLoading").assertIsDisplayed()
+        assertTrue(composeRule.onAllNodesWithText("Curated stacks").fetchSemanticsNodes().isEmpty())
+        assertTrue(composeRule.onAllNodesWithText("No stacks found.").fetchSemanticsNodes().isEmpty())
     }
 
     @Test

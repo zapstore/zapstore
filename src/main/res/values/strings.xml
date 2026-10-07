@@ -29,10 +29,8 @@
     <string name="update_version">%1$s → %2$s</string>
     <string name="search_results">Search results: %1$d in %2$dms</string>
     <string name="verified_author">Verified author</string>
-    <string name="curated_stacks">Curated stacks</string>
     <string name="latest_releases">Latest releases</string>
     <string name="no_releases">No releases found.</string>
-    <string name="no_stacks">No stacks found.</string>
     <string name="stack_not_found">Stack not found.</string>
     <string name="apps">Apps</string>
     <plurals name="curated_apps">

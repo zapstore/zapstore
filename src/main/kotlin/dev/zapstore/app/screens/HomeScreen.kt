@@ -43,7 +43,6 @@ import dev.zapstore.app.ZapTextTertiary
 import dev.zapstore.app.components.AppCard
 import dev.zapstore.app.components.LoadMoreWhenNearEnd
 import dev.zapstore.app.components.LoadingIndicator
-import dev.zapstore.app.components.SectionTitle
 import dev.zapstore.app.components.StackCard
 import dev.zapstore.app.components.StatusText
 import dev.zapstore.app.components.ZapSearchField
@@ -194,25 +193,25 @@ fun HomeScreen(
                 }
             }
 
-            item { SectionTitle(stringResource(R.string.curated_stacks), Modifier.padding(top = 16.dp)) }
-            item {
-                when {
-                    state.stacks.isNotEmpty() -> LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        contentPadding = PaddingValues(end = 8.dp),
-                    ) {
-                        items(state.stacks, key = { it.eventId }) { stack ->
-                            StackCard(
-                                stack = stack,
-                                apps = state.stackApps,
-                                onClick = { onStackClick(stack) },
-                                modifier = Modifier.testTag("stack:${stack.identifier}"),
-                            )
+            if (state.stacks.isNotEmpty() || state.stacksLoading || state.stacksError != null) {
+                item {
+                    when {
+                        state.stacks.isNotEmpty() -> LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            contentPadding = PaddingValues(end = 8.dp),
+                        ) {
+                            items(state.stacks, key = { it.eventId }) { stack ->
+                                StackCard(
+                                    stack = stack,
+                                    apps = state.stackApps,
+                                    onClick = { onStackClick(stack) },
+                                    modifier = Modifier.testTag("stack:${stack.identifier}"),
+                                )
+                            }
                         }
+                        state.stacksLoading -> LoadingIndicator(Modifier.padding(vertical = 12.dp))
+                        state.stacksError != null -> StatusText(state.stacksError)
                     }
-                    state.stacksLoading -> LoadingIndicator(Modifier.padding(vertical = 12.dp))
-                    state.stacksError != null -> StatusText(state.stacksError)
-                    else -> StatusText(stringResource(R.string.no_stacks))
                 }
             }
 
