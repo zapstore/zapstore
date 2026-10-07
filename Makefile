@@ -11,8 +11,11 @@ DEBUG_KEYSTORE ?= $(HOME)/.android/debug.keystore
 
 ASSETS_CATALOG_BUNDLE := src/main/assets/bundle-0-1.tar.zst
 RELAY_PORT := 3334
+# Baked into the APK. Example: CATALOG_RELAY=ws://127.0.0.1:3334 make run
+CATALOG_RELAY ?= wss://brelay.zapstore.dev
+GRADLE_RELAY := -PCATALOG_RELAY="$(CATALOG_RELAY)"
 
-.PHONY: build release install run run-release deploy refresh vendor unbundle-catalog
+.PHONY: build release install run run-release deploy refresh vendor unbundle-catalog reverse
 
 # Drop leftover seeds so a build without CATALOG_BUNDLE does not package them.
 unbundle-catalog:
@@ -38,7 +41,7 @@ vendor:
 	$(GRADLE) verifyArtiAbis
 
 build:
-	$(GRADLE) assembleDebug
+	$(GRADLE) assembleDebug $(GRADLE_RELAY)
 
 release:
 	@if [ -f "$(KEYSTORE)" ]; then \
@@ -64,24 +67,30 @@ release:
 		alias=androiddebugkey; \
 		keypass=android; \
 	fi; \
-	$(GRADLE) assembleRelease \
+	$(GRADLE) assembleRelease $(GRADLE_RELAY) \
 		-Pandroid.injected.signing.store.file="$$store" \
 		-Pandroid.injected.signing.store.password="$$pass" \
 		-Pandroid.injected.signing.key.alias="$$alias" \
 		-Pandroid.injected.signing.key.password="$$keypass"
 
-run-release: release
-	@$(ADB) reverse tcp:$(RELAY_PORT) tcp:$(RELAY_PORT) || true
+# Forward this machine to the device. A local CATALOG_RELAY port is included.
+reverse:
+	@$(ADB) reverse tcp:$(RELAY_PORT) tcp:$(RELAY_PORT) >/dev/null || true
+	@port=$$(printf '%s\n' "$(CATALOG_RELAY)" | sed -nE 's#^wss?://(127\.0\.0\.1|localhost):([0-9]+).*#\2#p'); \
+	if [ -n "$$port" ] && [ "$$port" != "$(RELAY_PORT)" ]; then \
+		$(ADB) reverse tcp:$$port tcp:$$port >/dev/null || true; \
+	fi
+
+run-release: release reverse
 	$(ADB) install -r --no-incremental build/outputs/apk/release/zapstore-release.apk
 	$(ADB) shell am force-stop $(PACKAGE)
 	$(ADB) shell am start -n $(PACKAGE)/$(ACTIVITY)
 
 install:
-	$(GRADLE) installDebug
+	$(GRADLE) installDebug $(GRADLE_RELAY)
 	$(ADB) shell pm clear $(PACKAGE)
 
-run: install
-	@$(ADB) reverse tcp:$(RELAY_PORT) tcp:$(RELAY_PORT) || true
+run: install reverse
 	@$(ADB) shell am force-stop $(PACKAGE)
 	@$(ADB) shell am start -n $(PACKAGE)/$(ACTIVITY)
 	@if [ -t 0 ]; then \
@@ -91,7 +100,7 @@ run: install
 		printf "\n"; \
 		case "$$key" in \
 			q) break ;; \
-			r) $(GRADLE) installDebug && $(ADB) shell am force-stop $(PACKAGE) && $(ADB) shell am start -n $(PACKAGE)/$(ACTIVITY) ;; \
+			r) $(GRADLE) installDebug $(GRADLE_RELAY) && $(ADB) shell am force-stop $(PACKAGE) && $(ADB) shell am start -n $(PACKAGE)/$(ACTIVITY) ;; \
 		esac; \
 		done; \
 	fi

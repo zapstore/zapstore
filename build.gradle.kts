@@ -50,11 +50,16 @@ android {
         localeFilters += "en"
     }
 
+    // `make run` passes -PCATALOG_RELAY. The daemon ignores a new environment, so the property is the input.
+    val catalogRelay = providers.gradleProperty("CATALOG_RELAY").orElse("wss://brelay.zapstore.dev").get().trim()
+        .ifEmpty { "wss://brelay.zapstore.dev" }
+    val catalogRelayField = "\"" + catalogRelay.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
     buildTypes {
         // Debug builds never open relay sockets. Catalog sync uses CATALOG_RELAY.
         debug {
             buildConfigField("boolean", "RELAYS_ENABLED", "false")
-            buildConfigField("String", "CATALOG_RELAY", "\"wss://brelay.zapstore.dev\"")
+            buildConfigField("String", "CATALOG_RELAY", catalogRelayField)
         }
         release {
             isMinifyEnabled = true
@@ -64,7 +69,7 @@ android {
                 "proguard-rules.pro",
             )
             buildConfigField("boolean", "RELAYS_ENABLED", "true")
-            buildConfigField("String", "CATALOG_RELAY", "\"wss://brelay.zapstore.dev\"")
+            buildConfigField("String", "CATALOG_RELAY", catalogRelayField)
         }
     }
 
