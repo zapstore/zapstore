@@ -4,8 +4,10 @@ import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -13,6 +15,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
@@ -25,6 +30,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import dev.zapstore.app.install.hasOtherProfiles
+import dev.zapstore.app.install.uninstallIntent
 import dev.zapstore.app.screens.AppDetailScreen
 import dev.zapstore.app.screens.AppDetailViewModel
 import dev.zapstore.app.screens.HomeScreen
@@ -36,6 +43,7 @@ import dev.zapstore.app.screens.SettingsScreen
 import dev.zapstore.app.screens.SettingsViewModel
 import dev.zapstore.app.screens.StackDetailScreen
 import dev.zapstore.app.screens.StackDetailViewModel
+import dev.zapstore.app.screens.UninstallProfilesDialog
 import dev.zapstore.app.screens.UpdatesScreen
 import dev.zapstore.app.screens.UpdatesViewModel
 import dev.zapstore.iolite.AppRecord
@@ -71,6 +79,10 @@ class MainActivity : ComponentActivity() {
     private fun requestInstallPermission() {
         if (BuildConfig.DEBUG || installPermissionPrompted || packageManager.canRequestPackageInstalls()) return
         installPermissionPrompted = true
+        openUnknownSourcesSettings()
+    }
+
+    private fun openUnknownSourcesSettings() {
         val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, "package:$packageName".toUri())
         runCatching { startActivity(intent) }
     }
@@ -80,6 +92,14 @@ class MainActivity : ComponentActivity() {
         val iolite = zapstore.iolite
         val openApp = { app: AppRecord -> navController.navigate(Routes.app(app.appId)) }
         val openProfile = { pubkey: String -> navController.navigate(Routes.profile(pubkey)) }
+        var uninstallPrompt by remember { mutableStateOf<Pair<String, String>?>(null) }
+        val uninstallLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            zapstore.catalogSync.refreshInstalled()
+        }
+        val requestUninstall = { packageId: String, name: String ->
+            if (hasOtherProfiles()) uninstallPrompt = packageId to name
+            else uninstallLauncher.launch(uninstallIntent(packageId))
+        }
 
         NavHost(
             navController = navController,
@@ -109,9 +129,21 @@ class MainActivity : ComponentActivity() {
             }
 
             composable(Routes.UPDATES) {
-                val viewModel: UpdatesViewModel = viewModel(factory = UpdatesViewModel.factory(zapstore.catalogSync))
+                val viewModel: UpdatesViewModel = viewModel(factory = UpdatesViewModel.factory(zapstore))
                 val state by viewModel.uiState.collectAsStateWithLifecycle()
-                UpdatesScreen(state = state, onSync = viewModel::sync, onAppClick = openApp)
+                UpdatesScreen(
+                    state = state,
+                    onSync = viewModel::sync,
+                    onAppClick = openApp,
+                    onUninstall = { requestUninstall(it.appId, it.name) },
+                    onUninstallInstalled = { packageId, name -> requestUninstall(packageId, name) },
+                    onUpdateAll = {
+                        if (packageManager.canRequestPackageInstalls()) viewModel.prepareUpdateAll()
+                        else openUnknownSourcesSettings()
+                    },
+                    onConfirmUpdateAll = viewModel::confirmUpdateAll,
+                    onDismissUpdateAll = viewModel::dismissUpdateAll,
+                )
             }
 
             composable(Routes.SETTINGS) {
@@ -149,7 +181,7 @@ class MainActivity : ComponentActivity() {
                 route = Routes.APP,
                 arguments = listOf(navArgument(Routes.APP_ID_ARG) { type = NavType.StringType }),
             ) {
-                val viewModel: AppDetailViewModel = viewModel(factory = AppDetailViewModel.factory(iolite))
+                val viewModel: AppDetailViewModel = viewModel(factory = AppDetailViewModel.factory(zapstore))
                 val state by viewModel.uiState.collectAsStateWithLifecycle()
                 AppDetailScreen(
                     state = state,
@@ -157,6 +189,14 @@ class MainActivity : ComponentActivity() {
                     onProfileClick = openProfile,
                     onRetryComments = viewModel::retryComments,
                     onSettingsClick = { navController.navigate(Routes.SETTINGS) },
+                    onInstall = {
+                        if (packageManager.canRequestPackageInstalls()) viewModel.prepareInstall()
+                        else openUnknownSourcesSettings()
+                    },
+                    onConfirmInstall = viewModel::confirmInstall,
+                    onDismissInstall = viewModel::dismissInstall,
+                    onUninstall = { state.app?.let { requestUninstall(it.appId, it.name) } },
+                    onRefreshOrigin = viewModel::refreshOrigin,
                 )
             }
 
@@ -168,6 +208,17 @@ class MainActivity : ComponentActivity() {
                 val state by viewModel.uiState.collectAsStateWithLifecycle()
                 ProfileScreen(state = state, onOpenUrl = ::openUrl, onAppClick = openApp)
             }
+        }
+
+        uninstallPrompt?.let { (packageId, name) ->
+            UninstallProfilesDialog(
+                name = name,
+                onConfirm = {
+                    uninstallPrompt = null
+                    uninstallLauncher.launch(uninstallIntent(packageId))
+                },
+                onDismiss = { uninstallPrompt = null },
+            )
         }
     }
 

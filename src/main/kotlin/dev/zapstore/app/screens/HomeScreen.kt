@@ -130,7 +130,7 @@ fun HomeScreen(
             Box(contentAlignment = Alignment.TopEnd) {
                 IconButton(onClick = onUpdatesClick, modifier = Modifier.testTag("updatesButton")) {
                     Icon(
-                        painter = painterResource(R.drawable.ic_launcher),
+                        painter = painterResource(R.drawable.ic_update),
                         contentDescription = stringResource(R.string.updates),
                         modifier = Modifier.size(24.dp),
                     )

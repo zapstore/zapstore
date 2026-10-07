@@ -48,6 +48,28 @@ class InstalledAppsTest {
 
         assertEquals(listOf("alpha", "Zed"), availableUpdates(installed, catalog).map { it.app.name })
     }
+
+    @Test
+    fun `groups match the flutter updates screen`() {
+        val installed = listOf(
+            InstalledApp("dev.ready", 1, "1", setOf("aa"), installingPackage = "dev.zapstore.app", label = "Ready"),
+            InstalledApp("dev.manual", 1, "1", setOf("aa"), installingPackage = "com.android.vending", label = "Manual"),
+            InstalledApp("dev.current", 2, "2", setOf("aa"), label = "Current"),
+            InstalledApp("com.other", 1, "1.4", setOf("zz"), label = "Other"),
+        )
+        val catalog = listOf(
+            app("dev.ready", "Ready", "2", 2, certificateHash = "aa"),
+            app("dev.manual", "Manual", "2", 2, certificateHash = "aa"),
+            app("dev.current", "Current", "2", 2, certificateHash = "aa"),
+        )
+        val updates = availableUpdates(installed, catalog)
+        val groups = updateGroups(updates, installed, catalog) { it.installingPackage == "dev.zapstore.app" }
+
+        assertEquals(listOf("dev.ready"), groups.updates.map { it.app.appId })
+        assertEquals(listOf("dev.manual"), groups.manualUpdates.map { it.app.appId })
+        assertEquals(listOf("dev.current"), groups.installedApps.map { it.appId })
+        assertEquals(listOf("com.other"), groups.otherInstalled.map { it.packageId })
+    }
 }
 
 internal fun app(appId: String, name: String, version: String, versionCode: Long, certificateHash: String?): AppRecord = AppRecord(

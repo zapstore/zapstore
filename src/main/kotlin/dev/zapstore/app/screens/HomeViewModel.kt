@@ -10,10 +10,10 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import dev.zapstore.app.components.AppListState
 import dev.zapstore.iolite.AppFilter
 import dev.zapstore.iolite.AppRecord
-import dev.zapstore.iolite.CatalogStackPubkey
 import dev.zapstore.iolite.Iolite
 import dev.zapstore.iolite.ProfileRecord
 import dev.zapstore.iolite.Query
+import dev.zapstore.iolite.QueryPhase
 import dev.zapstore.iolite.QueryState
 import dev.zapstore.iolite.StackRecord
 import dev.zapstore.iolite.SearchFact
@@ -117,7 +117,13 @@ class HomeViewModel(
     }
 
     private val stacks: Flow<QueryState<List<StackRecord>>> =
-        iolite.query(Query.stacks(CatalogStackPubkey, limit = STACK_LIMIT))
+        iolite.observeCatalogs()
+            .map { catalogs -> catalogs.firstOrNull()?.manifestPubkey }
+            .distinctUntilChanged()
+            .flatMapLatest { pubkey ->
+                if (pubkey == null) flowOf(QueryState(emptyList(), QueryPhase.LocalOnly))
+                else iolite.query(Query.stacks(pubkey, limit = STACK_LIMIT))
+            }
 
     private val stackApps: Flow<Map<String, AppRecord>> = stacks
         .map { state -> state.items.flatMap(StackRecord::appIds).toSet() }

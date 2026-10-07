@@ -10,6 +10,8 @@ data class ApkIdentity(
     val sha256: String,
     val currentCertificates: Set<String>,
     val lineage: List<String>,
+    /** 0 when the archive did not report one. The install floor treats 0 as unknown. */
+    val targetSdk: Int = 0,
 )
 
 data class ListedApk(
@@ -32,11 +34,17 @@ object ApkVerifier {
         }
         val current = signing.apkContentsSigners.map { it.toByteArray().sha256Hex() }.toSet()
         val lineage = signing.signingCertificateHistory.map { it.toByteArray().sha256Hex() }
+        val appInfo = info.applicationInfo
+        if (appInfo != null) {
+            appInfo.sourceDir = apk.absolutePath
+            appInfo.publicSourceDir = apk.absolutePath
+        }
         return ApkIdentity(
             packageId = info.packageName,
             sha256 = apk.sha256Hex(),
             currentCertificates = current,
             lineage = lineage,
+            targetSdk = appInfo?.targetSdkVersion ?: 0,
         )
     }
 
@@ -46,12 +54,16 @@ object ApkVerifier {
         installedCertificates: Set<String> = emptySet(),
         isUpdate: Boolean = false,
     ): Boolean {
-        if (apk.sha256 != listed.sha256) return false
+        if (!apk.sha256.equals(listed.sha256, ignoreCase = true)) return false
         if (apk.packageId != listed.packageId) return false
-        if (listed.certificateHash !in apk.currentCertificates) return false
-        if (!isUpdate || installedCertificates.isEmpty()) return true
-        if (installedCertificates.any { it in apk.currentCertificates }) return true
-        return installedCertificates.any { it in apk.lineage }
+        if (listed.certificateHash.lowercase() !in apk.currentCertificates) return false
+        if (!isUpdate) return true
+        if (installedCertificates.isEmpty()) return false
+        val installed = installedCertificates.map { it.lowercase() }
+        val current = apk.currentCertificates.map { it.lowercase() }
+        val lineage = apk.lineage.map { it.lowercase() }
+        if (installed.any { it in current }) return true
+        return installed.any { it in lineage }
     }
 }
 
@@ -66,7 +78,7 @@ private fun File.sha256Hex(): String = inputStream().use { input ->
     digest.digest().toHex()
 }
 
-private fun ByteArray.sha256Hex(): String =
+internal fun ByteArray.sha256Hex(): String =
     MessageDigest.getInstance("SHA-256").digest(this).toHex()
 
 private fun ByteArray.toHex(): String = joinToString("") { byte ->

@@ -35,7 +35,7 @@ data class SyncStatus(
  */
 class CatalogSync(
     private val iolite: Iolite,
-    scope: CoroutineScope,
+    private val scope: CoroutineScope,
     private val readInstalledApps: () -> List<InstalledApp>,
     private val readBundledSnapshot: () -> ByteArray,
     private val useOnion: () -> Boolean = { false },
@@ -47,6 +47,9 @@ class CatalogSync(
     val status: StateFlow<SyncStatus> = _status.asStateFlow()
 
     private val installed = MutableStateFlow<List<InstalledApp>>(emptyList())
+
+    /** User-installed packages. System packages are left out, matching the Flutter list. */
+    val installedApps: StateFlow<List<InstalledApp>> = installed.asStateFlow()
 
     /** Newer catalog listings for packages installed on this device. */
     val updates: Flow<List<AvailableUpdate>> =
@@ -110,6 +113,10 @@ class CatalogSync(
                 )
             }
         }
+    }
+
+    fun refreshInstalled() {
+        scope.launch { refreshInstalledApps() }
     }
 
     private suspend fun refreshInstalledApps() {

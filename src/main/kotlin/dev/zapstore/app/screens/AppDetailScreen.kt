@@ -32,6 +32,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -40,11 +41,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import dev.zapstore.app.facts.FactCatalog
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -87,6 +92,7 @@ import dev.zapstore.app.components.ParagraphSkeleton
 import dev.zapstore.app.components.SkeletonBlock
 import dev.zapstore.app.components.LoadingIndicator
 import dev.zapstore.app.components.StatusText
+import dev.zapstore.app.install.InstallPlan
 import dev.zapstore.iolite.AppRecord
 import dev.zapstore.iolite.CommentRecord
 import dev.zapstore.iolite.ProfileRecord
@@ -105,7 +111,20 @@ fun AppDetailScreen(
     onProfileClick: (String) -> Unit = {},
     onRetryComments: () -> Unit = {},
     onSettingsClick: () -> Unit = {},
+    onInstall: () -> Unit = {},
+    onConfirmInstall: () -> Unit = {},
+    onDismissInstall: () -> Unit = {},
+    onUninstall: () -> Unit = {},
+    onRefreshOrigin: () -> Unit = {},
 ) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) onRefreshOrigin()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     var selectedScreenshot by remember { mutableStateOf<Int?>(null) }
     var showDeveloperDescription by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
@@ -143,6 +162,12 @@ fun AppDetailScreen(
                     author = state.author,
                     onAuthorClick = onProfileClick,
                 )
+            }
+
+            if (state.install.offer || state.install.installed || state.install.message != null) {
+                item {
+                    InstallAction(state.install, onInstall, onUninstall)
+                }
             }
 
             if (app.screenshots.isNotEmpty()) {
@@ -320,6 +345,16 @@ fun AppDetailScreen(
                 onDismiss = { selectedScreenshot = null },
             )
         }
+        state.install.dialog?.let { plan ->
+            InstallDialog(
+                name = app.name,
+                version = app.version,
+                verified = app.isVerified,
+                plan = plan,
+                onConfirm = onConfirmInstall,
+                onDismiss = onDismissInstall,
+            )
+        }
         if (showDeveloperDescription && app.description.isNotBlank()) {
             MarkdownDialog(
                 title = stringResource(R.string.developer_description),
@@ -327,6 +362,115 @@ fun AppDetailScreen(
                 onOpenUrl = onOpenUrl,
                 onDismiss = { showDeveloperDescription = false },
             )
+        }
+    }
+}
+
+@Composable
+private fun InstallAction(install: InstallUi, onInstall: () -> Unit, onUninstall: () -> Unit) {
+    val onDevice = install.installed || install.updating
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (install.offer) {
+            FilledTonalButton(
+                onClick = onInstall,
+                enabled = !install.busy && install.dialog == null,
+                modifier = Modifier.testTag("installApp"),
+            ) {
+                Text(
+                    when {
+                        install.busy && install.received > 0 -> stringResource(R.string.downloading)
+                        install.busy -> stringResource(R.string.installing)
+                        install.updating -> stringResource(R.string.update_app)
+                        else -> stringResource(R.string.install)
+                    },
+                )
+            }
+        } else if (install.installed && !install.busy) {
+            StatusText(stringResource(R.string.installed), Modifier.testTag("installedApp"))
+        }
+        if (onDevice) {
+            TextButton(
+                onClick = onUninstall,
+                enabled = !install.busy,
+                modifier = Modifier.testTag("uninstallApp"),
+                contentPadding = PaddingValues(0.dp),
+            ) {
+                Text(stringResource(R.string.uninstall), color = ZapDanger)
+            }
+        }
+        if (install.busy && install.received > 0) {
+            val readMb = install.received / 1_000_000.0
+            val total = install.total
+            StatusText(
+                if (total != null && total > 0) {
+                    stringResource(R.string.download_progress_total, readMb, total / 1_000_000.0)
+                } else {
+                    stringResource(R.string.download_progress, readMb)
+                },
+            )
+        }
+        install.message?.let { StatusText(it, Modifier.testTag("installStatus")) }
+    }
+}
+
+@Composable
+private fun InstallDialog(
+    name: String,
+    version: String,
+    verified: Boolean,
+    plan: InstallPlan,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(ZapRadius.lg))
+                .background(ZapSurface1)
+                .border(1.dp, ZapLine, RoundedCornerShape(ZapRadius.lg))
+                .padding(ZapSpacing.space4),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = stringResource(if (plan is InstallPlan.FirstInstall) R.string.install_title else R.string.update_title, name),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = stringResource(R.string.install_version, version),
+                color = ZapTextSecondary,
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            if (verified) {
+                Text(
+                    text = stringResource(R.string.verified_author),
+                    color = ZapVerified,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            Text(
+                text = stringResource(
+                    when (plan) {
+                        InstallPlan.FirstInstall -> R.string.install_android_confirm
+                        InstallPlan.Takeover -> R.string.install_takeover
+                        else -> R.string.install_silent
+                    },
+                ),
+                color = ZapTextSecondary,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(R.string.install_cancel), color = ZapTextSecondary)
+                }
+                TextButton(onClick = onConfirm, modifier = Modifier.testTag("installConfirm")) {
+                    Text(stringResource(R.string.install_confirm), color = ZapActionText)
+                }
+            }
         }
     }
 }

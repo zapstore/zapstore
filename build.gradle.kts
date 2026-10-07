@@ -15,8 +15,8 @@ android {
     compileSdk = providers.gradleProperty("iolite.compileSdk").orElse("37").get().toInt()
 
     defaultConfig {
-        applicationId = "dev.zapstore.beta"
-        minSdk = 29
+        applicationId = "dev.zapstore.app"
+        minSdk = 31
         targetSdk = 37
         versionCode = 1
         versionName = "1.0"
@@ -54,6 +54,17 @@ android {
     val catalogRelay = providers.gradleProperty("CATALOG_RELAY").orElse("wss://brelay.zapstore.dev").get().trim()
         .ifEmpty { "wss://brelay.zapstore.dev" }
     val catalogRelayField = "\"" + catalogRelay.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
+    // ~/.android is not readable in this environment. AGP only stats that
+    // directory when the debug config still uses alias AndroidDebugKey.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = layout.projectDirectory.file("debug.keystore").asFile
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
 
     buildTypes {
         // Debug builds never open relay sockets. Catalog sync uses CATALOG_RELAY.
@@ -102,6 +113,29 @@ tasks.register("verifyArtiAbis") {
 
 tasks.matching { it.name.startsWith("assembleRelease") }.configureEach {
     dependsOn("verifyArtiAbis")
+}
+
+val ensureDebugKeystore = tasks.register<Exec>("ensureDebugKeystore") {
+    val store = layout.projectDirectory.file("debug.keystore").asFile
+    val keytool = File(System.getProperty("java.home"), "bin/keytool")
+    outputs.file(store)
+    onlyIf { !store.isFile }
+    executable = keytool.absolutePath
+    args(
+        "-genkeypair",
+        "-keystore", store.absolutePath,
+        "-storepass", "android",
+        "-keypass", "android",
+        "-alias", "androiddebugkey",
+        "-keyalg", "RSA",
+        "-keysize", "2048",
+        "-validity", "10000",
+        "-dname", "CN=Android Debug,O=Android,C=US",
+    )
+}
+
+tasks.matching { it.name.startsWith("validateSigning") }.configureEach {
+    dependsOn(ensureDebugKeystore)
 }
 
 val downloadLeafModel = tasks.register("downloadLeafModel") {

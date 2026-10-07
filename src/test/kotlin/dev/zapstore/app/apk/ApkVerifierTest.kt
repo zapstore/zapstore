@@ -30,6 +30,14 @@ class ApkVerifierTest {
     }
 
     @Test
+    fun updateRejectsAnEmptyInstalledCertificateSet() {
+        val apk = ApkIdentity("com.example.app", "aa", setOf("cert"), listOf("cert"))
+        val listed = ListedApk("com.example.app", "aa", "cert")
+        assertFalse(ApkVerifier.isInstallable(apk, listed, installedCertificates = emptySet(), isUpdate = true))
+        assertTrue(ApkVerifier.isInstallable(apk, listed, installedCertificates = emptySet(), isUpdate = false))
+    }
+
+    @Test
     fun c1ReputationIsNotASubstitute() {
         val apk = ApkIdentity("com.example.app", "aa", setOf("cert"), listOf("cert"))
         val listed = ListedApk("com.example.app", "wrong", "cert")

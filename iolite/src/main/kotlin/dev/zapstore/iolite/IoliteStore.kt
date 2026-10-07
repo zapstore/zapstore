@@ -139,20 +139,20 @@ class IoliteStore internal constructor(
         device: DeviceProfile,
         now: Long,
         artifacts: CatalogArtifact = CatalogArtifact.EMPTY,
-        stackPubkey: String = CatalogStackPubkey,
     ): Set<String> {
+        val stackPubkey = catalog.manifestPubkey ?: throw CatalogImportException("catalog manifest pubkey is missing")
         val removed = LinkedHashSet<String>()
         write { tx ->
             for (event in events) {
                 if (event.kind != Kinds.AppStack) continue
                 if (event.pubkey != stackPubkey) {
-                    throw CatalogImportException("stack is not signed by the curator")
+                    throw CatalogImportException("stack is not signed by the catalog key")
                 }
                 if (event.dTag().isNullOrBlank()) throw CatalogImportException("stack missing d")
             }
             for (delete in deletes) {
                 if (delete is CatalogDelete.Coordinate && delete.kind == Kinds.AppStack && delete.pubkey != stackPubkey) {
-                    throw CatalogImportException("stack is not signed by the curator")
+                    throw CatalogImportException("stack is not signed by the catalog key")
                 }
                 ListingRows.delete(tx, catalog, delete)
                 if (delete is CatalogDelete.Listing) removed += delete.appId

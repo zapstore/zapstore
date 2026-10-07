@@ -26,8 +26,6 @@ data class IoliteConfig(
     /** One JSONL line (one event or delete). Matches the relay's 0.5 MiB event cap. */
     val maxJsonLineBytes: Long = 512L * 1024,
     val maxIconBytes: Long = 256L * 1024,
-    /** Kind 30267 author included in catalog bundles. */
-    val catalogStackPubkey: String = CatalogStackPubkey,
 ) {
     internal fun validate() {
         require(databaseName.isNotBlank() && databaseName.none { it == '/' || it == '\\' || it == '\u0000' }) {

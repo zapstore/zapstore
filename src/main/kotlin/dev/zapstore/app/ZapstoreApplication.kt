@@ -11,6 +11,7 @@ import coil3.annotation.ExperimentalCoilApi
 import coil3.network.ConnectivityChecker
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import dev.zapstore.app.catalog.CatalogSync
+import dev.zapstore.app.install.InstallCache
 import dev.zapstore.app.catalog.installedApps
 import dev.zapstore.app.search.QueryEncoder
 import dev.zapstore.app.transport.NetworkRuntime
@@ -38,6 +39,7 @@ class ZapstoreApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        InstallCache.sweep(this)
         network = NetworkRuntime(this, scope)
         queryEncoder = QueryEncoder(this)
         registerComponentCallbacks(queryEncoder)

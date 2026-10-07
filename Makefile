@@ -1,13 +1,12 @@
 GRADLE ?= ./gradlew
-ANDROID_SDK_ROOT ?= $(ANDROID_HOME)
-ADB ?= $(ANDROID_SDK_ROOT)/platform-tools/adb
-PACKAGE ?= dev.zapstore.beta
+ADB := ./tools/adb
+PACKAGE ?= dev.zapstore.app
 ACTIVITY ?= dev.zapstore.app.MainActivity
 KEYSTORE ?= release.keystore
 KEYSTORE_PASSWORD ?=
 KEY_ALIAS ?=
 KEY_PASSWORD ?= $(KEYSTORE_PASSWORD)
-DEBUG_KEYSTORE ?= $(HOME)/.android/debug.keystore
+DEBUG_KEYSTORE ?= $(abspath debug.keystore)
 
 ASSETS_CATALOG_BUNDLE := src/main/assets/bundle-0-1.tar.zst
 RELAY_PORT := 3334
@@ -15,7 +14,7 @@ RELAY_PORT := 3334
 CATALOG_RELAY ?= wss://brelay.zapstore.dev
 GRADLE_RELAY := -PCATALOG_RELAY="$(CATALOG_RELAY)"
 
-.PHONY: build release install run run-release deploy refresh vendor unbundle-catalog reverse
+.PHONY: build release install run run-release deploy refresh vendor unbundle-catalog reverse link-adb
 
 # Drop leftover seeds so a build without CATALOG_BUNDLE does not package them.
 unbundle-catalog:
@@ -86,7 +85,26 @@ run-release: release reverse
 	$(ADB) shell am force-stop $(PACKAGE)
 	$(ADB) shell am start -n $(PACKAGE)/$(ACTIVITY)
 
-install:
+# Gradle runs .android-sdk/platform-tools/adb. Keep that path on tools/adb.
+link-adb:
+	@sdk="$(abspath .android-sdk)/platform-tools"; \
+	if [ -L "$$sdk/adb" ] && [ "$$(readlink "$$sdk/adb")" = "../../tools/adb" ]; then \
+		exit 0; \
+	fi; \
+	real=""; \
+	for candidate in "$${ANDROID_SDK_ROOT:-}/platform-tools" "$${ANDROID_HOME:-}/platform-tools" "/opt/homebrew/share/android-commandlinetools/platform-tools"; do \
+		if [ -x "$$candidate/adb" ] && [ ! -L "$$candidate/adb" ]; then real=$$candidate; break; fi; \
+	done; \
+	test -n "$$real" || { echo "platform-tools adb not found" >&2; exit 1; }; \
+	if [ -L "$$sdk" ]; then rm "$$sdk"; fi; \
+	mkdir -p "$$sdk"; \
+	for entry in "$$real"/*; do \
+		name=$$(basename "$$entry"); \
+		if [ "$$name" = "adb" ]; then ln -sfn ../../tools/adb "$$sdk/adb"; \
+		else ln -sfn "$$entry" "$$sdk/$$name"; fi; \
+	done
+
+install: link-adb
 	$(GRADLE) installDebug $(GRADLE_RELAY)
 	$(ADB) shell pm clear $(PACKAGE)
 

@@ -1,0 +1,50 @@
+#!/bin/sh
+# adb aborts when $HOME/.android exists and is not a directory it can use.
+# Keep its keys in the project instead of ~/.android.
+set -eu
+
+script=$0
+while [ -L "$script" ]; do
+    dir=$(CDPATH= cd -- "$(dirname "$script")" && pwd)
+    target=$(readlink "$script")
+    case $target in
+        /*) script=$target ;;
+        *) script=$dir/$target ;;
+    esac
+done
+script_dir=$(CDPATH= cd -- "$(dirname "$script")" && pwd)
+root=$(CDPATH= cd -- "$script_dir/.." && pwd)
+export HOME="$root/.adb-home"
+mkdir -p "$HOME"
+
+real=""
+for candidate in \
+    "${ANDROID_SDK_ROOT:-}/platform-tools/adb" \
+    "${ANDROID_HOME:-}/platform-tools/adb" \
+    "/opt/homebrew/share/android-commandlinetools/platform-tools/adb"
+do
+    if [ -z "$candidate" ] || [ ! -x "$candidate" ]; then
+        continue
+    fi
+    resolved=$candidate
+    while [ -L "$resolved" ]; do
+        dir=$(CDPATH= cd -- "$(dirname "$resolved")" && pwd)
+        target=$(readlink "$resolved")
+        case $target in
+            /*) resolved=$target ;;
+            *) resolved=$dir/$target ;;
+        esac
+    done
+    if [ "$resolved" = "$script" ]; then
+        continue
+    fi
+    real=$resolved
+    break
+done
+
+if [ -z "$real" ]; then
+    echo "adb: platform-tools adb not found" >&2
+    exit 1
+fi
+
+exec "$real" "$@"

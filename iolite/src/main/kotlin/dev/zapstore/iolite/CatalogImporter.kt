@@ -53,7 +53,8 @@ class CatalogImporter(
 
         val (events, deletes) = parseDiff(byName["diff.jsonl"], config.maxJsonLineBytes)
         validateOperations(events, deletes)
-        validateStacks(events, deletes, config.catalogStackPubkey)
+        val catalogPubkey = existing?.manifestPubkey ?: manifest.event.pubkey
+        validateStacks(events, deletes, catalogPubkey)
         events.filter { it.kind == Kinds.IdentityProof }.forEach(ListingRows::validateProof)
         val artifacts = CatalogArtifacts.fromMembers(byName, config.maxIconBytes)
 
@@ -73,7 +74,6 @@ class CatalogImporter(
                 device = device,
                 now = nowSeconds(),
                 artifacts = artifacts,
-                stackPubkey = config.catalogStackPubkey,
             )
         } catch (failure: Throwable) {
             throw if (failure is CatalogImportException) failure else CatalogImportException(failure.message ?: "import failed")
@@ -177,12 +177,12 @@ class CatalogImporter(
         private fun validateStacks(events: List<Event>, deletes: List<CatalogDelete>, catalogPubkey: String) {
             for (event in events) {
                 if (event.kind != Kinds.AppStack) continue
-                if (event.pubkey != catalogPubkey) throw CatalogImportException("stack is not signed by the curator")
+                if (event.pubkey != catalogPubkey) throw CatalogImportException("stack is not signed by the catalog key")
                 if (event.dTag().isNullOrBlank()) throw CatalogImportException("stack missing d")
             }
             for (delete in deletes) {
                 if (delete is CatalogDelete.Coordinate && delete.kind == Kinds.AppStack && delete.pubkey != catalogPubkey) {
-                    throw CatalogImportException("stack is not signed by the curator")
+                    throw CatalogImportException("stack is not signed by the catalog key")
                 }
             }
         }

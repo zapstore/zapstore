@@ -215,9 +215,6 @@ object Kinds {
     const val App = 32_267
 }
 
-/** Signs the Zapstore curated stacks (kind 30267). Not the catalog manifest key. */
-const val CatalogStackPubkey = "acfeaea6e51420e8068fac446ca9d17d7a9ef6a5d20d93894e50fee3d4902a84"
-
 /** NIP-65: unmarked or `read`-marked `r` tags. */
 fun List<List<String>>.readRelayUrls(): Set<RelayUrl> = markedRelayUrls("read")
 

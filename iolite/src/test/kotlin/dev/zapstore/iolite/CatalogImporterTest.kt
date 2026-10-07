@@ -254,7 +254,6 @@ class CatalogImporterTest {
                 toEpoch = 1,
                 device = device,
                 now = 1_700_000_000,
-                stackPubkey = catalogStack.pubkey,
             )
             }.exceptionOrNull()
             assertTrue(rejected is CatalogImportException)
@@ -266,7 +265,6 @@ class CatalogImporterTest {
                 toEpoch = 1,
                 device = device,
                 now = 1_700_000_000,
-                stackPubkey = catalogStack.pubkey,
             )
             val curated = store.stacks(catalogStack.pubkey)
             assertEquals(listOf("editors"), curated.map { it.identifier })
@@ -280,7 +278,6 @@ class CatalogImporterTest {
                 toEpoch = 2,
                 device = device,
                 now = 1_700_000_000,
-                stackPubkey = catalogStack.pubkey,
             )
             assertEquals(emptyList<StackRecord>(), store.stacks(catalogStack.pubkey))
             assertEquals(listOf("mine"), store.stacks(otherStack.pubkey).map { it.identifier })
