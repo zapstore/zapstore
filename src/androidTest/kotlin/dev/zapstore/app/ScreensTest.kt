@@ -1,13 +1,19 @@
 package dev.zapstore.app
 
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.test.performSemanticsAction
+import dev.zapstore.app.ZapDanger
+import dev.zapstore.app.ZapVerified
 import dev.zapstore.app.catalog.AvailableUpdate
 import dev.zapstore.app.catalog.SyncStatus
 import dev.zapstore.app.components.AppCard
@@ -133,6 +139,67 @@ class ScreensTest {
         composeRule.onNodeWithTag("homeList").performScrollToKey("app:app.19")
         composeRule.waitUntil { loadMoreCount > 0 }
         assertTrue(loadMoreCount > 0)
+    }
+
+    @Test
+    fun appDetailFactsFollowTheSheet() {
+        val security = """
+            "google_services","no",""
+            "open_source","no",""
+            "offline_capable","yes","No INTERNET"
+            ---
+            CAMERA
+            ---
+        """.trimIndent()
+
+        composeRule.setContent {
+            ZapstoreTheme {
+                AppDetailScreen(
+                    state = AppDetailUiState(app = app("dev.zap", "Zap", security = security), loaded = true),
+                    onOpenUrl = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("appDetail").performScrollToKey("facts")
+        composeRule.onNodeWithText("No Google services").assertIsDisplayed()
+        composeRule.onNodeWithText("Works offline").assertIsDisplayed()
+        composeRule.onNodeWithText("Closed source").assertIsDisplayed()
+        assertTrue(composeRule.onAllNodesWithText("E2EE").fetchSemanticsNodes().isEmpty())
+        assertTrue(composeRule.onAllNodesWithText("Account required").fetchSemanticsNodes().isEmpty())
+        assertPillColor("fact_google_services", ZapDanger)
+        assertPillColor("fact_offline_capable", ZapVerified)
+        assertPillColor("fact_open_source", ZapDanger)
+
+        composeRule.onNodeWithTag("appDetail").performScrollToKey("permissions")
+        composeRule.onNodeWithText("CAMERA").assertIsDisplayed()
+    }
+
+    @Test
+    fun appDetailPrefixesSecurityNotices() {
+        val security = "Contacts leave the phone.\nInstalls other apps.\n---\nThe address book is read on the share screen."
+        composeRule.setContent {
+            ZapstoreTheme {
+                AppDetailScreen(
+                    state = AppDetailUiState(app = app("dev.zap", "Zap", security = security), loaded = true),
+                    onOpenUrl = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("appDetail").performScrollToKey("securityWarnings")
+        composeRule.onNodeWithText("⚠️ Contacts leave the phone.\n⚠️ Installs other apps.").assertIsDisplayed()
+        composeRule.onNodeWithTag("appDetail").performScrollToKey("securityBody")
+        composeRule.onNodeWithText("The address book is read on the share screen.").assertIsDisplayed()
+        assertTrue(composeRule.onAllNodesWithText("---").fetchSemanticsNodes().isEmpty())
+    }
+
+    private fun assertPillColor(tag: String, expected: Color) {
+        val pixels = composeRule.onNodeWithTag(tag).captureToImage().toPixelMap()
+        val hit = (0 until pixels.width).any { x ->
+            (0 until pixels.height).any { y -> pixels[x, y].matches(expected) }
+        }
+        assertTrue(hit)
     }
 
     @Test
@@ -379,12 +446,19 @@ class ScreensTest {
 
 private val AUTHOR = "1".repeat(64)
 
+private fun Color.matches(expected: Color): Boolean {
+    fun near(left: Float, right: Float) = kotlin.math.abs(left - right) < 0.08f
+    return alpha > 0.9f && near(red, expected.red) && near(green, expected.green) && near(blue, expected.blue)
+}
+
 private fun app(
     appId: String,
     name: String,
     version: String = "1.0",
     repository: String? = null,
     proofPubkey: String? = null,
+    facts: String = "",
+    security: String = "",
 ): AppRecord = AppRecord(
     id = appId.toByteArray(),
     catalogId = 1,
@@ -401,4 +475,6 @@ private fun app(
     versionCode = 1,
     channel = null,
     metadata = JSONObject(),
+    facts = facts,
+    security = security,
 )

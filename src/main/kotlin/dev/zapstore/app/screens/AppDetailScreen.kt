@@ -38,6 +38,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import dev.zapstore.app.facts.FactCatalog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -122,7 +123,8 @@ fun AppDetailScreen(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.safeDrawing),
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .testTag("appDetail"),
             contentPadding = PaddingValues(start = 16.dp, top = 4.dp, end = 16.dp, bottom = 36.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
@@ -199,10 +201,21 @@ fun AppDetailScreen(
                 }
             }
 
-            if (app.security.isNotBlank() || app.factRows.isNotEmpty()) {
+            val pills = app.factRows.mapNotNull { fact ->
+                val pill = FactCatalog.pill(fact.key) ?: return@mapNotNull null
+                if (!pill.visible(fact.yes)) return@mapNotNull null
+                Triple(fact.key, pill.label(fact.yes), pill.feature(fact.yes))
+            }
+            val permissions = app.permissionIds.ifEmpty {
+                app.factRows.mapNotNull { fact ->
+                    if (!fact.yes) return@mapNotNull null
+                    FactCatalog.permission(fact.key)
+                }
+            }
+            if (app.security.isNotBlank() || pills.isNotEmpty() || permissions.isNotEmpty()) {
                 item { SectionDivider(stringResource(R.string.privacy_and_security)) }
-                if (app.factRows.isNotEmpty()) {
-                    item {
+                if (pills.isNotEmpty()) {
+                    item(key = "facts") {
                         FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
                             verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
@@ -210,23 +223,33 @@ fun AppDetailScreen(
                                 .fillMaxWidth()
                                 .testTag("facts"),
                         ) {
-                            app.factRows.forEach { fact ->
-                                FactPill(key = fact.key, yes = fact.yes)
+                            pills.forEach { (key, label, feature) ->
+                                FactPill(key = key, label = label, feature = feature)
                             }
                         }
                     }
                 }
-                if (app.securityWarnings.isNotBlank()) {
-                    item {
+                if (permissions.isNotEmpty()) {
+                    item(key = "permissions") {
                         Text(
-                            text = app.securityWarnings,
+                            text = permissions.joinToString(", "),
+                            color = ZapTextSecondary,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.testTag("permissions"),
+                        )
+                    }
+                }
+                if (app.securityWarnings.isNotBlank()) {
+                    item(key = "securityWarnings") {
+                        Text(
+                            text = warningLines(app.securityWarnings),
                             color = ZapWarning,
                             style = MaterialTheme.typography.bodyLarge,
                         )
                     }
                 }
                 if (app.securityBody.isNotBlank()) {
-                    item {
+                    item(key = "securityBody") {
                         MarkdownText(
                             value = app.securityBody,
                             color = ZapTextSecondary,
@@ -322,39 +345,17 @@ private fun NotFoundCard() {
     }
 }
 
-/** Yes is the good outcome for these. Every other fact is an antifeature or sensitive access. */
-private val desirableFactKeys = setOf(
-    "open_source",
-    "e2ee",
-    "offline_capable",
-    "self_hostable",
-)
-
-/** Ordinary device access. Presence is not a warning and absence is not a virtue. */
-private val neutralFactKeys = setOf("camera", "location")
-
-internal enum class FactTone { Positive, Negative, Neutral }
-
-internal fun factTone(key: String, yes: Boolean): FactTone {
-    if (key in neutralFactKeys) return FactTone.Neutral
-    val positive = if (key in desirableFactKeys) yes else !yes
-    return if (positive) FactTone.Positive else FactTone.Negative
-}
-
-internal fun factIsPositive(key: String, yes: Boolean): Boolean =
-    factTone(key, yes) == FactTone.Positive
+/** The file has no emoji. Each notice line is shown with a warning mark. */
+private fun warningLines(notices: String): String =
+    notices.lineSequence()
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .joinToString("\n") { line -> if (line.startsWith("⚠")) line else "⚠️ $line" }
 
 @Composable
-private fun FactPill(key: String, yes: Boolean) {
-    val label = factLabel(key)
-    val text = if (yes) label else stringResource(R.string.fact_no, factAbsentBody(label))
-    val fill = when (factTone(key, yes)) {
-        FactTone.Positive -> ZapVerified
-        FactTone.Negative -> ZapDanger
-        FactTone.Neutral -> ZapTextSecondary
-    }
+private fun FactPill(key: String, label: String, feature: Boolean) {
     Text(
-        text = text,
+        text = label,
         color = ZapCanvas,
         style = MaterialTheme.typography.labelMedium.copy(
             fontSize = 12.5.sp,
@@ -365,26 +366,11 @@ private fun FactPill(key: String, yes: Boolean) {
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier
             .clip(RoundedCornerShape(ZapRadius.xs))
-            .background(fill)
+            // Yes is the feature color. No is the inverse color.
+            .background(if (feature) ZapVerified else ZapDanger)
             .padding(horizontal = 8.dp, vertical = 3.dp)
             .testTag("fact_$key"),
     )
-}
-
-@Composable
-private fun factLabel(key: String): String = when (key) {
-    "google_services" -> stringResource(R.string.fact_google_services)
-    "open_source" -> stringResource(R.string.fact_open_source)
-    "e2ee" -> "E2EE"
-    else -> key.replace('_', ' ').replaceFirstChar { it.titlecase() }
-}
-
-/** Keeps brands and acronyms; lowercases a sentence-style label after "No". */
-internal fun factAbsentBody(label: String): String {
-    val letters = label.filter { it.isLetter() }
-    val acronym = letters.isNotEmpty() && letters.all { it.isUpperCase() }
-    val keepCase = acronym || label.startsWith("Google ") || label.startsWith("Firebase ")
-    return if (keepCase) label else label.replaceFirstChar { it.lowercase() }
 }
 
 @Composable
