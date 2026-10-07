@@ -47,6 +47,7 @@ import dev.zapstore.app.components.SectionTitle
 import dev.zapstore.app.components.StackCard
 import dev.zapstore.app.components.StatusText
 import dev.zapstore.app.components.ZapSearchField
+import dev.zapstore.app.facts.label
 import dev.zapstore.app.components.appList
 import dev.zapstore.iolite.AppRecord
 import dev.zapstore.iolite.StackRecord
@@ -168,6 +169,14 @@ fun HomeScreen(
             state = listState,
         ) {
             state.searchResults?.let { results ->
+                if (state.searchFacts.isNotEmpty()) {
+                    item {
+                        StatusText(
+                            value = state.searchFacts.joinToString(" · ") { it.label() },
+                            modifier = Modifier.testTag("searchFacts"),
+                        )
+                    }
+                }
                 item {
                     StatusText(
                         value = stringResource(R.string.search_results, results.size, state.searchDurationMillis ?: 0L),

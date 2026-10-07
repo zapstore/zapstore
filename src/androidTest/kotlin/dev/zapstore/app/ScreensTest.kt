@@ -30,6 +30,7 @@ import dev.zapstore.app.screens.SettingsUiState
 import dev.zapstore.app.screens.UpdatesScreen
 import dev.zapstore.app.screens.UpdatesUiState
 import dev.zapstore.iolite.AppCoordinate
+import dev.zapstore.iolite.SearchFact
 import dev.zapstore.iolite.AppRecord
 import dev.zapstore.iolite.CommentRecord
 import dev.zapstore.iolite.StackRecord
@@ -67,6 +68,7 @@ class ScreensTest {
                         searchQuery = "zap",
                         submittedQuery = "zap",
                         searchResults = listOf(app),
+                        searchFacts = listOf(SearchFact.OpenSource, SearchFact.WorksOffline),
                         stacks = listOf(stack),
                         stacksLoading = false,
                         feed = AppListState(loading = false),
@@ -81,6 +83,8 @@ class ScreensTest {
             }
         }
 
+        composeRule.onNodeWithTag("searchFacts").assertIsDisplayed()
+        composeRule.onNodeWithText("Open source · Works offline").assertIsDisplayed()
         composeRule.onNodeWithTag("clearSearch").performClick()
         composeRule.onNodeWithTag("updatesButton").performClick()
         composeRule.onNodeWithTag("stack:privacy").performClick()

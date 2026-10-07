@@ -16,7 +16,9 @@ import dev.zapstore.iolite.ProfileRecord
 import dev.zapstore.iolite.Query
 import dev.zapstore.iolite.QueryState
 import dev.zapstore.iolite.StackRecord
+import dev.zapstore.iolite.SearchFact
 import dev.zapstore.iolite.normalizeSearchQuery
+import dev.zapstore.iolite.parseSearchQuery
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -43,6 +45,8 @@ data class HomeUiState(
     val searchResults: List<AppRecord>? = null,
     /** Encode plus first ranking pass for [searchResults]. Null when no search is active. */
     val searchDurationMillis: Long? = null,
+    /** Facts parsed out of [submittedQuery], in the order they were found. */
+    val searchFacts: List<SearchFact> = emptyList(),
     val stacks: List<StackRecord> = emptyList(),
     val stackApps: Map<String, AppRecord> = emptyMap(),
     val stacksLoading: Boolean = true,
@@ -73,19 +77,33 @@ class HomeViewModel(
             if (query.length < MIN_SEARCH_LENGTH) {
                 flowOf(SearchSnapshot())
             } else {
+                val parsed = parseSearchQuery(query)
                 flow {
                     val started = TimeSource.Monotonic.markNow()
-                    val vector = try {
-                        withContext(Dispatchers.Default) { encodeQuery(query) }
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (_: Throwable) {
+                    val vector = if (parsed.residual.isEmpty()) {
                         null
+                    } else {
+                        try {
+                            withContext(Dispatchers.Default) { encodeQuery(parsed.residual) }
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Throwable) {
+                            null
+                        }
                     }
                     var durationMillis: Long? = null
-                    iolite.observeApps(AppFilter(search = query, queryVector = vector, limit = SEARCH_LIMIT)).collect { apps ->
+                    val filter = AppFilter(
+                        search = parsed.residual.takeIf { it.isNotEmpty() },
+                        queryVector = vector,
+                        hard = parsed.hard,
+                        boost = parsed.boost,
+                        soft = parsed.soft,
+                        penalty = parsed.penalty,
+                        limit = SEARCH_LIMIT,
+                    )
+                    iolite.observeApps(filter).collect { apps ->
                         if (durationMillis == null) durationMillis = started.elapsedNow().inWholeMilliseconds
-                        emit(SearchSnapshot(apps, durationMillis))
+                        emit(SearchSnapshot(apps, durationMillis, parsed.facts))
                     }
                 }
             }
@@ -121,6 +139,7 @@ class HomeViewModel(
             submittedQuery = submitted,
             searchResults = snapshot.results,
             searchDurationMillis = snapshot.durationMillis,
+            searchFacts = snapshot.facts,
             stacks = stackState.items,
             stackApps = stackApps,
             stacksLoading = stackState.items.isEmpty() && stackState.isLoading,
@@ -180,4 +199,5 @@ internal const val STOP_TIMEOUT_MILLIS = 5_000L
 private data class SearchSnapshot(
     val results: List<AppRecord>? = null,
     val durationMillis: Long? = null,
+    val facts: List<SearchFact> = emptyList(),
 )
