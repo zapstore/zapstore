@@ -12,7 +12,7 @@ import coil3.network.ConnectivityChecker
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import dev.zapstore.app.catalog.CatalogSync
 import dev.zapstore.app.catalog.installedApps
-import dev.zapstore.app.search.LeafQueryEncoder
+import dev.zapstore.app.search.QueryEncoder
 import dev.zapstore.app.transport.NetworkRuntime
 import dev.zapstore.iolite.DeviceProfile
 import dev.zapstore.iolite.Iolite
@@ -31,7 +31,7 @@ class ZapstoreApplication : Application() {
         private set
     lateinit var iolite: Iolite
         private set
-    lateinit var queryEncoder: LeafQueryEncoder
+    lateinit var queryEncoder: QueryEncoder
         private set
     lateinit var catalogSync: CatalogSync
         private set
@@ -39,7 +39,7 @@ class ZapstoreApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         network = NetworkRuntime(this, scope)
-        queryEncoder = LeafQueryEncoder(this)
+        queryEncoder = QueryEncoder(this)
         registerComponentCallbacks(queryEncoder)
         val deviceSigner = DeviceKeys.loadOrCreate(this)
         iolite = Iolite.create(

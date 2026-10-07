@@ -3,7 +3,7 @@ package dev.zapstore.iolite
 import java.util.PriorityQueue
 
 /** leaf-ir-v1 document and query width. */
-const val EMBEDDING_DIMS = 768
+const val VECTOR_DIMS = 768
 
 /** Queries are bounded to the same size as `POST /search`. */
 const val MAX_QUERY_BYTES = 256
@@ -48,18 +48,18 @@ internal fun foldSearchText(value: String): String {
 }
 
 /**
- * Exact and prefix name or app-ID hits stay in the list without an embedding.
+ * Exact and prefix name or app-ID hits stay in the list without a vector.
  * Other listings are included only when [queryVector] clears [MIN_VECTOR_DOT].
  * Keeps ids only, and at most [limit] of them, so the caller can load full rows for the survivors.
  */
 internal class SearchRanker(private val query: String, queryVector: ByteArray?, private val limit: Int?) {
-    private val vector = queryVector?.takeIf { it.size == EMBEDDING_DIMS }
+    private val vector = queryVector?.takeIf { it.size == VECTOR_DIMS }
     private val kept = ArrayList<Ranked>()
     private val worstFirst = limit?.takeIf { it > 0 }?.let { PriorityQueue(it, dropFirst) }
 
-    fun consider(id: ByteArray, appId: String, name: String, embedding: ByteArray?) {
+    fun consider(id: ByteArray, appId: String, name: String, docVector: ByteArray?) {
         if (limit == 0) return
-        val score = score(name, appId, embedding) ?: return
+        val score = score(name, appId, docVector) ?: return
         val heap = worstFirst
         if (heap == null) {
             kept += Ranked(id, appId, score)
@@ -82,10 +82,10 @@ internal class SearchRanker(private val query: String, queryVector: ByteArray?, 
         return ranked.map { it.id }
     }
 
-    private fun score(name: String, appId: String, embedding: ByteArray?): Int? {
+    private fun score(name: String, appId: String, docVector: ByteArray?): Int? {
         val boost = textBoost(query, name, appId)
         val dot = vector?.let { left ->
-            embedding?.takeIf { it.size == EMBEDDING_DIMS }?.let { embeddingDot(left, it) }
+            docVector?.takeIf { it.size == VECTOR_DIMS }?.let { vectorDot(left, it) }
         }
         if (boost == 0 && (dot == null || dot < MIN_VECTOR_DOT)) return null
         return boost + (dot ?: 0)
@@ -110,9 +110,9 @@ private fun textBoost(query: String, name: String, appId: String): Int {
     }
 }
 
-private fun embeddingDot(left: ByteArray, right: ByteArray): Int {
+private fun vectorDot(left: ByteArray, right: ByteArray): Int {
     var sum = 0
-    for (i in 0 until EMBEDDING_DIMS) {
+    for (i in 0 until VECTOR_DIMS) {
         sum += left[i].toInt() * right[i].toInt()
     }
     return sum

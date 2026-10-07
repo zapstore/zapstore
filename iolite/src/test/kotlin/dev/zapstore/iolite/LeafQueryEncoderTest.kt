@@ -1,4 +1,4 @@
-package dev.zapstore.app.search
+package dev.zapstore.iolite
 
 import java.io.File
 import org.junit.Assert.assertArrayEquals
@@ -29,9 +29,11 @@ class LeafQueryEncoderTest {
     }
 
     @Test
-    fun queryVectorMatchesSealer() {
-        val dir = listOf(File(".tools/leaf-ir-assets/leaf-ir-v1"), File("android/.tools/leaf-ir-assets/leaf-ir-v1"))
-            .first { it.resolve("model_quantized.onnx").isFile }
+    fun queryVectorMatchesEnricher() {
+        val dir = listOf(
+            File("../.tools/leaf-ir-assets/leaf-ir-v1"),
+            File(".tools/leaf-ir-assets/leaf-ir-v1"),
+        ).first { it.resolve("model_quantized.onnx").isFile }
         val encoder = LeafQueryEncoder(dir)
         try {
             val got = encoder.encode("offline maps")

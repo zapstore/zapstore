@@ -1,8 +1,8 @@
-package dev.zapstore.app.search
+package dev.zapstore.iolite
 
 import java.io.File
 
-/** WordPiece tokenizer matching the sealer's leaf-ir-v1 encoder. */
+/** WordPiece tokenizer matching the enricher's leaf-ir-v1 encoder. */
 internal class WordPiece(
     private val ids: Map<String, Int>,
     private val unk: Int,

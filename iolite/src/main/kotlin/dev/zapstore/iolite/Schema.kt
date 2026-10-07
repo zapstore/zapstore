@@ -6,8 +6,8 @@ internal object Schema {
     const val APPS_SEARCH = """
         CREATE TABLE apps_search (
             id          BLOB PRIMARY KEY REFERENCES apps(id) ON DELETE CASCADE,
-            embedding   BLOB,
-            CHECK (embedding IS NULL OR length(embedding) = 768)
+            vector   BLOB,
+            CHECK (vector IS NULL OR length(vector) = 768)
         )
     """
 

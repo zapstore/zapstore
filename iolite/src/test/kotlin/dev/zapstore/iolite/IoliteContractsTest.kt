@@ -250,7 +250,7 @@ class IoliteContractsTest {
         val dir = File("build/tmp/iolite-search-${System.nanoTime()}").apply { mkdirs() }
         val store = IoliteStore(File(dir, "iolite.db").absolutePath)
         store.insertFixtureCatalog()
-        insertApp(store, 1, "com.example.app", "Zapstore", embedding = null)
+        insertApp(store, 1, "com.example.app", "Zapstore", vector = null)
         assertEquals(listOf("com.example.app"), store.apps(AppFilter(search = "zap")).map { it.appId })
         assertEquals(emptyList<AppRecord>(), store.apps(AppFilter(search = "example")))
         assertEquals(listOf("com.example.app"), store.apps(AppFilter(search = "com.example")).map { it.appId })
@@ -259,18 +259,18 @@ class IoliteContractsTest {
     }
 
     @Test
-    fun appSearchRanksEmbeddings() {
+    fun appSearchRanksVectors() {
         val dir = File("build/tmp/iolite-search-vec-${System.nanoTime()}").apply { mkdirs() }
         val store = IoliteStore(File(dir, "iolite.db").absolutePath)
         store.insertFixtureCatalog()
-        val close = ByteArray(EMBEDDING_DIMS) { 20 }
-        val far = ByteArray(EMBEDDING_DIMS) { 1 }
-        val opposite = ByteArray(EMBEDDING_DIMS) { -20 }
+        val close = ByteArray(VECTOR_DIMS) { 20 }
+        val far = ByteArray(VECTOR_DIMS) { 1 }
+        val opposite = ByteArray(VECTOR_DIMS) { -20 }
         insertApp(store, 1, "app.map", "Map", opposite)
-        insertApp(store, 2, "app.maple", "Maple", embedding = null)
+        insertApp(store, 2, "app.maple", "Maple", vector = null)
         insertApp(store, 3, "app.atlas", "Atlas", close)
         insertApp(store, 4, "app.noise", "Noise", far)
-        val vector = ByteArray(EMBEDDING_DIMS) { 20 }
+        val vector = ByteArray(VECTOR_DIMS) { 20 }
         assertEquals(
             listOf("app.map", "app.atlas", "app.maple"),
             store.apps(AppFilter(search = "map", queryVector = vector)).map { it.appId },
@@ -393,7 +393,7 @@ class IoliteContractsTest {
         }
     }
 
-    private fun insertApp(store: IoliteStore, index: Int, appId: String, name: String, embedding: ByteArray?) {
+    private fun insertApp(store: IoliteStore, index: Int, appId: String, name: String, vector: ByteArray?) {
         val pubkey = Hex.decode(LocalSigner(SECRET).publicKey)
         val id = ByteArray(32) { index.toByte() }
         store.write { tx ->
@@ -414,10 +414,10 @@ class IoliteContractsTest {
                 statement.bindText(7, name)
                 statement.step()
             }
-            if (embedding != null) {
-                tx.db.prepare("INSERT INTO apps_search (id, embedding) VALUES (?, ?)").use { statement ->
+            if (vector != null) {
+                tx.db.prepare("INSERT INTO apps_search (id, vector) VALUES (?, ?)").use { statement ->
                     statement.bindBlob(1, id)
-                    statement.bindBlob(2, embedding)
+                    statement.bindBlob(2, vector)
                     statement.step()
                 }
             }

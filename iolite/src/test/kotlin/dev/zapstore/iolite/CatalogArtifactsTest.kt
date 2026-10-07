@@ -33,7 +33,7 @@ class CatalogArtifactsTest {
                 "com.example.app/about" to TarMember("com.example.app/about", "Maps.".toByteArray()),
                 "com.example.app/security" to TarMember("com.example.app/security", "It asks for location.\n⚠️ It runs a shell.".toByteArray()),
                 "com.example.app/facts" to TarMember("com.example.app/facts", "gms: no".toByteArray()),
-                "com.example.app/vector" to TarMember("com.example.app/vector", ByteArray(EMBEDDING_DIMS) { 7 }),
+                "com.example.app/vector" to TarMember("com.example.app/vector", ByteArray(VECTOR_DIMS) { 7 }),
                 "com.example.app/icon.webp" to TarMember("com.example.app/icon.webp", "icon".toByteArray()),
                 "$pubkey.webp" to TarMember("$pubkey.webp", "avatar".toByteArray()),
             ),
@@ -44,7 +44,7 @@ class CatalogArtifactsTest {
         assertEquals("Maps.", app.about)
         assertEquals("It asks for location.\n⚠️ It runs a shell.", app.security)
         assertEquals("gms: no", app.facts)
-        assertEquals(EMBEDDING_DIMS, app.embedding!!.size)
+        assertEquals(VECTOR_DIMS, app.vector!!.size)
         assertEquals(pubkey, parsed.avatars.single().pubkey)
         assertArrayEquals("avatar".toByteArray(), parsed.avatars.single().webp)
     }
@@ -61,7 +61,7 @@ class CatalogArtifactsTest {
         assertTrue(CatalogArtifacts.allowedMember("${"cd".repeat(32)}.webp"))
         val failure = runCatching {
             CatalogArtifacts.fromMembers(
-                mapOf("com.example.app/vector" to TarMember("com.example.app/vector", ByteArray(32 + EMBEDDING_DIMS))),
+                mapOf("com.example.app/vector" to TarMember("com.example.app/vector", ByteArray(32 + VECTOR_DIMS))),
                 maxIconBytes = 256L * 1024,
             )
         }.exceptionOrNull()
@@ -106,7 +106,7 @@ class CatalogArtifactsTest {
                         AppArtifact(
                             appId = "com.example.app",
                             webp = "one".toByteArray(),
-                            embedding = ByteArray(EMBEDDING_DIMS) { 7 },
+                            vector = ByteArray(VECTOR_DIMS) { 7 },
                             facts = "maps",
                             about = "first note",
                             security = "Asks for location.\n⚠️ first",
@@ -121,7 +121,7 @@ class CatalogArtifactsTest {
             assertEquals("⚠️ first", imported.securityWarnings)
             assertEquals("one", imported.iconFile!!.readText())
             assertEquals("face", store.avatarFile(pubkey).readText())
-            val embedding = searchEmbedding(store)
+            val vector = searchVector(store)
 
             store.importCatalog(
                 catalog = store.catalog(1)!!,
@@ -136,7 +136,7 @@ class CatalogArtifactsTest {
                         AppArtifact(
                             appId = "com.example.app",
                             webp = "two".toByteArray(),
-                            embedding = null,
+                            vector = null,
                             facts = null,
                             about = null,
                             security = null,
@@ -148,7 +148,7 @@ class CatalogArtifactsTest {
             assertEquals("first note", kept.about)
             assertEquals("Asks for location.\n⚠️ first", kept.security)
             assertEquals("two", kept.iconFile!!.readText())
-            assertArrayEquals(embedding, searchEmbedding(store))
+            assertArrayEquals(vector, searchVector(store))
             assertEquals("maps", searchFeatures(store))
         } finally {
             store.close()
@@ -161,9 +161,9 @@ class CatalogArtifactsTest {
         assertEquals(pubkey, pubkey.toNpub().decodeNpub())
     }
 
-    private fun searchEmbedding(store: IoliteStore): ByteArray = store.read { db ->
+    private fun searchVector(store: IoliteStore): ByteArray = store.read { db ->
         db.prepare(
-            "SELECT embedding FROM apps_search WHERE id = (SELECT id FROM apps WHERE app_id = 'com.example.app')",
+            "SELECT vector FROM apps_search WHERE id = (SELECT id FROM apps WHERE app_id = 'com.example.app')",
         ).use { statement ->
             assertTrue(statement.step())
             statement.getBlob(0)

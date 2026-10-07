@@ -1,6 +1,5 @@
-package dev.zapstore.app.search
+package dev.zapstore.iolite
 
-import dev.zapstore.iolite.EMBEDDING_DIMS
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -30,15 +29,15 @@ internal fun loadDense(file: File): Pair<FloatArray, FloatArray> {
     val header = JSONObject(raw.decodeToString(8, headerEnd))
     val weight = f32Tensor(header, raw, headerEnd, "linear.weight")
     val bias = f32Tensor(header, raw, headerEnd, "linear.bias")
-    require(weight.size == HIDDEN_DIM * EMBEDDING_DIMS && bias.size == EMBEDDING_DIMS) {
-        "dense: want ${HIDDEN_DIM}x$EMBEDDING_DIMS, got ${weight.size} + ${bias.size}"
+    require(weight.size == HIDDEN_DIM * VECTOR_DIMS && bias.size == VECTOR_DIMS) {
+        "dense: want ${HIDDEN_DIM}x$VECTOR_DIMS, got ${weight.size} + ${bias.size}"
     }
     return weight to bias
 }
 
 internal fun projectQuantize(pooled: FloatArray, weight: FloatArray, bias: FloatArray): ByteArray {
     val output = bias.copyOf()
-    for (row in 0 until EMBEDDING_DIMS) {
+    for (row in 0 until VECTOR_DIMS) {
         var sum = 0f
         val offset = row * HIDDEN_DIM
         for (column in 0 until HIDDEN_DIM) sum += pooled[column] * weight[offset + column]

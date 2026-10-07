@@ -24,10 +24,10 @@ data class AppFilter(
     val author: String? = null,
     /**
      * Case-insensitive exact or prefix match on the name or app ID.
-     * With [queryVector], listings are also ranked by embedding similarity.
+     * With [queryVector], listings are also ranked by vector similarity.
      */
     val search: String? = null,
-    /** leaf-ir-v1 query embedding, [EMBEDDING_DIMS] int8 bytes. Ignored unless [search] is set. */
+    /** leaf-ir-v1 query vector, [VECTOR_DIMS] int8 bytes. Ignored unless [search] is set. */
     val queryVector: ByteArray? = null,
     val limit: Int? = null,
 )
@@ -229,18 +229,18 @@ class IoliteStore internal constructor(
                     statement.step()
                 }
             }
-            val embedding = artifact.embedding
-            if (embedding != null) {
+            val vector = artifact.vector
+            if (vector != null) {
                 db.prepare(
                     """
-                    INSERT INTO apps_search (id, embedding)
+                    INSERT INTO apps_search (id, vector)
                     VALUES (?, ?)
                     ON CONFLICT(id) DO UPDATE SET
-                        embedding = excluded.embedding
+                        vector = excluded.vector
                     """.trimIndent(),
                 ).use { statement ->
                     statement.bindBlob(1, appRow)
-                    statement.bindBlob(2, embedding)
+                    statement.bindBlob(2, vector)
                     statement.step()
                 }
             }
@@ -395,7 +395,7 @@ class IoliteStore internal constructor(
                     id = statement.getBlob(0),
                     appId = statement.getText(1),
                     name = statement.getText(2),
-                    embedding = if (statement.isNull(3)) null else statement.getBlob(3),
+                    docVector = if (statement.isNull(3)) null else statement.getBlob(3),
                 )
             }
         }
@@ -639,7 +639,7 @@ class IoliteStore internal constructor(
 
         /** Columns [SearchRanker] needs. Full listings are loaded only for the ids it keeps. */
         private val SELECT_SEARCH_KEY = """
-            SELECT a.id, a.app_id, a.name, s.embedding
+            SELECT a.id, a.app_id, a.name, s.vector
             FROM apps a
             JOIN catalogs c ON c.id = a.catalog_id
             LEFT JOIN apps_search s ON s.id = a.id

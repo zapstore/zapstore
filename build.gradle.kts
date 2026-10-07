@@ -181,16 +181,11 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
     implementation(libs.okhttp)
-    implementation(libs.sqlite)
-    implementation(libs.sqlite.bundled)
-    implementation(libs.onnxruntime.android)
 
     testImplementation("org.json:json:20250517")
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
     testImplementation(libs.okhttp.mockwebserver)
-    testImplementation(libs.sqlite.bundled)
-    testImplementation(libs.onnxruntime)
 
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.androidx.test.junit)
