@@ -27,8 +27,8 @@ fun String.httpOriginToRelayUrl(): RelayUrl {
 fun RelayUrl.originHttpUrl(): String =
     url.replaceFirst("wss://", "https://").replaceFirst("ws://", "http://")
 
-/** `GET /deltas` on the relay origin; path, query, and fragment are ignored. */
-fun RelayUrl.deltasUrl(from: Long): String = origin() + "/deltas?from=$from"
+/** `GET /bundle` on the relay origin; path, query, and fragment are ignored. */
+fun RelayUrl.bundleUrl(from: Long): String = origin() + "/bundle?from=$from"
 
 /** True when the host is a Tor onion service. */
 val RelayUrl.isOnion: Boolean

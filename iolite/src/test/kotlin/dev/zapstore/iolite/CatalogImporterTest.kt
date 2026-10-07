@@ -136,7 +136,7 @@ class CatalogImporterTest {
         val http = HttpTransport { url, _ ->
             requested += url
             when (url) {
-                "http://127.0.0.1:3334/deltas?from=1" -> HttpResponse(304, emptyMap(), null)
+                "http://127.0.0.1:3334/bundle?from=1" -> HttpResponse(304, emptyMap(), null)
                 else -> error("unexpected catalog URL $url")
             }
         }
@@ -158,8 +158,8 @@ class CatalogImporterTest {
         assertTrue(unchanged.notModified)
         assertEquals(
             listOf(
-                "http://127.0.0.1:3334/deltas?from=1",
-                "http://127.0.0.1:3334/deltas?from=1",
+                "http://127.0.0.1:3334/bundle?from=1",
+                "http://127.0.0.1:3334/bundle?from=1",
             ),
             requested,
         )
@@ -176,7 +176,7 @@ class CatalogImporterTest {
         val http = HttpTransport { url, _ ->
             requested += url
             when (url) {
-                "http://127.0.0.1:3334/deltas?from=0" -> HttpResponse(200, emptyMap(), bundle)
+                "http://127.0.0.1:3334/bundle?from=0" -> HttpResponse(200, emptyMap(), bundle)
                 else -> error("unexpected catalog URL $url")
             }
         }
@@ -192,7 +192,7 @@ class CatalogImporterTest {
         assertEquals(bundle.size.toLong(), first.bytes)
         assertEquals(manifestPubkey(bundle), iolite.defaultCatalog().manifestPubkey)
         assertEquals(listOf("ws://127.0.0.1:3334"), iolite.defaultCatalog().relays.map { it.url })
-        assertEquals(listOf("http://127.0.0.1:3334/deltas?from=0"), requested)
+        assertEquals(listOf("http://127.0.0.1:3334/bundle?from=0"), requested)
         iolite.close()
         scope.coroutineContext.job.cancel()
     }

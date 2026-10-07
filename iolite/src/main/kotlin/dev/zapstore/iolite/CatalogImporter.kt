@@ -6,7 +6,7 @@ import org.json.JSONObject
 
 data class CatalogImportResult(val from: Long, val to: Long)
 
-/** Outcome of `GET /deltas`. [imported] is null when the relay answered 304. */
+/** Outcome of `GET /bundle`. [imported] is null when the relay answered 304. */
 data class CatalogSyncResult(
     val imported: CatalogImportResult?,
     val bytes: Long,

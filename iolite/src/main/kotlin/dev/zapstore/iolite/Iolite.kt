@@ -79,7 +79,7 @@ class Iolite private constructor(
 
     /**
      * Imports [bundled] when the catalog is missing or still at epoch 0, then fetches the next epoch.
-     * With no bundle and no stored catalog, fetches `GET /deltas?from=0` from [endpoint] and imports
+     * With no bundle and no stored catalog, fetches `GET /bundle?from=0` from [endpoint] and imports
      * that body. Both bodies go through [importCatalogUpdate]. [CatalogSyncResult.imported] is null on
      * HTTP 304 when nothing was imported. [endpoint] is stored when the catalog has none. [useOnion]
      * selects a stored Tor endpoint when one is present.
@@ -104,7 +104,7 @@ class Iolite private constructor(
             val relay = endpoint ?: throw CatalogImportException("catalog relay is missing")
             return applyCatalogResponse(
                 catalogId,
-                httpClient.get(relay.deltasUrl(0), emptyMap()),
+                httpClient.get(relay.bundleUrl(0), emptyMap()),
                 seeded = null,
                 seededBytes = 0,
                 endpoint = relay,
@@ -112,7 +112,7 @@ class Iolite private constructor(
         }
         return applyCatalogResponse(
             catalogId,
-            httpClient.get(catalog.syncRelay(useOnion).deltasUrl(catalog.epoch), emptyMap()),
+            httpClient.get(catalog.syncRelay(useOnion).bundleUrl(catalog.epoch), emptyMap()),
             seeded = seeded,
             seededBytes = bundled.size.toLong(),
             endpoint = null,

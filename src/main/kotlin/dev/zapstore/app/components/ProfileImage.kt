@@ -23,7 +23,7 @@ import dev.zapstore.app.isHttpUrl
 import dev.zapstore.app.profileCdnUrl
 
 /**
- * Avatar from the sealed catalog file, then the Zapstore CDN, then the profile's own picture URL.
+ * Avatar from the bundle, then the Zapstore CDN, then the profile's own picture URL.
  * A new [profileVersion] (kind 0 event ID) evicts the cached image so an updated avatar shows.
  */
 @Composable

@@ -129,9 +129,9 @@ class AppTransportTest {
             direct = AppTransport(direct, direct, direct),
             tor = { AppTransport(tor, tor, tor) },
         )
-        split.http.get("http://127.0.0.1:3334/deltas?from=0", emptyMap())
+        split.http.get("http://127.0.0.1:3334/bundle?from=0", emptyMap())
         split.http.get("https://relay.zapstore.dev", emptyMap())
-        assertEquals(listOf("http://127.0.0.1:3334/deltas?from=0"), direct.urls)
+        assertEquals(listOf("http://127.0.0.1:3334/bundle?from=0"), direct.urls)
         assertEquals(listOf("https://relay.zapstore.dev"), tor.urls)
     }
 
@@ -162,7 +162,7 @@ class AppTransportTest {
             direct = AppTransport(direct, direct, direct),
             tor = { null },
         )
-        split.http.get("http://localhost:3334/deltas?from=0", emptyMap())
+        split.http.get("http://localhost:3334/bundle?from=0", emptyMap())
         assertEquals(1, direct.urls.size)
         try {
             split.http.get("https://cdn.zapstore.dev/p/ab.webp", emptyMap())

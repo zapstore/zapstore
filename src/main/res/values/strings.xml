@@ -80,7 +80,7 @@
     <string name="network_tor">Tor only</string>
     <string name="network_direct">Direct only</string>
     <string name="network_tor_fallback">Tor with Direct fallback</string>
-    <string name="network_direct_warning">Direct exposes your IP address to relays, catalog servers, and download hosts.</string>
+    <string name="network_direct_warning">Direct exposes your IP address to relays, catalog relays, and download hosts.</string>
     <string name="tor_bootstrapping">Tor bootstrapping</string>
     <string name="tor_ready">Tor ready</string>
     <string name="tor_dormant">Tor dormant</string>

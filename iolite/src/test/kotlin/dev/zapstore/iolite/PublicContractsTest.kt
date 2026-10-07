@@ -56,14 +56,14 @@ class PublicContractsTest {
     }
 
     @Test
-    fun deltasUrlUsesRelayOrigin() {
+    fun bundleUrlUsesRelayOrigin() {
         assertEquals(
-            "https://relay.example.com/deltas?from=0",
-            "wss://relay.example.com/nostr?x=1#frag".normalizeRelayUrl().deltasUrl(0),
+            "https://relay.example.com/bundle?from=0",
+            "wss://relay.example.com/nostr?x=1#frag".normalizeRelayUrl().bundleUrl(0),
         )
         assertEquals(
-            "http://127.0.0.1:3334/deltas?from=7",
-            "ws://127.0.0.1:3334".normalizeRelayUrl().deltasUrl(7),
+            "http://127.0.0.1:3334/bundle?from=7",
+            "ws://127.0.0.1:3334".normalizeRelayUrl().bundleUrl(7),
         )
     }
 
