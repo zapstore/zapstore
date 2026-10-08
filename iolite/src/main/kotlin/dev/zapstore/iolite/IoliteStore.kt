@@ -201,8 +201,8 @@ class IoliteStore internal constructor(
     }
 
     /**
-     * Writes the vector and about, security, and facts for apps that already have a listing row.
-     * A missing about, security, or facts member means that note did not change, and the stored text stays.
+     * Writes the vector and about and security for apps that already have a listing row.
+     * A missing about or security member means that note did not change, and the stored text stays.
      * A missing vector or icon does the same. Icon and avatar bytes land on disk for Coil.
      */
     private fun applyArtifacts(tx: Tx, catalog: CatalogRecord, artifacts: CatalogArtifact) {
@@ -237,15 +237,6 @@ class IoliteStore internal constructor(
                         statement.bindText(4, artifact.appId)
                         statement.step()
                     }
-                }
-            }
-            artifact.facts?.let { facts ->
-                db.prepare("UPDATE apps SET facts = ?, fact_bits = ? WHERE catalog_id = ? AND app_id = ?").use { statement ->
-                    statement.bindText(1, facts)
-                    statement.bindLong(2, factBits(facts).toLong())
-                    statement.bindLong(3, catalog.id)
-                    statement.bindText(4, artifact.appId)
-                    statement.step()
                 }
             }
             val vector = artifact.vector

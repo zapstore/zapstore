@@ -28,11 +28,12 @@ class SecurityDocumentTest {
     }
 
     @Test
-    fun olderNoteStaysProse() {
+    fun proseNoteIsNotASecurityFile() {
         val text = "Contacts leave the phone.\n---\nThe address book is read."
         val doc = parseSecurityDocument(text)
         assertFalse(doc.combined)
         assertNull(securityFactsCsv(text))
-        assertEquals(text, doc.prose)
+        assertEquals("", doc.csv)
+        assertEquals("", doc.prose)
     }
 }

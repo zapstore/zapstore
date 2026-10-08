@@ -1,9 +1,9 @@
 package dev.zapstore.iolite
 
 /**
- * Artifact members of a catalog bundle. App files are `<app-id>/about`, `security`, `facts`,
+ * Artifact members of a catalog bundle. App files are `<app-id>/about`, `security`,
  * `vector`, and `icon.webp`. Avatars are `<64 hex characters>.webp`.
- * A missing about, security, or facts member means that note did not change.
+ * A missing about or security member means that note did not change.
  * The stored text stays. A missing vector or icon does the same.
  */
 internal data class CatalogArtifact(
@@ -19,7 +19,6 @@ internal data class AppArtifact(
     val appId: String,
     val webp: ByteArray?,
     val vector: ByteArray?,
-    val facts: String?,
     val about: String?,
     val security: String?,
 )
@@ -52,7 +51,7 @@ internal object CatalogArtifacts {
             if (!validAppId(appId) || file !in APP_FILES) fail("unexpected catalog member $name")
             val app = apps.getOrPut(appId) { Partial(appId) }
             when (file) {
-                "about", "security", "facts" -> applyText(app, file, member.data)
+                "about", "security" -> applyText(app, file, member.data)
                 "vector" -> {
                     if (member.data.size != VECTOR_DIMS) fail("vector $appId")
                     app.vector = member.data
@@ -85,7 +84,6 @@ internal object CatalogArtifacts {
         when (file) {
             "about" -> app.about = text
             "security" -> app.security = text
-            "facts" -> app.facts = text
         }
     }
 
@@ -105,12 +103,11 @@ internal object CatalogArtifacts {
     private class Partial(val appId: String) {
         var webp: ByteArray? = null
         var vector: ByteArray? = null
-        var facts: String? = null
         var about: String? = null
         var security: String? = null
 
-        fun toArtifact() = AppArtifact(appId, webp, vector, facts, about, security)
+        fun toArtifact() = AppArtifact(appId, webp, vector, about, security)
     }
 
-    private val APP_FILES = setOf("about", "security", "facts", "vector", "icon.webp")
+    private val APP_FILES = setOf("about", "security", "vector", "icon.webp")
 }

@@ -112,10 +112,7 @@ class AppRecord(
             return doc.permissions.split(',').map { it.trim() }.filter { it.isNotEmpty() }
         }
 
-    private fun securityProse(): String {
-        val doc = parseSecurityDocument(security)
-        return if (doc.combined) doc.prose else security.trim()
-    }
+    private fun securityProse(): String = parseSecurityDocument(security).prose
     val iconUrl: String? get() = metadata.string("icon")
     val screenshots: List<String> get() = metadata.stringList("image")
     val website: String? get() = metadata.string("url")
@@ -125,15 +122,12 @@ class AppRecord(
     val releaseNotes: String get() = metadata.optString("release_notes")
 
     /**
-     * [facts] in file order, one row per key.
-     * The file is a quoted CSV with no header. Columns are fact, value, and notes.
+     * Fact rows from the security file, in file order, one row per key.
+     * The CSV has no header. Columns are fact, value, and notes.
      * The sheet repeats a key once per library. A yes wins over a no.
      */
     val factRows: List<AppFact>
-        get() {
-            val doc = parseSecurityDocument(security)
-            return parseFactRows(if (doc.combined) doc.csv else facts)
-        }
+        get() = parseFactRows(parseSecurityDocument(security).csv)
     /** Kind 30063 timestamp, in Unix seconds. */
     val releasedAt: Long get() = metadata.optLong("release_created_at", createdAt)
 
@@ -151,9 +145,9 @@ internal data class SecurityDocument(
 )
 
 /**
- * A current security file starts with a quoted CSV row and has two `---` lines.
+ * A security file starts with a quoted CSV row and has two `---` lines.
  * The text after the second `---` is the prose, which may contain another `---`.
- * Anything else is an older prose note.
+ * Anything else is not a security file.
  */
 internal fun parseSecurityDocument(text: String): SecurityDocument {
     val lines = text.trim().lines()
@@ -165,10 +159,10 @@ internal fun parseSecurityDocument(text: String): SecurityDocument {
         val prose = lines.drop(marks[1] + 1).joinToString("\n").trim()
         return SecurityDocument(csv, perms, prose, true)
     }
-    return SecurityDocument("", "", text.trim(), false)
+    return SecurityDocument("", "", "", false)
 }
 
-/** Fact CSV inside a current security file, or null when the text is an older note. */
+/** Fact CSV inside a security file, or null when the text is not one. */
 internal fun securityFactsCsv(text: String): String? {
     val doc = parseSecurityDocument(text)
     return if (doc.combined) doc.csv else null
@@ -253,7 +247,7 @@ internal fun parseCsv(text: String): List<List<String>> {
     return rows
 }
 
-/** One scanner fact. [reason] is the notes column, empty when the facts file has no phrase for this key. */
+/** One scanner fact. [reason] is the notes column, empty when the CSV has no phrase for this key. */
 data class AppFact(
     val key: String,
     val yes: Boolean,

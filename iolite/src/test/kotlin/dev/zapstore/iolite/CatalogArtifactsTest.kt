@@ -35,13 +35,13 @@ class CatalogArtifactsTest {
     }
 
     @Test
-    fun parsesAboutSecurityFactsWarningsVectorIconAndHexAvatar() {
+    fun parsesAboutSecurityVectorIconAndHexAvatar() {
         val pubkey = "ab".repeat(32)
+        val security = "\"offline_capable\",\"yes\",\"\"\n---\nINTERNET\n---\nIt asks for location."
         val parsed = CatalogArtifacts.fromMembers(
             mapOf(
                 "com.example.app/about" to TarMember("com.example.app/about", "Maps.".toByteArray()),
-                "com.example.app/security" to TarMember("com.example.app/security", "It asks for location.\n⚠️ It runs a shell.".toByteArray()),
-                "com.example.app/facts" to TarMember("com.example.app/facts", "gms: no".toByteArray()),
+                "com.example.app/security" to TarMember("com.example.app/security", security.toByteArray()),
                 "com.example.app/vector" to TarMember("com.example.app/vector", ByteArray(VECTOR_DIMS) { 7 }),
                 "com.example.app/icon.webp" to TarMember("com.example.app/icon.webp", "icon".toByteArray()),
                 "$pubkey.webp" to TarMember("$pubkey.webp", "avatar".toByteArray()),
@@ -51,8 +51,7 @@ class CatalogArtifactsTest {
         val app = parsed.apps.single()
         assertEquals("com.example.app", app.appId)
         assertEquals("Maps.", app.about)
-        assertEquals("It asks for location.\n⚠️ It runs a shell.", app.security)
-        assertEquals("gms: no", app.facts)
+        assertEquals(security, app.security)
         assertEquals(VECTOR_DIMS, app.vector!!.size)
         assertEquals(pubkey, parsed.avatars.single().pubkey)
         assertArrayEquals("avatar".toByteArray(), parsed.avatars.single().webp)
@@ -62,6 +61,7 @@ class CatalogArtifactsTest {
     fun rejectsPrefixedPathsAndNpubAvatars() {
         assertFalse(CatalogArtifacts.allowedMember("artifacts/com.example.app/about"))
         assertFalse(CatalogArtifacts.allowedMember("com.example.app/analysis"))
+        assertFalse(CatalogArtifacts.allowedMember("com.example.app/facts"))
         assertFalse(CatalogArtifacts.allowedMember("com.example.app/warnings"))
         assertFalse(CatalogArtifacts.allowedMember("artifacts.bin"))
         assertFalse(CatalogArtifacts.allowedMember("npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqkxqqu.webp"))
@@ -83,9 +83,11 @@ class CatalogArtifactsTest {
         val dir = File("build/tmp/catalog-artifacts-${System.nanoTime()}").apply { mkdirs() }
         val store = jdbcStore(File(dir, "iolite.db").absolutePath)
         store.insertFixtureCatalog()
+        store.pinManifestPubkeyIfAbsent(1, "ab".repeat(32))
         val catalog = store.catalog(1)!!
         val device = DeviceProfile(abis = listOf("arm64-v8a"), sdk = 34)
         val pubkey = "cd".repeat(32)
+        val security = "\"offline_capable\",\"yes\",\"\"\n---\nINTERNET\n---\nContacts leave the phone.\n---\nAsks for location."
         try {
             store.write { tx ->
                 tx.db.prepare(
@@ -116,9 +118,8 @@ class CatalogArtifactsTest {
                             appId = "com.example.app",
                             webp = "one".toByteArray(),
                             vector = ByteArray(VECTOR_DIMS) { 7 },
-                            facts = "maps",
                             about = "first note",
-                            security = "Contacts leave the phone.\n---\nAsks for location.",
+                            security = security,
                         ),
                     ),
                     avatars = listOf(AvatarArtifact(pubkey, "face".toByteArray())),
@@ -126,7 +127,7 @@ class CatalogArtifactsTest {
             )
             val imported = store.apps().single()
             assertEquals("first note", imported.about)
-            assertEquals("Contacts leave the phone.\n---\nAsks for location.", imported.security)
+            assertEquals(security, imported.security)
             assertEquals("Contacts leave the phone.", imported.securityWarnings)
             assertEquals("Asks for location.", imported.securityBody)
             assertEquals("one", imported.iconFile!!.readText())
@@ -147,7 +148,6 @@ class CatalogArtifactsTest {
                             appId = "com.example.app",
                             webp = "two".toByteArray(),
                             vector = null,
-                            facts = null,
                             about = null,
                             security = null,
                         ),
@@ -156,10 +156,10 @@ class CatalogArtifactsTest {
             )
             val kept = store.apps().single()
             assertEquals("first note", kept.about)
-            assertEquals("Contacts leave the phone.\n---\nAsks for location.", kept.security)
+            assertEquals(security, kept.security)
             assertEquals("two", kept.iconFile!!.readText())
             assertArrayEquals(vector, searchVector(store))
-            assertEquals("maps", searchFeatures(store))
+            assertEquals("\"offline_capable\",\"yes\",\"\"", searchFeatures(store))
         } finally {
             store.close()
         }
