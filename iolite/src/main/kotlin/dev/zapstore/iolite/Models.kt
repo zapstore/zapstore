@@ -91,7 +91,7 @@ class AppRecord(
     val coordinate: AppCoordinate get() = AppCoordinate(eventPubkey, appId)
     val isVerified: Boolean get() = proofPubkey != null
 
-    /** Publisher to show: proof owner, else app signer, hidden when it is the catalog relay itself. */
+    /** C1 owner when a current proof exists, otherwise the listing signer. Hidden when that key is the catalog key. */
     val authorPubkey: String? get() = (proofPubkey ?: eventPubkey).takeUnless { it == catalogManifestPubkey }
 
     val description: String get() = metadata.optString("description").ifBlank { summary }
