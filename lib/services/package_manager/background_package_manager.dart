@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:zapstore/services/package_manager/installed_packages_snapshot.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/services/log_service.dart';
+import 'package:zapstore/constants/app_constants.dart';
 
 /// Background-safe PackageManager that avoids EventChannel usage.
 final class BackgroundPackageManager extends PackageManager {
@@ -12,7 +13,7 @@ final class BackgroundPackageManager extends PackageManager {
 
   // Zapstore currently targets arm64 APKs for background checks.
   @override
-  String get platform => 'android-arm64-v8a';
+  String get platform => kDevicePlatform;
 
   @override
   String get packageExtension => '.apk';

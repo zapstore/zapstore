@@ -394,6 +394,7 @@ final storageReadyProvider = FutureProvider<void>((ref) async {
           'vertex': {'wss://relay.vertexlab.io'},
         },
         responseTimeout: Duration(seconds: 6),
+        platform: kDevicePlatform,
       ),
     ).future,
   );
