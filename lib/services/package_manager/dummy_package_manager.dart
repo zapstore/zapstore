@@ -1,5 +1,6 @@
 import 'package:models/models.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
+import 'package:zapstore/constants/app_constants.dart';
 
 /// Dummy implementation of PackageManager for testing and non-Android platforms
 final class DummyPackageManager extends PackageManager {
@@ -33,7 +34,7 @@ final class DummyPackageManager extends PackageManager {
   }
 
   @override
-  String get platform => 'android-arm64-v8a';
+  String get platform => kDevicePlatform;
 
   @override
   String get packageExtension => '.apk';

@@ -1,6 +1,9 @@
 /// Application identifier for Zapstore itself
 const kZapstoreAppIdentifier = 'dev.zapstore.app';
 
+/// NIP-82 platform of the assets Zapstore installs
+const kDevicePlatform = 'android-arm64-v8a';
+
 /// Zapstore's public key for relay-signed apps
 const kZapstorePubkey =
     '78ce6faa72264387284e647ba6938995735ec8c7d5c5a65737e55130f026307d';

@@ -20,6 +20,7 @@ import 'package:zapstore/services/package_manager/dummy_package_manager.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/services/catalog_fetcher.dart';
 import 'package:zapstore/services/settings_service.dart';
+import 'package:zapstore/constants/app_constants.dart';
 
 /// Legacy notification-only task name (cancelled on init; no longer registered).
 const kBackgroundUpdateTaskName = 'dev.zapstore.backgroundUpdateCheck';
@@ -259,6 +260,7 @@ Future<bool> _checkForUpdatesInBackground(Set<String>? appCatalogRelays) async {
           StorageConfiguration(
             databasePath: dbPath,
             defaultRelays: {'AppCatalog': relays},
+            platform: kDevicePlatform,
           ),
         ).future,
       );
