@@ -39,3 +39,5 @@ captures/
 .cursor/
 *.md
 !tools/arti-build/README.md
+
+settings-gradle.lockfile
