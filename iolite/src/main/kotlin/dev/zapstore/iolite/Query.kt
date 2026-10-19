@@ -43,6 +43,25 @@ class Query<T> internal constructor(
             read = { store, signer -> store.stacks(author, limit = limit, deviceSigner = signer) },
         )
 
+        /**
+         * Public stacks from anyone: kind `30267` tagged for this device's [platforms].
+         * Private lists (empty public part) and the device's own are skipped.
+         */
+        fun socialStacks(platforms: List<String>, limit: Int, until: Long? = null): Query<List<StackRecord>> = Query(
+            filters = listOf(
+                Filter(
+                    kinds = listOf(Kinds.AppStack),
+                    tags = mapOf("f" to platforms),
+                    until = until,
+                    limit = limit,
+                ),
+            ),
+            tables = setOf(Table.Stacks),
+            authors = emptyList(),
+            empty = emptyList(),
+            read = { store, signer -> store.publicStacks(limit = limit, until = until, excluding = signer?.publicKey) },
+        )
+
         fun stack(author: String, identifier: String): Query<StackRecord?> = Query(
             filters = listOf(
                 Filter(authors = listOf(author), kinds = listOf(Kinds.AppStack), tags = mapOf("d" to listOf(identifier)), limit = 1),
@@ -53,24 +72,73 @@ class Query<T> internal constructor(
             read = { store, signer -> store.stacks(author, identifier, limit = 1, deviceSigner = signer).firstOrNull() },
         )
 
-        fun zaps(app: AppCoordinate, limit: Int? = null): Query<List<ZapRecord>> = Query(
+        /** Public stacks whose `a` tags list one of [anchors], one app's coordinates. Newest first. */
+        fun stackedBy(anchors: List<AppCoordinate>, limit: Int): Query<List<StackRecord>> = Query(
             filters = listOf(
-                Filter(kinds = listOf(Kinds.Zap), tags = mapOf("a" to listOf(app.toString())), limit = limit),
+                Filter(kinds = listOf(Kinds.AppStack), tags = mapOf("a" to anchors.map(AppCoordinate::toString)), limit = limit),
+            ),
+            tables = setOf(Table.Stacks),
+            authors = emptyList(),
+            empty = emptyList(),
+            read = { store, _ -> store.stacksListing(anchors, limit) },
+        )
+
+        /** The device key's private events, fetched once when a key is restored. */
+        fun devicePrivate(devicePubkey: String): Query<String?> = Query(
+            filters = listOf(
+                Filter(
+                    authors = listOf(devicePubkey),
+                    kinds = listOf(Kinds.Preferences),
+                    tags = mapOf("d" to listOf(DeviceEvents.STATE)),
+                    limit = 1,
+                ),
+                Filter(
+                    authors = listOf(devicePubkey),
+                    kinds = listOf(Kinds.AppStack),
+                    tags = mapOf("d" to listOf(DeviceEvents.BOOKMARKS, DeviceEvents.UPDATE_IGNORE)),
+                ),
+            ),
+            tables = setOf(Table.Preferences, Table.Stacks),
+            authors = emptyList(),
+            empty = null,
+            read = { store, signer -> store.devicePreference(DeviceEvents.STATE, signer) },
+        )
+
+        fun zaps(anchors: List<AppCoordinate>, limit: Int? = null): Query<List<ZapRecord>> = Query(
+            filters = listOf(
+                Filter(kinds = listOf(Kinds.Zap), tags = mapOf("a" to anchors.map(AppCoordinate::toString)), limit = limit),
             ),
             tables = setOf(Table.Zaps),
             authors = emptyList(),
             empty = emptyList(),
-            read = { store, _ -> store.zaps(app.appId, limit) },
+            read = { store, _ -> store.zaps(anchors.first().appId, limit) },
         )
 
-        fun comments(app: AppCoordinate, limit: Int? = null): Query<List<CommentRecord>> = Query(
+        fun comments(anchors: List<AppCoordinate>, limit: Int? = null): Query<List<CommentRecord>> = Query(
             filters = listOf(
-                Filter(kinds = listOf(Kinds.Comment), tags = mapOf("A" to listOf(app.toString())), limit = limit),
+                Filter(kinds = listOf(Kinds.Comment), tags = mapOf("A" to anchors.map(AppCoordinate::toString)), limit = limit),
             ),
             tables = setOf(Table.Comments),
-            authors = listOf(app.pubkey),
+            authors = anchors.map(AppCoordinate::pubkey),
             empty = emptyList(),
-            read = { store, _ -> store.comments(app.appId) },
+            read = { store, _ -> store.comments(anchors.first().appId) },
+        )
+
+        /**
+         * Newest comments on any app (NIP-22 root kind `K` = app) and zaps on [zapAnchors]; zap
+         * receipts carry only exact `a` tags, so the caller names the apps, such as the latest releases.
+         */
+        fun activity(zapAnchors: List<AppCoordinate>, limit: Int): Query<ActivityRecord> = Query(
+            filters = listOfNotNull(
+                Filter(kinds = listOf(Kinds.Comment), tags = mapOf("K" to listOf(Kinds.App.toString())), limit = limit),
+                zapAnchors.takeIf { it.isNotEmpty() }?.let {
+                    Filter(kinds = listOf(Kinds.Zap), tags = mapOf("a" to it.map(AppCoordinate::toString)), limit = limit)
+                },
+            ),
+            tables = setOf(Table.Comments, Table.Zaps),
+            authors = emptyList(),
+            empty = ActivityRecord(),
+            read = { store, _ -> ActivityRecord(store.recentComments(limit), store.recentZaps(limit)) },
         )
     }
 

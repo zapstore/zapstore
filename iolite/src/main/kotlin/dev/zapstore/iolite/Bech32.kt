@@ -4,12 +4,17 @@ private const val BECH32_CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
 private val BECH32_GENERATOR = longArrayOf(0x3b6a57b2L, 0x26508e6dL, 0x1ea119faL, 0x3d4233ddL, 0x2a1462b3L)
 
 /** NIP-19 `npub` for a 64-char hex pubkey; other strings are returned unchanged. */
-fun String.toNpub(): String {
-    if (!Hex.isHex(lowercase(), 64)) return this
-    val data = convertBits(Hex.decode(this).map { it.toInt() and 0xff }, 8, 5)
-    val checksum = bech32Checksum("npub", data)
+fun String.toNpub(): String = encodeKey("npub", this) ?: this
+
+/** NIP-19 `nsec` for a 64-char hex secret key; other strings are returned unchanged. */
+fun String.toNsec(): String = encodeKey("nsec", this) ?: this
+
+private fun encodeKey(hrp: String, hex: String): String? {
+    if (!Hex.isHex(hex.lowercase(), 64)) return null
+    val data = convertBits(Hex.decode(hex).map { it.toInt() and 0xff }, 8, 5)
+    val checksum = bech32Checksum(hrp, data)
     return buildString {
-        append("npub1")
+        append(hrp).append('1')
         (data + checksum).forEach { append(BECH32_CHARSET[it]) }
     }
 }
@@ -32,20 +37,60 @@ private fun convertBits(data: List<Int>, fromBits: Int, toBits: Int): List<Int> 
 }
 
 /** Hex pubkey for an `npub`, or null when the string is not a valid NIP-19 public key. */
-fun String.decodeNpub(): String? {
-    val value = lowercase()
-    if (!value.startsWith("npub1")) return null
-    val dataChars = value.substring(5)
+fun String.decodeNpub(): String? = decodeKey("npub", this)
+
+/** Hex secret key for an `nsec`, or null when the string is not a valid NIP-19 secret key. */
+fun String.decodeNsec(): String? = decodeKey("nsec", this)
+
+private fun decodeKey(hrp: String, input: String): String? =
+    decodeBech32(hrp, input)?.takeIf { it.size == 32 }?.let(Hex::encode)
+
+/** A NIP-19 `naddr`: the address of a replaceable event. */
+data class Naddr(val kind: Int, val pubkey: String, val identifier: String)
+
+/** Decodes an `naddr`, or null when it is not one or lacks a kind or author. */
+fun String.decodeNaddr(): Naddr? {
+    val tlv = decodeTlv(decodeBech32("naddr", this) ?: return null) ?: return null
+    val identifier = tlv[0]?.firstOrNull()?.toString(Charsets.UTF_8) ?: return null
+    val author = tlv[2]?.firstOrNull()?.takeIf { it.size == 32 } ?: return null
+    val kind = tlv[3]?.firstOrNull()?.takeIf { it.size == 4 } ?: return null
+    val kindValue = kind.fold(0) { acc, byte -> (acc shl 8) or (byte.toInt() and 0xff) }
+    return Naddr(kindValue, Hex.encode(author), identifier)
+}
+
+/** Hex pubkey of an `nprofile`, or null when it is not one. */
+fun String.decodeNprofile(): String? {
+    val tlv = decodeTlv(decodeBech32("nprofile", this) ?: return null) ?: return null
+    return tlv[0]?.firstOrNull()?.takeIf { it.size == 32 }?.let(Hex::encode)
+}
+
+private fun decodeTlv(bytes: ByteArray): Map<Int, List<ByteArray>>? {
+    val out = mutableMapOf<Int, MutableList<ByteArray>>()
+    var index = 0
+    while (index < bytes.size) {
+        if (index + 2 > bytes.size) return null
+        val type = bytes[index].toInt() and 0xff
+        val length = bytes[index + 1].toInt() and 0xff
+        if (index + 2 + length > bytes.size) return null
+        out.getOrPut(type) { mutableListOf() } += bytes.copyOfRange(index + 2, index + 2 + length)
+        index += 2 + length
+    }
+    return out
+}
+
+/** Bech32 payload bytes for [hrp], without the 90-character limit (`naddr` can be longer). */
+private fun decodeBech32(hrp: String, input: String): ByteArray? {
+    val value = input.trim().lowercase()
+    if (!value.startsWith("${hrp}1")) return null
+    val dataChars = value.substring(hrp.length + 1)
     if (dataChars.length < 6) return null
     val data = dataChars.map { char ->
         val index = BECH32_CHARSET.indexOf(char)
         if (index < 0) return null
         index
     }
-    if (polymod(hrpExpand("npub") + data) != 1L) return null
-    val bytes = convertBitsDown(data.dropLast(6)) ?: return null
-    if (bytes.size != 32) return null
-    return Hex.encode(bytes)
+    if (polymod(hrpExpand(hrp) + data) != 1L) return null
+    return convertBitsDown(data.dropLast(6))
 }
 
 private fun hrpExpand(hrp: String): List<Int> =

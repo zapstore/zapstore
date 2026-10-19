@@ -52,7 +52,7 @@ internal fun socks5TargetHost(address: InetSocketAddress): String {
     if (raw.isNotBlank() && !isNumericIp(raw)) return raw
     address.address?.let { ip ->
         TorFakeDns.hostnameFor(ip)?.let { return it }
-        ip.hostName?.takeIf { it.isNotBlank() && !isNumericIp(it) }?.let { return it }
+        ip.hostName.takeIf { it.isNotBlank() && !isNumericIp(it) }?.let { return it }
     }
     throw IOException("SOCKS5 target hostname is missing")
 }

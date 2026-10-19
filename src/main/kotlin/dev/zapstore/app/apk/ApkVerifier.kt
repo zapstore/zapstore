@@ -12,6 +12,8 @@ data class ApkIdentity(
     val lineage: List<String>,
     /** 0 when the archive did not report one. The install floor treats 0 as unknown. */
     val targetSdk: Int = 0,
+    /** DER of each current signer, keyed by its SHA-256. */
+    val certificateDer: Map<String, ByteArray> = emptyMap(),
 )
 
 data class ListedApk(
@@ -32,7 +34,8 @@ object ApkVerifier {
         if (signing.hasMultipleSigners()) {
             throw ApkVerificationException("APK has multiple current signers")
         }
-        val current = signing.apkContentsSigners.map { it.toByteArray().sha256Hex() }.toSet()
+        val der = signing.apkContentsSigners.associate { it.toByteArray().let { bytes -> bytes.sha256Hex() to bytes } }
+        val current = der.keys
         val lineage = signing.signingCertificateHistory.map { it.toByteArray().sha256Hex() }
         val appInfo = info.applicationInfo
         if (appInfo != null) {
@@ -45,6 +48,7 @@ object ApkVerifier {
             currentCertificates = current,
             lineage = lineage,
             targetSdk = appInfo?.targetSdkVersion ?: 0,
+            certificateDer = der,
         )
     }
 

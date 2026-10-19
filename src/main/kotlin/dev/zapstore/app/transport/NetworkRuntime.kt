@@ -8,8 +8,10 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -19,12 +21,12 @@ import java.util.concurrent.CopyOnWriteArrayList
 class NetworkRuntime(
     context: Context,
     private val scope: CoroutineScope,
+    initialMode: NetworkMode,
     private val engineFactory: (Context) -> ArtiEngine? = { ctx ->
         runCatching { EmbeddedArtiEngine(ctx) }.getOrNull()
     },
 ) {
     private val appContext = context.applicationContext
-    private val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val lock = Mutex()
     private val resetListeners = CopyOnWriteArrayList<() -> Unit>()
     private val direct = AppTransports.directTransport()
@@ -33,7 +35,7 @@ class NetworkRuntime(
     private var torTransport: AppTransport? = null
     private var torImages: AppTransport? = null
 
-    private val _mode = MutableStateFlow(loadMode())
+    private val _mode = MutableStateFlow(initialMode)
     val mode: StateFlow<NetworkMode> = _mode.asStateFlow()
 
     private val _torState = MutableStateFlow(
@@ -73,7 +75,6 @@ class NetworkRuntime(
     fun setMode(mode: NetworkMode) {
         if (mode == _mode.value) return
         val wasUsingTor = _mode.value.usesTor
-        prefs.edit().putString(KEY_MODE, mode.name).apply()
         _mode.value = mode
         if (!mode.usesTor) {
             _torState.value = TorRuntimeState.Stopped
@@ -103,6 +104,22 @@ class NetworkRuntime(
                 lock.withLock { closeConnections() }
             }
         }
+    }
+
+    /**
+     * For work outside the foreground: wakes Tor and waits until it is ready. Direct is ready at once.
+     * False when Tor fails or [timeoutMs] passes; never falls back to Direct.
+     */
+    suspend fun awaitRemoteReady(timeoutMs: Long): Boolean {
+        if (!_mode.value.usesTor) return true
+        when (_torState.value) {
+            TorRuntimeState.Dormant -> _torState.value = TorRuntimeState.Ready
+            TorRuntimeState.Failed, TorRuntimeState.Stopped -> startArti()
+            else -> Unit
+        }
+        return withTimeoutOrNull(timeoutMs) {
+            torState.first { it == TorRuntimeState.Ready || it == TorRuntimeState.Failed } == TorRuntimeState.Ready
+        } ?: false
     }
 
     private fun startArti() {
@@ -173,16 +190,5 @@ class NetworkRuntime(
 
     private fun notifyReset() {
         resetListeners.forEach { runCatching(it) }
-    }
-
-	private fun loadMode(): NetworkMode {
-		val debug = appContext.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0
-		val fallback = if (debug) NetworkMode.DirectOnly else NetworkMode.TorOnly
-		return NetworkMode.fromStored(prefs.getString(KEY_MODE, fallback.name))
-	}
-
-    private companion object {
-        const val PREFS = "network"
-        const val KEY_MODE = "mode"
     }
 }

@@ -1,12 +1,6 @@
 package dev.zapstore.iolite
 
 import androidx.sqlite.SQLiteConnection
-import java.io.ByteArrayInputStream
-import java.security.Signature
-import java.security.cert.CertificateFactory
-import java.security.interfaces.ECPublicKey
-import java.security.interfaces.RSAPublicKey
-import java.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -52,14 +46,14 @@ internal object ListingRows {
             .maxWithOrNull(compareBy<Event> { it.tagValue("version_code")?.toLongOrNull() ?: -1 }.thenBy { it.id })
         if (app == null && release == null && asset == null) return
         val stored = storedListing(db, catalog.id, appId)
-        val certificate = asset?.tagValue("apk_certificate_hash")?.takeIf { Hex.isHex(it, 64) }
-            ?: stored?.certificate
+        val assetCertificate = asset?.tagValue("apk_certificate_hash")?.takeIf { Hex.isHex(it, 64) }
+        val certificate = assetCertificate ?: stored?.certificate
         val eventPubkey = app?.pubkey ?: stored?.eventPubkey ?: release?.pubkey ?: asset?.pubkey ?: return
         if (!Hex.isHex(eventPubkey, 64)) return
         val metadata = JSONObject(stored?.metadata ?: "{}").apply {
             if (app != null) putAppMetadata(app)
             if (release != null) putReleaseMetadata(release)
-            if (asset != null) putAssetMetadata(asset)
+            if (asset != null) putAssetMetadata(asset, assetCertificate)
         }
         val version = asset?.tagValue("version")?.takeIf { it.isNotBlank() }
             ?: stored?.version?.takeIf { it.isNotBlank() }
@@ -72,9 +66,9 @@ internal object ListingRows {
         db.prepare(
             """
             INSERT INTO apps (
-                id, catalog_id, app_id, variant_id, certificate_hash, app_event_created_at, pubkey, event_pubkey,
+                id, catalog_id, app_id, certificate_hash, app_event_created_at, pubkey, event_pubkey,
                 name, summary, repository, version, version_code, channel, metadata
-            ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(catalog_id, app_id) DO UPDATE SET
                 certificate_hash = excluded.certificate_hash,
                 app_event_created_at = excluded.app_event_created_at,
@@ -164,30 +158,44 @@ internal object ListingRows {
         put("release_notes", release.content)
     }
 
-    private fun JSONObject.putAssetMetadata(asset: Event) {
+    private fun JSONObject.putAssetMetadata(asset: Event, certificate: String?) {
         put("asset_event_id", asset.id)
         asset.tagValue("url")?.let { put("download_url", it) }
         asset.tagValue("x")?.takeIf { it.isNotBlank() }?.let { put("apk_hash", it) }
         asset.tagValue("filename")?.let { put("filename", it) }
         asset.tagValue("m")?.let { put("mime", it) }
+        if (certificate != null) {
+            put("apk_certificate_ancestor", JSONArray(assetAncestors(asset, certificate)))
+        }
     }
 
+    /** Ancestor hashes on the asset, oldest first, excluding the signer and any extra `apk_certificate_hash`. */
+    private fun assetAncestors(asset: Event, signer: String): List<String> {
+        val seen = LinkedHashSet<String>()
+        for (hash in asset.tagValues("apk_certificate_ancestor")) {
+            if (Hex.isHex(hash, 64) && hash != signer) seen.add(hash)
+        }
+        return seen.toList()
+    }
+
+
     fun persistProof(tx: Tx, catalog: CatalogRecord, event: Event) {
-        validateProof(event)
+        if (!acceptableProof(event)) return
         val hash = event.tagValue("d")!!
         val revoked = event.tagCount("revoked") > 0
         val expiry = if (revoked) 0 else event.tagValue("expiry")!!.toLong()
         tx.db.prepare(
             """
             INSERT INTO certificate_proofs (
-                id, catalog_id, certificate_hash, pubkey, event_id, created_at, expiry, revoked, delegations
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                id, catalog_id, certificate_hash, pubkey, event_id, created_at, expiry, revoked, delegations, signature
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(catalog_id, certificate_hash, pubkey) DO UPDATE SET
                 event_id = excluded.event_id,
                 created_at = excluded.created_at,
                 expiry = excluded.expiry,
                 revoked = excluded.revoked,
-                delegations = excluded.delegations
+                delegations = excluded.delegations,
+                signature = excluded.signature
             """.trimIndent(),
         ).use { statement ->
             statement.bindBlob(1, proofRowId(manifestPubkey(catalog), Hex.decode(hash), Hex.decode(event.pubkey)))
@@ -199,6 +207,7 @@ internal object ListingRows {
             statement.bindLong(7, expiry)
             statement.bindLong(8, if (revoked) 1 else 0)
             statement.bindText(9, JSONArray(event.tagValues("delegation")).toString())
+            statement.bindText(10, event.tagValue("signature").orEmpty())
             statement.step()
         }
         tx.touch(Table.Proofs)
@@ -268,6 +277,7 @@ internal object ListingRows {
         if (changed) tx.touch(Table.Apps)
     }
 
+    /** Newest current proof for [certificateHash]. An ancestor proof does not count. */
     private fun currentProofPubkey(db: SQLiteConnection, catalogId: Long, certificateHash: String, now: Long): String? =
         db.prepare(
             """
@@ -312,7 +322,6 @@ internal object ListingRows {
     // --- validation --------------------------------------------------------------------------------
 
     private fun assetMatchesDevice(event: Event, device: DeviceProfile): Boolean {
-        if (!event.tagValue("variant").isNullOrBlank()) return false
         if (event.tagValue("m") != ANDROID_APK) return false
         val platforms = event.tagValues("f").filter { it.startsWith("android-") }
         if (platforms.isNotEmpty() && platforms.none { it in device.platforms }) return false
@@ -320,42 +329,21 @@ internal object ListingRows {
         return minSdk == null || device.sdk >= minSdk
     }
 
-    fun validateProof(event: Event) {
-        if (event.kind != Kinds.IdentityProof) throw CatalogImportException("expected proof")
-        if (event.tagCount("d") != 1) throw CatalogImportException("proof must have one d tag")
-        val hash = event.tagValue("d") ?: throw CatalogImportException("proof missing d")
-        if (!Hex.isHex(hash, 64)) throw CatalogImportException("proof d is not a sha256")
+    /**
+     * Form of one kind 30509. `cert` is ignored. A false result omits that proof;
+     * it does not reject the bundle.
+     */
+    fun acceptableProof(event: Event): Boolean {
+        if (event.kind != Kinds.IdentityProof) return false
+        if (event.tagCount("d") != 1) return false
+        val hash = event.tagValue("d") ?: return false
+        if (!Hex.isHex(hash, 64)) return false
         if (event.tagCount("revoked") > 0) {
-            if (event.tagCount("signature") != 0 || event.tagCount("expiry") != 0 ||
-                event.tagCount("cert") != 0 || event.tagCount("delegation") != 0
-            ) {
-                throw CatalogImportException("revocation must omit active tags")
-            }
-            return
+            return event.tagCount("signature") == 0 && event.tagCount("expiry") == 0 &&
+                event.tagCount("delegation") == 0
         }
-        if (event.tagCount("signature") != 1 || event.tagCount("expiry") != 1) {
-            throw CatalogImportException("active proof requires signature and expiry")
-        }
-        val expiry = event.tagValue("expiry")?.toLongOrNull() ?: throw CatalogImportException("invalid expiry")
-        if (expiry <= event.createdAt) throw CatalogImportException("expiry must be after created_at")
-        val cert = event.tagValue("cert") ?: return
-        val der = Base64.getDecoder().decode(cert)
-        if (Hex.encode(Crypto.sha256(der)) != hash) throw CatalogImportException("embedded certificate hash does not match d")
-        verifyCertificateKey(der, event, expiry)
-    }
-
-    private fun verifyCertificateKey(der: ByteArray, event: Event, expiry: Long) {
-        val certificate = CertificateFactory.getInstance("X.509").generateCertificate(ByteArrayInputStream(der))
-        val message = "Verifying at ${event.createdAt} until $expiry that I control the following Nostr public key: ${event.pubkey}"
-        val signature = Base64.getDecoder().decode(event.tagValue("signature"))
-        val algorithm = when (certificate.publicKey) {
-            is RSAPublicKey -> "SHA256withRSA"
-            is ECPublicKey -> "SHA256withECDSA"
-            else -> throw CatalogImportException("unsupported certificate key type")
-        }
-        val verifier = Signature.getInstance(algorithm)
-        verifier.initVerify(certificate.publicKey)
-        verifier.update(message.toByteArray(Charsets.UTF_8))
-        if (!verifier.verify(signature)) throw CatalogImportException("invalid certificate-key signature")
+        if (event.tagCount("signature") != 1 || event.tagCount("expiry") != 1) return false
+        val expiry = event.tagValue("expiry")?.toLongOrNull() ?: return false
+        return expiry > event.createdAt
     }
 }

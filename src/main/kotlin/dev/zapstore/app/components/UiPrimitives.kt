@@ -96,27 +96,9 @@ fun EvidenceText(
     )
 }
 
-@Composable
-fun StatusBadge(
-    value: String,
-    background: Color,
-    foreground: Color,
-    modifier: Modifier = Modifier,
-) {
-    Text(
-        text = value,
-        color = foreground,
-        style = MaterialTheme.typography.labelSmall,
-        modifier = modifier
-            .clip(RoundedCornerShape(ZapRadius.full))
-            .background(background)
-            .padding(horizontal = ZapSpacing.space2, vertical = ZapSpacing.space1),
-    )
-}
-
 /**
- * Pill search field matching the "search" component (design/DESIGN.md): surface-1, hairline
- * border, fully rounded, 44 dp Android control height — not the default 56 dp text field.
+ * The "search" component (design/DESIGN.md): surface-1, hairline border, 12 dp corners,
+ * 44 dp tall — not the default 56 dp text field.
  */
 @Composable
 fun ZapSearchField(
@@ -130,7 +112,7 @@ fun ZapSearchField(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val keyboardController = LocalSoftwareKeyboardController.current
-    val shape = RoundedCornerShape(ZapRadius.full)
+    val shape = RoundedCornerShape(ZapRadius.control)
     val textStyle = MaterialTheme.typography.bodyMedium.copy(color = ZapTextPrimary)
 
     BasicTextField(

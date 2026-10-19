@@ -17,19 +17,18 @@ import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
+/** Tor never falls back to Direct (`zapstore/SPEC.md#network-transport`). */
 enum class NetworkMode {
     TorOnly,
     DirectOnly,
-    TorWithDirectFallback,
     ;
 
     val usesTor: Boolean get() = this != DirectOnly
-    val allowsDirectFallback: Boolean get() = this == TorWithDirectFallback
 
     companion object {
+        /** The retired Tor-with-Direct-fallback values read as Tor. */
         fun fromStored(value: String?): NetworkMode = when (value) {
             "Direct", DirectOnly.name -> DirectOnly
-            "TorFallback", TorWithDirectFallback.name -> TorWithDirectFallback
             else -> TorOnly
         }
     }
@@ -47,9 +46,7 @@ enum class TorRuntimeState {
 fun remoteImagesReady(mode: NetworkMode, torState: TorRuntimeState): Boolean =
     mode == NetworkMode.DirectOnly ||
         torState == TorRuntimeState.Ready ||
-        torState == TorRuntimeState.Dormant ||
-        (mode.allowsDirectFallback &&
-            (torState == TorRuntimeState.Failed || torState == TorRuntimeState.Stopped))
+        torState == TorRuntimeState.Dormant
 
 class TorUnavailableException(message: String) : IllegalStateException(message)
 
@@ -70,11 +67,10 @@ data class AppTransport(
 object AppTransports {
     fun create(mode: NetworkMode, arti: ArtiEngine? = null): AppTransport = when (mode) {
         NetworkMode.DirectOnly -> directTransport()
-        NetworkMode.TorOnly, NetworkMode.TorWithDirectFallback -> {
+        NetworkMode.TorOnly -> {
             val socksPort = arti?.socksPort ?: 0
             when {
                 socksPort > 0 -> torTransport(socksPort)
-                mode.allowsDirectFallback -> directTransport()
                 arti == null -> throw TorUnavailableException(
                     "Tor is selected and Arti is not available; refusing Direct fallback",
                 )
@@ -140,7 +136,7 @@ object TorFakeDns : Dns {
         return listOf(address)
     }
 
-    fun hostnameFor(address: InetAddress): String? = hosts[address.hostAddress]
+    fun hostnameFor(address: InetAddress): String? = address.hostAddress?.let { hosts[it] }
 }
 
 /** HTTP/1.1 only: HTTP/2 over Arti's SOCKS port fails the CDN fetches Coil uses for icons. */
@@ -263,27 +259,15 @@ internal class SplitRouter(
     private fun routeHost(host: String): AppTransport =
         if (!mode().usesTor || isLoopbackHost(host)) direct else remote()
 
-    private fun remote(): AppTransport {
-        val fallback = mode().allowsDirectFallback
-        when (torState()) {
-            TorRuntimeState.Ready, TorRuntimeState.Dormant -> {
-                return tor() ?: if (fallback) {
-                    direct
-                } else {
-                    throw TorUnavailableException(
-                        "Tor is selected and Arti is not available; refusing Direct fallback",
-                    )
-                }
-            }
-            TorRuntimeState.Bootstrapping -> throw TorUnavailableException(
-                "Tor is bootstrapping; refusing Direct fallback",
-            )
-            TorRuntimeState.Failed, TorRuntimeState.Stopped -> {
-                if (fallback) return direct
-                throw TorUnavailableException(
-                    "Tor is not available; refusing Direct fallback",
-                )
-            }
-        }
+    private fun remote(): AppTransport = when (torState()) {
+        TorRuntimeState.Ready, TorRuntimeState.Dormant -> tor() ?: throw TorUnavailableException(
+            "Tor is selected and Arti is not available; refusing Direct fallback",
+        )
+        TorRuntimeState.Bootstrapping -> throw TorUnavailableException(
+            "Tor is bootstrapping; refusing Direct fallback",
+        )
+        TorRuntimeState.Failed, TorRuntimeState.Stopped -> throw TorUnavailableException(
+            "Tor is not available; refusing Direct fallback",
+        )
     }
 }

@@ -75,8 +75,6 @@ class AppTransportTest {
         assertTrue(remoteImagesReady(NetworkMode.TorOnly, TorRuntimeState.Dormant))
         assertTrue(!remoteImagesReady(NetworkMode.TorOnly, TorRuntimeState.Bootstrapping))
         assertTrue(!remoteImagesReady(NetworkMode.TorOnly, TorRuntimeState.Failed))
-        assertTrue(remoteImagesReady(NetworkMode.TorWithDirectFallback, TorRuntimeState.Failed))
-        assertTrue(!remoteImagesReady(NetworkMode.TorWithDirectFallback, TorRuntimeState.Bootstrapping))
     }
 
     @Test
@@ -129,9 +127,9 @@ class AppTransportTest {
             direct = AppTransport(direct, direct, direct),
             tor = { AppTransport(tor, tor, tor) },
         )
-        split.http.get("http://127.0.0.1:3334/bundle?from=0", emptyMap())
+        split.http.get("http://127.0.0.1:3334/v1/bundle?from=0", emptyMap())
         split.http.get("https://relay.zapstore.dev", emptyMap())
-        assertEquals(listOf("http://127.0.0.1:3334/bundle?from=0"), direct.urls)
+        assertEquals(listOf("http://127.0.0.1:3334/v1/bundle?from=0"), direct.urls)
         assertEquals(listOf("https://relay.zapstore.dev"), tor.urls)
     }
 
@@ -162,7 +160,7 @@ class AppTransportTest {
             direct = AppTransport(direct, direct, direct),
             tor = { null },
         )
-        split.http.get("http://localhost:3334/bundle?from=0", emptyMap())
+        split.http.get("http://localhost:3334/v1/bundle?from=0", emptyMap())
         assertEquals(1, direct.urls.size)
         try {
             split.http.get("https://cdn.zapstore.dev/p/ab.webp", emptyMap())
@@ -170,25 +168,6 @@ class AppTransportTest {
         } catch (failure: TorUnavailableException) {
             assertTrue(failure.message!!.contains("bootstrapping"))
         }
-    }
-
-    @Test
-    fun fallbackUsesDirectWhenTorFails() {
-        val transport = AppTransports.create(NetworkMode.TorWithDirectFallback)
-        assertTrue(transport.http is OkHttpAppTransport)
-    }
-
-    @Test
-    fun splitFallsBackToDirectWhenFallbackModeAndTorFails() {
-        val direct = RecordingTransport("direct")
-        val split = AppTransports.split(
-            mode = { NetworkMode.TorWithDirectFallback },
-            torState = { TorRuntimeState.Failed },
-            direct = AppTransport(direct, direct, direct),
-            tor = { null },
-        )
-        split.http.get("https://relay.zapstore.dev", emptyMap())
-        assertEquals(listOf("https://relay.zapstore.dev"), direct.urls)
     }
 
     @Test
@@ -211,7 +190,8 @@ class AppTransportTest {
         assertEquals(NetworkMode.TorOnly, NetworkMode.fromStored(null))
         assertEquals(NetworkMode.TorOnly, NetworkMode.fromStored("Tor"))
         assertEquals(NetworkMode.DirectOnly, NetworkMode.fromStored("Direct"))
-        assertEquals(NetworkMode.TorWithDirectFallback, NetworkMode.fromStored("TorWithDirectFallback"))
+        assertEquals(NetworkMode.TorOnly, NetworkMode.fromStored("TorWithDirectFallback"))
+        assertEquals(NetworkMode.TorOnly, NetworkMode.fromStored("TorFallback"))
     }
 }
 

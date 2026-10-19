@@ -1,0 +1,113 @@
+package dev.zapstore.app.install
+
+import android.content.Context
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ProcessLifecycleOwner
+import androidx.work.BackoffPolicy
+import androidx.work.Constraints
+import androidx.work.CoroutineWorker
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.WorkerParameters
+import dev.zapstore.app.AppLog
+import dev.zapstore.app.DeviceState
+import dev.zapstore.app.ZapstoreApplication
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
+import java.util.concurrent.TimeUnit
+
+/**
+ * On the chosen interval: refresh the catalog, then download and verify each update. Updates that
+ * install without a prompt are committed silently; the rest wait in [InstallCache.ready] for a tap,
+ * and [UpdateNotifier] says so once. A failed sync or a dropped download retries with backoff,
+ * resuming partial files.
+ */
+class BackgroundUpdateWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
+    override suspend fun doWork(): Result {
+        val app = applicationContext as ZapstoreApplication
+        if (!app.settings.state.value.backgroundAutoUpdates) return Result.success()
+        if (!app.packageManager.canRequestPackageInstalls()) return Result.success()
+        if (!app.network.awaitRemoteReady(TOR_TIMEOUT_MS)) return retryOrGiveUp()
+        var transient = 0
+        try {
+            app.catalogSync.sync()
+            if (app.catalogSync.status.value.error != null) transient++
+            val updates = app.catalogSync.updates.first()
+            var committed = 0
+            val ready = LinkedHashMap<String, String>()
+            for (update in updates) {
+                if (isStopped) break
+                runCatching {
+                    InstallTurn.exclusive {
+                        stageAndCommit(
+                            context = app,
+                            calls = app.network.transport.callFactory,
+                            app = update.app,
+                            origin = InstallOrigin(
+                                installed = true,
+                                versionCode = update.installedVersionCode,
+                                installingPackage = update.installingPackage,
+                                updateOwner = update.updateOwner,
+                                certificates = update.certificateHashes,
+                            ),
+                            ourPackage = app.packageName,
+                            bulk = true,
+                            proofOf = app.iolite::proof,
+                            promptAllowed = false,
+                        ) { _, _ -> }
+                    }
+                }.onSuccess { staged ->
+                    if (staged == Staged.Committed) committed++ else ready["${update.app.appId}@${update.app.apkHash}"] = update.app.name
+                }.onFailure {
+                    if (it.isTransient()) transient++
+                    AppLog.w(TAG, "background update ${update.app.appId} failed", it)
+                }
+            }
+            AppLog.i(TAG, "background updates: ${updates.size} available, $committed committed, ${ready.size} ready, $transient to retry")
+            if (!isStopped && !inForeground()) UpdateNotifier.post(app, ready.keys, ready.values.toList())
+        } finally {
+            if (!inForeground()) app.network.setForeground(false)
+        }
+        return if (transient > 0) retryOrGiveUp() else Result.success()
+    }
+
+    /** A periodic run retries a few times with backoff; after that it waits for the next period. */
+    private fun retryOrGiveUp(): Result = if (runAttemptCount < MAX_RETRIES) Result.retry() else Result.success()
+
+    private suspend fun inForeground(): Boolean = withContext(Dispatchers.Main) {
+        ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+    }
+
+    companion object {
+        private const val TAG = "BackgroundUpdates"
+        private const val NAME = "backgroundUpdates"
+        private const val TOR_TIMEOUT_MS = 90_000L
+        private const val MAX_RETRIES = 3
+        private const val BACKOFF_MINUTES = 15L
+
+        /** Schedules or cancels the daily run to match [state]. */
+        fun apply(context: Context, state: DeviceState) {
+            val work = WorkManager.getInstance(context)
+            if (!state.backgroundAutoUpdates) {
+                work.cancelUniqueWork(NAME)
+                return
+            }
+            val network = if (state.backgroundAutoUpdatesAnyNetwork) NetworkType.CONNECTED else NetworkType.UNMETERED
+            val hours = state.backgroundUpdateInterval.hours.toLong()
+            val request = PeriodicWorkRequestBuilder<BackgroundUpdateWorker>(hours, TimeUnit.HOURS, hours * 60 / 6, TimeUnit.MINUTES)
+                .setConstraints(
+                    Constraints.Builder()
+                        .setRequiredNetworkType(network)
+                        .setRequiresBatteryNotLow(true)
+                        .setRequiresStorageNotLow(true)
+                        .build(),
+                )
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, BACKOFF_MINUTES, TimeUnit.MINUTES)
+                .build()
+            work.enqueueUniquePeriodicWork(NAME, ExistingPeriodicWorkPolicy.UPDATE, request)
+        }
+    }
+}

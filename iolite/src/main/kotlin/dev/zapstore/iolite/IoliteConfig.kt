@@ -18,6 +18,8 @@ data class IoliteConfig(
     /** How long a resolved NIP-65 relay list is trusted before relays are asked again. */
     val relayListCacheFor: Duration = 6.hours,
     val relayListTimeout: Duration = 10.seconds,
+    /** A NIP-47 wallet reply; paying can wait on a route. */
+    val walletTimeout: Duration = 60.seconds,
     val maxCompressedBytes: Long = 32L * 1024 * 1024,
     /** Whole tar after zstd. Epoch 0 is every current listing; 20k apps is tens of MB. */
     val maxUncompressedBytes: Long = 512L * 1024 * 1024,

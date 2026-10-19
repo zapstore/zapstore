@@ -1,7 +1,7 @@
 package dev.zapstore.iolite
 
 /** One explicit yes, stored in `apps.fact_bits`. A no leaves the bit clear. */
-internal const val FACT_OPEN_SOURCE = 1
+internal const val FACT_SOURCE_AVAILABLE = 1
 
 internal const val FACT_GOOGLE = 1 shl 1
 
@@ -15,7 +15,13 @@ internal const val FACT_OFFLINE = 1 shl 2
 
 // 1 shl 6 was ads. Do not reuse it. Old catalogs may still have that bit set.
 
-/** Residual text is what the encoder sees. Masks use the [FACT_OPEN_SOURCE] bits. */
+internal const val FACT_E2EE = 1 shl 7
+
+/**
+ * [residual] is the text left for exact matching; the encoder sees the whole normalized query.
+ * A fact phrase is a hard filter: [hard] bits must be set, [exclude] bits must be clear.
+ * Masks use the [FACT_SOURCE_AVAILABLE] bits.
+ */
 data class ParsedQuery(
     val residual: String,
     val hard: Int,
@@ -23,6 +29,7 @@ data class ParsedQuery(
     val penalty: Int,
     val boost: Int,
     val facts: List<SearchFact>,
+    val exclude: Int = 0,
 )
 
 /** Bits for yes rows of searchable facts. A missing row, a no, and every other fact leave the bit clear. */
@@ -62,7 +69,7 @@ fun parseSearchQuery(raw: String): ParsedQuery {
         index++
     }
     val residual = tokens.filterIndexed { at, _ -> !consumed[at] }.joinToString(" ")
-    return ParsedQuery(residual, 0, 0, penalty, boost, facts.toList())
+    return ParsedQuery(residual, hard = boost, soft = 0, penalty = penalty, boost = boost, facts = facts.toList(), exclude = penalty)
 }
 
 private class Hit(val label: SearchablePill, val start: Int, val length: Int)

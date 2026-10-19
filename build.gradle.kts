@@ -15,11 +15,13 @@ android {
     compileSdk = providers.gradleProperty("iolite.compileSdk").orElse("37").get().toInt()
 
     defaultConfig {
-        applicationId = "dev.zapstore.app"
+        // Beta id so it installs beside production Zapstore. Revert at launch (product/issues/launch-checklist.md).
+        applicationId = "dev.zapstore.beta"
         minSdk = 31
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0"
+        // Flutter's last release is 1009; this installs over it.
+        versionCode = 2000
+        versionName = "2.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             abiFilters += "arm64-v8a"
@@ -67,9 +69,10 @@ android {
     }
 
     buildTypes {
-        // Debug builds never open relay sockets. Catalog sync uses CATALOG_RELAY.
+        // Debug builds open no relay sockets unless -PRELAYS_ENABLED=true. Catalog sync uses CATALOG_RELAY.
         debug {
-            buildConfigField("boolean", "RELAYS_ENABLED", "false")
+            val relaysEnabled = providers.gradleProperty("RELAYS_ENABLED").orElse("false").get().trim() == "true"
+            buildConfigField("boolean", "RELAYS_ENABLED", relaysEnabled.toString())
             buildConfigField("String", "CATALOG_RELAY", catalogRelayField)
         }
         release {
@@ -214,7 +217,14 @@ dependencies {
     implementation(libs.coroutines.android)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
+    implementation(libs.commonmark)
+    implementation(libs.commonmark.tables)
+    implementation(libs.commonmark.strikethrough)
+    implementation(libs.commonmark.tasklist)
+    implementation(libs.commonmark.autolink)
     implementation(libs.okhttp)
+    implementation(libs.security.crypto)
+    implementation(libs.work.runtime)
 
     testImplementation("org.json:json:20250517")
     testImplementation(libs.junit)

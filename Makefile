@@ -1,10 +1,11 @@
 GRADLE ?= ./gradlew
 ADB := ./tools/adb
-PACKAGE ?= dev.zapstore.app
+PACKAGE ?= dev.zapstore.beta
 ACTIVITY ?= dev.zapstore.app.MainActivity
-KEYSTORE ?= release.keystore
-KEYSTORE_PASSWORD ?=
-KEY_ALIAS ?=
+# The Flutter release key, under the names the Flutter build used.
+KEYSTORE ?= $(or $(ZAPSTORE_KEY_PATH),release.keystore)
+KEYSTORE_PASSWORD ?= $(ZAPSTORE_KEY_PASSWORD)
+KEY_ALIAS ?= $(ZAPSTORE_KEY_ALIAS)
 KEY_PASSWORD ?= $(KEYSTORE_PASSWORD)
 DEBUG_KEYSTORE ?= $(abspath debug.keystore)
 

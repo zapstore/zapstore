@@ -1,6 +1,7 @@
 package dev.zapstore.app.catalog
 
 import dev.zapstore.iolite.AppRecord
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -28,6 +29,26 @@ class InstalledAppsTest {
     }
 
     @Test
+    fun `an installed ancestor certificate is an update`() {
+        val installed = listOf(InstalledApp("dev.one", 10, "1.0", setOf("aa".repeat(32))))
+        val catalog = listOf(
+            app("dev.one", "One", "1.1", 11, certificateHash = "bb".repeat(32), ancestors = listOf("aa".repeat(32))),
+        )
+
+        assertEquals(listOf("dev.one"), availableUpdates(installed, catalog).map { it.app.appId })
+    }
+
+    @Test
+    fun `a certificate outside the chain is not an update`() {
+        val installed = listOf(InstalledApp("dev.one", 10, "1.0", setOf("zz".repeat(32))))
+        val catalog = listOf(
+            app("dev.one", "One", "1.1", 11, certificateHash = "bb".repeat(32), ancestors = listOf("aa".repeat(32))),
+        )
+
+        assertEquals(emptyList<AvailableUpdate>(), availableUpdates(installed, catalog))
+    }
+
+    @Test
     fun `a listing without a certificate is not an update`() {
         val installed = listOf(InstalledApp("dev.none", 1, "1", setOf("aa")))
         val catalog = listOf(app("dev.none", "None", "9", 9, certificateHash = null))
@@ -50,29 +71,45 @@ class InstalledAppsTest {
     }
 
     @Test
-    fun `groups match the flutter updates screen`() {
+    fun `each installed app lands in one group`() {
+        val ours = "dev.zapstore.app"
         val installed = listOf(
-            InstalledApp("dev.ready", 1, "1", setOf("aa"), installingPackage = "dev.zapstore.app", label = "Ready"),
-            InstalledApp("dev.manual", 1, "1", setOf("aa"), installingPackage = "com.android.vending", label = "Manual"),
+            InstalledApp("dev.ready", 1, "1", setOf("aa"), installingPackage = ours, label = "Ready"),
+            InstalledApp("dev.sideloaded", 1, "1", setOf("aa"), installingPackage = "com.google.android.packageinstaller", label = "Side"),
+            InstalledApp("dev.play", 1, "1", setOf("aa"), installingPackage = "com.android.vending", label = "Play"),
+            InstalledApp("dev.resigned", 1, "1", setOf("pp"), installingPackage = "com.android.vending", label = "Resigned"),
+            InstalledApp("dev.owned", 1, "1", setOf("aa"), installingPackage = ours, updateOwner = "org.fdroid.fdroid", label = "Owned"),
             InstalledApp("dev.current", 2, "2", setOf("aa"), label = "Current"),
+            InstalledApp("dev.skip", 1, "1", setOf("aa"), installingPackage = ours, label = "Skip"),
             InstalledApp("com.other", 1, "1.4", setOf("zz"), label = "Other"),
         )
-        val catalog = listOf(
-            app("dev.ready", "Ready", "2", 2, certificateHash = "aa"),
-            app("dev.manual", "Manual", "2", 2, certificateHash = "aa"),
-            app("dev.current", "Current", "2", 2, certificateHash = "aa"),
-        )
-        val updates = availableUpdates(installed, catalog)
-        val groups = updateGroups(updates, installed, catalog) { it.installingPackage == "dev.zapstore.app" }
+        val catalog = listOf("dev.ready", "dev.sideloaded", "dev.play", "dev.resigned", "dev.owned", "dev.current", "dev.skip")
+            .map { app(it, it.removePrefix("dev."), "2", 2, certificateHash = "aa") }
+        val groups = updateGroups(installed, catalog, ignored = setOf("dev.skip"), ourPackage = ours) { it.installingPackage == ours }
 
         assertEquals(listOf("dev.ready"), groups.updates.map { it.app.appId })
-        assertEquals(listOf("dev.manual"), groups.manualUpdates.map { it.app.appId })
+        assertEquals(listOf("dev.sideloaded"), groups.manualUpdates.map { it.app.appId })
         assertEquals(listOf("dev.current"), groups.installedApps.map { it.appId })
+        assertEquals(listOf("dev.owned", "dev.play", "dev.resigned"), groups.otherStores.map { it.app.appId })
+        val play = groups.otherStores.first { it.app.appId == "dev.play" }
+        assertEquals("com.android.vending", play.store)
+        assertEquals("dev.play", play.update?.app?.appId)
+        val resigned = groups.otherStores.first { it.app.appId == "dev.resigned" }
+        assertEquals(null, resigned.update)
+        assertEquals(true, resigned.signedDifferently)
+        assertEquals("org.fdroid.fdroid", groups.otherStores.first { it.app.appId == "dev.owned" }.store)
         assertEquals(listOf("com.other"), groups.otherInstalled.map { it.packageId })
     }
 }
 
-internal fun app(appId: String, name: String, version: String, versionCode: Long, certificateHash: String?): AppRecord = AppRecord(
+internal fun app(
+    appId: String,
+    name: String,
+    version: String,
+    versionCode: Long,
+    certificateHash: String?,
+    ancestors: List<String> = emptyList(),
+): AppRecord = AppRecord(
     id = appId.toByteArray(),
     catalogId = 1,
     appId = appId,
@@ -87,5 +124,7 @@ internal fun app(appId: String, name: String, version: String, versionCode: Long
     version = version,
     versionCode = versionCode,
     channel = null,
-    metadata = JSONObject(),
+    metadata = JSONObject().apply {
+        if (ancestors.isNotEmpty()) put("apk_certificate_ancestor", JSONArray(ancestors))
+    },
 )

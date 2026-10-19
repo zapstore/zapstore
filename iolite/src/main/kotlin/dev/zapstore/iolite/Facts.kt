@@ -5,16 +5,17 @@ package dev.zapstore.iolite
  * The app chooses the chip wording. These names are not display copy.
  */
 enum class SearchFact {
-    OpenSource,
+    SourceAvailable,
     GoogleServices,
     WorksOffline,
+    E2ee,
 }
 
 /**
  * Query phrases for the searchable facts.
  * Wording here is the search contract. Pill and permission labels live in the app.
- * "offline" stands alone. "open source" and "no google services" match only as a phrase.
- * A word shared with the opposite phrase is not a keyword, so "source" does not select open source.
+ * "offline" stands alone. "source available", its alias "open source", "e2ee", and "no google services" match
+ * only as a phrase. A word shared with the opposite phrase is not a keyword, so "source" alone selects nothing.
  */
 internal class SearchablePill(
     val key: String,
@@ -46,12 +47,42 @@ internal val searchablePills: List<SearchablePill> = listOf(
         penalty = false,
     ),
     SearchablePill(
-        key = "open_source",
-        bit = FACT_OPEN_SOURCE,
-        fact = SearchFact.OpenSource,
+        key = SOURCE_AVAILABLE,
+        bit = FACT_SOURCE_AVAILABLE,
+        fact = SearchFact.SourceAvailable,
+        words = listOf("source", "available"),
+        keywords = emptyList(),
+        phraseOnly = true,
+        penalty = false,
+    ),
+    SearchablePill(
+        key = "$SOURCE_AVAILABLE:alias",
+        bit = FACT_SOURCE_AVAILABLE,
+        fact = SearchFact.SourceAvailable,
         words = listOf("open", "source"),
         keywords = emptyList(),
         phraseOnly = true,
         penalty = false,
     ),
+    SearchablePill(
+        key = "e2ee",
+        bit = FACT_E2EE,
+        fact = SearchFact.E2ee,
+        words = listOf("e2ee"),
+        keywords = emptyList(),
+        phraseOnly = true,
+        penalty = false,
+    ),
 )
+
+/** The bit this fact must have set ([AppFilter.hard]) and the bit it must have clear ([AppFilter.exclude]). */
+val SearchFact.hardBit: Int
+    get() = when (this) {
+        SearchFact.SourceAvailable -> FACT_SOURCE_AVAILABLE
+        SearchFact.WorksOffline -> FACT_OFFLINE
+        SearchFact.E2ee -> FACT_E2EE
+        SearchFact.GoogleServices -> 0
+    }
+
+val SearchFact.excludeBit: Int
+    get() = if (this == SearchFact.GoogleServices) FACT_GOOGLE else 0

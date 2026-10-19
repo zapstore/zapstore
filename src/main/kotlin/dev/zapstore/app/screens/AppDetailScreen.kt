@@ -1,45 +1,37 @@
 package dev.zapstore.app.screens
 
+import androidx.compose.runtime.mutableLongStateOf
+import dev.zapstore.app.components.shortDisplayName
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.ui.platform.LocalDensity
+import dev.zapstore.app.components.animationsEnabled
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import dev.zapstore.app.facts.FactCatalog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.derivedStateOf
@@ -47,61 +39,47 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil3.compose.AsyncImage
 import dev.zapstore.app.CdnImageVariant
 import dev.zapstore.app.MarkdownText
 import dev.zapstore.app.R
-import dev.zapstore.app.ZapActionText
 import dev.zapstore.app.ZapCanvas
+import dev.zapstore.app.ZapDanger
 import dev.zapstore.app.ZapLine
 import dev.zapstore.app.ZapRadius
+import dev.zapstore.app.ZapSize
 import dev.zapstore.app.ZapSpacing
-import dev.zapstore.app.ZapSurface1
-import dev.zapstore.app.ZapSurface2
 import dev.zapstore.app.ZapSurface3
-import dev.zapstore.app.ZapDanger
 import dev.zapstore.app.ZapTextSecondary
-import dev.zapstore.app.ZapVerified
-import dev.zapstore.app.ZapWarning
 import dev.zapstore.app.cdnImageUrl
+import dev.zapstore.app.components.AppDetailHead
+import dev.zapstore.app.components.ZapMotion
+import dev.zapstore.app.components.scrollParallax
+import dev.zapstore.app.components.windowParallax
 import dev.zapstore.app.components.AppIcon
-import dev.zapstore.app.components.AppIdentityRow
-import dev.zapstore.app.components.AuthorByline
-import dev.zapstore.app.components.InfoRow
-import dev.zapstore.app.components.ProfileImage
-import dev.zapstore.app.components.shortDisplayName
+import dev.zapstore.app.components.EmptyRow
+import dev.zapstore.app.components.GroupHeader
+import dev.zapstore.app.components.LoadingIndicator
 import dev.zapstore.app.components.ParagraphSkeleton
 import dev.zapstore.app.components.SkeletonBlock
-import dev.zapstore.app.components.LoadingIndicator
 import dev.zapstore.app.components.StatusText
-import dev.zapstore.app.install.InstallPlan
+import dev.zapstore.app.components.ZapButtonStyle
+import dev.zapstore.app.components.ZapIconButton
+import dev.zapstore.app.components.ZapProgressButton
+import dev.zapstore.app.components.ZapTextLink
 import dev.zapstore.iolite.AppRecord
-import dev.zapstore.iolite.CommentRecord
-import dev.zapstore.iolite.ProfileRecord
-import java.text.DateFormat
-import java.text.NumberFormat
-import java.util.Date
-
-private val CompactIconSize = 26.dp
-private val CompactHeaderHeight = 32.dp
+import dev.zapstore.iolite.StackRecord
 
 @Composable
 fun AppDetailScreen(
@@ -112,10 +90,27 @@ fun AppDetailScreen(
     onRetryComments: () -> Unit = {},
     onSettingsClick: () -> Unit = {},
     onInstall: () -> Unit = {},
-    onConfirmInstall: () -> Unit = {},
+    onConfirmInstall: (alwaysTrust: Boolean) -> Unit = {},
     onDismissInstall: () -> Unit = {},
     onUninstall: () -> Unit = {},
+    onOpenApp: () -> Unit = {},
     onRefreshOrigin: () -> Unit = {},
+    onPauseInstall: () -> Unit = {},
+    onStartInstall: () -> Unit = {},
+    onDismissInstallError: () -> Unit = {},
+    saved: Boolean = false,
+    ignored: Boolean = false,
+    onSave: (Boolean) -> Unit = {},
+    onIgnore: (Boolean) -> Unit = {},
+    onShare: () -> Unit = {},
+    onPostComment: (String) -> Unit = {},
+    onReport: (type: String, note: String) -> Unit = { _, _ -> },
+    onReportClosed: () -> Unit = {},
+    onZap: (sats: Long, note: String) -> Unit = { _, _ -> },
+    onZapClosed: () -> Unit = {},
+    onToggleStack: (StackRecord) -> Unit = {},
+    onCreateStack: (String) -> Unit = {},
+    onStackClick: (StackRecord) -> Unit = {},
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -126,195 +121,158 @@ fun AppDetailScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     var selectedScreenshot by remember { mutableStateOf<Int?>(null) }
-    var showDeveloperDescription by remember { mutableStateOf(false) }
+    var sheet by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var actions by remember { mutableStateOf(false) }
+    var reporting by remember { mutableStateOf(false) }
+    var stacking by remember { mutableStateOf(false) }
+    var zapping by remember { mutableStateOf(false) }
+    var zapAmount by remember { mutableLongStateOf(ZAP_AMOUNTS[1]) }
     val listState = rememberLazyListState()
-    val showCompactHeader by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 } }
+    val headCollapse by remember {
+        derivedStateOf {
+            val head = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == "head" }
+            when {
+                listState.firstVisibleItemIndex > 0 || head == null -> 1f
+                else -> (listState.firstVisibleItemScrollOffset / head.size.coerceAtLeast(1).toFloat()).coerceIn(0f, 1f)
+            }
+        }
+    }
     val app = state.app
     val comments = state.comments
     val threaded = remember(comments.threads) { comments.threads.flattenComments() }
+    val developerDescription = stringResource(R.string.developer_description)
+    val releaseNotes = stringResource(R.string.release_notes)
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(ZapCanvas),
-    ) {
+    Box(modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
-            modifier = Modifier
-                .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-                .testTag("appDetail"),
-            contentPadding = PaddingValues(start = 16.dp, top = 4.dp, end = 16.dp, bottom = 36.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier.fillMaxSize().testTag("appDetail"),
+            contentPadding = PaddingValues(
+                start = ZapSpacing.space4,
+                top = ZapSpacing.space4,
+                end = ZapSpacing.space4,
+                bottom = if (state.install.hasBar) INSTALL_BAR_SPACE + ZapSpacing.space4 else ZapSpacing.space10,
+            ),
+            verticalArrangement = Arrangement.spacedBy(ZapSpacing.space4),
         ) {
             if (app == null) {
-                item { if (state.loaded) NotFoundCard() else AppDetailSkeleton() }
+                item { if (state.loaded) EmptyRow(stringResource(R.string.app_not_found)) else AppDetailSkeleton() }
                 return@LazyColumn
             }
 
-            item {
-                AppIdentityRow(
+            item(key = "head", contentType = "head") {
+                AppDetailHead(
                     name = app.name,
                     iconUrl = app.iconUrl,
                     iconFile = app.iconFile,
                     version = app.version,
+                    caption = formatDate(app.releasedAt),
                     authorPubkey = app.authorPubkey,
                     author = state.author,
                     onAuthorClick = onProfileClick,
+                    onMore = { actions = true },
+                    modifier = Modifier.scrollParallax(listState),
                 )
             }
-
-            if (state.install.offer || state.install.installed || state.install.message != null) {
-                item {
-                    InstallAction(state.install, onInstall, onUninstall)
+            state.install.otherStore?.let { store ->
+                item(key = "otherStore", contentType = "status") {
+                    StatusText(stringResource(R.string.installed_by_store, store), Modifier.testTag("installedByStore"))
                 }
             }
 
             if (app.screenshots.isNotEmpty()) {
-                item {
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                item(key = "screenshots", contentType = "screenshots") {
+                    val shots = rememberLazyListState()
+                    LazyRow(state = shots, horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2)) {
                         items(app.screenshots.take(5), key = { it }) { url ->
-                            AsyncImage(
-                                model = cdnImageUrl(url, CdnImageVariant.ThumbnailSmall),
-                                contentDescription = stringResource(R.string.screenshot_description, app.name),
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
+                            Box(
+                                Modifier
                                     .width(120.dp)
-                                    .height(200.dp)
-                                    .clip(RoundedCornerShape(16.dp))
+                                    .height(208.dp)
+                                    .clip(RoundedCornerShape(ZapRadius.md))
                                     .background(ZapSurface3)
                                     .clickable { selectedScreenshot = app.screenshots.indexOf(url) },
+                            ) {
+                                AsyncImage(
+                                    model = cdnImageUrl(url, CdnImageVariant.ThumbnailSmall),
+                                    contentDescription = stringResource(R.string.screenshot_description, app.name),
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize().windowParallax(shots, url),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            val about = app.about.ifBlank { app.description }
+            if (about.isNotBlank()) {
+                item(key = "about", contentType = "text") {
+                    Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space1)) {
+                        MarkdownText(
+                            value = about,
+                            color = ZapTextSecondary,
+                            style = MaterialTheme.typography.bodyLarge,
+                            onOpenUrl = onOpenUrl,
+                            collapsible = app.about.isBlank(),
+                        )
+                        if (app.about.isNotBlank() && app.description.isNotBlank()) {
+                            ZapTextLink(
+                                stringResource(R.string.see_developer_description),
+                                { sheet = developerDescription to app.description },
+                                Modifier.testTag("developerDescription"),
                             )
                         }
                     }
                 }
             }
 
-            if (app.about.isNotBlank()) {
-                item {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        MarkdownText(
-                            value = app.about,
-                            color = ZapTextSecondary,
-                            style = MaterialTheme.typography.bodyLarge,
-                            onOpenUrl = onOpenUrl,
-                        )
-                        if (app.description.isNotBlank()) {
-                            TextButton(
-                                onClick = { showDeveloperDescription = true },
-                                contentPadding = PaddingValues(0.dp),
-                                modifier = Modifier.testTag("developerDescription"),
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.see_developer_description),
-                                    color = ZapActionText,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
-                            }
-                        }
-                    }
-                }
-            } else if (app.description.isNotBlank()) {
-                item {
-                    MarkdownText(
-                        value = app.description,
-                        color = ZapTextSecondary,
-                        style = MaterialTheme.typography.bodyLarge,
-                        onOpenUrl = onOpenUrl,
-                        collapsible = true,
+            if (state.social.zappable || state.zaps.count > 0) {
+                item(key = "zaps", contentType = "zaps") {
+                    ZapCard(
+                        state.zaps,
+                        appName = app.name,
+                        onZap = if (state.social.zappable) ({ amount -> zapAmount = amount; zapping = true }) else null,
                     )
                 }
             }
 
-            val pills = app.factRows.mapNotNull { fact ->
-                val pill = FactCatalog.pill(fact.key) ?: return@mapNotNull null
-                if (!pill.visible(fact.yes)) return@mapNotNull null
-                Triple(fact.key, pill.label(fact.yes), pill.feature(fact.yes))
+            if (app.hasSecurityCard()) {
+                item(key = "security", contentType = "card") { SecurityCard(app, onOpenUrl) }
             }
-            val permissions = app.permissionIds.ifEmpty {
-                app.factRows.mapNotNull { fact ->
-                    if (!fact.yes) return@mapNotNull null
-                    FactCatalog.permission(fact.key)
-                }
-            }
-            if (app.security.isNotBlank() || pills.isNotEmpty() || permissions.isNotEmpty()) {
-                item { SectionDivider(stringResource(R.string.privacy_and_security)) }
-                if (pills.isNotEmpty()) {
-                    item(key = "facts") {
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
-                            verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("facts"),
-                        ) {
-                            pills.forEach { (key, label, feature) ->
-                                FactPill(key = key, label = label, feature = feature)
-                            }
-                        }
-                    }
-                }
-                if (permissions.isNotEmpty()) {
-                    item(key = "permissions") {
-                        Text(
-                            text = permissions.joinToString(", "),
-                            color = ZapTextSecondary,
-                            style = MaterialTheme.typography.bodyLarge,
-                            modifier = Modifier.testTag("permissions"),
-                        )
-                    }
-                }
-                if (app.securityWarnings.isNotBlank()) {
-                    item(key = "securityWarnings") {
-                        Text(
-                            text = warningLines(app.securityWarnings),
-                            color = ZapWarning,
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                    }
-                }
-                if (app.securityBody.isNotBlank()) {
-                    item(key = "securityBody") {
-                        MarkdownText(
-                            value = app.securityBody,
-                            color = ZapTextSecondary,
-                            style = MaterialTheme.typography.bodyLarge,
-                            onOpenUrl = onOpenUrl,
-                        )
-                    }
-                }
-            }
-
-            if (state.zaps.loading || state.zaps.count > 0 || state.zaps.error != null) {
-                item { ZapSummaryCard(state.zaps) }
-            }
-
-            item { SectionDivider(stringResource(R.string.latest_release)) }
-            item { VersionRow(app, onOpenUrl) }
-
-            item {
-                AppInfoCard(
+            item(key = "release", contentType = "card") {
+                ReleaseCard(
                     app = app,
                     author = state.author,
                     onOpenUrl = onOpenUrl,
                     onProfileClick = onProfileClick,
-                    modifier = Modifier.padding(top = 8.dp),
+                    onReleaseNotes = { sheet = releaseNotes to app.releaseNotes },
                 )
             }
 
-            item { SectionDivider(stringResource(R.string.comments)) }
+            if (state.stackedBy.stacks.isNotEmpty()) {
+                item(key = "stackedBy", contentType = "stackedBy") {
+                    StackedByRow(state.stackedBy, onStackClick, Modifier.padding(vertical = ZapSpacing.space2))
+                }
+            }
+
+            item(key = "commentsHeader", contentType = "header") {
+                Column {
+                    HorizontalDivider(color = ZapLine)
+                    GroupHeader(stringResource(R.string.comments), Modifier.padding(top = ZapSpacing.space2))
+                }
+            }
+            item(key = "commentComposer", contentType = "composer") {
+                CommentComposer(state.social, onPostComment, onSettingsClick)
+            }
             when {
-                comments.loading && threaded.isEmpty() -> item {
-                    LoadingIndicator(Modifier.padding(vertical = 12.dp).testTag("commentsLoading"))
+                comments.loading && threaded.isEmpty() -> item(contentType = "loading") {
+                    LoadingIndicator(Modifier.padding(vertical = ZapSpacing.space3).testTag("commentsLoading"))
                 }
-                threaded.isEmpty() -> item {
-                    CommentsEmpty(
-                        error = comments.error,
-                        onRetry = onRetryComments,
-                        onSettings = onSettingsClick,
-                    )
+                threaded.isEmpty() -> item(contentType = "empty") {
+                    CommentsEmpty(error = comments.error, onRetry = onRetryComments, onSettings = onSettingsClick)
                 }
-                else -> items(threaded, key = { it.comment.eventId }) { entry ->
+                else -> items(threaded, key = { it.comment.eventId }, contentType = { "comment" }) { entry ->
                     CommentRow(
                         comment = entry.comment,
                         author = comments.profiles[entry.comment.pubkey],
@@ -326,606 +284,204 @@ fun AppDetailScreen(
             }
         }
 
-        if (showCompactHeader && app != null) {
+        if (app != null) {
             CompactAppHeader(
                 app = app,
-                author = state.author,
-                onProfileClick = onProfileClick,
+                collapse = { headCollapse },
                 modifier = Modifier.align(Alignment.TopCenter),
+            )
+            InstallBar(
+                app = app,
+                install = state.install,
+                actions = InstallActions(
+                    onInstall = onInstall,
+                    onPause = onPauseInstall,
+                    onStart = onStartInstall,
+                    onDismissError = onDismissInstallError,
+                    onOpen = onOpenApp,
+                    onUninstall = onUninstall,
+                ),
+                modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
     }
 
     if (app != null) {
         selectedScreenshot?.let { initialPage ->
-            ScreenshotCarousel(
-                screenshots = app.screenshots,
-                initialPage = initialPage,
-                appName = app.name,
-                onDismiss = { selectedScreenshot = null },
-            )
+            ScreenshotCarousel(app.screenshots, initialPage, app.name) { selectedScreenshot = null }
         }
         state.install.dialog?.let { plan ->
-            InstallDialog(
+            InstallSheet(
                 name = app.name,
                 version = app.version,
                 verified = app.isVerified,
                 plan = plan,
                 onConfirm = onConfirmInstall,
                 onDismiss = onDismissInstall,
+                otherStore = state.install.otherStore,
+                trustName = app.authorPubkey?.let { shortDisplayName(it, state.author) },
+                catalogSigned = app.isCatalogSigned,
+                downloadUrl = app.downloadUrl,
             )
         }
-        if (showDeveloperDescription && app.description.isNotBlank()) {
-            MarkdownDialog(
-                title = stringResource(R.string.developer_description),
-                markdown = app.description,
-                onOpenUrl = onOpenUrl,
-                onDismiss = { showDeveloperDescription = false },
-            )
+        sheet?.let { (title, markdown) ->
+            MarkdownSheet(title, markdown, onOpenUrl) { sheet = null }
         }
-    }
-}
-
-@Composable
-private fun InstallAction(install: InstallUi, onInstall: () -> Unit, onUninstall: () -> Unit) {
-    val onDevice = install.installed || install.updating
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        if (install.offer) {
-            FilledTonalButton(
-                onClick = onInstall,
-                enabled = !install.busy && install.dialog == null,
-                modifier = Modifier.testTag("installApp"),
-            ) {
-                Text(
-                    when {
-                        install.busy && install.received > 0 -> stringResource(R.string.downloading)
-                        install.busy -> stringResource(R.string.installing)
-                        install.updating -> stringResource(R.string.update_app)
-                        else -> stringResource(R.string.install)
-                    },
-                )
-            }
-        } else if (install.installed && !install.busy) {
-            StatusText(stringResource(R.string.installed), Modifier.testTag("installedApp"))
-        }
-        if (onDevice) {
-            TextButton(
-                onClick = onUninstall,
-                enabled = !install.busy,
-                modifier = Modifier.testTag("uninstallApp"),
-                contentPadding = PaddingValues(0.dp),
-            ) {
-                Text(stringResource(R.string.uninstall), color = ZapDanger)
-            }
-        }
-        if (install.busy && install.received > 0) {
-            val readMb = install.received / 1_000_000.0
-            val total = install.total
-            StatusText(
-                if (total != null && total > 0) {
-                    stringResource(R.string.download_progress_total, readMb, total / 1_000_000.0)
-                } else {
-                    stringResource(R.string.download_progress, readMb)
+        if (zapping) {
+            ZapAppSheet(
+                appName = app.name,
+                social = state.social,
+                recipient = state.zaps.recipient,
+                recipientName = state.zaps.recipient?.let { shortDisplayName(it.pubkey, state.zaps.profiles[it.pubkey]) }.orEmpty(),
+                initialSats = zapAmount,
+                onZap = onZap,
+                onSettings = {
+                    zapping = false
+                    onZapClosed()
+                    onSettingsClick()
+                },
+                onDismiss = {
+                    zapping = false
+                    onZapClosed()
                 },
             )
         }
-        install.message?.let { StatusText(it, Modifier.testTag("installStatus")) }
-    }
-}
-
-@Composable
-private fun InstallDialog(
-    name: String,
-    version: String,
-    verified: Boolean,
-    plan: InstallPlan,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    Dialog(onDismissRequest = onDismiss) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(ZapRadius.lg))
-                .background(ZapSurface1)
-                .border(1.dp, ZapLine, RoundedCornerShape(ZapRadius.lg))
-                .padding(ZapSpacing.space4),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(
-                text = stringResource(if (plan is InstallPlan.FirstInstall) R.string.install_title else R.string.update_title, name),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
+        if (reporting) {
+            ReportSheet(
+                appName = app.name,
+                social = state.social,
+                onSend = onReport,
+                onSignIn = {
+                    reporting = false
+                    onSettingsClick()
+                },
+                onDismiss = {
+                    reporting = false
+                    onReportClosed()
+                },
             )
-            Text(
-                text = stringResource(R.string.install_version, version),
-                color = ZapTextSecondary,
-                style = MaterialTheme.typography.bodyLarge,
+        }
+        if (actions) {
+            AppActionSheet(
+                app = app,
+                saved = saved,
+                ignored = ignored,
+                installed = state.install.installed,
+                onSave = { onSave(!saved) },
+                onIgnore = { onIgnore(!ignored) },
+                onShare = {
+                    actions = false
+                    onShare()
+                },
+                onReport = {
+                    actions = false
+                    reporting = true
+                },
+                onUninstall = if (state.install.installed || state.install.updating) {
+                    {
+                        actions = false
+                        onUninstall()
+                    }
+                } else {
+                    null
+                },
+                onDismiss = { actions = false },
+                onAddToStack = {
+                    actions = false
+                    if (state.userStacks == null) onSettingsClick() else stacking = true
+                },
             )
-            if (verified) {
-                Text(
-                    text = stringResource(R.string.verified_author),
-                    color = ZapVerified,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-            Text(
-                text = stringResource(
-                    when (plan) {
-                        InstallPlan.FirstInstall -> R.string.install_android_confirm
-                        InstallPlan.Takeover -> R.string.install_takeover
-                        else -> R.string.install_silent
-                    },
-                ),
-                color = ZapTextSecondary,
-                style = MaterialTheme.typography.bodyMedium,
+        }
+        val userStacks = state.userStacks
+        if (stacking && userStacks != null) {
+            AddToStackSheet(
+                app = app,
+                state = userStacks,
+                onToggle = onToggleStack,
+                onCreate = onCreateStack,
+                onDismiss = { stacking = false },
             )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                TextButton(onClick = onDismiss) {
-                    Text(stringResource(R.string.install_cancel), color = ZapTextSecondary)
-                }
-                TextButton(onClick = onConfirm, modifier = Modifier.testTag("installConfirm")) {
-                    Text(stringResource(R.string.install_confirm), color = ZapActionText)
-                }
-            }
         }
     }
 }
 
-@Composable
-private fun NotFoundCard() {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(100.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(ZapSurface2),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(text = stringResource(R.string.app_not_found), color = ZapTextSecondary)
-    }
-}
-
-/** The file has no emoji. Each notice line is shown with a warning mark. */
-private fun warningLines(notices: String): String =
-    notices.lineSequence()
-        .map { it.trim() }
-        .filter { it.isNotEmpty() }
-        .joinToString("\n") { line -> if (line.startsWith("⚠")) line else "⚠️ $line" }
-
-@Composable
-private fun FactPill(key: String, label: String, feature: Boolean) {
-    Text(
-        text = label,
-        color = ZapCanvas,
-        style = MaterialTheme.typography.labelMedium.copy(
-            fontSize = 12.5.sp,
-            lineHeight = 16.sp,
-            fontWeight = FontWeight.Medium,
-        ),
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier
-            .clip(RoundedCornerShape(ZapRadius.xs))
-            // Yes is the feature color. No is the inverse color.
-            .background(if (feature) ZapVerified else ZapDanger)
-            .padding(horizontal = 8.dp, vertical = 3.dp)
-            .testTag("fact_$key"),
-    )
-}
-
-@Composable
-private fun SectionDivider(title: String) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(top = 8.dp),
-    ) {
-        HorizontalDivider(Modifier.weight(1f), color = ZapLine)
-        Text(
-            text = title.uppercase(),
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(horizontal = 16.dp),
-        )
-        HorizontalDivider(Modifier.weight(1f), color = ZapLine)
-    }
-}
+private val InstallUi.hasBar: Boolean get() = offer || installed || phase != InstallPhase.Idle
 
 @Composable
 private fun AppDetailSkeleton() {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SkeletonBlock(74.dp, 74.dp, 16.dp)
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                SkeletonBlock(width = 190.dp, height = 22.dp, cornerRadius = 6.dp)
-                SkeletonBlock(width = 140.dp, height = 16.dp, cornerRadius = 6.dp)
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ZapSpacing.space4)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space4)) {
+            SkeletonBlock(64.dp, 64.dp, 14.dp)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2)) {
+                SkeletonBlock(width = 180.dp, height = 22.dp, cornerRadius = 6.dp)
+                SkeletonBlock(width = 96.dp, height = 20.dp, cornerRadius = 10.dp)
             }
         }
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(4) { SkeletonBlock(width = 120.dp, height = 200.dp, cornerRadius = 16.dp) }
+        SkeletonBlock(width = 400.dp, height = 40.dp, cornerRadius = 12.dp)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2)) {
+            items(4) { SkeletonBlock(width = 120.dp, height = 208.dp, cornerRadius = 14.dp) }
         }
-        ParagraphSkeleton()
-        SkeletonBlock(width = 220.dp, height = 32.dp, cornerRadius = 8.dp)
         ParagraphSkeleton()
     }
 }
 
+/**
+ * Fades in as the head scrolls away; the icon settles from the head's size into the bar.
+ */
 @Composable
 private fun CompactAppHeader(
     app: AppRecord,
-    author: ProfileRecord?,
-    onProfileClick: (String) -> Unit,
+    collapse: () -> Float,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier
+    val animate = animationsEnabled()
+    val shown by remember { derivedStateOf { collapse() > COMPACT_START } }
+    if (!shown) return
+    val reveal = { ((collapse() - COMPACT_START) / (1f - COMPACT_START)).coerceIn(0f, 1f) }
+    Column(
+        modifier
             .fillMaxWidth()
+            .graphicsLayer { alpha = if (animate) reveal() else 1f }
             .background(ZapCanvas)
-            .windowInsetsPadding(WindowInsets.statusBars)
-            .height(CompactHeaderHeight)
-            .padding(horizontal = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+            .testTag("compactHeader"),
     ) {
-        AppIcon(title = app.name, iconUrl = app.iconUrl, iconFile = app.iconFile, size = CompactIconSize)
-        Text(
-            text = app.name,
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Black),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f, fill = false),
-        )
-        app.authorPubkey?.let { pubkey ->
-            AuthorByline(pubkey = pubkey, profile = author, onClick = { onProfileClick(pubkey) })
-        }
-    }
-}
-
-@Composable
-private fun ScreenshotCarousel(
-    screenshots: List<String>,
-    initialPage: Int,
-    appName: String,
-    onDismiss: () -> Unit,
-) {
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
-    ) {
-        val pagerState = rememberPagerState(
-            initialPage = initialPage.coerceIn(0, screenshots.lastIndex),
-            pageCount = { screenshots.size },
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black),
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3),
+            modifier = Modifier.fillMaxWidth().height(COMPACT_BAR_HEIGHT).padding(start = ZapSpacing.space4, end = ZapSpacing.space3),
         ) {
-            HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-                AsyncImage(
-                    model = cdnImageUrl(screenshots[page], CdnImageVariant.ThumbnailLarge),
-                    contentDescription = stringResource(R.string.screenshot_description, appName),
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 12.dp, vertical = 48.dp),
-                )
-            }
-            IconButton(
-                onClick = onDismiss,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .statusBarsPadding()
-                    .padding(top = 12.dp, end = 8.dp),
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_close),
-                    contentDescription = stringResource(R.string.close),
-                    tint = Color.White,
-                )
-            }
-            Text(
-                text = "${pagerState.currentPage + 1}/${screenshots.size}",
-                color = Color.White,
-                style = MaterialTheme.typography.labelLarge,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 18.dp),
-            )
-        }
-    }
-}
-
-@Composable
-private fun ZapSummaryCard(summary: ZapSummary) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(ZapSurface1)
-            .border(1.dp, ZapLine, RoundedCornerShape(16.dp))
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-    ) {
-        Text(
-            text = stringResource(R.string.support).uppercase(),
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.Bold,
-            color = ZapTextSecondary,
-        )
-        Spacer(Modifier.height(4.dp))
-        when {
-            summary.loading && summary.count == 0 -> SkeletonBlock(width = 148.dp, height = 24.dp, cornerRadius = 6.dp)
-            summary.count == 0 -> StatusText(summary.error.orEmpty())
-            else -> Text(
-                text = stringResource(
-                    R.string.zap_summary,
-                    NumberFormat.getInstance().format(summary.totalSats),
-                    summary.count,
-                ),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-    }
-}
-
-@Composable
-private fun VersionRow(app: AppRecord, onOpenUrl: (String) -> Unit) {
-    val notes = app.releaseNotes
-    val hasNotes = notes.isNotBlank()
-    var showNotes by remember { mutableStateOf(false) }
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(ZapRadius.md))
-            .background(ZapSurface2)
-            .border(1.dp, ZapLine, RoundedCornerShape(ZapRadius.md))
-            .padding(
-                start = ZapSpacing.space3,
-                top = if (hasNotes) 0.dp else ZapSpacing.space2,
-                end = if (hasNotes) 0.dp else ZapSpacing.space3,
-                bottom = if (hasNotes) 0.dp else ZapSpacing.space2,
-            ),
-    ) {
-        StatusText(stringResource(R.string.version))
-        Spacer(Modifier.width(6.dp))
-        Text(
-            text = app.version,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f, fill = false),
-        )
-        Spacer(Modifier.width(6.dp))
-        StatusText("(${formatDate(app.releasedAt)})")
-        if (hasNotes) {
-            IconButton(
-                onClick = { showNotes = true },
-                modifier = Modifier.testTag("releaseNotes"),
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_more),
-                    contentDescription = stringResource(R.string.release_notes),
-                    tint = ZapTextSecondary,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
-        }
-    }
-    if (showNotes) {
-        MarkdownDialog(
-            title = stringResource(R.string.release_notes),
-            markdown = notes,
-            onOpenUrl = onOpenUrl,
-            onDismiss = { showNotes = false },
-        )
-    }
-}
-
-@Composable
-private fun MarkdownDialog(
-    title: String,
-    markdown: String,
-    onOpenUrl: (String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.72f).dp
-    Dialog(onDismissRequest = onDismiss) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = maxHeight)
-                .clip(RoundedCornerShape(ZapRadius.lg))
-                .background(ZapSurface1)
-                .border(1.dp, ZapLine, RoundedCornerShape(ZapRadius.lg)),
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = ZapSpacing.space4, end = 4.dp),
-            ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f),
-                )
-                IconButton(onClick = onDismiss) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_close),
-                        contentDescription = stringResource(R.string.close),
-                        tint = ZapTextSecondary,
-                    )
-                }
-            }
-            Column(
-                modifier = Modifier
-                    .weight(1f, fill = false)
-                    .verticalScroll(rememberScrollState())
-                    .padding(
-                        start = ZapSpacing.space4,
-                        end = ZapSpacing.space4,
-                        bottom = ZapSpacing.space4,
-                    ),
-            ) {
-                MarkdownText(
-                    value = markdown,
-                    color = ZapTextSecondary,
-                    style = MaterialTheme.typography.bodyLarge,
-                    onOpenUrl = onOpenUrl,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun AppInfoCard(
-    app: AppRecord,
-    author: ProfileRecord?,
-    onOpenUrl: (String) -> Unit,
-    onProfileClick: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(ZapRadius.md))
-            .background(ZapSurface1)
-            .border(1.dp, ZapLine, RoundedCornerShape(ZapRadius.md))
-            .padding(ZapSpacing.space4),
-    ) {
-        InfoRow(
-            label = stringResource(R.string.source),
-            value = app.repository ?: stringResource(R.string.not_available),
-            link = app.repository,
-            onOpenUrl = onOpenUrl,
-        )
-        app.website?.let { InfoRow(stringResource(R.string.website), it, link = it, onOpenUrl = onOpenUrl) }
-        app.license?.let { InfoRow(stringResource(R.string.license), it) }
-        InfoRow(stringResource(R.string.app_id), app.appId)
-        app.authorPubkey?.let { pubkey ->
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 10.dp),
-            ) {
-                StatusText(stringResource(if (app.isVerified) R.string.verified_author else R.string.author))
-                Spacer(Modifier.weight(1f))
-                AuthorByline(pubkey = pubkey, profile = author, showBy = false, onClick = { onProfileClick(pubkey) })
-            }
-        }
-        InfoRow(stringResource(R.string.release_date), formatDate(app.releasedAt))
-    }
-}
-
-@Composable
-private fun CommentsEmpty(
-    error: CommentsError?,
-    onRetry: () -> Unit,
-    onSettings: () -> Unit,
-) {
-    Column(
-        modifier = Modifier.testTag("commentsEmpty"),
-        verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
-    ) {
-        StatusText(
-            stringResource(
-                when (error) {
-                    CommentsError.RelaysUnreachable -> R.string.comments_error_relays
-                    CommentsError.TimedOut -> R.string.comments_error_timeout
-                    null -> R.string.no_comments
+            AppIcon(
+                title = app.name,
+                iconUrl = app.iconUrl,
+                iconFile = app.iconFile,
+                size = 28.dp,
+                modifier = Modifier.graphicsLayer {
+                    if (!animate) return@graphicsLayer
+                    val t = reveal()
+                    val scale = 1f + (HEAD_ICON_RATIO - 1f) * (1f - t)
+                    scaleX = scale
+                    scaleY = scale
+                    translationY = (1f - t) * 14.dp.toPx()
+                    transformOrigin = TransformOrigin(0f, 0.5f)
                 },
-            ),
-        )
-        if (error != null) {
-            Row(horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2)) {
-                TextButton(onClick = onRetry, modifier = Modifier.testTag("commentsRetry")) {
-                    Text(stringResource(R.string.try_again))
-                }
-                TextButton(onClick = onSettings, modifier = Modifier.testTag("commentsNetworkSettings")) {
-                    Text(stringResource(R.string.network_settings))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun CommentRow(
-    comment: CommentRecord,
-    author: ProfileRecord?,
-    onOpenUrl: (String) -> Unit,
-    onAuthorClick: (String) -> Unit,
-    depth: Int = 0,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = ZapSpacing.space5 * depth)
-            .testTag("commentDepth:${comment.eventId}:$depth"),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(ZapRadius.md))
-                .background(ZapSurface1)
-                .border(1.dp, ZapLine, RoundedCornerShape(ZapRadius.md))
-                .padding(ZapSpacing.space3)
-                .testTag("comment:${comment.eventId}"),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onAuthorClick(comment.pubkey) }
-                    .testTag("profile:${comment.pubkey}"),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(ZapSurface3),
-                ) {
-                    ProfileImage(
-                        pubkey = comment.pubkey,
-                        pictureUrl = author?.picture,
-                        profileVersion = author?.eventId,
-                        contentDescription = stringResource(R.string.profile_avatar_description, shortDisplayName(comment.pubkey, author)),
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                }
-                Text(
-                    text = shortDisplayName(comment.pubkey, author),
-                    color = ZapTextSecondary,
-                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                StatusText(formatDate(comment.createdAt))
-            }
-            MarkdownText(
-                value = comment.content,
-                color = ZapTextSecondary,
-                style = MaterialTheme.typography.bodyMedium,
-                onOpenUrl = onOpenUrl,
+            )
+            Text(
+                app.name,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).graphicsLayer {
+                    if (animate) translationX = (1f - reveal()) * 10.dp.toPx()
+                },
             )
         }
+        HorizontalDivider(color = ZapLine)
     }
 }
 
-private fun formatDate(createdAt: Long): String =
-    DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(createdAt * 1_000))
+private const val COMPACT_START = 0.45f
+
+private val COMPACT_BAR_HEIGHT = 52.dp
+
+/** Head icon (64 dp) over bar icon (28 dp): where the morph starts. */
+private const val HEAD_ICON_RATIO = 64f / 28f

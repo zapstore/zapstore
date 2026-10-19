@@ -1,5 +1,11 @@
 package dev.zapstore.iolite
 
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.CompletableDeferred
+import org.json.JSONArray
+import org.json.JSONObject
 import android.content.Context
 import androidx.sqlite.SQLiteConnection
 import java.io.File
@@ -27,6 +33,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /**
  * The local-first Nostr client. Every event, whether it arrives in a catalog bundle or over a relay
@@ -34,7 +41,7 @@ import kotlinx.coroutines.sync.withLock
  * reading those tables. UI code reads records and never touches event JSON.
  */
 class Iolite private constructor(
-    private val store: IoliteStore,
+    internal val store: IoliteStore,
     private val importer: CatalogImporter,
     private val scope: CoroutineScope,
     private val job: Job,
@@ -63,6 +70,13 @@ class Iolite private constructor(
 
     fun app(appId: String): AppRecord? = store.app(appId)
 
+    /** The proof behind [AppRecord.proofPubkey], for the NIP-C1 check against the downloaded APK. */
+    fun proof(app: AppRecord): CertificateProof? {
+        val owner = app.proofPubkey ?: return null
+        val hash = app.certificateHash ?: return null
+        return store.proof(app.catalogId, hash, owner)
+    }
+
     fun catalogs(): List<CatalogRecord> = store.selectedCatalogs()
 
     fun allCatalogs(): List<CatalogRecord> = store.allCatalogs()
@@ -80,10 +94,12 @@ class Iolite private constructor(
 
     /**
      * Imports [bundled] when the catalog is missing or still at epoch 0, then fetches the next epoch.
-     * With no bundle and no stored catalog, fetches `GET /bundle?from=0` from [endpoint] and imports
+     * With no bundle and no stored relays, fetches `GET /v1/bundle?from=0` from [endpoint] and imports
      * that body. Both bodies go through [importCatalogUpdate]. [CatalogSyncResult.imported] is null on
-     * HTTP 304 when nothing was imported. [endpoint] is stored when the catalog has none. [useOnion]
-     * selects a stored Tor endpoint when one is present.
+     * HTTP 304 when nothing was imported. A catalog-key kind 10067 in a bundle replaces the stored
+     * relays. [endpoint] is stored only when that event is absent and the catalog has no relays.
+     * [useOnion] selects a stored Tor endpoint when one is present.
+     * [client] is the Zapstore version sent as the `v` query. Empty omits it.
      */
     fun syncCatalog(
         catalogId: Long = defaultCatalog().id,
@@ -91,6 +107,7 @@ class Iolite private constructor(
         useOnion: Boolean = false,
         bundled: ByteArray = ByteArray(0),
         endpoint: RelayUrl? = null,
+        client: String = "",
     ): CatalogSyncResult {
         checkOpen()
         val httpClient = transport ?: throw IllegalStateException("HTTP transport is required for catalog sync")
@@ -105,19 +122,15 @@ class Iolite private constructor(
             val relay = endpoint ?: throw CatalogImportException("catalog relay is missing")
             return applyCatalogResponse(
                 catalogId,
-                httpClient.get(relay.bundleUrl(0), emptyMap()),
+                httpClient.get(relay.bundleUrl(0, client), emptyMap()),
                 seeded = null,
                 seededBytes = 0,
                 endpoint = relay,
             )
         }
-        return applyCatalogResponse(
-            catalogId,
-            httpClient.get(catalog.syncRelay(useOnion).bundleUrl(catalog.epoch), emptyMap()),
-            seeded = seeded,
-            seededBytes = bundled.size.toLong(),
-            endpoint = null,
-        )
+        val relay = catalog.syncRelay(useOnion)
+        val response = httpClient.get(relay.bundleUrl(catalog.epoch, client), emptyMap())
+        return applyCatalogResponse(catalogId, response, seeded = seeded, seededBytes = bundled.size.toLong(), endpoint = null)
     }
 
     private fun applyCatalogResponse(
@@ -139,7 +152,11 @@ class Iolite private constructor(
                 ),
                 bytes = bytes,
             )
-            400 -> throw CatalogImportException(response.headers["X-Reason"] ?: "catalog protocol error")
+            400 -> throw CatalogImportException(
+                response.headers["X-Reason"]
+                    ?: body?.toString(Charsets.UTF_8)?.trim()?.take(200)?.ifEmpty { null }
+                    ?: "catalog protocol error",
+            )
             else -> throw CatalogImportException("catalog update failed with HTTP ${response.status}")
         }
     }
@@ -195,10 +212,174 @@ class Iolite private constructor(
         relays: Set<RelayUrl> = writeRelays,
     ): Event {
         checkOpen()
-        val event = signer.sign(createdAt, kind, tags, content)
+        val createdAt = afterStored(kind, signer.publicKey, tags, createdAt)
+        val work = Pow.required(kind, content)
+        val template = if (work > 0 && signer.publicKey != deviceSigner?.publicKey) {
+            withContext(Dispatchers.Default) { Pow.mine(signer.publicKey, createdAt, kind, tags, content, work) }
+        } else {
+            tags
+        }
+        val event = signer.sign(createdAt, kind, template, content)
         store.commitPublish(event, ingestContext)
-        publishOutbox(event, relays)
+        scope.launch { outboxLock.withLock { send(event, relays) } }
         return event
+    }
+
+    /**
+     * Sends a finished event without storing it, such as a gift wrap. True once one relay in
+     * [relays] accepts it; false when every relay refused or [timeout] passed.
+     */
+    suspend fun sendUnstored(event: Event, relays: Set<RelayUrl>, timeout: Duration = config.oneShotTimeout): Boolean {
+        checkOpen()
+        val relayPool = pool ?: return false
+        if (relays.isEmpty()) return false
+        val result = CompletableDeferred<Boolean>()
+        val refused = ConcurrentHashMap.newKeySet<RelayUrl>()
+        relayPool.publish(event, relays) { relay, accepted, _ ->
+            if (accepted) result.complete(true)
+            else if (refused.add(relay) && refused.size == relays.size) result.complete(false)
+        }
+        return withTimeoutOrNull(timeout) { result.await() } ?: false
+    }
+
+    /**
+     * A replacement must be newer than what it replaces: on a same-second tie the lower id wins,
+     * so two quick edits could keep the older one.
+     */
+    private fun afterStored(kind: Int, pubkey: String, tags: List<List<String>>, createdAt: Long): Long {
+        val identifier = tags.firstOrNull { it.size > 1 && it[0] == "d" }?.get(1) ?: return createdAt
+        val stored = store.storedCreatedAt(kind, pubkey, identifier) ?: return createdAt
+        return maxOf(createdAt, stored + 1)
+    }
+
+    /**
+     * Events straight from relays, not stored: for events the local tables do not keep, such as an
+     * account-signed `zapstore-device-key-backup`. Returns once every relay sent EOSE, or at [timeout].
+     */
+    suspend fun fetch(filters: List<Filter>, relays: Set<RelayUrl>, timeout: Duration = config.oneShotTimeout): List<Event> {
+        checkOpen()
+        val relayPool = pool ?: return emptyList()
+        if (relays.isEmpty()) return emptyList()
+        val events = ConcurrentHashMap<String, Event>()
+        val finished = ConcurrentHashMap.newKeySet<RelayUrl>()
+        val done = CompletableDeferred<Unit>()
+        val unsubscribe = relayPool.subscribe(
+            id = "f" + Hex.encode(Crypto.randomBytes(4)),
+            filters = filters,
+            relays = relays,
+            onEvent = { _, event -> if (event.verify()) events[event.id] = event },
+            onEose = { relay -> if (finished.add(relay) && finished.size >= relays.size) done.complete(Unit) },
+            onState = { relay, state ->
+                if (state.lastError != null && finished.add(relay) && finished.size >= relays.size) done.complete(Unit)
+            },
+        )
+        try {
+            withTimeoutOrNull(timeout) { done.await() }
+        } finally {
+            unsubscribe()
+        }
+        return events.values.sortedByDescending { it.createdAt }
+    }
+
+    /**
+     * One NIP-47 request: sends [method] with [params] to the wallet and returns the `result`.
+     * Uses NIP-44 when the wallet's info event offers it, else NIP-04. Nothing is stored.
+     */
+    suspend fun walletRequest(
+        connection: NwcConnection,
+        method: String,
+        params: JSONObject,
+        timeout: Duration = config.walletTimeout,
+    ): JSONObject {
+        checkOpen()
+        val relayPool = pool ?: throw NwcException("OFFLINE", "relays are off")
+        val secret = Hex.decode(connection.secret)
+        val wallet = Hex.decode(connection.walletPubkey)
+        val info = fetch(
+            listOf(Filter(authors = listOf(connection.walletPubkey), kinds = listOf(Kinds.WalletInfo), limit = 1)),
+            connection.relays,
+            timeout = minOf(timeout, 5.seconds),
+        )
+        val nip44 = info.firstOrNull()?.tags?.any { it.firstOrNull() == "encryption" && "nip44_v2" in it.getOrNull(1).orEmpty() } == true
+        val body = JSONObject().put("method", method).put("params", params).toString()
+        val conversation = if (nip44) Nip44.conversationKey(secret, wallet) else null
+        val content = conversation?.let { Nip44.encrypt(body, it) } ?: Nip04.encrypt(body, secret, wallet)
+        val tags = buildList {
+            add(listOf("p", connection.walletPubkey))
+            if (nip44) add(listOf("encryption", "nip44_v2"))
+        }
+        val request = Event.sign(secret, System.currentTimeMillis() / 1_000, Kinds.WalletRequest, tags, content)
+        val reply = CompletableDeferred<Event>()
+        val sent = AtomicBoolean(false)
+        val unsubscribe = relayPool.subscribe(
+            id = "w" + Hex.encode(Crypto.randomBytes(4)),
+            filters = listOf(
+                Filter(authors = listOf(connection.walletPubkey), kinds = listOf(Kinds.WalletResponse), tags = mapOf("e" to listOf(request.id))),
+            ),
+            relays = connection.relays,
+            onEvent = { _, event -> if (event.verify()) reply.complete(event) },
+            onEose = { if (sent.compareAndSet(false, true)) relayPool.publish(request, connection.relays) { _, _, _ -> } },
+            onState = { _, _ -> },
+        )
+        val event = try {
+            withTimeoutOrNull(timeout) { reply.await() } ?: throw NwcException("TIMEOUT", "the wallet did not answer")
+        } finally {
+            unsubscribe()
+        }
+        val plain = conversation?.let { Nip44.decrypt(event.content, it) } ?: Nip04.decrypt(event.content, secret, wallet)
+        val json = JSONObject(plain)
+        json.optJSONObject("error")?.let { throw NwcException(it.optString("code", "OTHER"), it.optString("message")) }
+        return json.optJSONObject("result") ?: JSONObject()
+    }
+
+    /** Plaintext of a kind 30078 the device key signed, or null. */
+    fun observeDevicePreference(identifier: String): Flow<String?> =
+        observe(setOf(Table.Preferences)) { it.devicePreference(identifier, deviceSigner) }
+
+    /** Publishes a device-private kind 30078, NIP-44 to the device key. */
+    suspend fun publishDevicePreference(identifier: String, plaintext: String): Event {
+        val signer = deviceSigner ?: error("device signer is required for $identifier")
+        return publish(Kinds.Preferences, listOf(listOf("d", identifier)), signer.encryptToSelf(plaintext), signer)
+    }
+
+    /** App ids in a device-private app stack ([DeviceEvents.BOOKMARKS], [DeviceEvents.UPDATE_IGNORE]), stored order. */
+    fun observeDeviceList(identifier: String): Flow<List<String>> = observe(setOf(Table.Stacks)) { store ->
+        val signer = deviceSigner ?: return@observe emptyList()
+        store.stacks(signer.publicKey, identifier, limit = 1, deviceSigner = signer)
+            .firstOrNull()?.apps?.map { it.appId }?.distinct().orEmpty()
+    }
+
+    /**
+     * Replaces a device-private app stack. Every entry is private, written as
+     * `32267:<device-pubkey>:<app-id>` and encrypted to the device key; an empty list is still
+     * encrypted, so the event stays private and carries its proof of work.
+     */
+    suspend fun setDeviceList(identifier: String, appIds: List<String>): Event {
+        val signer = deviceSigner ?: error("device signer is required for $identifier")
+        val tags = buildList {
+            add(listOf("d", identifier))
+            add(listOf("name", DeviceEvents.listName(identifier)))
+            device.platforms.forEach { add(listOf("f", it)) }
+        }
+        val coordinates = appIds.distinct().map { "${Kinds.App}:${signer.publicKey}:$it" }
+        return publish(Kinds.AppStack, tags, signer.encryptToSelf(JSONArray(coordinates).toString()), signer)
+    }
+
+    /**
+     * Replaces one of [signer]'s public stacks with [apps] as `a` tags. Its description, content,
+     * and tags this client does not model are kept. A stack with no apps is hidden by every client.
+     */
+    suspend fun setStack(signer: Signer, identifier: String, name: String, apps: List<AppCoordinate>): Event {
+        val (stored, content) = store.storedStack(signer.publicKey, identifier) ?: (emptyList<List<String>>() to "")
+        val tags = buildList {
+            add(listOf("d", identifier))
+            add(listOf("name", name))
+            stored.firstOrNull { it.firstOrNull() == "description" }?.let(::add)
+            apps.distinct().forEach { add(listOf("a", it.toString())) }
+            device.platforms.forEach { add(listOf("f", it)) }
+            addAll(EventRows.leftoverTags(stored, EventRows.STACK_MODELED_TAGS))
+        }
+        return publish(Kinds.AppStack, tags, content, signer)
     }
 
     suspend fun rehydrateCatalogRelayList(): Event {
@@ -265,6 +446,7 @@ class Iolite private constructor(
         @Volatile private var phase: QueryPhase? = null
         @Volatile private var error: QueryError? = null
         private val relayStates = ConcurrentHashMap<RelayUrl, RelayQueryState>()
+        private val answered = ConcurrentHashMap.newKeySet<RelayUrl>()
         private var unsubscribe: (() -> Unit)? = null
         private var graceJob: Job? = null
         private var timeoutJob: Job? = null
@@ -316,7 +498,9 @@ class Iolite private constructor(
                     enqueueIngest(event)
                     if (phase == QueryPhase.Connecting) transition(QueryPhase.CatchingUp)
                 },
-                onEose = { _ ->
+                onEose = { relay ->
+                    answered += relay
+                    if (error is QueryError.RelayFailure) error = null
                     synchronized(lock) {
                         if (graceJob != null) return@subscribe
                         graceJob = producer.launch {
@@ -339,7 +523,8 @@ class Iolite private constructor(
                 },
                 onState = { relay, state ->
                     relayStates[relay] = state
-                    if (state.lastError != null && phase == QueryPhase.Connecting) {
+                    val allFailed = answered.isEmpty() && relays.all { relayStates[it]?.lastError != null }
+                    if (state.lastError != null && phase == QueryPhase.Connecting && allFailed) {
                         error = QueryError.RelayFailure(relay, state.lastError)
                     }
                     emitCurrent()
@@ -411,6 +596,8 @@ class Iolite private constructor(
     }
 
     private fun start() {
+        // Off the caller's thread: opening the store must not wait on proof expiry.
+        scope.launch { store.recomputeProofs(nowMillis() / 1_000) }
         scope.launch { flushOutbox() }
         scope.launch {
             while (isActive) {
@@ -445,12 +632,46 @@ class Iolite private constructor(
 
     private suspend fun flushOutbox() {
         outboxLock.withLock {
-            store.pendingOutbox().forEach { publishOutbox(it, writeRelays) }
+            store.pendingOutbox().forEach { send(it, writeRelays) }
         }
     }
 
+    /**
+     * Device-private events (the ones that need proof of work) go only to the catalog relays,
+     * per `SPEC.md#device-private-events`; everything else goes where the caller asked.
+     */
+    private fun destinations(event: Event, relays: Set<RelayUrl>): Set<RelayUrl> {
+        if (Pow.required(event.kind, event.content) > 0) {
+            val catalogRelays = store.selectedCatalogs().map { it.relayUrl }.toSet()
+            if (catalogRelays.isNotEmpty()) return catalogRelays
+        }
+        return relays.ifEmpty { writeRelays }
+    }
+
+    private suspend fun send(event: Event, relays: Set<RelayUrl>) {
+        if (pool == null) return
+        val ready = withWork(event) ?: return
+        publishOutbox(ready, relays)
+    }
+
+    /**
+     * A device-key draft is committed without work so the screen updates at once; the work is added here,
+     * before it leaves the phone. Null when it needs work and no local key can re-sign it.
+     */
+    private suspend fun withWork(event: Event): Event? {
+        val work = Pow.required(event.kind, event.content)
+        if (work == 0 || Pow.meets(event, work)) return event
+        val signer = deviceSigner?.takeIf { it.publicKey == event.pubkey } ?: return null
+        val tags = withContext(Dispatchers.Default) {
+            Pow.mine(event.pubkey, event.createdAt, event.kind, event.tags, event.content, work)
+        }
+        val mined = signer.sign(event.createdAt, event.kind, tags, event.content)
+        store.replaceOutbox(event.id, mined, ingestContext)
+        return mined
+    }
+
     private fun publishOutbox(event: Event, relays: Set<RelayUrl>) {
-        val dest = relays.ifEmpty { writeRelays }
+        val dest = destinations(event, relays)
         if (dest.isEmpty() || pool == null) return
         val needed = okThreshold(dest.size)
         pool.publish(event, dest) { relay, accepted, _ ->
@@ -552,12 +773,6 @@ class Iolite private constructor(
                 val scope = CoroutineScope(parentScope.coroutineContext + job + Dispatchers.IO)
                 val nowSeconds = { nowMillis() / 1_000 }
                 val store = IoliteStore(databasePath, openConnection = openConnection)
-                try {
-                    store.recomputeProofs(nowSeconds())
-                } catch (failure: Throwable) {
-                    store.close()
-                    throw failure
-                }
                 val importer = CatalogImporter(store, File(File(databasePath).parentFile, "icons"), config, device, nowSeconds)
                 return Iolite(
                     store = store,

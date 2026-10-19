@@ -15,9 +15,8 @@ class PublisherLookupTest {
     }
 
     @Test
-    fun showsTheSignerWhenNoProofExists() {
-        val signer = "d".repeat(64)
-        assertEquals(signer, app(proof = null, signer = signer, catalog = "c".repeat(64)).authorPubkey)
+    fun showsNoAuthorWithoutAProof() {
+        assertNull(app(proof = null, signer = "d".repeat(64), catalog = "c".repeat(64)).authorPubkey)
     }
 
     @Test

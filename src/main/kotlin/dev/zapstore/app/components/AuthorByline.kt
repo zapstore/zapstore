@@ -1,6 +1,8 @@
 package dev.zapstore.app.components
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
@@ -17,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.zapstore.app.R
+import dev.zapstore.app.ZapSurface3
 import dev.zapstore.app.ZapTextSecondary
 import dev.zapstore.iolite.ProfileRecord
 import dev.zapstore.iolite.toNpub
@@ -35,7 +38,7 @@ fun AuthorByline(
             .testTag("profile:$pubkey")
             .then(onClick?.let { Modifier.clickable(onClick = it) } ?: Modifier),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         if (showBy) {
             Text(
@@ -44,21 +47,24 @@ fun AuthorByline(
                 style = MaterialTheme.typography.bodySmall,
             )
         }
-        ProfileImage(
-            pubkey = pubkey,
-            pictureUrl = profile?.picture,
-            profileVersion = profile?.eventId,
-            contentDescription = null,
-            modifier = Modifier
-                .size(17.dp)
-                .clip(CircleShape),
-        )
+        Box(Modifier.size(16.dp).clip(CircleShape).background(ZapSurface3)) {
+            ProfileImage(
+                pubkey = pubkey,
+                pictureUrl = profile?.picture,
+                profileVersion = profile?.eventId,
+                contentDescription = null,
+                modifier = Modifier.matchParentSize(),
+            )
+        }
+        val name = shortDisplayName(pubkey, profile)
+        val style = MaterialTheme.typography.bodySmall
         Text(
-            text = shortDisplayName(pubkey, profile),
+            text = name,
             color = ZapTextSecondary,
-            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+            style = if (name.startsWith("npub1")) style.copy(fontWeight = FontWeight.Medium, fontFeatureSettings = "tnum") else style.copy(fontWeight = FontWeight.SemiBold),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
         )
     }
 }
@@ -66,5 +72,5 @@ fun AuthorByline(
 /** Profile name, or an abbreviated npub when no kind 0 is known. */
 fun shortDisplayName(pubkey: String, profile: ProfileRecord?): String {
     val name = profile?.displayNameOrNpub ?: pubkey.toNpub()
-    return if (name.startsWith("npub") && name.length > 18) "${name.take(10)}…${name.takeLast(6)}" else name
+    return if (name.startsWith("npub1") && name.length > 18) "${name.take(9)}…${name.takeLast(4)}" else name.trim()
 }

@@ -1,5 +1,6 @@
 package dev.zapstore.iolite
 
+import org.json.JSONObject
 import androidx.sqlite.execSQL
 import java.io.File
 import kotlin.time.Duration.Companion.milliseconds
@@ -41,6 +42,37 @@ class IoliteContractsTest {
             assertTrue(selected.all { it.manifestPubkey == null })
             delay(80)
             assertTrue(iolite.allCatalogs().all { it.manifestPubkey == null })
+        }
+    }
+
+    @Test
+    fun socialStacksListPublicStacksOnly() = runBlocking {
+        val device = LocalSigner(SECRET)
+        val other = LocalSigner(Hex.decode("0000000000000000000000000000000000000000000000000000000000000002"))
+        withIolite(signer = device) { iolite ->
+            suspend fun stack(signer: LocalSigner, d: String, at: Long, public: Boolean) = signer.sign(
+                at,
+                Kinds.AppStack,
+                listOfNotNull(
+                    listOf("d", d),
+                    listOf("name", d),
+                    if (public) listOf("a", "32267:${signer.publicKey}:com.example.$d") else null,
+                ),
+                if (public) "" else signer.encryptToSelf("[]"),
+            )
+            iolite.ingest(
+                listOf(
+                    stack(other, "older", 1_700_000_100, public = true),
+                    stack(other, "newer", 1_700_000_200, public = true),
+                    stack(other, "secret", 1_700_000_300, public = false),
+                    stack(device, "mine", 1_700_000_400, public = true),
+                ),
+            )
+            val query = Query.socialStacks(listOf("android-arm64-v8a"), limit = 10)
+            val names = iolite.query(query, QueryOptions.local()).first().items.map { it.identifier }
+            assertEquals(listOf("newer", "older"), names)
+            val older = Query.socialStacks(listOf("android-arm64-v8a"), limit = 10, until = 1_700_000_150)
+            assertEquals(listOf("older"), iolite.query(older, QueryOptions.local()).first().items.map { it.identifier })
         }
     }
 
@@ -108,6 +140,33 @@ class IoliteContractsTest {
     }
 
     @Test
+    fun setStackReplacesAppsAndKeepsWhatItDoesNotModel() = runBlocking {
+        val user = LocalSigner(ByteArray(32) { 7 })
+        withIolite(signer = LocalSigner(SECRET)) { iolite ->
+            val created = iolite.setStack(user, "music", "Music", listOf(AppCoordinate("aa", "org.one")))
+            assertEquals(listOf("32267:aa:org.one"), created.tagValues("a"))
+            assertEquals("", created.content)
+            iolite.ingest(
+                listOf(user.sign(
+                    created.createdAt + 1,
+                    Kinds.AppStack,
+                    created.tags + listOf(listOf("description", "Good sound"), listOf("client", "zapstore")),
+                    "",
+                )),
+            )
+            val edited = iolite.setStack(
+                user,
+                "music",
+                "Music",
+                listOf(AppCoordinate("aa", "org.one"), AppCoordinate("bb", "org.two"), AppCoordinate("bb", "org.two")),
+            )
+            assertEquals(listOf("32267:aa:org.one", "32267:bb:org.two"), edited.tagValues("a"))
+            assertEquals("Good sound", edited.tagValue("description"))
+            assertEquals("zapstore", edited.tagValue("client"))
+        }
+    }
+
+    @Test
     fun catalogManifestsAreNotStoredAsPreferences() = runBlocking {
         val signer = LocalSigner(SECRET)
         withIolite(signer = signer) { iolite ->
@@ -149,10 +208,29 @@ class IoliteContractsTest {
             )
             iolite.ingest(listOf(newZap))
             delay(80)
-            val zaps = iolite.query(Query.zaps(AppCoordinate(signer.publicKey, "com.example.app"))).first { true }
+            val zaps = iolite.query(Query.zaps(listOf(AppCoordinate(signer.publicKey, "com.example.app")))).first { true }
             assertEquals(QueryPhase.LocalOnly, zaps.phase)
             assertEquals(listOf(newZap.id), zaps.items.map { it.eventId })
             assertEquals(2_000L, zaps.items.single().amountSats)
+        }
+    }
+
+    @Test
+    fun zapsNameTheSenderOfTheZapRequest() = runBlocking {
+        val wallet = LocalSigner(SECRET)
+        val sender = "ab".repeat(32)
+        withIolite(signer = wallet) { iolite ->
+            val request = JSONObject().put("kind", 9734).put("pubkey", sender).toString()
+            iolite.ingest(
+                listOf(wallet.sign(
+                    1_700_000_000,
+                    Kinds.Zap,
+                    listOf(listOf("i", "com.example.app"), listOf("amount", "21000"), listOf("description", request)),
+                    "",
+                )),
+            )
+            val zaps = iolite.query(Query.zaps(listOf(AppCoordinate(wallet.publicKey, "com.example.app")))).first { it.items.isNotEmpty() }
+            assertEquals(sender, zaps.items.single().pubkey)
         }
     }
 
@@ -168,7 +246,7 @@ class IoliteContractsTest {
                 "great app",
             )
             iolite.ingest(listOf(event))
-            val comments = iolite.query(Query.comments(coordinate)).first { it.items.isNotEmpty() }
+            val comments = iolite.query(Query.comments(listOf(coordinate))).first { it.items.isNotEmpty() }
             assertEquals(listOf(event.id), comments.items.map { it.eventId })
             assertEquals(listOf("great app"), comments.items.map { it.content })
             assertEquals(listOf("com.example.app"), comments.items.map { it.appId })
@@ -193,7 +271,7 @@ class IoliteContractsTest {
                 "reply",
             )
             iolite.ingest(listOf(root, reply))
-            val comments = iolite.query(Query.comments(coordinate)).first { it.items.size == 2 }
+            val comments = iolite.query(Query.comments(listOf(coordinate))).first { it.items.size == 2 }
             assertEquals(root.id, comments.items.single { it.eventId == reply.id }.parentEventId)
             assertNull(comments.items.single { it.eventId == root.id }.parentEventId)
         }
@@ -251,10 +329,37 @@ class IoliteContractsTest {
         val store = jdbcStore(File(dir, "iolite.db").absolutePath)
         store.insertFixtureCatalog()
         insertApp(store, 1, "com.example.app", "Zapstore", vector = null)
-        assertEquals(listOf("com.example.app"), store.apps(AppFilter(search = "zap")).map { it.appId })
-        assertEquals(emptyList<AppRecord>(), store.apps(AppFilter(search = "example")))
-        assertEquals(listOf("com.example.app"), store.apps(AppFilter(search = "com.example")).map { it.appId })
-        assertEquals(listOf("com.example.app"), store.apps(AppFilter(search = "COM.EXAMPLE")).map { it.appId })
+        assertEquals(listOf("com.example.app"), store.apps(AppFilter(prefix = "zap")).map { it.appId })
+        assertEquals(emptyList<AppRecord>(), store.apps(AppFilter(prefix = "example")))
+        assertEquals(listOf("com.example.app"), store.apps(AppFilter(prefix = "com.example")).map { it.appId })
+        assertEquals(listOf("com.example.app"), store.apps(AppFilter(prefix = "COM.EXAMPLE")).map { it.appId })
+        assertEquals(emptyList<AppRecord>(), store.apps(AppFilter(prefix = "com_example")))
+        assertEquals(listOf("com.example.app"), store.apps(AppFilter(search = "example")).map { it.appId })
+        store.close()
+    }
+
+    @Test
+    fun hardFactsFilterAndExcludeAndRepositoryMatchesOnlyTheRepository() {
+        val dir = File("build/tmp/iolite-hard-${System.nanoTime()}").apply { mkdirs() }
+        val store = jdbcStore(File(dir, "iolite.db").absolutePath)
+        store.insertFixtureCatalog()
+        insertApp(store, 1, "app.chat", "Chat", vector = null)
+        insertApp(store, 2, "app.chatgoogle", "Chat Google", vector = null)
+        insertApp(store, 3, "app.chatplain", "Chat Plain", vector = null)
+        store.write { tx ->
+            tx.db.execSQL("UPDATE apps SET fact_bits = ${FACT_E2EE or FACT_SOURCE_AVAILABLE}, repository = 'https://github.com/a/chat.git' WHERE app_id = 'app.chat'")
+            tx.db.execSQL("UPDATE apps SET fact_bits = ${FACT_E2EE or FACT_GOOGLE} WHERE app_id = 'app.chatgoogle'")
+        }
+        assertEquals(
+            listOf("app.chat", "app.chatgoogle"),
+            store.apps(AppFilter(search = "chat", hard = FACT_E2EE)).map { it.appId },
+        )
+        assertEquals(
+            listOf("app.chat", "app.chatplain"),
+            store.apps(AppFilter(search = "chat", exclude = FACT_GOOGLE)).map { it.appId },
+        )
+        assertEquals(listOf("app.chat"), store.apps(AppFilter(repository = "github.com/a/chat")).map { it.appId })
+        assertEquals(emptyList<AppRecord>(), store.apps(AppFilter(repository = "github.com/a/other")))
         store.close()
     }
 
@@ -290,12 +395,12 @@ class IoliteContractsTest {
         val close = ByteArray(VECTOR_DIMS) { 20 }
         insertApp(store, 1, "app.closed", "Closed", close)
         insertApp(store, 2, "app.foss", "Noise", opposite)
-        setFactBits(store, "app.foss", FACT_OPEN_SOURCE)
-        assertEquals(listOf("app.foss"), store.apps(AppFilter(hard = FACT_OPEN_SOURCE)).map { it.appId })
+        setFactBits(store, "app.foss", FACT_SOURCE_AVAILABLE)
+        assertEquals(listOf("app.foss"), store.apps(AppFilter(hard = FACT_SOURCE_AVAILABLE)).map { it.appId })
         val vector = ByteArray(VECTOR_DIMS) { 20 }
         assertEquals(
             listOf("app.foss"),
-            store.apps(AppFilter(search = "nope", queryVector = vector, hard = FACT_OPEN_SOURCE)).map { it.appId },
+            store.apps(AppFilter(search = "nope", queryVector = vector, hard = FACT_SOURCE_AVAILABLE)).map { it.appId },
         )
         store.close()
     }

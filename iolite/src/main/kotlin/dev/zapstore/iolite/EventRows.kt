@@ -64,6 +64,8 @@ internal object EventRows {
             Kinds.Preferences -> {
                 val identifier = event.dTag() ?: return false
                 if (isCatalogManifest(event)) return false
+                // Rows are keyed by `d` alone; only the device key may write them.
+                if (event.pubkey != context.deviceSigner?.publicKey) return false
                 ifNewer(event, preferenceVersion(db, identifier)) {
                     upsertPreference(db, event, identifier)
                     tx.touch(Table.Preferences)
@@ -178,7 +180,7 @@ internal object EventRows {
             """.trimIndent(),
         ).use { statement ->
             statement.bindBlob(1, Hex.decode(event.id))
-            statement.bindBlob(2, Hex.decode(event.pubkey))
+            statement.bindBlob(2, Hex.decode(zapSender(event.tags) ?: event.pubkey))
             statement.bindLong(3, amountSats)
             statement.bindLong(4, event.createdAt)
             statement.bindText(5, appId)
@@ -324,6 +326,16 @@ internal object EventRows {
             }
         }
         stale.forEach { deleteStack(tx, pubkey, it) }
+    }
+
+    /**
+     * The zapper is the pubkey of the zap request embedded in the receipt's `description`;
+     * the receipt itself is signed by the recipient's wallet service.
+     */
+    fun zapSender(tags: List<List<String>>): String? {
+        val request = tags.firstOrNull { it.firstOrNull() == "description" }?.getOrNull(1) ?: return null
+        val pubkey = runCatching { JSONObject(request).optString("pubkey") }.getOrNull() ?: return null
+        return pubkey.lowercase().takeIf { it.length == 64 && it.all { c -> c in '0'..'9' || c in 'a'..'f' } }
     }
 
     private fun zapAppId(event: Event): String? =

@@ -20,6 +20,8 @@ enum class BlockReason {
     MissingFile,
     Banned,
     NotListed,
+    /** The C1 proof does not verify against the downloaded APK's certificate. */
+    Proof,
 }
 
 sealed class InstallPlan {

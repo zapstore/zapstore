@@ -47,6 +47,7 @@ class InstallStatusReceiver : BroadcastReceiver() {
                         packageId = packageId,
                         success = false,
                         message = installFailureText(status, Build.MANUFACTURER, detail),
+                        cancelled = status == PackageInstaller.STATUS_FAILURE_ABORTED,
                     ),
                 )
             }

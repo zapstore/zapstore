@@ -1,5 +1,7 @@
 package dev.zapstore.iolite
 
+import java.net.URLEncoder
+
 @JvmInline
 value class RelayUrl(val url: String) {
     override fun toString(): String = url
@@ -27,8 +29,12 @@ fun String.httpOriginToRelayUrl(): RelayUrl {
 fun RelayUrl.originHttpUrl(): String =
     url.replaceFirst("wss://", "https://").replaceFirst("ws://", "http://")
 
-/** `GET /bundle` on the relay origin; path, query, and fragment are ignored. */
-fun RelayUrl.bundleUrl(from: Long): String = origin() + "/bundle?from=$from"
+/** `GET /v1/bundle` on the relay origin. [client] is the Zapstore version sent as `v`. */
+fun RelayUrl.bundleUrl(from: Long, client: String = ""): String {
+    val base = origin() + "/v1/bundle?from=$from"
+    if (client.isEmpty()) return base
+    return base + "&v=" + URLEncoder.encode(client, Charsets.UTF_8)
+}
 
 /** True when the host is a Tor onion service. */
 val RelayUrl.isOnion: Boolean

@@ -20,7 +20,7 @@ import org.json.JSONObject
 /** Selects visible catalog listings. All fields are optional and combine with AND. */
 data class AppFilter(
     val appIds: Collection<String>? = null,
-    /** Matches the proof owner or the app event signer. */
+    /** Matches the current NIP-C1 proof owner; signing a listing is not authorship. */
     val author: String? = null,
     /**
      * Case-insensitive exact or prefix match on the name or app ID.
@@ -32,6 +32,12 @@ data class AppFilter(
     val queryVector: ByteArray? = null,
     /** Required fact bits. Unknown and the opposite value both fail. */
     val hard: Int = 0,
+    /** Fact bits that must be clear, as in "no google services". */
+    val exclude: Int = 0,
+    /** While typing: name or app ID starts with this, newest first. No ranking, no vector. */
+    val prefix: String? = null,
+    /** A normalized repository URL ([normalizeRepositoryUrl]). Matches only that repository; sorted by app ID. */
+    val repository: String? = null,
     /** Fact bits that raise a listing above a soft preference. A missing bit stays in the list. */
     val boost: Int = 0,
     /** Fact bits that raise a listing when set. */
@@ -139,40 +145,58 @@ class IoliteStore internal constructor(
         device: DeviceProfile,
         now: Long,
         artifacts: CatalogArtifact = CatalogArtifact.EMPTY,
+        skipped: MutableList<String> = ArrayList(),
     ): Set<String> {
         val stackPubkey = catalog.manifestPubkey ?: throw CatalogImportException("catalog manifest pubkey is missing")
         val removed = LinkedHashSet<String>()
         write { tx ->
+            /** One bad item is rolled back to its savepoint and skipped; the items around it stay. */
+            fun guard(what: String, block: () -> Unit): Boolean {
+                tx.db.execSQL("SAVEPOINT catalog_item")
+                return try {
+                    block()
+                    tx.db.execSQL("RELEASE catalog_item")
+                    true
+                } catch (failure: Exception) {
+                    tx.db.execSQL("ROLLBACK TO catalog_item")
+                    tx.db.execSQL("RELEASE catalog_item")
+                    skipped += "$what: ${failure.message ?: failure.javaClass.simpleName}"
+                    false
+                }
+            }
             for (event in events) {
                 if (event.kind != Kinds.AppStack) continue
-                if (event.pubkey != stackPubkey) {
-                    throw CatalogImportException("stack is not signed by the catalog key")
+                if (event.pubkey != stackPubkey || event.dTag().isNullOrBlank()) {
+                    skipped += "stack ${event.id} is not a catalog stack"
                 }
-                if (event.dTag().isNullOrBlank()) throw CatalogImportException("stack missing d")
             }
             for (delete in deletes) {
                 if (delete is CatalogDelete.Coordinate && delete.kind == Kinds.AppStack && delete.pubkey != stackPubkey) {
-                    throw CatalogImportException("stack is not signed by the catalog key")
+                    skipped += "stack delete is not for the catalog key"
+                    continue
                 }
-                ListingRows.delete(tx, catalog, delete)
-                if (delete is CatalogDelete.Listing) removed += delete.appId
+                if (guard("delete $delete") { ListingRows.delete(tx, catalog, delete) } && delete is CatalogDelete.Listing) {
+                    removed += delete.appId
+                }
             }
             val listings = events.filter { ListingRows.isListingKind(it.kind) }.groupBy(ListingRows::listingAppId)
             for ((appId, listing) in listings) {
                 if (appId == null) continue
-                ListingRows.persistListing(tx, catalog, appId, listing, device, now)
+                guard("listing $appId") { ListingRows.persistListing(tx, catalog, appId, listing, device, now) }
             }
-            events.filter { it.kind == Kinds.IdentityProof }.forEach { ListingRows.persistProof(tx, catalog, it) }
+            events.filter { it.kind == Kinds.IdentityProof }.forEach { proof ->
+                guard("proof ${proof.id}") { ListingRows.persistProof(tx, catalog, proof) }
+            }
             val keptStacks = LinkedHashSet<String>()
             val context = IngestContext(device, null)
             for (event in events) {
-                if (event.kind == Kinds.Profile) EventRows.persist(tx, event, context)
+                if (event.kind == Kinds.Profile) guard("profile ${event.pubkey}") { EventRows.persist(tx, event, context) }
             }
             for (event in events) {
-                if (event.kind != Kinds.AppStack || !EventRows.stackMatchesDevice(event, device)) continue
-                val identifier = event.dTag() ?: continue
-                keptStacks += identifier
-                EventRows.persist(tx, event, context)
+                if (event.kind != Kinds.AppStack || event.pubkey != stackPubkey) continue
+                if (!EventRows.stackMatchesDevice(event, device)) continue
+                val identifier = event.dTag()?.takeIf { it.isNotBlank() } ?: continue
+                if (guard("stack $identifier") { EventRows.persist(tx, event, context) }) keptStacks += identifier
             }
             if (replaceAll) EventRows.retainCatalogStacks(tx, stackPubkey, keptStacks)
             if (replaceAll) {
@@ -181,7 +205,7 @@ class IoliteStore internal constructor(
                     removed += appId
                 }
             }
-            applyArtifacts(tx, catalog, artifacts)
+            applyArtifacts(tx, catalog, artifacts, ::guard)
             ListingRows.recomputeAppPubkeys(tx, catalog.id, now)
             tx.db.prepare("UPDATE catalogs SET epoch = ? WHERE id = ?").use { statement ->
                 statement.bindLong(1, toEpoch)
@@ -205,15 +229,20 @@ class IoliteStore internal constructor(
      * A missing about or security member means that note did not change, and the stored text stays.
      * A missing vector or icon does the same. Icon and avatar bytes land on disk for Coil.
      */
-    private fun applyArtifacts(tx: Tx, catalog: CatalogRecord, artifacts: CatalogArtifact) {
+    private fun applyArtifacts(
+        tx: Tx,
+        catalog: CatalogRecord,
+        artifacts: CatalogArtifact,
+        guard: (String, () -> Unit) -> Boolean,
+    ) {
         if (artifacts.apps.isEmpty() && artifacts.avatars.isEmpty()) return
         val db = tx.db
-        for (artifact in artifacts.apps) {
+        for (artifact in artifacts.apps) guard("files for ${artifact.appId}") appFiles@{
             val appRow = db.prepare("SELECT id FROM apps WHERE catalog_id = ? AND app_id = ?").use { statement ->
                 statement.bindLong(1, catalog.id)
                 statement.bindText(2, artifact.appId)
                 if (statement.step()) statement.getBlob(0) else null
-            } ?: continue
+            } ?: return@appFiles
             artifact.about?.let { about ->
                 db.prepare("UPDATE apps SET about = ? WHERE catalog_id = ? AND app_id = ?").use { statement ->
                     statement.bindText(1, about)
@@ -227,6 +256,18 @@ class IoliteStore internal constructor(
                     statement.bindText(1, security)
                     statement.bindLong(2, catalog.id)
                     statement.bindText(3, artifact.appId)
+                    statement.step()
+                }
+                db.prepare(
+                    """
+                    INSERT INTO apps_search (id, keywords)
+                    VALUES (?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        keywords = excluded.keywords
+                    """.trimIndent(),
+                ).use { statement ->
+                    statement.bindBlob(1, appRow)
+                    statement.bindText(2, securityKeywords(security).joinToString("\n"))
                     statement.step()
                 }
                 securityFactsCsv(security)?.let { facts ->
@@ -257,7 +298,7 @@ class IoliteStore internal constructor(
             artifact.webp?.let { writeBytes(File(iconsDir, "${catalog.id}/${artifact.appId}.webp"), it) }
         }
         for (avatar in artifacts.avatars) {
-            writeBytes(avatarFile(avatar.pubkey), avatar.webp)
+            guard("avatar ${avatar.pubkey}") { writeBytes(avatarFile(avatar.pubkey), avatar.webp) }
         }
         if (artifacts.apps.isNotEmpty()) tx.touch(Table.Apps)
     }
@@ -277,6 +318,48 @@ class IoliteStore internal constructor(
             EventRows.persist(tx, event, context)
             EventRows.insertOutbox(tx, event)
         }
+    }
+
+    /** Swaps an outbox draft for its mined form; the derived row follows the mined event. */
+    internal fun replaceOutbox(draftId: String, mined: Event, context: IngestContext) {
+        require(mined.verify()) { "mined event failed verification" }
+        write { tx ->
+            tx.db.prepare("DELETE FROM outbox WHERE event_id = ?").use { statement ->
+                statement.bindBlob(1, Hex.decode(draftId))
+                statement.step()
+            }
+            EventRows.persist(tx, mined, context)
+            EventRows.insertOutbox(tx, mined)
+        }
+    }
+
+    /** Decrypted content of a kind 30078 signed by [deviceSigner], or null. */
+    /** `created_at` of the stored kind 30078 or 30267 for this author and `d`, or null. */
+    fun storedCreatedAt(kind: Int, pubkey: String, identifier: String): Long? = read { db ->
+        when (kind) {
+            Kinds.Preferences -> db.prepare("SELECT updated_at, metadata FROM preferences WHERE identifier = ?").use { statement ->
+                statement.bindText(1, identifier)
+                statement.rowOrNull { row -> row.getLong(0).takeIf { JSONObject(row.getText(1)).optString("pubkey") == pubkey } }
+            }
+            Kinds.AppStack -> db.prepare("SELECT updated_at FROM stacks WHERE pubkey = ? AND identifier = ?").use { statement ->
+                statement.bindBlob(1, Hex.decode(pubkey))
+                statement.bindText(2, identifier)
+                statement.rowOrNull { it.getLong(0) }
+            }
+            else -> null
+        }
+    }
+
+    fun devicePreference(identifier: String, deviceSigner: LocalSigner?): String? {
+        deviceSigner ?: return null
+        val row = read { db ->
+            db.prepare("SELECT metadata FROM preferences WHERE identifier = ?").use { statement ->
+                statement.bindText(1, identifier)
+                statement.rowOrNull { JSONObject(it.getText(0)) }
+            }
+        } ?: return null
+        if (row.optString("pubkey") != deviceSigner.publicKey) return null
+        return runCatching { deviceSigner.decryptFromSelf(row.optString("content")) }.getOrNull()
     }
 
     fun wipe() {
@@ -385,8 +468,7 @@ class IoliteStore internal constructor(
         }
         filter.author?.let { author ->
             val bytes = Hex.decode(author)
-            where.append(" AND (a.pubkey = ? OR a.event_pubkey = ?)")
-            binds += { s, i -> s.bindBlob(i, bytes) }
+            where.append(" AND a.pubkey = ?")
             binds += { s, i -> s.bindBlob(i, bytes) }
         }
         if (filter.hard != 0) {
@@ -394,6 +476,39 @@ class IoliteStore internal constructor(
             val hard = filter.hard.toLong()
             binds += { s, i -> s.bindLong(i, hard) }
             binds += { s, i -> s.bindLong(i, hard) }
+        }
+        if (filter.exclude != 0) {
+            where.append(" AND (a.fact_bits & ?) = 0")
+            val exclude = filter.exclude.toLong()
+            binds += { s, i -> s.bindLong(i, exclude) }
+        }
+        filter.repository?.let { repository ->
+            val ids = db.prepare("SELECT DISTINCT app_id, repository FROM apps WHERE repository IS NOT NULL").use { statement ->
+                buildList {
+                    while (statement.step()) {
+                        if (normalizeRepositoryUrl(statement.getText(1)) == repository) add(statement.getText(0))
+                    }
+                }
+            }
+            if (ids.isEmpty()) return@read emptyList()
+            where.append(" AND a.app_id IN (").append(ids.joinToString(",") { "?" }).append(")")
+            ids.forEach { id -> binds += { s, i -> s.bindText(i, id) } }
+            val limit = filter.limit?.let { " LIMIT $it" } ?: ""
+            return@read db.prepare("$SELECT_VISIBLE_APP$where ORDER BY a.app_id ASC$limit").use { statement ->
+                binds.forEachIndexed { index, bind -> bind(statement, index + 1) }
+                statement.rows { toApp(iconsDir) }
+            }
+        }
+        filter.prefix?.let(::normalizeSearchQuery)?.takeIf { it.isNotEmpty() }?.let { prefix ->
+            val pattern = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            where.append(" AND (lower(a.name) LIKE ? ESCAPE '\\' OR lower(a.app_id) LIKE ? ESCAPE '\\')")
+            binds += { s, i -> s.bindText(i, pattern) }
+            binds += { s, i -> s.bindText(i, pattern) }
+            val limit = filter.limit?.let { " LIMIT $it" } ?: ""
+            return@read db.prepare("$SELECT_VISIBLE_APP$where ORDER BY a.app_event_created_at DESC, a.app_id ASC$limit").use { statement ->
+                binds.forEachIndexed { index, bind -> bind(statement, index + 1) }
+                statement.rows { toApp(iconsDir) }
+            }
         }
         val query = filter.search?.let(::normalizeSearchQuery)?.takeIf { it.isNotEmpty() }
         val rankFacts = filter.boost != 0 || filter.soft != 0 || filter.penalty != 0
@@ -422,6 +537,7 @@ class IoliteStore internal constructor(
                     name = statement.getText(2),
                     docVector = if (statement.isNull(3)) null else statement.getBlob(3),
                     factBits = statement.getLong(4).toInt(),
+                    keywords = if (statement.isNull(5)) emptyList() else statement.getText(5).lines().filter { it.isNotEmpty() },
                 )
             }
         }
@@ -437,6 +553,29 @@ class IoliteStore internal constructor(
     }
 
     fun app(appId: String): AppRecord? = apps(AppFilter(appIds = listOf(appId), limit = 1)).firstOrNull()
+
+    /** The stored proof of [pubkey] for [certificateHash] in [catalogId], revoked or not. */
+    fun proof(catalogId: Long, certificateHash: String, pubkey: String): CertificateProof? = read { db ->
+        db.prepare(
+            """
+            SELECT created_at, expiry, revoked, signature FROM certificate_proofs
+            WHERE catalog_id = ? AND certificate_hash = ? AND pubkey = ?
+            """.trimIndent(),
+        ).use { statement ->
+            statement.bindLong(1, catalogId)
+            statement.bindBlob(2, Hex.decode(certificateHash))
+            statement.bindBlob(3, Hex.decode(pubkey))
+            if (!statement.step()) return@use null
+            CertificateProof(
+                pubkey = pubkey.lowercase(),
+                certificateHash = certificateHash.lowercase(),
+                createdAt = statement.getLong(0),
+                expiry = statement.getLong(1),
+                revoked = statement.getLong(2) != 0L,
+                signature = statement.getText(3),
+            )
+        }
+    }
 
     fun nextProofExpiry(nowSeconds: Long): Long? = read { db ->
         db.prepare("SELECT MIN(expiry) FROM certificate_proofs WHERE revoked = 0 AND expiry > ?").use { statement ->
@@ -473,6 +612,7 @@ class IoliteStore internal constructor(
                             banner = content.string("banner"),
                             website = content.string("website"),
                             nip05 = content.string("nip05"),
+                            lud16 = content.string("lud16"),
                         ),
                     )
                 }
@@ -517,6 +657,58 @@ class IoliteStore internal constructor(
             }
         }
 
+    /** Stacks with at least one public app, newest first, optionally older than [until] and not signed by [excluding]. */
+    fun publicStacks(limit: Int, until: Long? = null, excluding: String? = null): List<StackRecord> = read { db ->
+        val clauses = buildList {
+            add("public_apps <> '[]'")
+            if (until != null) add("updated_at <= ?")
+            if (excluding != null) add("pubkey <> ?")
+        }
+        db.prepare(
+            "SELECT pubkey, identifier, event_id, name, description, public_apps, updated_at FROM stacks " +
+                "WHERE ${clauses.joinToString(" AND ")} ORDER BY updated_at DESC LIMIT $limit",
+        ).use { statement ->
+            var index = 1
+            if (until != null) statement.bindLong(index++, until)
+            if (excluding != null) statement.bindBlob(index, Hex.decode(excluding))
+            statement.rows {
+                StackRecord(
+                    pubkey = Hex.encode(getBlob(0)),
+                    identifier = getText(1),
+                    eventId = Hex.encode(getBlob(2)),
+                    name = getText(3),
+                    description = textOrNull(4).orEmpty(),
+                    apps = JSONArray(getText(5)).toStringList().mapNotNull(AppCoordinate::parse),
+                    updatedAt = getLong(6),
+                )
+            }
+        }
+    }
+
+    /** Public stacks listing any of [anchors], newest first. */
+    fun stacksListing(anchors: List<AppCoordinate>, limit: Int): List<StackRecord> = read { db ->
+        val wanted = anchors.toSet()
+        val appIds = wanted.map(AppCoordinate::appId).distinct()
+        if (appIds.isEmpty()) return@read emptyList()
+        db.prepare(
+            "SELECT pubkey, identifier, event_id, name, description, public_apps, updated_at FROM stacks " +
+                "WHERE ${appIds.joinToString(" OR ") { "public_apps LIKE ?" }} ORDER BY updated_at DESC",
+        ).use { statement ->
+            appIds.forEachIndexed { index, appId -> statement.bindText(index + 1, "%:$appId\"%") }
+            statement.rows {
+                StackRecord(
+                    pubkey = Hex.encode(getBlob(0)),
+                    identifier = getText(1),
+                    eventId = Hex.encode(getBlob(2)),
+                    name = getText(3),
+                    description = textOrNull(4).orEmpty(),
+                    apps = JSONArray(getText(5)).toStringList().mapNotNull(AppCoordinate::parse),
+                    updatedAt = getLong(6),
+                )
+            }.filter { stack -> stack.apps.any(wanted::contains) }.take(limit)
+        }
+    }
+
     fun zaps(appId: String, limit: Int? = null): List<ZapRecord> = read { db ->
         val limitSql = limit?.let { " LIMIT $it" } ?: ""
         db.prepare(
@@ -547,6 +739,35 @@ class IoliteStore internal constructor(
                     parentEventId = blobHexOrNull(5),
                 )
             }
+        }
+    }
+
+    /** Newest comments on any app, replies included. */
+    fun recentComments(limit: Int): List<CommentRecord> = read { db ->
+        db.prepare(
+            "SELECT event_id, pubkey, created_at, content, app_id, stack, parent_event_id FROM comments " +
+                "WHERE app_id IS NOT NULL ORDER BY created_at DESC LIMIT $limit",
+        ).use { statement ->
+            statement.rows {
+                CommentRecord(
+                    eventId = Hex.encode(getBlob(0)),
+                    pubkey = Hex.encode(getBlob(1)),
+                    createdAt = getLong(2),
+                    content = getText(3),
+                    appId = textOrNull(4),
+                    stack = textOrNull(5),
+                    parentEventId = blobHexOrNull(6),
+                )
+            }
+        }
+    }
+
+    /** Newest zaps on any app. */
+    fun recentZaps(limit: Int): List<ZapRecord> = read { db ->
+        db.prepare(
+            "SELECT event_id, pubkey, amount_sats, created_at, app_id FROM zaps WHERE app_id IS NOT NULL ORDER BY created_at DESC LIMIT $limit",
+        ).use { statement ->
+            statement.rows { ZapRecord(Hex.encode(getBlob(0)), Hex.encode(getBlob(1)), getLong(2), getLong(3), getText(4)) }
         }
     }
 
@@ -606,6 +827,18 @@ class IoliteStore internal constructor(
         } ?: error("missing preference $identifier")
         val leftovers = EventRows.leftoverTags(row.optJSONArray("tags").toStringLists(), setOf("d"))
         return (listOf(listOf("d", identifier)) + leftovers) to row.optString("content")
+    }
+
+    /** The stored tags and content of one stack, or null when it is not stored. */
+    fun storedStack(pubkey: String, identifier: String): Pair<List<List<String>>, String>? = read { db ->
+        db.prepare("SELECT metadata FROM stacks WHERE pubkey = ? AND identifier = ?").use { statement ->
+            statement.bindBlob(1, Hex.decode(pubkey))
+            statement.bindText(2, identifier)
+            statement.rowOrNull {
+                val metadata = JSONObject(it.getText(0))
+                metadata.optJSONArray("tags").toStringLists() to metadata.optString("content")
+            }
+        }
     }
 
     fun stackTemplate(pubkey: String, identifier: String, device: DeviceProfile, deviceSigner: LocalSigner?): Pair<List<List<String>>, String> {
@@ -670,7 +903,7 @@ class IoliteStore internal constructor(
 
         /** Columns [SearchRanker] needs. Full listings are loaded only for the ids it keeps. */
         private val SELECT_SEARCH_KEY = """
-            SELECT a.id, a.app_id, a.name, s.vector, a.fact_bits
+            SELECT a.id, a.app_id, a.name, s.vector, a.fact_bits, s.keywords
             FROM apps a
             JOIN catalogs c ON c.id = a.catalog_id
             LEFT JOIN apps_search s ON s.id = a.id
@@ -699,19 +932,16 @@ class IoliteStore internal constructor(
             when (version) {
                 Schema.USER_VERSION -> Unit
                 0 -> applySchema(connection) { Schema.statements.forEach(connection::execSQL) }
-                1 -> {
-                    connection.execSQL("PRAGMA foreign_keys = OFF")
-                    applySchema(connection) {
-                        addFactBits(connection)
-                        rehashCatalogIdentities(connection)
-                    }
-                    connection.execSQL("PRAGMA foreign_keys = ON")
+                1 -> applySchema(connection) {
+                    recomputeFactBits(connection)
+                    addProofSignatures(connection)
+                    setZapSenders(connection)
                 }
-                2 -> {
-                    connection.execSQL("PRAGMA foreign_keys = OFF")
-                    applySchema(connection) { rehashCatalogIdentities(connection) }
-                    connection.execSQL("PRAGMA foreign_keys = ON")
+                2 -> applySchema(connection) {
+                    addProofSignatures(connection)
+                    setZapSenders(connection)
                 }
+                3 -> applySchema(connection) { setZapSenders(connection) }
                 else -> error("unsupported Iolite schema version $version")
             }
             runCatching {
@@ -720,97 +950,59 @@ class IoliteStore internal constructor(
             return connection
         }
 
-        private fun applySchema(connection: SQLiteConnection, migrate: () -> Unit) {
+        /** Version 2 added the e2ee bit; rows imported earlier lack it. */
+        private fun recomputeFactBits(connection: SQLiteConnection) {
+            val rows = connection.prepare("SELECT id, facts FROM apps WHERE facts IS NOT NULL").use { statement ->
+                buildList { while (statement.step()) add(statement.getBlob(0) to statement.getText(1)) }
+            }
+            connection.prepare("UPDATE apps SET fact_bits = ? WHERE id = ?").use { statement ->
+                for ((id, facts) in rows) {
+                    statement.bindLong(1, factBits(facts).toLong())
+                    statement.bindBlob(2, id)
+                    statement.step()
+                    statement.reset()
+                }
+            }
+        }
+
+        /**
+         * Version 3 stores the proof signature. Older rows lack it, so catalog rows are dropped
+         * and the epoch reset: the embedded seed shows at once and the next sync rebuilds them.
+         */
+        private fun addProofSignatures(connection: SQLiteConnection) {
+            connection.execSQL("ALTER TABLE certificate_proofs ADD COLUMN signature TEXT NOT NULL DEFAULT ''")
+            connection.execSQL("DELETE FROM apps_search")
+            connection.execSQL("DELETE FROM apps")
+            connection.execSQL("DELETE FROM certificate_proofs")
+            connection.execSQL("UPDATE catalogs SET epoch = 0")
+        }
+
+        /** Version 4 keys a zap by its sender rather than the wallet service that signed the receipt. */
+        private fun setZapSenders(connection: SQLiteConnection) {
+            val rows = connection.prepare("SELECT event_id, metadata FROM zaps").use { statement ->
+                buildList { while (statement.step()) add(statement.getBlob(0) to statement.getText(1)) }
+            }
+            connection.prepare("UPDATE zaps SET pubkey = ? WHERE event_id = ?").use { statement ->
+                for ((id, metadata) in rows) {
+                    val tags = runCatching { JSONObject(metadata).getJSONArray("tags").toStringLists() }.getOrNull() ?: continue
+                    val sender = EventRows.zapSender(tags) ?: continue
+                    statement.bindBlob(1, Hex.decode(sender))
+                    statement.bindBlob(2, id)
+                    statement.step()
+                    statement.reset()
+                }
+            }
+        }
+
+        private fun applySchema(connection: SQLiteConnection, create: () -> Unit) {
             connection.execSQL("BEGIN IMMEDIATE")
             try {
-                migrate()
+                create()
                 connection.execSQL("PRAGMA user_version = ${Schema.USER_VERSION}")
                 connection.execSQL("COMMIT")
             } catch (failure: Throwable) {
                 runCatching { connection.execSQL("ROLLBACK") }
                 throw failure
-            }
-        }
-
-        private fun rehashCatalogIdentities(connection: SQLiteConnection) {
-            val keys = HashMap<Long, ByteArray>()
-            connection.prepare("SELECT id, manifest_pubkey FROM catalogs WHERE manifest_pubkey IS NOT NULL").use { statement ->
-                while (statement.step()) {
-                    val pubkey = statement.getBlob(1).copyOf()
-                    if (pubkey.size == 32) keys[statement.getLong(0)] = pubkey
-                }
-            }
-            val apps = connection.prepare("SELECT rowid, id, catalog_id, app_id FROM apps").use { statement ->
-                buildList {
-                    while (statement.step()) {
-                        add(IdRow(statement.getLong(0), statement.getBlob(1).copyOf(), statement.getLong(2), statement.getText(3)))
-                    }
-                }
-            }
-            for (app in apps) {
-                val key = keys[app.catalogId] ?: continue
-                val newId = ListingRows.appRowId(key, app.appId)
-                if (newId.contentEquals(app.oldId)) continue
-                connection.prepare("UPDATE apps_search SET id = ? WHERE id = ?").use { statement ->
-                    statement.bindBlob(1, newId)
-                    statement.bindBlob(2, app.oldId)
-                    statement.step()
-                }
-                connection.prepare("UPDATE app_variants SET app_id = ? WHERE app_id = ?").use { statement ->
-                    statement.bindBlob(1, newId)
-                    statement.bindBlob(2, app.oldId)
-                    statement.step()
-                }
-                connection.prepare("UPDATE apps SET id = ? WHERE rowid = ?").use { statement ->
-                    statement.bindBlob(1, newId)
-                    statement.bindLong(2, app.rowId)
-                    statement.step()
-                }
-            }
-            val proofs = connection.prepare(
-                "SELECT rowid, catalog_id, certificate_hash, pubkey FROM certificate_proofs",
-            ).use { statement ->
-                buildList {
-                    while (statement.step()) {
-                        add(ProofRow(statement.getLong(0), statement.getLong(1), statement.getBlob(2).copyOf(), statement.getBlob(3).copyOf()))
-                    }
-                }
-            }
-            for (proof in proofs) {
-                val key = keys[proof.catalogId] ?: continue
-                val newId = ListingRows.proofRowId(key, proof.certificate, proof.pubkey)
-                connection.prepare("UPDATE certificate_proofs SET id = ? WHERE rowid = ?").use { statement ->
-                    statement.bindBlob(1, newId)
-                    statement.bindLong(2, proof.rowId)
-                    statement.step()
-                }
-            }
-        }
-
-        private data class IdRow(val rowId: Long, val oldId: ByteArray, val catalogId: Long, val appId: String)
-
-        private data class ProofRow(
-            val rowId: Long,
-            val catalogId: Long,
-            val certificate: ByteArray,
-            val pubkey: ByteArray,
-        )
-
-        private fun addFactBits(connection: SQLiteConnection) {
-            connection.execSQL("ALTER TABLE apps ADD COLUMN fact_bits INTEGER NOT NULL DEFAULT 0")
-            val rows = connection.prepare("SELECT rowid, facts FROM apps WHERE facts <> ''").use { statement ->
-                buildList {
-                    while (statement.step()) add(statement.getLong(0) to statement.getText(1))
-                }
-            }
-            for ((rowId, facts) in rows) {
-                val bits = factBits(facts)
-                if (bits == 0) continue
-                connection.prepare("UPDATE apps SET fact_bits = ? WHERE rowid = ?").use { statement ->
-                    statement.bindLong(1, bits.toLong())
-                    statement.bindLong(2, rowId)
-                    statement.step()
-                }
             }
         }
     }

@@ -25,7 +25,7 @@ data class AppListState(
     val error: String? = null,
 )
 
-/** App cards with a title, empty state, and load-more footer. */
+/** App rows with a group header, empty state, and load-more footer. */
 fun LazyListScope.appList(
     state: AppListState,
     emptyMessage: String,
@@ -33,22 +33,22 @@ fun LazyListScope.appList(
     modifier: Modifier = Modifier,
     title: String? = null,
     showAuthor: Boolean = true,
-    onAuthorClick: ((String) -> Unit)? = null,
+    trailing: (@Composable (AppRecord) -> Unit)? = null,
 ) {
-    title?.let { item { SectionTitle(it, modifier.padding(top = 4.dp)) } }
+    title?.let { item(contentType = "header") { GroupHeader(it, modifier.padding(top = 8.dp)) } }
     when {
         state.apps.isEmpty() && state.loading -> item { LoadingIndicator(modifier.padding(vertical = 12.dp)) }
         state.apps.isEmpty() -> item { StatusText(state.error ?: emptyMessage, modifier) }
         else -> {
             state.error?.let { item { StatusText(it, modifier) } }
-            items(state.apps, key = { "app:${it.appId}" }) { app ->
-                AppCard(
+            items(state.apps, key = { "app:${it.appId}" }, contentType = { "app" }) { app ->
+                AppRow(
                     app = app,
-                    author = app.authorPubkey?.let(state.profiles::get),
                     onClick = { onAppClick(app) },
-                    onAuthorClick = onAuthorClick,
+                    author = app.authorPubkey?.let(state.profiles::get),
                     showAuthor = showAuthor,
-                    modifier = modifier.testTag("app:${app.appId}"),
+                    modifier = modifier.then(listItemMotion()).testTag("app:${app.appId}"),
+                    trailing = trailing?.let { content -> { content(app) } },
                 )
             }
             if (state.loadingMore) {

@@ -9,6 +9,7 @@ import okhttp3.Call
 import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import java.security.MessageDigest
 
 class InstallException(val kind: Kind, message: String) : Exception(message) {
@@ -30,7 +31,8 @@ object ApkDownloader {
     /**
      * Tries [urls] in order. Each call follows redirects itself. The body is kept only when
      * its SHA-256 matches [expectedHash]. A partial file is resumed with `Range` when the
-     * server returns 206.
+     * server returns 206. Every URL serves the same bytes, so a partial from one resumes on the
+     * next. A network failure or cancellation keeps the partial; any other failure deletes it.
      */
     suspend fun download(
         calls: Call.Factory,
@@ -47,10 +49,9 @@ object ApkDownloader {
                 fetch(calls, url, dest, expectedHash, freeBytes, onProgress)
                 return
             } catch (e: kotlinx.coroutines.CancellationException) {
-                dest.delete()
                 throw e
             } catch (e: Exception) {
-                dest.delete()
+                if (!e.isTransient()) dest.delete()
                 if (!currentCoroutineContext().isActive) throw e
                 last = e
             }
@@ -155,6 +156,9 @@ object ApkDownloader {
         }
     }
 }
+
+/** A dropped or timed-out connection, worth retrying later. */
+fun Throwable.isTransient(): Boolean = this is IOException
 
 private fun File.sha256(): String {
     val digest = MessageDigest.getInstance("SHA-256")

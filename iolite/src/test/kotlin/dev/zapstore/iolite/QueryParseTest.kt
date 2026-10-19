@@ -5,27 +5,28 @@ import org.junit.Test
 
 class QueryParseTest {
     @Test
-    fun offlineIsPickedUpAndE2eeIsNot() {
+    fun offlineAndE2eeAreHardFilters() {
         val offline = parseSearchQuery("offline maps")
         assertEquals("maps", offline.residual)
-        assertEquals(0, offline.hard)
+        assertEquals(FACT_OFFLINE, offline.hard)
         assertEquals(FACT_OFFLINE, offline.boost)
         assertEquals(listOf(SearchFact.WorksOffline), offline.facts)
 
         val e2ee = parseSearchQuery("e2ee chat")
-        assertEquals("e2ee chat", e2ee.residual)
-        assertEquals(0, e2ee.boost)
-        assertEquals(emptyList<SearchFact>(), e2ee.facts)
+        assertEquals("chat", e2ee.residual)
+        assertEquals(FACT_E2EE, e2ee.hard)
+        assertEquals(listOf(SearchFact.E2ee), e2ee.facts)
+        assertEquals(emptyList<SearchFact>(), parseSearchQuery("encrypted chat").facts)
     }
 
     @Test
     fun openSourceLabelIsABoost() {
         val parsed = parseSearchQuery("open source maps")
         assertEquals("maps", parsed.residual)
-        assertEquals(0, parsed.hard)
-        assertEquals(FACT_OPEN_SOURCE, parsed.boost)
-        assertEquals(listOf(SearchFact.OpenSource), parsed.facts)
-        assertEquals(FACT_OPEN_SOURCE, parseSearchQuery("open-source").boost)
+        assertEquals(FACT_SOURCE_AVAILABLE, parsed.hard)
+        assertEquals(FACT_SOURCE_AVAILABLE, parsed.boost)
+        assertEquals(listOf(SearchFact.SourceAvailable), parsed.facts)
+        assertEquals(FACT_SOURCE_AVAILABLE, parseSearchQuery("open-source").boost)
         assertEquals(emptyList<SearchFact>(), parseSearchQuery("foss maps").facts)
         assertEquals("foss maps", parseSearchQuery("foss maps").residual)
         assertEquals(emptyList<SearchFact>(), parseSearchQuery("OSS").facts)
@@ -33,11 +34,12 @@ class QueryParseTest {
     }
 
     @Test
-    fun googleServicesLabelIsABoost() {
+    fun noGoogleServicesExcludesGoogleApps() {
         val parsed = parseSearchQuery("maps no google services")
         assertEquals("maps", parsed.residual)
         assertEquals(0, parsed.boost)
-        assertEquals(FACT_GOOGLE, parsed.penalty)
+        assertEquals(0, parsed.hard)
+        assertEquals(FACT_GOOGLE, parsed.exclude)
         assertEquals(listOf(SearchFact.GoogleServices), parsed.facts)
         assertEquals(emptyList<SearchFact>(), parseSearchQuery("google services").facts)
         assertEquals(emptyList<SearchFact>(), parseSearchQuery("google maps").facts)
@@ -58,14 +60,14 @@ class QueryParseTest {
         val ads = parseSearchQuery("no ads")
         assertEquals("no ads", ads.residual)
         assertEquals(0, ads.boost)
-        assertEquals(0, ads.penalty)
+        assertEquals(0, ads.exclude)
         assertEquals(emptyList<SearchFact>(), ads.facts)
         assertEquals(emptyList<SearchFact>(), parseSearchQuery("ads").facts)
         assertEquals(emptyList<SearchFact>(), parseSearchQuery("works").facts)
         assertEquals(emptyList<SearchFact>(), parseSearchQuery("closed source").facts)
         val tracking = parseSearchQuery("no tracking")
         assertEquals("no tracking", tracking.residual)
-        assertEquals(0, tracking.penalty)
+        assertEquals(0, tracking.exclude)
         assertEquals(emptyList<SearchFact>(), tracking.facts)
         assertEquals(emptyList<SearchFact>(), parseSearchQuery("tracking").facts)
     }
@@ -83,11 +85,21 @@ class QueryParseTest {
             "camera","yes","CAMERA. No shown use."
         """.trimIndent()
         assertEquals(
-            FACT_OPEN_SOURCE or FACT_GOOGLE or FACT_OFFLINE,
+            FACT_SOURCE_AVAILABLE or FACT_GOOGLE or FACT_OFFLINE or FACT_E2EE,
             factBits(csv),
         )
         assertEquals(0, factBits("\"accountless\",\"yes\",\"\"\n"))
-        assertEquals(0, factBits("\"e2ee\",\"yes\",\"\"\n"))
+        assertEquals(FACT_E2EE, factBits("\"e2ee\",\"yes\",\"\"\n"))
         assertEquals(0, factBits("\"google_services\",\"no\",\"\"\n"))
+    }
+
+    @Test
+    fun repositoryUrlsNormalizeTheSameWay() {
+        assertEquals("github.com/zapstore/zapstore", repositoryQuery("https://www.github.com/Zapstore/zapstore.git/"))
+        assertEquals("github.com/zapstore/zapstore", repositoryQuery("github.com/zapstore/zapstore/tree/main?tab=readme#top"))
+        assertEquals("codeberg.org/a/b", repositoryQuery("codeberg.org/a/b"))
+        assertEquals(null, repositoryQuery("github maps"))
+        assertEquals(null, repositoryQuery("zapstore"))
+        assertEquals("github.com/zapstore/zapstore", normalizeRepositoryUrl("http://github.com/zapstore/zapstore"))
     }
 }

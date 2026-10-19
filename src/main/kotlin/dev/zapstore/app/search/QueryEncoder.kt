@@ -12,11 +12,20 @@ import java.io.IOException
  * Encoding itself is [LeafQueryEncoder].
  */
 class QueryEncoder(context: Context) : ComponentCallbacks2 {
-    private val encoder = LeafQueryEncoder(install(context.applicationContext))
+    private val appContext = context.applicationContext
+    private val lazyEncoder = lazy { LeafQueryEncoder(install(appContext)) }
+    private val encoder by lazyEncoder
+
+    /** Copies the model files on first launch. Call off the main thread. */
+    fun prepare() {
+        encoder
+    }
 
     fun encode(query: String): ByteArray? = encoder.encode(query)
 
-    fun release() = encoder.release()
+    fun release() {
+        if (lazyEncoder.isInitialized()) encoder.release()
+    }
 
     @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
     override fun onTrimMemory(level: Int) {

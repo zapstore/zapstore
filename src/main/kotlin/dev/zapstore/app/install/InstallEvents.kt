@@ -7,6 +7,8 @@ data class InstallResult(
     val success: Boolean,
     val message: String? = null,
     val awaitingUser: Boolean = false,
+    /** The user turned down Android's install prompt. */
+    val cancelled: Boolean = false,
 )
 
 /** The status receiver and the app page share one process. Listeners are called on the receiver thread. */

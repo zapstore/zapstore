@@ -14,6 +14,9 @@ junit = "4.13.2"
 secp256k1 = "0.23.0"
 zstd = "1.5.7-4"
 onnxruntime = "1.23.2"
+security-crypto = "1.1.0"
+work = "2.10.5"
+commonmark = "0.30.1"
 
 [libraries]
 secp256k1 = { module = "fr.acinq.secp256k1:secp256k1-kmp", version.ref = "secp256k1" }
@@ -25,6 +28,11 @@ coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", ve
 coil = { module = "io.coil-kt.coil3:coil", version.ref = "coil" }
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
+commonmark = { module = "org.commonmark:commonmark", version.ref = "commonmark" }
+commonmark-tables = { module = "org.commonmark:commonmark-ext-gfm-tables", version.ref = "commonmark" }
+commonmark-strikethrough = { module = "org.commonmark:commonmark-ext-gfm-strikethrough", version.ref = "commonmark" }
+commonmark-tasklist = { module = "org.commonmark:commonmark-ext-task-list-items", version.ref = "commonmark" }
+commonmark-autolink = { module = "org.commonmark:commonmark-ext-autolink", version.ref = "commonmark" }
 okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
 okhttp-mockwebserver = { module = "com.squareup.okhttp3:mockwebserver", version.ref = "okhttp" }
 sqlite = { module = "androidx.sqlite:sqlite", version.ref = "sqlite" }
@@ -46,6 +54,8 @@ navigation-testing = { module = "androidx.navigation:navigation-testing", versio
 junit = { module = "junit:junit", version.ref = "junit" }
 onnxruntime-android = { module = "com.microsoft.onnxruntime:onnxruntime-android", version.ref = "onnxruntime" }
 onnxruntime = { module = "com.microsoft.onnxruntime:onnxruntime", version.ref = "onnxruntime" }
+security-crypto = { module = "androidx.security:security-crypto", version.ref = "security-crypto" }
+work-runtime = { module = "androidx.work:work-runtime-ktx", version.ref = "work" }
 androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidx-test" }
 androidx-test-junit = { module = "androidx.test.ext:junit", version = "1.3.0" }
 

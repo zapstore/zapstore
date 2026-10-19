@@ -1,12 +1,13 @@
 package dev.zapstore.iolite
 
 internal object Schema {
-    const val USER_VERSION = 3
+    const val USER_VERSION = 4
 
     const val APPS_SEARCH = """
         CREATE TABLE apps_search (
             id          BLOB PRIMARY KEY REFERENCES apps(id) ON DELETE CASCADE,
-            vector   BLOB,
+            vector      BLOB,
+            keywords    TEXT NOT NULL DEFAULT '',
             CHECK (vector IS NULL OR length(vector) = 768)
         )
     """
@@ -37,7 +38,6 @@ internal object Schema {
             catalog_id                  INTEGER NOT NULL
                                             REFERENCES catalogs(id) ON DELETE CASCADE,
             app_id                      TEXT NOT NULL,
-            variant_id                  BLOB,
             certificate_hash            BLOB,
             app_event_created_at        INTEGER NOT NULL,
             pubkey                      BLOB,
@@ -76,26 +76,12 @@ internal object Schema {
             revoked             INTEGER NOT NULL DEFAULT 0
                                   CHECK (revoked IN (0, 1)),
             delegations         TEXT NOT NULL DEFAULT '[]',
+            -- The `signature` tag; empty on a revocation. Checked against the APK before install.
+            signature           TEXT NOT NULL DEFAULT '',
             UNIQUE (catalog_id, certificate_hash, pubkey)
         )
         """.trimIndent(),
         "CREATE INDEX certificate_proofs_certificate_idx ON certificate_proofs(catalog_id, certificate_hash)",
-        """
-        CREATE TABLE app_variants (
-            id                  BLOB PRIMARY KEY,
-            app_id              BLOB NOT NULL
-                                  REFERENCES apps(id) ON DELETE CASCADE,
-            channel             TEXT NOT NULL DEFAULT '',
-            variant             TEXT NOT NULL DEFAULT '',
-            certificate_hash    BLOB NOT NULL,
-            version             TEXT NOT NULL,
-            version_code        INTEGER NOT NULL,
-            metadata            TEXT NOT NULL DEFAULT '{}',
-            UNIQUE (app_id, channel, variant),
-            CHECK (channel <> '' OR variant <> '')
-        )
-        """.trimIndent(),
-        "CREATE INDEX app_variants_version_idx ON app_variants(app_id, channel, version_code DESC)",
         """
         CREATE TABLE preferences (
             identifier  TEXT PRIMARY KEY,

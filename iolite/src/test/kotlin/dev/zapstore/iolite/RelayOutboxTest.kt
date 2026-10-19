@@ -102,6 +102,31 @@ class RelayOutboxTest {
     }
 
     @Test
+    fun oneFailedRelayIsNotAQueryError() = runBlocking {
+        val network = MemoryNetwork()
+        val signer = LocalSigner(SECRET)
+        val down = "ws://down.test".normalizeRelayUrl()
+        val up = "ws://up.test".normalizeRelayUrl()
+        withIolite(webSocket = network.factory(), writeRelays = setOf(up), signer = signer) { iolite ->
+            val live = async {
+                withTimeout(5_000) {
+                    iolite.query(Query.profile(signer.publicKey), QueryOptions.localAndRemote(setOf(down, up), RemoteMode.Stream))
+                        .first { it.phase == QueryPhase.Live }
+                }
+            }
+            network.awaitOpen(down.url)
+            network.awaitOpen(up.url)
+            network.relays.getValue(down.url).listener!!.onFailure(IllegalStateException("refused"))
+            val req = withTimeout(2_000) {
+                while (network.relays.getValue(up.url).sent.none { it.startsWith("[\"REQ\"") }) kotlinx.coroutines.delay(5)
+                JSONArray(network.relays.getValue(up.url).sent.first { it.startsWith("[\"REQ\"") })
+            }
+            network.push(up.url, JSONArray().put("EOSE").put(req.getString(1)).toString())
+            assertEquals(null, live.await().error)
+        }
+    }
+
+    @Test
     fun oneOrTwoRelaysNeedSingleOk() = runBlocking {
         val network = MemoryNetwork()
         val signer = LocalSigner(SECRET)
@@ -111,6 +136,29 @@ class RelayOutboxTest {
             network.awaitOpen(relay.url)
             network.push(relay.url, JSONArray().put("OK").put(event.id).put(true).put("").toString())
             assertTrue(iolite.pendingOutbox().isEmpty())
+        }
+    }
+
+    @Test
+    fun devicePrivateEventsGoOnlyToTheCatalogRelay() = runBlocking {
+        val network = MemoryNetwork()
+        val signer = LocalSigner(SECRET)
+        val general = "ws://general.test".normalizeRelayUrl()
+        val catalog = "ws://catalog.test".normalizeRelayUrl()
+        withIolite(webSocket = network.factory(), writeRelays = setOf(general), signer = signer) { iolite ->
+            iolite.store.upsertCatalogRelays(1, listOf(catalog), replaceIdentity = true)
+            iolite.setDeviceList(DeviceEvents.BOOKMARKS, listOf("dev.zap"))
+            val note = iolite.publish(1, emptyList(), "note", signer)
+            network.awaitOpen(catalog.url)
+            network.awaitOpen(general.url)
+            withTimeout(5_000) {
+                while (network.relays.getValue(catalog.url).sent.none { it.startsWith("""["EVENT"""") }) kotlinx.coroutines.delay(5)
+                while (network.relays.getValue(general.url).sent.none { note.id in it }) kotlinx.coroutines.delay(5)
+            }
+            val toCatalog = network.relays.getValue(catalog.url).sent.filter { it.startsWith("""["EVENT"""") }
+            val toGeneral = network.relays.getValue(general.url).sent.filter { it.startsWith("""["EVENT"""") }
+            assertTrue(toCatalog.all { Event.parse(JSONArray(it).getJSONObject(1)).kind == Kinds.AppStack })
+            assertTrue(toGeneral.none { Event.parse(JSONArray(it).getJSONObject(1)).kind == Kinds.AppStack })
         }
     }
 

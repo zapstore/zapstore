@@ -31,7 +31,12 @@ internal data class AvatarArtifact(
 internal object CatalogArtifacts {
     private const val MAX_APP_ID = 255
 
-    fun fromMembers(members: Map<String, TarMember>, maxIconBytes: Long): CatalogArtifact {
+    /** Artifacts from verified members. A member that is not a valid artifact is skipped. */
+    fun fromMembers(
+        members: Map<String, TarMember>,
+        maxIconBytes: Long,
+        skipped: MutableList<String> = ArrayList(),
+    ): CatalogArtifact {
         val apps = LinkedHashMap<String, Partial>()
         val avatars = ArrayList<AvatarArtifact>()
         for ((name, member) in members) {
@@ -39,27 +44,34 @@ internal object CatalogArtifacts {
             val pubkey = avatarPubkey(name)
             if (pubkey != null) {
                 if (member.data.isEmpty() || member.data.size.toLong() > maxIconBytes) {
-                    fail("bad avatar $name")
+                    skipped += "bad avatar $name"
+                } else {
+                    avatars += AvatarArtifact(pubkey, member.data)
                 }
-                avatars += AvatarArtifact(pubkey, member.data)
                 continue
             }
             val slash = name.indexOf('/')
-            if (slash <= 0 || slash != name.lastIndexOf('/')) fail("unexpected catalog member $name")
-            val appId = name.substring(0, slash)
+            val appId = if (slash > 0 && slash == name.lastIndexOf('/')) name.substring(0, slash) else null
             val file = name.substring(slash + 1)
-            if (!validAppId(appId) || file !in APP_FILES) fail("unexpected catalog member $name")
+            if (appId == null || !validAppId(appId) || file !in APP_FILES) {
+                skipped += "unexpected catalog member $name"
+                continue
+            }
+            val problem = when (file) {
+                "about", "security" -> "$file $appId contains NUL".takeIf { member.data.any { it == 0.toByte() } }
+                "vector" -> "vector $appId has the wrong size".takeIf { member.data.size != VECTOR_DIMS }
+                else -> "icon $appId is empty or too large".takeIf { member.data.isEmpty() || member.data.size.toLong() > maxIconBytes }
+            }
+            if (problem != null) {
+                skipped += problem
+                continue
+            }
             val app = apps.getOrPut(appId) { Partial(appId) }
             when (file) {
-                "about", "security" -> applyText(app, file, member.data)
-                "vector" -> {
-                    if (member.data.size != VECTOR_DIMS) fail("vector $appId")
-                    app.vector = member.data
-                }
-                "icon.webp" -> {
-                    if (member.data.isEmpty() || member.data.size.toLong() > maxIconBytes) fail("icon $appId exceeds size limit")
-                    app.webp = member.data
-                }
+                "about" -> app.about = member.data.toString(Charsets.UTF_8)
+                "security" -> app.security = member.data.toString(Charsets.UTF_8)
+                "vector" -> app.vector = member.data
+                "icon.webp" -> app.webp = member.data
             }
         }
         return CatalogArtifact(
@@ -78,15 +90,6 @@ internal object CatalogArtifacts {
         return validAppId(appId) && file in APP_FILES
     }
 
-    private fun applyText(app: Partial, file: String, raw: ByteArray) {
-        val text = raw.toString(Charsets.UTF_8)
-        if (text.any { it == '\u0000' }) fail("$file ${app.appId} contains NUL")
-        when (file) {
-            "about" -> app.about = text
-            "security" -> app.security = text
-        }
-    }
-
     private fun avatarPubkey(name: String): String? {
         if (name.contains('/')) return null
         val pubkey = name.removeSuffix(".webp")
@@ -97,8 +100,6 @@ internal object CatalogArtifacts {
 
     private fun validAppId(id: String): Boolean =
         id.length in 1..MAX_APP_ID && id.none { it == '\u0000' || it == '/' || it == '\\' } && ".." !in id
-
-    private fun fail(reason: String): Nothing = throw CatalogImportException(reason)
 
     private class Partial(val appId: String) {
         var webp: ByteArray? = null

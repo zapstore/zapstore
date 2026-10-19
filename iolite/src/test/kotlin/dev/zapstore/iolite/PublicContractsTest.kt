@@ -58,11 +58,11 @@ class PublicContractsTest {
     @Test
     fun bundleUrlUsesRelayOrigin() {
         assertEquals(
-            "https://relay.example.com/bundle?from=0",
-            "wss://relay.example.com/nostr?x=1#frag".normalizeRelayUrl().bundleUrl(0),
+            "https://relay.example.com/v1/bundle?from=0&v=2.0.1",
+            "wss://relay.example.com/nostr?x=1#frag".normalizeRelayUrl().bundleUrl(0, "2.0.1"),
         )
         assertEquals(
-            "http://127.0.0.1:3334/bundle?from=7",
+            "http://127.0.0.1:3334/v1/bundle?from=7",
             "ws://127.0.0.1:3334".normalizeRelayUrl().bundleUrl(7),
         )
     }

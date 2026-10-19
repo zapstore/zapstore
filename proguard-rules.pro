@@ -9,3 +9,10 @@
 # Native GetFieldID("srcPos"|"dstPos", "J") — keeping native methods is not enough.
 -keep class com.github.luben.zstd.** { *; }
 -keep class ai.onnxruntime.** { *; }
+
+# Tink references compile-only errorprone annotations.
+-dontwarn com.google.errorprone.annotations.**
+
+# Strict full mode: a bare -keep class no longer keeps <init>(). These are created by reflection.
+-keep class * extends androidx.room.RoomDatabase { <init>(); }
+-keep class * extends androidx.work.InputMerger { <init>(); }

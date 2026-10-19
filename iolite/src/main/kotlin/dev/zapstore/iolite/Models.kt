@@ -21,7 +21,7 @@ data class CatalogRecord(
     val id: Long,
     /** Canonical endpoint: the first clearnet endpoint, or the first endpoint when every one is onion. */
     val relayUrl: RelayUrl,
-    /** Endpoints from the signed manifest, clearnet and Tor. */
+    /** Clearnet and Tor addresses for this catalog. */
     val relays: List<RelayUrl>,
     val position: Int?,
     val isPrivate: Boolean,
@@ -51,18 +51,35 @@ data class AppCoordinate(val pubkey: String, val appId: String) {
 }
 
 /**
- * One visible catalog listing: the `apps` row for the main channel and no-variant asset.
+ * One visible catalog listing: the `apps` row for the main channel and its selected asset.
  * All values come from SQLite; nothing is re-derived from event JSON.
  */
+/** A stored kind 30509. [createdAt], [expiry], and [pubkey] make up the signed proof message. */
+data class CertificateProof(
+    val pubkey: String,
+    val certificateHash: String,
+    val createdAt: Long,
+    val expiry: Long,
+    val revoked: Boolean,
+    /** Padded base64 of the certificate-key signature; empty on a revocation. */
+    val signature: String,
+) {
+    fun isActive(nowSeconds: Long): Boolean = !revoked && nowSeconds < expiry
+
+    /** The exact UTF-8 message the certificate key signed. */
+    fun message(): String =
+        "Verifying at $createdAt until $expiry that I control the following Nostr public key: $pubkey"
+}
+
 class AppRecord(
     val id: ByteArray,
     val catalogId: Long,
     val appId: String,
-    /** Kind 3063 `apk_certificate_hash`. Null until an asset is stored. */
+    /** Kind 3063 `apk_certificate_hash`, the current signer. Null until an asset is stored. */
     val certificateHash: String?,
     /** Kind 32267 timestamp; sorts recently updated lists. */
     val createdAt: Long,
-    /** Active NIP-C1 proof owner; null when the certificate has no current proof. */
+    /** Newest current NIP-C1 proof for [certificateHash]. An ancestor proof does not count. */
     val proofPubkey: String?,
     /** Listing signer: the app event, or the release or asset that created the row. */
     val eventPubkey: String,
@@ -89,12 +106,43 @@ class AppRecord(
     val iconFile: File? = null,
 ) {
     val coordinate: AppCoordinate get() = AppCoordinate(eventPubkey, appId)
-    val isVerified: Boolean get() = proofPubkey != null
 
-    /** C1 owner when a current proof exists, otherwise the listing signer. Hidden when that key is the catalog key. */
-    val authorPubkey: String? get() = (proofPubkey ?: eventPubkey).takeUnless { it == catalogManifestPubkey }
+    /**
+     * Where comments, zaps, and reports live (`specs/catalog.md`): the catalog coordinate, which
+     * writes use, then the active C1 owner or else the listing signer. A repeated pubkey is dropped.
+     */
+    val catalogAnchor: AppCoordinate? get() = catalogManifestPubkey?.let { AppCoordinate(it, appId) }
+    /** Who a zap pays: the C1 owner, or else the catalog that lists the app. */
+    val zapRecipient: String? get() = proofPubkey ?: catalogManifestPubkey
+    val anchors: List<AppCoordinate>
+        get() = listOfNotNull(catalogManifestPubkey, eventPubkey).distinct().map { AppCoordinate(it, appId) }
+    val isVerified: Boolean get() = proofPubkey != null
+    /** The catalog key signed this listing: Zapstore indexed it, the developer did not publish it. */
+    val isCatalogSigned: Boolean get() = catalogManifestPubkey != null && eventPubkey == catalogManifestPubkey
+
+    /** Signer, then `apk_certificate_ancestor` from metadata, oldest first. */
+    fun certificateChain(): List<String> {
+        val signer = certificateHash ?: return emptyList()
+        return buildList {
+            add(signer)
+            for (hash in metadata.stringList("apk_certificate_ancestor")) {
+                if (Hex.isHex(hash, 64) && hash != signer) add(hash)
+            }
+        }
+    }
+
+    /** The C1 owner of the current certificate, the only claim of authorship. Null without a current proof. */
+    val authorPubkey: String? get() = proofPubkey?.takeUnless { it == catalogManifestPubkey }
 
     val description: String get() = metadata.optString("description").ifBlank { summary }
+
+    /**
+     * One line for listing rows: the summary, else the generated [about], else the first plain
+     * paragraph of the developer description. Empty only when the listing has none of them.
+     */
+    val tagline: String by lazy(LazyThreadSafetyMode.NONE) {
+        summary.trim().ifEmpty { plainParagraph(about) }.ifEmpty { plainParagraph(metadata.optString("description")) }
+    }
 
     /** Notices before a line that is only `---`. Empty when the prose has no separator. */
     val securityWarnings: String
@@ -111,6 +159,19 @@ class AppRecord(
             if (!doc.combined) return emptyList()
             return doc.permissions.split(',').map { it.trim() }.filter { it.isNotEmpty() }
         }
+
+    /** Notes by fact name. A permission's reason is under its fact, such as `camera`. */
+    val securityNotes: Map<String, String>
+        get() {
+            val doc = parseSecurityDocument(security)
+            return doc.notes.ifEmpty {
+                parseFactRows(doc.csv).filter { it.reason.isNotBlank() }.associate { it.key to it.reason }
+            }
+        }
+
+    /** Problems to show next to the facts. An unknown id is kept; the app decides what it shows. */
+    val securityFlags: List<SecurityFlag>
+        get() = parseSecurityDocument(security).flags
 
     private fun securityProse(): String = parseSecurityDocument(security).prose
     val iconUrl: String? get() = metadata.string("icon")
@@ -136,21 +197,47 @@ class AppRecord(
     override fun toString(): String = "AppRecord($appId@$version)"
 }
 
-/** Fact CSV, permission ids, and prose from one security file. */
+/** A problem the enricher wants shown next to the facts, such as `source_mismatch`. */
+data class SecurityFlag(val id: String, val note: String)
+
+/**
+ * Fact CSV, permission ids, and prose from one security file.
+ * A dash-separated file has no keywords, notes object, or flags.
+ */
 internal data class SecurityDocument(
     val csv: String,
     val permissions: String,
     val prose: String,
     val combined: Boolean,
+    val keywords: List<String> = emptyList(),
+    val notes: Map<String, String> = emptyMap(),
+    val flags: List<SecurityFlag> = emptyList(),
+)
+
+internal const val SOURCE_AVAILABLE = "source_available"
+
+/** Older files named [SOURCE_AVAILABLE] this. */
+private const val OPEN_SOURCE = "open_source"
+
+private val pillKeys = listOf(
+    "google_services",
+    "tracking",
+    "ads",
+    "offline_capable",
+    "e2ee",
+    SOURCE_AVAILABLE,
 )
 
 /**
- * A security file starts with a quoted CSV row and has two `---` lines.
+ * A security file is one JSON object, or the older dash-separated text.
+ * That older text starts with a quoted CSV row and has two `---` lines.
  * The text after the second `---` is the prose, which may contain another `---`.
  * Anything else is not a security file.
  */
 internal fun parseSecurityDocument(text: String): SecurityDocument {
-    val lines = text.trim().lines()
+    val trimmed = text.trim()
+    if (trimmed.startsWith("{")) return parseSecurityJson(trimmed)
+    val lines = trimmed.lines()
     if (lines.isEmpty()) return SecurityDocument("", "", "", false)
     val marks = lines.indices.filter { lines[it].trim() == "---" }
     if (marks.size >= 2 && lines.first().trim().startsWith("\"")) {
@@ -162,11 +249,80 @@ internal fun parseSecurityDocument(text: String): SecurityDocument {
     return SecurityDocument("", "", "", false)
 }
 
+private fun parseSecurityJson(text: String): SecurityDocument {
+    val obj = try {
+        JSONObject(text)
+    } catch (_: Exception) {
+        return SecurityDocument("", "", "", false)
+    }
+    val facts = obj.optJSONObject("facts")
+    val notes = obj.optJSONObject("notes")
+    val csv = buildString {
+        for (key in pillKeys) {
+            val stored = if (key == SOURCE_AVAILABLE && facts?.has(key) != true) OPEN_SOURCE else key
+            if (facts == null || facts.isNull(stored)) continue
+            val value = facts.opt(stored)
+            if (value !is Boolean) continue
+            if (isNotEmpty()) append('\n')
+            append('"').append(key).append('"')
+            append(',').append('"').append(if (value) "yes" else "no").append('"')
+            append(',').append('"').append(jsonNote(notes, stored).replace("\"", "\"\"")).append('"')
+        }
+    }
+    val noteMap = buildMap {
+        notes?.keys()?.forEach { key ->
+            val note = jsonNote(notes, key)
+            if (note.isNotEmpty()) put(if (key == OPEN_SOURCE) SOURCE_AVAILABLE else key, note)
+        }
+    }
+    val flags = buildList {
+        val raw = obj.optJSONArray("flags") ?: return@buildList
+        for (index in 0 until raw.length()) {
+            val flag = raw.optJSONObject(index) ?: continue
+            val id = flag.optString("id").trim()
+            if (id.isNotEmpty()) add(SecurityFlag(id, flag.optString("note").trim()))
+        }
+    }
+    val permissions = buildString {
+        val ids = obj.optJSONArray("permissions") ?: JSONArray()
+        for (index in 0 until ids.length()) {
+            val id = ids.optString(index).trim()
+            if (id.isEmpty()) continue
+            if (isNotEmpty()) append(", ")
+            append(id)
+        }
+    }
+    val notice = obj.optString("notice").trim()
+    val body = obj.optString("body").trim()
+    val prose = when {
+        notice.isNotEmpty() && body.isNotEmpty() -> "$notice\n---\n$body"
+        notice.isNotEmpty() -> notice
+        else -> body
+    }
+    val keywords = buildList {
+        val raw = obj.optJSONArray("keywords") ?: return@buildList
+        for (index in 0 until raw.length()) {
+            val word = raw.optString(index).trim()
+            if (word.isNotEmpty()) add(word)
+        }
+    }
+    return SecurityDocument(csv, permissions, prose, true, keywords, noteMap, flags)
+}
+
+private fun jsonNote(notes: JSONObject?, key: String): String {
+    if (notes == null || notes.isNull(key)) return ""
+    val value = notes.opt(key)
+    return if (value is String) value.trim() else ""
+}
+
 /** Fact CSV inside a security file, or null when the text is not one. */
 internal fun securityFactsCsv(text: String): String? {
     val doc = parseSecurityDocument(text)
     return if (doc.combined) doc.csv else null
 }
+
+/** Keywords from a JSON security file. A dash-separated file has none. */
+internal fun securityKeywords(text: String): List<String> = parseSecurityDocument(text).keywords
 
 private fun proseSections(text: String): Pair<String, String> {
     val lines = text.lines()
@@ -183,12 +339,12 @@ internal fun parseFactRows(facts: String): List<AppFact> {
     if (table.isEmpty()) return emptyList()
     val rows = LinkedHashMap<String, AppFact>()
     for (record in table) {
-        val key = record.getOrNull(0)?.trim().orEmpty()
+        val key = record.getOrNull(0)?.trim().orEmpty().let { if (it == OPEN_SOURCE) SOURCE_AVAILABLE else it }
         if (key.isEmpty() || key.equals("fact", ignoreCase = true)) continue
         val yes = when (record.getOrNull(1)?.trim()) {
             "yes" -> true
             "no" -> false
-            else -> continue // unknown is not a pill, so a missing open_source is not Closed source
+            else -> continue // unknown is not a pill, so a missing source_available is not No source
         }
         val notes = record.getOrNull(2)?.trim().orEmpty()
         val previous = rows[key]
@@ -266,6 +422,7 @@ data class ProfileRecord(
     val banner: String?,
     val website: String?,
     val nip05: String?,
+    val lud16: String? = null,
 ) {
     val displayNameOrNpub: String get() = displayName ?: name ?: pubkey.toNpub()
 }
@@ -302,6 +459,9 @@ data class CommentRecord(
     val stack: String?,
     val parentEventId: String?,
 )
+
+/** Recent social activity across apps, newest first within each list. */
+data class ActivityRecord(val comments: List<CommentRecord> = emptyList(), val zaps: List<ZapRecord> = emptyList())
 
 data class DeviceProfile(
     val abis: List<String>,
@@ -345,3 +505,24 @@ internal fun JSONArray?.toStringList(): List<String> {
     if (this == null) return emptyList()
     return List(length()) { index -> optString(index) }.filter { it.isNotBlank() }
 }
+
+private val markdownImage = Regex("""!\[[^\]]*]\([^)]*\)""")
+private val markdownLink = Regex("""\[([^\]]*)]\([^)]*\)""")
+private val markdownMarks = Regex("""\*\*|__|`|^\s*(?:>+|[-+*]|\d+\.)\s+""")
+
+/**
+ * The first paragraph that is prose: headings, images, and bare URLs are skipped, links keep
+ * their text, and emphasis marks are dropped.
+ */
+internal fun plainParagraph(markdown: String): String =
+    markdown.split(Regex("""\n\s*\n"""))
+        .asSequence()
+        .map { block ->
+            block.lines()
+                .filterNot { it.trimStart().startsWith("#") }
+                .joinToString(" ") { it.replace(markdownImage, "").replace(markdownLink, "$1").replace(markdownMarks, "") }
+                .replace(Regex("""\s+"""), " ")
+                .trim()
+        }
+        .firstOrNull { it.isNotEmpty() && !it.startsWith("http") }
+        .orEmpty()

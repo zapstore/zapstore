@@ -4,6 +4,7 @@ import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.SocketPolicy
 import okio.Buffer
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -83,6 +84,24 @@ class ApkDownloaderTest {
             freeBytes = { Long.MAX_VALUE },
         )
         assertEquals("bytes=4-", server.takeRequest().getHeader("Range"))
+        assertTrue(dest.readBytes().contentEquals(body))
+    }
+
+    @Test
+    fun aDroppedConnectionKeepsThePartialForTheNextAttempt() = runBlocking {
+        val body = ByteArray(64 * 1024) { (it % 251).toByte() }
+        server.enqueue(MockResponse().setBody(Buffer().write(body)).setSocketPolicy(SocketPolicy.DISCONNECT_DURING_RESPONSE_BODY))
+        val error = runCatching {
+            ApkDownloader.download(client, listOf(server.url("/apk").toString()), dest, sha256(body), freeBytes = { Long.MAX_VALUE })
+        }.exceptionOrNull()
+        assertTrue(error?.isTransient() == true)
+        val kept = dest.length()
+        assertTrue(kept in 1 until body.size.toLong())
+        server.takeRequest()
+
+        server.enqueue(MockResponse().setResponseCode(206).setBody(Buffer().write(body.copyOfRange(kept.toInt(), body.size))))
+        ApkDownloader.download(client, listOf(server.url("/apk").toString()), dest, sha256(body), freeBytes = { Long.MAX_VALUE })
+        assertEquals("bytes=$kept-", server.takeRequest().getHeader("Range"))
         assertTrue(dest.readBytes().contentEquals(body))
     }
 

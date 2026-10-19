@@ -11,29 +11,34 @@ import org.junit.Test
 
 class FactPillTest {
     @Test
-    fun yesIsTheFeatureColorAndNoIsTheInverseColor() {
+    fun yesShowsTheLabelAndNoShowsTheInverse() {
         val google = FactCatalog.pill("google_services")!!
         assertTrue(google.visible(yes = true))
-        assertTrue(google.feature(yes = true))
         assertEquals("Google services", google.label(true))
         assertTrue(google.visible(yes = false))
-        assertFalse(google.feature(yes = false))
         assertEquals("No Google services", google.label(false))
 
-        val source = FactCatalog.pill("open_source")!!
-        assertEquals("Open source", source.label(true))
-        assertTrue(source.feature(true))
-        assertEquals("Closed source", source.label(false))
-        assertFalse(source.feature(false))
+        val source = FactCatalog.pill("source_available")!!
+        assertEquals("Source available", source.label(true))
+        assertEquals("No source", source.label(false))
 
         val tracking = FactCatalog.pill("tracking")!!
         assertEquals("Tracking", tracking.label(true))
-        assertTrue(tracking.feature(true))
         assertFalse(tracking.visible(false))
         val ads = FactCatalog.pill("ads")!!
         assertEquals("Ads", ads.label(true))
-        assertTrue(ads.feature(true))
         assertFalse(ads.visible(false))
+    }
+
+    @Test
+    fun toneFollowsWhatIsGoodForTheUser() {
+        val google = FactCatalog.pill("google_services")!!
+        assertEquals(FactCatalog.Tone.Bad, google.tone(true))
+        assertEquals(FactCatalog.Tone.Good, google.tone(false))
+        assertEquals(FactCatalog.Tone.Bad, FactCatalog.pill("tracking")!!.tone(true))
+        assertEquals(FactCatalog.Tone.Good, FactCatalog.pill("offline_capable")!!.tone(true))
+        assertEquals(FactCatalog.Tone.Good, FactCatalog.pill("source_available")!!.tone(true))
+        assertEquals(FactCatalog.Tone.Bad, FactCatalog.pill("source_available")!!.tone(false))
     }
 
     @Test
@@ -41,7 +46,6 @@ class FactPillTest {
         for (key in listOf("e2ee", "offline_capable")) {
             val pill = FactCatalog.pill(key)!!
             assertTrue(pill.visible(yes = true))
-            assertTrue(pill.feature(yes = true))
             assertFalse(pill.visible(yes = false))
         }
         assertEquals("E2EE", FactCatalog.pill("e2ee")!!.label(true))
@@ -52,7 +56,7 @@ class FactPillTest {
 
     @Test
     fun searchChipsUseTheYesLabel() {
-        assertEquals("Open source", SearchFact.OpenSource.label())
+        assertEquals("Source available", SearchFact.SourceAvailable.label())
         assertEquals("No Google services", SearchFact.GoogleServices.label())
         assertEquals("Works offline", SearchFact.WorksOffline.label())
     }

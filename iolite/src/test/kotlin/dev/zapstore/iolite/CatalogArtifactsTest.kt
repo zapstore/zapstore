@@ -68,14 +68,18 @@ class CatalogArtifactsTest {
         assertTrue(CatalogArtifacts.allowedMember("diff.jsonl"))
         assertTrue(CatalogArtifacts.allowedMember("index"))
         assertTrue(CatalogArtifacts.allowedMember("${"cd".repeat(32)}.webp"))
-        val failure = runCatching {
-            CatalogArtifacts.fromMembers(
-                mapOf("com.example.app/vector" to TarMember("com.example.app/vector", ByteArray(32 + VECTOR_DIMS))),
-                maxIconBytes = 256L * 1024,
-            )
-        }.exceptionOrNull()
-        assertTrue(failure is CatalogImportException)
-        assertEquals("vector com.example.app", failure!!.message)
+        val skipped = ArrayList<String>()
+        val artifacts = CatalogArtifacts.fromMembers(
+            mapOf(
+                "com.example.app/vector" to TarMember("com.example.app/vector", ByteArray(32 + VECTOR_DIMS)),
+                "com.example.app/about" to TarMember("com.example.app/about", "Kept".toByteArray()),
+            ),
+            maxIconBytes = 256L * 1024,
+            skipped = skipped,
+        )
+        assertEquals(listOf("vector com.example.app has the wrong size"), skipped)
+        assertEquals("Kept", artifacts.apps.single().about)
+        assertEquals(null, artifacts.apps.single().vector)
     }
 
     @Test

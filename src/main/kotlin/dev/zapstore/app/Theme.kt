@@ -7,59 +7,67 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.ExperimentalTextApi
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 
-// Zapstore Design System v2 — "Graphite Shelf" (design/DESIGN.md, design/system/tokens.json)
-// Dark only. Warm graphite surfaces carry the product; app artwork is the only saturated color.
+// Zapstore Design System v3.4 — "Open Shelf" (design/DESIGN.md, design/system/android/ZapstoreTheme.kt).
+// Dark only. Neutral near-black chrome; app artwork is the only saturated color.
 
 // ---- Color ----
 
-val ZapCanvas = Color(0xFF100F0D)
+val ZapCanvas = Color(0xFF0F0F11)
 
-val ZapSurface1 = Color(0xFF191816) // Cards, search field, nav hover
-val ZapSurface2 = Color(0xFF201E1C) // Nested containers, sheet body, segmented track
-val ZapSurface3 = Color(0xFF292725) // Tonal buttons, icon plates, action-sheet tiles
-val ZapSurface4 = Color(0xFF322F2D) // Hover on surface-3, switch track off, active segment
+val ZapSurface1 = Color(0xFF18181A) // Cards, search field
+val ZapSurface2 = Color(0xFF1F1F22) // Nested containers, evidence cards, sheets, chips, nav bar
+val ZapSurface3 = Color(0xFF27272A) // Tonal buttons, icon plates, action-sheet tiles
+val ZapSurface4 = Color(0xFF303034) // Switch track off, active segment, grabbers
 
-val ZapLine = Color(0x0FFFFFFF) // 6% white — default hairline
-val ZapLineStrong = Color(0x1FFFFFFF) // 12% white — interactive edges
-val ZapHighlight = Color(0x09FFFFFF) // 3.5% white — inset top highlight on in-flow cards
+// Material roles are opaque, so the web's white-alpha hairlines are flattened onto the canvas.
+val ZapLine = Color(0xFF202022)
+val ZapLineStrong = Color(0xFF2E2E30)
+val ZapHighlight = Color(0x08FFFFFF) // 3% white — inset top highlight on in-flow cards
 
-val ZapTextPrimary = Color(0xFFF3F0EB)
-val ZapTextSecondary = Color(0xFFAAA59D)
-val ZapTextTertiary = Color(0xFF97928A)
-val ZapTextInverse = ZapCanvas
+val ZapTextPrimary = Color(0xFFECECEE)
+val ZapTextSecondary = Color(0xFFA6A6AB)
+val ZapTextTertiary = Color(0xFF8E8E94)
 
-val ZapAction = Color(0xFF3065A6) // Buttons, switches on, active segment. White text (5.9:1)
-val ZapActionHover = Color(0xFF3671BA)
-val ZapActionPressed = Color(0xFF275286)
-val ZapActionText = Color(0xFF73AAED) // Links, active nav icons, focus ring (7.9:1 on canvas)
-val ZapActionTint = Color(0x293065A6) // 16% — selected chip fill, focus ring glow
+val ZapAction = Color(0xFF3570B8) // Buttons, switches on, progress. White text 5.05:1
+val ZapActionHover = Color(0xFF3D78BF)
+val ZapActionPressed = Color(0xFF2C5E9B) // Also the action text form on paper
+val ZapActionText = Color(0xFF7DB1F0) // Links, active nav icons, focus ring
+val ZapActionTint = Color(0x293570B8) // 16% — selected chip fill
+val ZapActionContainer = Color(0xFF1D2633) // Action tint flattened over surface-1
 val ZapOnAction = Color(0xFFFFFFFF)
 
 val ZapVerified = Color(0xFF30A66F)
-val ZapVerifiedTint = Color(0x1F30A66F) // 12%
+val ZapVerifiedTint = Color(0x1F30A66F)
 val ZapWarning = Color(0xFFF2B95B)
-val ZapWarningTint = Color(0x1FF2B95B) // 12%
+val ZapWarningTint = Color(0x1FF2B95B)
 val ZapDanger = Color(0xFFF0706E)
-val ZapDangerTint = Color(0x1FF0706E) // 12%
+val ZapDangerTint = Color(0x1FF0706E)
 val ZapDangerFill = Color(0xFF3A1C1C)
+val ZapOnDangerFill = Color(0xFFFFD9D8)
+val ZapBadge = Color(0xFFE5484D) // Update count on the nav bar, white bold text
 
-val ZapBrand = Color(0xFF173A61) // Logo field only; never a flat UI tint
+/** Logo field and the version pill. Never a flat UI tint. */
+val ZapBrand = Color(0xFF173A61)
 
-val ZapFocus = ZapActionText
+// Paper is the snackbar only on Android.
+val ZapPaper = Color(0xFFF3F0EB)
+val ZapInk = Color(0xFF0B0B0C)
 
-/** Surface-3 tonal fill used for the version pill (surface-2 when it sits directly on canvas). */
-val ZapVersionPillBackground = ZapSurface3
+val ZapScrim = Color(0x99000000)
 
 // ---- Spacing ----
-// 4px base unit ladder: tight inside groups, generous between them.
+// 4 dp base: tight inside groups, generous between them, more above a heading than below.
 object ZapSpacing {
     val space1 = 4.dp
     val space2 = 8.dp
@@ -74,170 +82,133 @@ object ZapSpacing {
 }
 
 // ---- Size ----
-// Compact-density control heights (design/system/tokens.json "size"); Android is always at
-// the ≤860px floor, so controls use the larger figure in each pair.
 object ZapSize {
+    /** Visual height of a button; Material pads it to [touchTarget]. */
+    val button = 40.dp
+    /** Fields. */
     val control = 44.dp
-    val controlSmall = 40.dp
+    /** A sheet's full-width primary action. */
     val controlLarge = 48.dp
-    val touchTarget = 44.dp
+    val touchTarget = 48.dp
 }
 
 // ---- Radius ----
-// Corners are soft and sized to the element; pills for anything pressed.
 object ZapRadius {
-    val xs = 6.dp // tags, kbd, copy buttons
-    val sm = 10.dp // nav links, snackbar action
-    val md = 14.dp // fields, list rows, action-sheet tiles, snackbar
-    val lg = 20.dp // cards, panels
-    val xl = 28.dp // sheets, hero stage
-    val full = 999.dp // buttons, chips, badges, search, switches
+    val bar = 2.dp // progress tracks, grabbers
+    val xs = 6.dp // tags, copy buttons
+    val sm = 8.dp // snackbar action
+    val control = 12.dp // buttons, fields, search
+    val md = 14.dp // list rows, menus, snackbar
+    val lg = 20.dp // cards, FAB
+    val xl = 28.dp // sheets
+    val full = 999.dp // chips, segmented, badges, switches, version pill, avatars
 
-    /** App/stack tiles are always 22% of their size (design/system/tokens.json radius.appTile). */
+    /** App and stack tiles are 22% of their size. */
     const val appTileFraction = 0.22f
 }
 
 // ---- Type ----
-// One workhorse grotesque (Wix Madefor Text) carries everything; hierarchy comes from size and weight.
+// DM Sans, variable wght + opsz. Android does not apply optical sizing on its own,
+// so each style pins opsz to its size (axis range 9–40).
 
-private val ZapLetterSpacing = (-0.016).em
-
-val WixMadeforTextFontFamily = FontFamily(
-    Font(R.font.wix_madefor_text_regular, FontWeight.Normal),
-    Font(R.font.wix_madefor_text_italic, FontWeight.Normal, FontStyle.Italic),
-    Font(R.font.wix_madefor_text_medium, FontWeight.Medium),
-    Font(R.font.wix_madefor_text_medium_italic, FontWeight.Medium, FontStyle.Italic),
-    Font(R.font.wix_madefor_text_semibold, FontWeight.SemiBold),
-    Font(R.font.wix_madefor_text_semibold_italic, FontWeight.SemiBold, FontStyle.Italic),
-    Font(R.font.wix_madefor_text_bold, FontWeight.Bold),
-    Font(R.font.wix_madefor_text_bold_italic, FontWeight.Bold, FontStyle.Italic),
-    Font(R.font.wix_madefor_text_extrabold, FontWeight.ExtraBold),
-    Font(R.font.wix_madefor_text_extrabold_italic, FontWeight.ExtraBold, FontStyle.Italic),
+@OptIn(ExperimentalTextApi::class)
+private fun dmSans(opsz: Int) = FontFamily(
+    listOf(400, 500, 600, 700).flatMap { weight ->
+        listOf(FontStyle.Normal to R.font.dm_sans, FontStyle.Italic to R.font.dm_sans_italic).map { (fontStyle, res) ->
+            Font(
+                res,
+                weight = FontWeight(weight),
+                style = fontStyle,
+                variationSettings = FontVariation.Settings(
+                    FontVariation.weight(weight),
+                    FontVariation.Setting("opsz", opsz.coerceIn(9, 40).toFloat()),
+                ),
+            )
+        }
+    },
 )
+
+private fun style(size: Int, line: Int, weight: Int, tracking: Double = 0.0) = TextStyle(
+    fontFamily = dmSans(size),
+    fontWeight = FontWeight(weight),
+    fontSize = size.sp,
+    lineHeight = line.sp,
+    letterSpacing = tracking.em,
+)
+
+private val ZapTypography = Typography(
+    displayLarge = style(36, 44, 600, -0.03),
+    displayMedium = style(36, 44, 600, -0.03),
+    displaySmall = style(36, 44, 600, -0.03), // Display, Figure
+    headlineLarge = style(28, 36, 600, -0.03),
+    headlineMedium = style(28, 36, 600, -0.03), // Headline
+    headlineSmall = style(28, 34, 600, -0.025), // Title 1: screen titles
+    titleLarge = style(22, 28, 600, -0.015), // Title 2: sheet titles
+    titleMedium = style(18, 24, 600), // Title 4: app name in detail heads
+    titleSmall = style(15, 20, 600), // Row title
+    bodyLarge = style(16, 24, 400), // Body
+    bodyMedium = style(14, 20, 400), // Body small
+    bodySmall = style(13, 18, 400), // Caption
+    labelLarge = style(14, 20, 600), // Button
+    labelMedium = style(13, 18, 500).copy(fontFeatureSettings = "tnum"), // Evidence
+    labelSmall = style(12, 16, 600, 0.08), // Label: uppercase at the call site
+)
+
+/** Hashes, package ids, npubs: same face, tabular figures. Never monospace. */
+val ZapEvidenceStyle: TextStyle = ZapTypography.labelMedium
+
+/** Card and plan titles. */
+val ZapTitle3Style: TextStyle = style(20, 26, 600, -0.01)
 
 private val ZapColorScheme = darkColorScheme(
     primary = ZapAction,
     onPrimary = ZapOnAction,
-    primaryContainer = ZapActionPressed,
-    onPrimaryContainer = ZapOnAction,
-    secondary = ZapTextSecondary,
+    primaryContainer = ZapActionContainer,
+    onPrimaryContainer = ZapActionText,
+    inversePrimary = ZapActionPressed,
+    secondary = ZapVerified,
     onSecondary = ZapCanvas,
-    tertiary = ZapVerified,
+    secondaryContainer = ZapSurface3,
+    onSecondaryContainer = ZapTextPrimary,
+    tertiary = ZapWarning,
     onTertiary = ZapCanvas,
     background = ZapCanvas,
     onBackground = ZapTextPrimary,
-    surface = ZapSurface1,
+    surface = ZapCanvas,
     onSurface = ZapTextPrimary,
     surfaceVariant = ZapSurface2,
     onSurfaceVariant = ZapTextSecondary,
-    outline = ZapLine,
-    outlineVariant = ZapLineStrong,
+    surfaceTint = Color.Transparent,
+    surfaceContainerLowest = ZapCanvas,
+    surfaceContainerLow = ZapSurface1,
+    surfaceContainer = ZapSurface2,
+    surfaceContainerHigh = ZapSurface3,
+    surfaceContainerHighest = ZapSurface4,
+    surfaceBright = ZapSurface4,
+    surfaceDim = ZapCanvas,
+    inverseSurface = ZapPaper,
+    inverseOnSurface = ZapInk,
+    outline = ZapLineStrong,
+    outlineVariant = ZapLine,
     error = ZapDanger,
-    onError = ZapTextPrimary,
+    onError = ZapCanvas,
     errorContainer = ZapDangerFill,
-    onErrorContainer = ZapDanger,
-)
-
-// Sizes below follow design/system/tokens.json ("font.size"), converted 1rem = 16sp; Android
-// heading1/display use the fluid-scale floor since there is no viewport to clamp against.
-private val ZapTypography = Typography(
-    // Display — hero headline only.
-    displayLarge = Typography().displayLarge.copy(
-        fontFamily = WixMadeforTextFontFamily,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 36.sp,
-        lineHeight = 38.sp,
-        letterSpacing = ZapLetterSpacing,
-    ),
-    // Heading 1 — section and screen titles.
-    displaySmall = Typography().displaySmall.copy(
-        fontFamily = WixMadeforTextFontFamily,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 26.sp,
-        lineHeight = 30.sp,
-        letterSpacing = ZapLetterSpacing,
-    ),
-    // Heading 2 — sheet titles, welcome card.
-    headlineSmall = Typography().headlineSmall.copy(
-        fontFamily = WixMadeforTextFontFamily,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 22.sp,
-        lineHeight = 28.sp,
-        letterSpacing = ZapLetterSpacing,
-    ),
-    titleLarge = Typography().titleLarge.copy(
-        fontFamily = WixMadeforTextFontFamily,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 22.sp,
-        lineHeight = 28.sp,
-        letterSpacing = ZapLetterSpacing,
-    ),
-    // Heading 3 — app names in detail heads and rows.
-    titleMedium = Typography().titleMedium.copy(
-        fontFamily = WixMadeforTextFontFamily,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 17.sp,
-        lineHeight = 24.sp,
-        letterSpacing = ZapLetterSpacing,
-    ),
-    // Body — 16sp on Android.
-    bodyLarge = Typography().bodyLarge.copy(
-        fontFamily = WixMadeforTextFontFamily,
-        fontWeight = FontWeight.Normal,
-        fontSize = 16.sp,
-        lineHeight = 24.sp,
-        letterSpacing = ZapLetterSpacing,
-    ),
-    // Body small — descriptions in rows and cards.
-    bodyMedium = Typography().bodyMedium.copy(
-        fontFamily = WixMadeforTextFontFamily,
-        fontWeight = FontWeight.Normal,
-        fontSize = 15.sp,
-        lineHeight = 22.sp,
-        letterSpacing = ZapLetterSpacing,
-    ),
-    // Caption — timestamps, secondary facts.
-    bodySmall = Typography().bodySmall.copy(
-        fontFamily = WixMadeforTextFontFamily,
-        fontWeight = FontWeight.Normal,
-        fontSize = 13.sp,
-        lineHeight = 18.sp,
-        letterSpacing = ZapLetterSpacing,
-    ),
-    // Button label — 14sp/600.
-    labelLarge = Typography().labelLarge.copy(
-        fontFamily = WixMadeforTextFontFamily,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 14.sp,
-        lineHeight = 20.sp,
-        letterSpacing = ZapLetterSpacing,
-    ),
-    // Evidence — verifiable values (versions, hashes, package IDs); tabular figures.
-    labelMedium = Typography().labelMedium.copy(
-        fontFamily = WixMadeforTextFontFamily,
-        fontWeight = FontWeight.Medium,
-        fontSize = 13.sp,
-        lineHeight = 17.sp,
-        letterSpacing = ZapLetterSpacing,
-        fontFeatureSettings = "tnum",
-    ),
-    // Label — list-group headers, table headers, nav groups. Uppercase at call sites.
-    labelSmall = Typography().labelSmall.copy(
-        fontFamily = WixMadeforTextFontFamily,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 11.sp,
-        lineHeight = 16.sp,
-        letterSpacing = ZapLetterSpacing,
-    ),
+    onErrorContainer = ZapOnDangerFill,
+    scrim = ZapScrim,
 )
 
 private val ZapShapes = Shapes(
     extraSmall = RoundedCornerShape(ZapRadius.xs),
-    small = RoundedCornerShape(ZapRadius.sm),
+    small = RoundedCornerShape(ZapRadius.control),
     medium = RoundedCornerShape(ZapRadius.md),
     large = RoundedCornerShape(ZapRadius.lg),
     extraLarge = RoundedCornerShape(ZapRadius.xl),
 )
+
+// Material buttons and SearchBar default to a full pill whatever Shapes says.
+// Nothing you press to act is a pill here; pass this explicitly.
+val ZapButtonShape = RoundedCornerShape(ZapRadius.control)
+
 
 @Composable
 fun ZapstoreTheme(content: @Composable () -> Unit) {
