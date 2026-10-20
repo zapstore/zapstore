@@ -28,9 +28,7 @@ class CommentsSection extends HookConsumerWidget {
 
     final commentsState = ref.watch(
       query<Comment>(
-        tags: {
-          '#A': {app.id},
-        },
+        tags: {'#A': app.coordinates},
         source: LocalAndRemoteSource(stream: true, relays: 'AppCatalog'),
         subscriptionPrefix: 'app-comments',
       ),

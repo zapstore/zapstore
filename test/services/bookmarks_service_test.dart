@@ -46,6 +46,25 @@ void main() {
     expect(notifier.state, isEmpty);
   });
 
+  test('removes an app saved under an alias coordinate', () async {
+    final notifier = BookmarksNotifier((_, _) async {});
+    addTearDown(notifier.dispose);
+    const aliases = {'32267:new:app', '32267:old:app'};
+
+    await notifier.toggle('32267:old:app');
+    expect(
+      await notifier.toggle('32267:new:app', aliases: aliases),
+      isFalse,
+    );
+    expect(notifier.state, isEmpty);
+
+    expect(
+      await notifier.toggle('32267:new:app', aliases: aliases),
+      isTrue,
+    );
+    expect(notifier.state, {'32267:new:app'});
+  });
+
   test('rolls back optimistic state when the local save fails', () async {
     final notifier = BookmarksNotifier((_, _) {
       throw const DevicePrivateSaveException('save failed');

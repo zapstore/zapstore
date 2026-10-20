@@ -1,3 +1,24 @@
+import 'package:models/models.dart';
+import 'package:zapstore/constants/app_constants.dart';
+
+/// Adds both catalog keys to [authors] when it names either one, so a
+/// coordinate signed before rotation still finds the re-signed listing.
+Set<String> withCatalogAuthors(Set<String> authors) =>
+    authors.any(kCatalogKeys.contains) ? {...authors, ...kCatalogKeys} : authors;
+
+/// Maps each app's coordinate to the app. A catalog-signed app is also mapped
+/// under the other catalog key's coordinate.
+Map<String, App> appsByCoordinate(Iterable<App> apps) {
+  final map = {for (final app in apps) app.id: app};
+  for (final app in apps) {
+    if (!kCatalogKeys.contains(app.pubkey)) continue;
+    for (final key in kCatalogKeys) {
+      map.putIfAbsent('${app.event.kind}:$key:${app.identifier}', () => app);
+    }
+  }
+  return map;
+}
+
 /// Whether [id] is a Nostr addressable app coordinate (`kind:pubkey:d`).
 ///
 /// Private stacks may store either these coordinates (e.g. Saved Apps) or bare

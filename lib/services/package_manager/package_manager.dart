@@ -1386,7 +1386,11 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
     if (hash.isNotEmpty) {
       try {
         final assets = await storage.query(
-          RequestFilter<SoftwareAsset>(search: hash).toRequest(),
+          RequestFilter<SoftwareAsset>(
+            tags: {
+              '#x': {hash},
+            },
+          ).toRequest(),
           subscriptionPrefix: 'app-file-metadata-asset-search',
         );
         if (assets.isNotEmpty) return assets.first;
@@ -1394,7 +1398,11 @@ abstract class PackageManager extends StateNotifier<PackageManagerState> {
 
       try {
         final results = await storage.query(
-          RequestFilter<FileMetadata>(search: hash).toRequest(),
+          RequestFilter<FileMetadata>(
+            tags: {
+              '#x': {hash},
+            },
+          ).toRequest(),
           subscriptionPrefix: 'app-file-metadata-search',
         );
         if (results.isNotEmpty) return results.first;

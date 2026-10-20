@@ -5,9 +5,17 @@ const kZapstoreAppIdentifier = 'dev.zapstore.app';
 const kZapstorePubkey =
     '78ce6faa72264387284e647ba6938995735ec8c7d5c5a65737e55130f026307d';
 
+/// Catalog key that replaces [kZapstorePubkey] for relay-signed apps
+const kCatalogPubkey =
+    '44dc0ab0606436c14454d7ecf3581b7b4f1b48857fd9851896a07dcf2b72b2bb';
+
+/// Old and new catalog keys; a coordinate naming one may resolve under either
+const kCatalogKeys = {kZapstorePubkey, kCatalogPubkey};
+
 /// Additional trusted relay pubkeys for relay-signed apps
 const kTrustedRelayPubkeys = {
   kZapstorePubkey,
+  kCatalogPubkey,
   'fd2d438d5c0b419179b67ce4e8ae72a170aeca3045acccbe7661a5e1b5f0b7b1',
 };
 

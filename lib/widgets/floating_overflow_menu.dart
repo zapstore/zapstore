@@ -83,10 +83,7 @@ class FloatingOverflowMenu extends HookConsumerWidget {
   }
 
   bool _watchIsSaved(WidgetRef ref) {
-    final savedAppIds = ref.watch(bookmarksProvider);
-    final appAddressableId =
-        '${app!.event.kind}:${app!.pubkey}:${app!.identifier}';
-    return savedAppIds.contains(appAddressableId);
+    return isAppIn(ref.watch(bookmarksProvider), app!);
   }
 
   static PopupMenuItem<String> _menuItem(

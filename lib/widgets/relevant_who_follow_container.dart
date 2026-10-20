@@ -57,7 +57,7 @@ class RelevantWhoFollowContainer extends HookConsumerWidget {
     // Query preloaded zaps for the app (LocalSource only)
     final zapsState = ref.watch(
       query<Zap>(
-        tags: app.event.addressableIdTagMap,
+        tags: {'#a': app.coordinates},
         source: const LocalSource(),
         and: (zap) => {zap.author.query(), zap.zapRequest.query()},
         subscriptionPrefix: 'trust-zaps',

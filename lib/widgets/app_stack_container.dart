@@ -8,6 +8,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 import '../utils/extensions.dart';
 import '../utils/image_url.dart';
+import '../utils/stack_app_ids.dart';
 import '../utils/url_utils.dart';
 import '../theme.dart';
 import '../services/package_manager/package_manager.dart';
@@ -121,7 +122,7 @@ class AppStackContainer extends HookConsumerWidget {
     final previewAppsState = allPreviewIds.isNotEmpty
         ? ref.watch(
             query<App>(
-              authors: authors,
+              authors: withCatalogAuthors(authors),
               tags: {'#d': identifiers},
               source: const LocalAndRemoteSource(
                 relays: 'AppCatalog',
@@ -132,9 +133,7 @@ class AppStackContainer extends HookConsumerWidget {
           )
         : null;
 
-    final appsMap = {
-      for (final app in previewAppsState?.models ?? <App>[]) app.id: app,
-    };
+    final appsMap = appsByCoordinate(previewAppsState?.models ?? <App>[]);
 
     // Infinite horizontal scroll: load more when near end
     useEffect(() {

@@ -25,6 +25,14 @@ extension AppExt on App {
   /// Whether this app is "relay signed" - indexed by Zapstore but not a Zapstore app itself
   bool get isRelaySigned => isSignedByZapstore && !isZapstoreApp;
 
+  /// Coordinates that comments, zaps, and stacks may name for this app:
+  /// the listing signer's, the catalog key's, and the legacy catalog key's.
+  Set<String> get coordinates => {
+    id,
+    '${event.kind}:$kCatalogPubkey:$identifier',
+    '${event.kind}:$kZapstorePubkey:$identifier',
+  };
+
   /// Returns PackageInfo if installed, otherwise null
   PackageInfo? get installedPackage =>
       ref.read(packageManagerProvider).installed[identifier];

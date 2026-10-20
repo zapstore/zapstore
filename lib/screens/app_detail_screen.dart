@@ -9,6 +9,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:zapstore/utils/debug_utils.dart';
 import 'package:zapstore/utils/extensions.dart';
+import 'package:zapstore/utils/stack_app_ids.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/widgets/app_detail_widgets.dart';
 import 'package:zapstore/widgets/app_header.dart';
@@ -36,11 +37,14 @@ class AppDetailScreen extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final platform = ref.read(packageManagerProvider.notifier).platform;
+    final authors = authorPubkey != null
+        ? withCatalogAuthors({authorPubkey!})
+        : null;
 
     // Query app with relationships including author profile
     final appState = ref.watch(
       query<App>(
-        authors: authorPubkey != null ? {authorPubkey!} : null,
+        authors: authors,
         tags: {
           '#d': {appId},
           '#f': {platform},
@@ -63,7 +67,7 @@ class AppDetailScreen extends HookConsumerWidget {
     // Listen for query completion with no results - app removed from relay
     ref.listen(
       query<App>(
-        authors: authorPubkey != null ? {authorPubkey!} : null,
+        authors: authors,
         tags: {
           '#d': {appId},
           '#f': {platform},
@@ -81,18 +85,9 @@ class AppDetailScreen extends HookConsumerWidget {
         source: _detailCatalogSource,
         subscriptionPrefix: 'app-detail-$appId',
       ),
-      (previous, next) async {
+      (previous, next) {
         // When query completes with no models (app not found on relay)
         if (next is StorageData<App> && next.models.isEmpty) {
-          // Remove stale local data for this app
-          await ref.storage.clear(
-            RequestFilter<App>(
-              tags: {
-                '#d': {appId},
-              },
-            ).toRequest(),
-          );
-          // Navigate back
           if (context.mounted) {
             context.pop();
           }

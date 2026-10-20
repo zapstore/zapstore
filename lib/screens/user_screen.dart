@@ -188,13 +188,10 @@ class _UserZapsList extends HookConsumerWidget {
     }
 
     // Collect addressable tags for apps and metadata IDs
-    final allAppTags = <String, Set<String>>{};
+    final appCoordinates = <String>{};
     final metadataIds = <String>{};
     for (final app in apps) {
-      final appTags = app.event.addressableIdTagMap;
-      for (final entry in appTags.entries) {
-        allAppTags[entry.key] = {...?allAppTags[entry.key], ...entry.value};
-      }
+      appCoordinates.addAll(app.coordinates);
       final metadata = app.installable;
       if (metadata != null) {
         metadataIds.add(metadata.id);
@@ -204,7 +201,7 @@ class _UserZapsList extends HookConsumerWidget {
     // Query zaps on apps (via #a tag)
     final appZapsState = ref.watch(
       query<Zap>(
-        tags: allAppTags,
+        tags: {'#a': appCoordinates},
         source: const LocalAndRemoteSource(relays: 'AppCatalog'),
         subscriptionPrefix: 'app-user-app-zaps',
       ),

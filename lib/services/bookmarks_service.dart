@@ -3,10 +3,10 @@ import 'dart:async';
 import 'package:collection/collection.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:models/models.dart';
-import 'package:zapstore/constants/app_constants.dart';
 import 'package:zapstore/services/device_key_service.dart';
 import 'package:zapstore/services/device_private_event_service.dart';
 import 'package:zapstore/services/package_manager/package_manager.dart';
+import 'package:zapstore/utils/extensions.dart';
 
 final _persistedBookmarksProvider = Provider<AppStack?>((ref) {
   final devicePubkey = ref.watch(devicePubkeyProvider);
@@ -72,10 +72,16 @@ class BookmarksNotifier extends StateNotifier<Set<String>> {
     _setState(stack.privateAppIds.toSet());
   }
 
-  Future<bool> toggle(String appId) {
+  /// Adds [appId], or removes it and every id in [aliases] when any is saved.
+  Future<bool> toggle(String appId, {Set<String> aliases = const {}}) {
     final updated = {...state};
-    final removed = updated.remove(appId);
-    if (!removed) updated.add(appId);
+    final equivalents = {appId, ...aliases};
+    final removed = updated.any(equivalents.contains);
+    if (removed) {
+      updated.removeAll(equivalents);
+    } else {
+      updated.add(appId);
+    }
     _setState(updated);
 
     final createdAt = _nextCreatedAt();
@@ -161,18 +167,18 @@ Future<void> _writeBookmarks(
 }
 
 Future<bool> toggleBookmark(WidgetRef ref, App app) {
-  final appId = '${app.event.kind}:${app.pubkey}:${app.identifier}';
-  return ref.read(bookmarksProvider.notifier).toggle(appId);
+  return ref
+      .read(bookmarksProvider.notifier)
+      .toggle(app.id, aliases: app.coordinates);
 }
+
+/// Whether [savedAppIds] holds any coordinate of [app].
+bool isAppIn(Set<String> savedAppIds, App app) =>
+    app.coordinates.any(savedAppIds.contains);
 
 /// Extension to check if an app is saved
 extension SavedAppsChecker on WidgetRef {
-  bool isAppSaved(App app) {
-    final savedApps = watch(bookmarksProvider);
-    final appAddressableId =
-        '${app.event.kind}:${app.pubkey}:${app.identifier}';
-    return savedApps.contains(appAddressableId);
-  }
+  bool isAppSaved(App app) => isAppIn(watch(bookmarksProvider), app);
 
   Set<String> getSavedAppIds() {
     return watch(bookmarksProvider);

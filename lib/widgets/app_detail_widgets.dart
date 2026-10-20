@@ -94,9 +94,7 @@ class SocialActionsRow extends HookConsumerWidget {
     final savedAppIds = ref.watch(bookmarksProvider);
 
     // Check if this app is saved
-    final appAddressableId =
-        '${app.event.kind}:${app.pubkey}:${app.identifier}';
-    final isPrivatelySaved = savedAppIds.contains(appAddressableId);
+    final isPrivatelySaved = isAppIn(savedAppIds, app);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -213,7 +211,7 @@ class _ZappersListSection extends ConsumerWidget {
     // Query zaps on app (via #a tag)
     final zapsState = ref.watch(
       query<Zap>(
-        tags: app.event.addressableIdTagMap,
+        tags: {'#a': app.coordinates},
         source: const LocalAndRemoteSource(relays: 'AppCatalog'),
         subscriptionPrefix: 'app-zaps',
       ),
@@ -664,7 +662,7 @@ class DebugVersionsSection extends HookConsumerWidget {
     // Query ALL releases for this app using addressable ID tags
     final releasesState = ref.watch(
       query<Release>(
-        tags: app.event.addressableIdTagMap,
+        tags: {'#a': app.coordinates},
         and: (release) => {
           release.latestMetadata.query(),
           release.latestAsset.query(),

@@ -220,7 +220,7 @@ class _AddToStackDialogSignedIn extends HookConsumerWidget {
     useEffect(() {
       final selected = <String>{};
       for (final stack in publicStacks) {
-        if (stack.apps.toList().any((appModel) => appModel.id == app.id)) {
+        if (stack.event.getTagSetValues('a').any(app.coordinates.contains)) {
           selected.add(stack.identifier);
         }
       }
@@ -499,13 +499,14 @@ class _AddToStackDialogSignedIn extends HookConsumerWidget {
       }
 
       final platform = ref.read(packageManagerProvider.notifier).platform;
+      final coordinates = app.coordinates;
 
       // Get current state of which collections contain this app
       final currentCollectionsWithApp = <String>{};
       for (final stack in existingStacks) {
         // Get raw app IDs from event tags
         final appIds = stack.event.getTagSetValues('a');
-        if (appIds.contains(app.id)) {
+        if (appIds.any(coordinates.contains)) {
           currentCollectionsWithApp.add(stack.identifier);
         }
       }
@@ -530,7 +531,7 @@ class _AddToStackDialogSignedIn extends HookConsumerWidget {
             existingStack?.event.getTagSetValues('a').toList() ?? [];
 
         // Check if app already exists in the stack
-        final appAlreadyExists = existingAppIds.contains(app.id);
+        final appAlreadyExists = existingAppIds.any(coordinates.contains);
 
         // Only update if the app is not already in the stack
         if (!appAlreadyExists) {
@@ -574,7 +575,7 @@ class _AddToStackDialogSignedIn extends HookConsumerWidget {
               .getTagSetValues('a')
               .toList();
           for (final appId in existingAppIds) {
-            if (appId != app.id) {
+            if (!coordinates.contains(appId)) {
               partialStack.addApp(appId);
             }
           }

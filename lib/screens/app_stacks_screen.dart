@@ -10,6 +10,7 @@ import 'package:zapstore/services/package_manager/package_manager.dart';
 import 'package:zapstore/theme.dart';
 import 'package:zapstore/utils/extensions.dart';
 import 'package:zapstore/utils/paged_subscription_notifier.dart';
+import 'package:zapstore/utils/stack_app_ids.dart';
 import 'package:zapstore/widgets/app_stack_container.dart';
 
 // ---------------------------------------------------------------------------
@@ -207,7 +208,7 @@ class AppStacksScreen extends HookConsumerWidget {
     final previewAppsState = allPreviewIds.isNotEmpty
         ? ref.watch(
             query<App>(
-              authors: authors,
+              authors: withCatalogAuthors(authors),
               tags: {'#d': identifiers},
               source: const LocalAndRemoteSource(
                 relays: 'AppCatalog',
@@ -218,9 +219,7 @@ class AppStacksScreen extends HookConsumerWidget {
           )
         : null;
 
-    final appsMap = {
-      for (final app in previewAppsState?.models ?? <App>[]) app.id: app,
-    };
+    final appsMap = appsByCoordinate(previewAppsState?.models ?? <App>[]);
 
     final isInitialLoading = state.firstPage is StorageLoading && items.isEmpty;
 
@@ -399,7 +398,7 @@ class _MigrationBanner extends HookConsumerWidget {
     final previewAppsState = allPreviewIds.isNotEmpty
         ? ref.watch(
             query<App>(
-              authors: authors,
+              authors: withCatalogAuthors(authors),
               tags: {'#d': identifiers},
               source: const LocalAndRemoteSource(
                 relays: 'AppCatalog',
@@ -409,9 +408,7 @@ class _MigrationBanner extends HookConsumerWidget {
             ),
           )
         : null;
-    final appsMap = {
-      for (final app in previewAppsState?.models ?? <App>[]) app.id: app,
-    };
+    final appsMap = appsByCoordinate(previewAppsState?.models ?? <App>[]);
 
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),

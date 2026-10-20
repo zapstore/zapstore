@@ -35,9 +35,7 @@ class StackedByRow extends ConsumerWidget {
     // Followed users who included this app in a stack
     final stacksState = ref.watch(
       query<AppStack>(
-        tags: {
-          '#a': {app.id},
-        },
+        tags: {'#a': app.coordinates},
         source: const LocalSource(),
         subscriptionPrefix: 'app-stacked-by-${app.identifier}',
       ),
@@ -50,7 +48,7 @@ class StackedByRow extends ConsumerWidget {
     // Followed users who zapped this app
     final zapsState = ref.watch(
       query<Zap>(
-        tags: app.event.addressableIdTagMap,
+        tags: {'#a': app.coordinates},
         source: const LocalSource(),
         subscriptionPrefix: 'app-stacked-by-zaps-${app.identifier}',
       ),

@@ -106,7 +106,7 @@ class _AppStackContentWithApps extends ConsumerWidget {
     final addressableState = addressableIds.isNotEmpty
         ? ref.watch(
             query<App>(
-              authors: authors,
+              authors: withCatalogAuthors(authors),
               tags: {
                 '#d': identifiers,
                 '#f': {platform},
@@ -152,9 +152,9 @@ class _AppStackContentWithApps extends ConsumerWidget {
           )
         : null;
 
-    final appsByAddressableId = {
-      for (final app in addressableState?.models ?? const <App>[]) app.id: app,
-    };
+    final appsByAddressableId = appsByCoordinate(
+      addressableState?.models ?? const <App>[],
+    );
     final appsByPackageId = <String, App>{};
     for (final app in packageState?.models ?? const <App>[]) {
       appsByPackageId.putIfAbsent(app.identifier, () => app);

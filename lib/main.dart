@@ -24,6 +24,7 @@ import 'package:zapstore/theme.dart';
 import 'package:zapstore/services/package_manager/android_package_manager.dart';
 import 'package:zapstore/services/package_manager/dummy_package_manager.dart';
 import 'package:zapstore/services/deep_link_service.dart';
+import 'package:zapstore/services/deletion_processor.dart';
 import 'package:zapstore/services/device_backup_service.dart';
 import 'package:zapstore/services/device_key_service.dart';
 import 'package:zapstore/services/device_private_event_service.dart';
@@ -419,6 +420,8 @@ final storageReadyProvider = FutureProvider<void>((ref) async {
 /// as a skeleton gate offline.
 final appInitializationProvider = FutureProvider<void>((ref) async {
   await ref.read(storageReadyProvider.future);
+
+  ref.read(supersededCatalogCleanupProvider);
 
   // There is no bootstrap publication. Mark portable state usable before
   // background draft mining and relay work begin.
