@@ -3,6 +3,36 @@ import 'package:models/models.dart';
 import 'package:zapstore/widgets/app_report_sheet.dart';
 
 void main() {
+  setUpAll(() {
+    Model.register(
+      kind: 1984,
+      constructor: Report.fromMap,
+      partialConstructor: PartialReport.fromMap,
+    );
+  });
+
+  group('buildAppReport', () {
+    test('names the listing coordinate and app id', () {
+      final pubkey = 'b' * 64;
+      final report = buildAppReport(
+        appEventId: 'a' * 64,
+        appCoordinate: '32267:$pubkey:com.example.app',
+        appId: 'com.example.app',
+        authorPubkey: pubkey,
+        violationType: ReportType.malware,
+        description: 'The APK contains a known malicious payload.',
+      );
+
+      expect(
+        report.event.getFirstTagValue('a'),
+        '32267:$pubkey:com.example.app',
+      );
+      expect(report.event.getFirstTagValue('i'), 'com.example.app');
+      expect(report.event.getFirstTagValue('e'), 'a' * 64);
+      expect(report.event.getFirstTagValue('p'), pubkey);
+    });
+  });
+
   group('canSubmitAppReport', () {
     test('requires a policy violation', () {
       expect(

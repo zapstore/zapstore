@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.3] - 2026-10-20
+
+### Changed
+
+- Comments, zaps, stacks, and saved apps still match an app after the catalog signing key changes
+- An installed file is found by its hash, which the next relay answers for
+- Comments, replies, and reports on an app name its app id, which the next relay requires
+
+### Fixed
+
+- Opening an app the relay no longer has leaves the screen and keeps the local copy
+- A replaced catalog listing is removed locally only after the new listing and its installable file are stored
+
 ## [1.1.2] - 2026-08-27
 
 ### Added

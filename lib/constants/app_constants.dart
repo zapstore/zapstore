@@ -43,7 +43,11 @@ const kDeviceKeyBackupIdentifier = 'zapstore-device-key-backup';
 /// Used as the relay hint in naddr encoding so other clients can resolve app events.
 /// Invariant: all Zapstore-published app events are available on this relay.
 /// Stack events (social relays) should NOT use this hint.
-const kDefaultRelay = 'wss://relay.zapstore.dev';
+/// `--dart-define=ZAPSTORE_RELAY=ws://...` points a test build at another relay.
+const kDefaultRelay = String.fromEnvironment(
+  'ZAPSTORE_RELAY',
+  defaultValue: 'wss://relay.zapstore.dev',
+);
 
 /// Amber signer package ID
 const kAmberPackageId = 'com.greenart7c3.nostrsigner';

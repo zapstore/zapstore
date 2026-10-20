@@ -12,6 +12,7 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:purplebase/purplebase.dart';
 import 'package:workmanager/workmanager.dart';
+import 'package:zapstore/constants/app_constants.dart';
 import 'package:zapstore/services/background_auto_update_executor.dart';
 import 'package:zapstore/services/background_native_installer.dart';
 import 'package:zapstore/services/log_service.dart';
@@ -232,7 +233,7 @@ Future<bool> _performWeeklyCleanup() async {
 /// default relay if not provided.
 Future<bool> _checkForUpdatesInBackground(Set<String>? appCatalogRelays) async {
   try {
-    final relays = appCatalogRelays ?? {'wss://relay.zapstore.dev'};
+    final relays = appCatalogRelays ?? {kDefaultRelay};
     final settings = await SettingsService().load();
 
     if (!settings.backgroundAutoUpdatesEnabled) {

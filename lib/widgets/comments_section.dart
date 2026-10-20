@@ -14,6 +14,11 @@ import 'package:zapstore/widgets/common/profile_name_widget.dart';
 import 'package:zapstore/widgets/pill_widget.dart';
 
 /// Comments section for App detail screen
+/// The relay requires `i` with the app id on a comment rooted at an app.
+void tagAppComment(PartialComment comment, String appId) {
+  comment.event.addTagValue('i', appId);
+}
+
 class CommentsSection extends HookConsumerWidget {
   const CommentsSection({super.key, required this.app, this.fileMetadata});
 
@@ -670,6 +675,7 @@ class _CommentComposer extends HookConsumerWidget {
         // No parentModel for root comments - only A/K/P tags, no e/k/p
       );
 
+      tagAppComment(comment, app.identifier);
       // Add v tag for version (per NIP-22 guidance, not d tag)
       comment.event.addTagValue('v', versionToComment);
 
@@ -874,6 +880,7 @@ class _ReplyComposer extends HookConsumerWidget {
         rootModel: rootModel,
         parentModel: parentComment,
       );
+      if (app case final app?) tagAppComment(reply, app.identifier);
 
       // Add v tag for version if available (for App comments)
       if (fileMetadata != null) {

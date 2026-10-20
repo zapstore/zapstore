@@ -56,6 +56,27 @@ String? reportableAppEventId(App app) {
   return null;
 }
 
+/// A NIP-56 report on an app listing. The relay anchors it by the `a`
+/// coordinate and requires `i` to be that coordinate's app id.
+PartialReport buildAppReport({
+  required String appEventId,
+  required String appCoordinate,
+  required String appId,
+  required String authorPubkey,
+  required ReportType violationType,
+  required String description,
+}) {
+  final report = PartialReport.forContent(
+    contentId: appEventId,
+    authorPubkey: authorPubkey,
+    violationType: violationType,
+    reason: description,
+  );
+  report.event.addTagValue('a', appCoordinate);
+  report.event.addTagValue('i', appId);
+  return report;
+}
+
 /// Opens the NIP-56 report flow for an app listing.
 void showAppReportSheet(BuildContext context, App app) {
   showModalBottomSheet(
@@ -247,11 +268,13 @@ class AppReportSheet extends HookConsumerWidget {
     isPublishing.value = true;
     submissionError.value = null;
     try {
-      final report = await PartialReport.forContent(
-        contentId: appEventId,
+      final report = await buildAppReport(
+        appEventId: appEventId,
+        appCoordinate: app.id,
+        appId: app.identifier,
         authorPubkey: app.pubkey,
         violationType: violationType,
-        reason: description,
+        description: description,
       ).signWith(signer);
 
       await ref.storage.save({report});
