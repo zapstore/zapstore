@@ -65,3 +65,14 @@ bugs/
 # SQLite side files from opening assets/seed.db locally
 *.db-shm
 *.db-wal
+
+# Local files left by the v2 branch
+/.android-sdk/
+/.gradle/
+/.tools/
+/tools/arti-build/target/
+/iolite/
+/SPEC.md
+/debug.keystore
+/local.properties
+/settings-gradle.lockfile
