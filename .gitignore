@@ -1,4 +1,6 @@
 # Project-specific
+.env
+.env.*
 reference/
 .tools/
 .android-sdk/
