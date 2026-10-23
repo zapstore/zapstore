@@ -175,6 +175,7 @@ internal object ListingRows {
         asset.tagValue("x")?.takeIf { it.isNotBlank() }?.let { put("apk_hash", it) }
         asset.tagValue("filename")?.let { put("filename", it) }
         asset.tagValue("m")?.let { put("mime", it) }
+        asset.tagValue("target_platform_version")?.toIntOrNull()?.let { put("target_sdk", it) }
     }
 
     fun persistProof(tx: Tx, catalog: CatalogRecord, event: Event) {

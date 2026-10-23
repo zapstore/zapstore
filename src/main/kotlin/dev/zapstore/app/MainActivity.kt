@@ -2,7 +2,6 @@ package dev.zapstore.app
 
 import android.content.Intent
 import android.os.Bundle
-import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -36,6 +35,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import dev.zapstore.app.install.hasOtherProfiles
+import dev.zapstore.app.install.mustAskInstallPermission
+import dev.zapstore.app.install.unknownSourcesIntents
 import dev.zapstore.app.install.uninstallIntent
 import dev.zapstore.app.screens.AppDetailScreen
 import dev.zapstore.app.screens.AppDetailViewModel
@@ -89,14 +90,14 @@ class MainActivity : ComponentActivity() {
 
     // Once per process. onResume runs again when the user leaves the settings screen.
     private fun requestInstallPermission() {
-        if (BuildConfig.DEBUG || installPermissionPrompted || packageManager.canRequestPackageInstalls()) return
+        if (BuildConfig.DEBUG || installPermissionPrompted || !mustAskInstallPermission()) return
         installPermissionPrompted = true
         openUnknownSourcesSettings()
     }
 
+    /** Opens the first screen this device has for letting Zapstore install apps. */
     private fun openUnknownSourcesSettings() {
-        val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, "package:$packageName".toUri())
-        runCatching { startActivity(intent) }
+        unknownSourcesIntents(packageName).any { runCatching { startActivity(it) }.isSuccess }
     }
 
     @androidx.compose.runtime.Composable
@@ -150,7 +151,7 @@ class MainActivity : ComponentActivity() {
                     onUninstall = { requestUninstall(it.appId, it.name) },
                     onUninstallInstalled = { packageId, name -> requestUninstall(packageId, name) },
                     onUpdateAll = {
-                        if (packageManager.canRequestPackageInstalls()) viewModel.prepareUpdateAll()
+                        if (!mustAskInstallPermission()) viewModel.prepareUpdateAll()
                         else openUnknownSourcesSettings()
                     },
                     onConfirmUpdateAll = viewModel::confirmUpdateAll,
@@ -202,7 +203,7 @@ class MainActivity : ComponentActivity() {
                     onRetryComments = viewModel::retryComments,
                     onSettingsClick = { navController.navigate(Routes.SETTINGS) },
                     onInstall = {
-                        if (packageManager.canRequestPackageInstalls()) viewModel.prepareInstall()
+                        if (!mustAskInstallPermission()) viewModel.prepareInstall()
                         else openUnknownSourcesSettings()
                     },
                     onConfirmInstall = viewModel::confirmInstall,

@@ -41,8 +41,9 @@ fun platformFloor(deviceSdk: Int): Int? = when {
 
 /**
  * Classify one install before a session is opened.
- * [apk] is null before download. `targetSdk` is not in the listing, so the platform
- * block is decided only after the file is on disk.
+ * [apk] is null before download. Then the platform block uses the listing's
+ * [listedTargetSdk], so a device that cannot install the APK says so before downloading;
+ * the file's own `targetSdk` decides once it is on disk.
  */
 fun installPlan(
     deviceSdk: Int,
@@ -54,6 +55,7 @@ fun installPlan(
     listedCertificate: String?,
     banned: Boolean = false,
     apk: ApkIdentity? = null,
+    listedTargetSdk: Int? = null,
 ): InstallPlan {
     if (banned) return InstallPlan.Blocked(BlockReason.Banned)
     if (listedHash.isNullOrBlank() || listedCertificate.isNullOrBlank()) {
@@ -62,11 +64,12 @@ fun installPlan(
     if (origin.installed && listedVersionCode < origin.versionCode) {
         return InstallPlan.Blocked(BlockReason.Downgrade)
     }
+    val floor = platformFloor(deviceSdk)
+    val targetSdk = apk?.targetSdk ?: listedTargetSdk ?: 0
+    if (floor != null && targetSdk in 1 until floor) {
+        return InstallPlan.Blocked(BlockReason.Platform)
+    }
     if (apk != null) {
-        val floor = platformFloor(deviceSdk)
-        if (floor != null && apk.targetSdk in 1 until floor) {
-            return InstallPlan.Blocked(BlockReason.Platform)
-        }
         val listed = ListedApk(packageId, listedHash, listedCertificate)
         val sameFile = apk.packageId == packageId && apk.sha256.equals(listedHash, ignoreCase = true)
         val sameCert = listedCertificate.lowercase() in apk.currentCertificates.map { it.lowercase() }

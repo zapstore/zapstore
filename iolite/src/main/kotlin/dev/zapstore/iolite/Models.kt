@@ -122,6 +122,8 @@ class AppRecord(
     val license: String? get() = metadata.string("license")
     val downloadUrl: String? get() = metadata.string("download_url")
     val apkHash: String? get() = metadata.string("apk_hash")
+    /** Kind 3063 `target_platform_version`; null when the asset does not say. */
+    val targetSdk: Int? get() = metadata.optInt("target_sdk").takeIf { it > 0 }
     val releaseNotes: String get() = metadata.optString("release_notes")
 
     /**
