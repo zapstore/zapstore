@@ -36,7 +36,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import dev.zapstore.app.LocalIsTv
 import dev.zapstore.app.R
+import dev.zapstore.app.tvRememberFocus
 import dev.zapstore.app.ZapCanvas
 import dev.zapstore.app.ZapSize
 import dev.zapstore.app.ZapTextTertiary
@@ -127,35 +129,38 @@ fun HomeScreen(
                     .focusRequester(searchFocusRequester)
                     .testTag("searchField"),
             )
-            Box(contentAlignment = Alignment.TopEnd) {
-                IconButton(onClick = onUpdatesClick, modifier = Modifier.testTag("updatesButton")) {
+            // On a TV the navigation rail carries Updates and Settings.
+            if (!LocalIsTv.current) {
+                Box(contentAlignment = Alignment.TopEnd) {
+                    IconButton(onClick = onUpdatesClick, modifier = Modifier.testTag("updatesButton")) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_update),
+                            contentDescription = stringResource(R.string.updates),
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                    if (updateCount > 0) {
+                        Text(
+                            text = updateCount.toString(),
+                            color = MaterialTheme.colorScheme.onError,
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier
+                                .padding(top = 4.dp, end = 2.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.error)
+                                .padding(horizontal = 4.dp, vertical = 1.dp)
+                                .testTag("updatesBadge"),
+                        )
+                    }
+                }
+                IconButton(onClick = onSettingsClick, modifier = Modifier.testTag("settingsButton")) {
                     Icon(
-                        painter = painterResource(R.drawable.ic_update),
-                        contentDescription = stringResource(R.string.updates),
-                        modifier = Modifier.size(24.dp),
+                        painter = painterResource(R.drawable.ic_more),
+                        contentDescription = stringResource(R.string.settings),
+                        tint = ZapTextTertiary,
+                        modifier = Modifier.size(22.dp),
                     )
                 }
-                if (updateCount > 0) {
-                    Text(
-                        text = updateCount.toString(),
-                        color = MaterialTheme.colorScheme.onError,
-                        style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier
-                            .padding(top = 4.dp, end = 2.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.error)
-                            .padding(horizontal = 4.dp, vertical = 1.dp)
-                            .testTag("updatesBadge"),
-                    )
-                }
-            }
-            IconButton(onClick = onSettingsClick, modifier = Modifier.testTag("settingsButton")) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_more),
-                    contentDescription = stringResource(R.string.settings),
-                    tint = ZapTextTertiary,
-                    modifier = Modifier.size(22.dp),
-                )
             }
         }
 
@@ -188,7 +193,7 @@ fun HomeScreen(
                         author = app.authorPubkey?.let(state.profiles::get),
                         onClick = { onAppClick(app) },
                         onAuthorClick = onProfileClick,
-                        modifier = Modifier.testTag("searchResult:${app.appId}"),
+                        modifier = Modifier.tvRememberFocus("search:${app.appId}").testTag("searchResult:${app.appId}"),
                     )
                 }
             }
@@ -205,7 +210,7 @@ fun HomeScreen(
                                     stack = stack,
                                     apps = state.stackApps,
                                     onClick = { onStackClick(stack) },
-                                    modifier = Modifier.testTag("stack:${stack.identifier}"),
+                                    modifier = Modifier.tvRememberFocus("stack:${stack.eventId}").testTag("stack:${stack.identifier}"),
                                 )
                             }
                         }

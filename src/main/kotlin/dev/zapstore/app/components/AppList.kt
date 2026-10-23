@@ -12,6 +12,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import dev.zapstore.app.tvRememberFocus
 import dev.zapstore.iolite.AppRecord
 import dev.zapstore.iolite.ProfileRecord
 
@@ -48,7 +49,7 @@ fun LazyListScope.appList(
                     onClick = { onAppClick(app) },
                     onAuthorClick = onAuthorClick,
                     showAuthor = showAuthor,
-                    modifier = modifier.testTag("app:${app.appId}"),
+                    modifier = modifier.tvRememberFocus("app:${app.appId}").testTag("app:${app.appId}"),
                 )
             }
             if (state.loadingMore) {

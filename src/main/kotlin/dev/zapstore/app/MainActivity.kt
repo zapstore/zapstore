@@ -11,6 +11,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -24,6 +26,9 @@ import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NamedNavArgument
+import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -63,7 +68,14 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background,
                     contentColor = MaterialTheme.colorScheme.onBackground,
                 ) {
-                    ZapstoreNavHost(rememberNavController())
+                    val navController = rememberNavController()
+                    Row(Modifier.fillMaxSize()) {
+                        if (LocalIsTv.current) {
+                            val updateCount by zapstore.catalogSync.updateCount.collectAsStateWithLifecycle(0)
+                            TvNavigationRail(navController, updateCount)
+                        }
+                        Box(Modifier.weight(1f)) { ZapstoreNavHost(navController) }
+                    }
                 }
             }
         }
@@ -109,7 +121,7 @@ class MainActivity : ComponentActivity() {
             popEnterTransition = { slide(AnimatedContentTransitionScope.SlideDirection.Right) },
             popExitTransition = { slideOut(AnimatedContentTransitionScope.SlideDirection.Right) },
         ) {
-            composable(Routes.HOME) {
+            screen(Routes.HOME) {
                 val viewModel: HomeViewModel = viewModel(factory = HomeViewModel.factory(iolite, zapstore.queryEncoder::encode))
                 val state by viewModel.uiState.collectAsStateWithLifecycle()
                 val updateCount by zapstore.catalogSync.updateCount.collectAsStateWithLifecycle(0)
@@ -128,7 +140,7 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
-            composable(Routes.UPDATES) {
+            screen(Routes.UPDATES) {
                 val viewModel: UpdatesViewModel = viewModel(factory = UpdatesViewModel.factory(zapstore))
                 val state by viewModel.uiState.collectAsStateWithLifecycle()
                 UpdatesScreen(
@@ -146,7 +158,7 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
-            composable(Routes.SETTINGS) {
+            screen(Routes.SETTINGS) {
                 val viewModel: SettingsViewModel =
                     viewModel(
                         factory = SettingsViewModel.factory(
@@ -165,7 +177,7 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
-            composable(
+            screen(
                 route = Routes.STACK,
                 arguments = listOf(
                     navArgument(Routes.STACK_AUTHOR_ARG) { type = NavType.StringType },
@@ -177,7 +189,7 @@ class MainActivity : ComponentActivity() {
                 StackDetailScreen(state = state, onAppClick = openApp, onProfileClick = openProfile)
             }
 
-            composable(
+            screen(
                 route = Routes.APP,
                 arguments = listOf(navArgument(Routes.APP_ID_ARG) { type = NavType.StringType }),
             ) {
@@ -200,7 +212,7 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
-            composable(
+            screen(
                 route = Routes.PROFILE,
                 arguments = listOf(navArgument(Routes.PUBKEY_ARG) { type = NavType.StringType }),
             ) {
@@ -225,6 +237,15 @@ class MainActivity : ComponentActivity() {
     private fun openUrl(value: String) {
         if (!isHttpUrl(value)) return
         runCatching { startActivity(Intent(Intent.ACTION_VIEW, value.toUri())) }
+    }
+
+    /** A destination whose content takes and restores remote focus on a TV ([TvScreen]). */
+    private fun NavGraphBuilder.screen(
+        route: String,
+        arguments: List<NamedNavArgument> = emptyList(),
+        content: @androidx.compose.runtime.Composable (NavBackStackEntry) -> Unit,
+    ) = composable(route, arguments) { entry ->
+        TvScreen(Modifier.fillMaxSize()) { content(entry) }
     }
 
     private fun AnimatedContentTransitionScope<*>.slide(direction: AnimatedContentTransitionScope.SlideDirection) =

@@ -29,6 +29,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import dev.zapstore.app.tvInitialFocus
 import dev.zapstore.app.R
 import dev.zapstore.app.ZapActionText
 import dev.zapstore.app.ZapCanvas
@@ -323,7 +324,7 @@ private fun UpdateAllDialog(
                 TextButton(onClick = onDismiss) {
                     Text(stringResource(R.string.install_cancel), color = ZapTextSecondary)
                 }
-                TextButton(onClick = onConfirm, modifier = Modifier.testTag("updateAllConfirm")) {
+                TextButton(onClick = onConfirm, modifier = Modifier.tvInitialFocus().testTag("updateAllConfirm")) {
                     Text(stringResource(R.string.update_app), color = ZapActionText)
                 }
             }

@@ -245,6 +245,5 @@ fun ZapstoreTheme(content: @Composable () -> Unit) {
         colorScheme = ZapColorScheme,
         typography = ZapTypography,
         shapes = ZapShapes,
-        content = content,
-    )
+    ) { ProvideTvFocus(content) }
 }
