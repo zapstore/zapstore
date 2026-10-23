@@ -9,8 +9,8 @@ import kotlin.time.Duration.Companion.minutes
 
 /** Build-time endpoints and the query options each kind of data uses. */
 object AppConfig {
-    /** The only native ABI this app ships and matches catalog assets against. */
-    val supportedAbis = listOf("arm64-v8a")
+    /** ABIs this device runs, best first; catalog assets are matched against them, preferring the first. */
+    val supportedAbis: List<String> by lazy { android.os.Build.SUPPORTED_ABIS.toList() }
 
     /** When false every query is local-only and no relay socket is opened. */
     const val relaysEnabled: Boolean = BuildConfig.RELAYS_ENABLED

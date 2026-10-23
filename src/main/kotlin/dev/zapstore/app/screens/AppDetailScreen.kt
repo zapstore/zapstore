@@ -39,6 +39,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import dev.zapstore.app.tvInitialFocus
 import dev.zapstore.app.facts.FactCatalog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -467,7 +468,7 @@ private fun InstallDialog(
                 TextButton(onClick = onDismiss) {
                     Text(stringResource(R.string.install_cancel), color = ZapTextSecondary)
                 }
-                TextButton(onClick = onConfirm, modifier = Modifier.testTag("installConfirm")) {
+                TextButton(onClick = onConfirm, modifier = Modifier.tvInitialFocus().testTag("installConfirm")) {
                     Text(stringResource(R.string.install_confirm), color = ZapActionText)
                 }
             }

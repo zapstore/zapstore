@@ -17,7 +17,7 @@ object SessionInstaller {
         plan: InstallPlan,
         bulk: Boolean = false,
     ) {
-        if (!context.packageManager.canRequestPackageInstalls()) {
+        if (context.mustAskInstallPermission()) {
             throw InstallException(InstallException.Kind.Permission, "install permission missing")
         }
         val installer = context.packageManager.packageInstaller

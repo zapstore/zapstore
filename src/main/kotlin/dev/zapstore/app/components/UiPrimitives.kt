@@ -1,5 +1,6 @@
 package dev.zapstore.app.components
 
+import dev.zapstore.app.LocalIsTv
 import dev.zapstore.app.ZapAction
 import dev.zapstore.app.ZapActionText
 import dev.zapstore.app.ZapLine
@@ -29,8 +30,25 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -117,7 +135,13 @@ fun StatusBadge(
 /**
  * Pill search field matching the "search" component (design/DESIGN.md): surface-1, hairline
  * border, fully rounded, 44 dp Android control height — not the default 56 dp text field.
+ *
+ * With a remote on Android TV, focus passes through the field on its way to the
+ * buttons and the list. Passing by must not pop the keyboard or trap Left/Right in the text,
+ * so in that mode the field is read-only until OK/Enter, and read-only again once the
+ * keyboard closes. Touch input is unchanged.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ZapSearchField(
     value: String,
@@ -130,8 +154,23 @@ fun ZapSearchField(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
     val shape = RoundedCornerShape(ZapRadius.full)
     val textStyle = MaterialTheme.typography.bodyMedium.copy(color = ZapTextPrimary)
+    val keys = LocalIsTv.current && LocalInputModeManager.current.inputMode == InputMode.Keyboard
+    var editing by remember { mutableStateOf(false) }
+    var focused by remember { mutableStateOf(false) }
+    // Set once the keyboard has been up for this field, so its closing is told apart
+    // from the moment between OK and the keyboard showing.
+    var keyboardShown by remember { mutableStateOf(false) }
+    val imeVisible = WindowInsets.isImeVisible
+    LaunchedEffect(focused, imeVisible) {
+        when {
+            !focused -> { keyboardShown = false; editing = false }
+            imeVisible -> keyboardShown = true
+            keyboardShown -> { keyboardShown = false; editing = false }
+        }
+    }
 
     BasicTextField(
         value = value,
@@ -140,7 +179,40 @@ fun ZapSearchField(
             .height(ZapSize.control)
             .clip(shape)
             .background(ZapSurface1, shape)
-            .border(1.dp, ZapLine, shape),
+            .border(
+                if (keys && focused) 2.dp else 1.dp,
+                if (keys && focused) ZapActionText else ZapLine,
+                shape,
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .onPreviewKeyEvent {
+                if (!keys) return@onPreviewKeyEvent false
+                // Up and Down mean nothing in a single line, so they always leave the field,
+                // even while editing with no keyboard on screen.
+                val vertical = it.key == Key.DirectionUp || it.key == Key.DirectionDown
+                if (editing && !vertical) return@onPreviewKeyEvent false
+                val ok = it.key == Key.DirectionCenter || it.key == Key.Enter || it.key == Key.NumPadEnter
+                // A read-only field still takes the arrows for its cursor; hand them to focus.
+                val direction = when (it.key) {
+                    Key.DirectionLeft -> FocusDirection.Left
+                    Key.DirectionRight -> FocusDirection.Right
+                    Key.DirectionUp -> FocusDirection.Up
+                    Key.DirectionDown -> FocusDirection.Down
+                    else -> null
+                }
+                when {
+                    ok -> {
+                        if (it.type == KeyEventType.KeyUp) editing = true
+                        true
+                    }
+                    direction != null -> {
+                        if (it.type == KeyEventType.KeyDown) focusManager.moveFocus(direction)
+                        true
+                    }
+                    else -> false
+                }
+            },
+        readOnly = keys && !editing,
         singleLine = true,
         textStyle = textStyle,
         cursorBrush = SolidColor(ZapActionText),
@@ -148,6 +220,7 @@ fun ZapSearchField(
         keyboardActions = KeyboardActions(onSearch = {
             onSearch()
             keyboardController?.hide()
+            editing = false
         }),
         interactionSource = interactionSource,
         decorationBox = { innerTextField ->

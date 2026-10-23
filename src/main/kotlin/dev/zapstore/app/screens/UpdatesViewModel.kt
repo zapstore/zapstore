@@ -13,6 +13,7 @@ import dev.zapstore.app.catalog.InstalledApp
 import dev.zapstore.app.catalog.SyncStatus
 import dev.zapstore.app.catalog.updateGroups
 import dev.zapstore.iolite.AppRecord
+import dev.zapstore.app.install.mustAskInstallPermission
 import dev.zapstore.app.install.InstallOrigin
 import dev.zapstore.app.install.InstallTurn
 import dev.zapstore.app.install.awaitTerminal
@@ -97,7 +98,7 @@ class UpdatesViewModel(
     fun confirmUpdateAll() {
         val ready = uiState.value.updates
         if (ready.isEmpty() || batch.value.running) return
-        if (!zapstore.packageManager.canRequestPackageInstalls()) {
+        if (zapstore.mustAskInstallPermission()) {
             batch.update { it.copy(confirm = false) }
             return
         }

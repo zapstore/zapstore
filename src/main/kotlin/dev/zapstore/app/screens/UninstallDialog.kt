@@ -19,6 +19,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import dev.zapstore.app.tvInitialFocus
 import dev.zapstore.app.R
 import dev.zapstore.app.ZapDanger
 import dev.zapstore.app.ZapLine
@@ -57,7 +58,7 @@ fun UninstallProfilesDialog(
                 TextButton(onClick = onDismiss) {
                     Text(stringResource(R.string.install_cancel), color = ZapTextSecondary)
                 }
-                TextButton(onClick = onConfirm, modifier = Modifier.testTag("uninstallConfirm")) {
+                TextButton(onClick = onConfirm, modifier = Modifier.tvInitialFocus().testTag("uninstallConfirm")) {
                     Text(stringResource(R.string.uninstall), color = ZapDanger)
                 }
             }

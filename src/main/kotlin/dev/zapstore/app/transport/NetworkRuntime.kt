@@ -22,6 +22,8 @@ class NetworkRuntime(
     private val engineFactory: (Context) -> ArtiEngine? = { ctx ->
         runCatching { EmbeddedArtiEngine(ctx) }.getOrNull()
     },
+    /** False when this ABI ships no Arti library (32-bit TVs). The app is then Direct only. */
+    val torAvailable: Boolean = artiPackaged(context),
 ) {
     private val appContext = context.applicationContext
     private val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -71,7 +73,7 @@ class NetworkRuntime(
     }
 
     fun setMode(mode: NetworkMode) {
-        if (mode == _mode.value) return
+        if (mode == _mode.value || (mode.usesTor && !torAvailable)) return
         val wasUsingTor = _mode.value.usesTor
         prefs.edit().putString(KEY_MODE, mode.name).apply()
         _mode.value = mode
@@ -176,12 +178,22 @@ class NetworkRuntime(
     }
 
 	private fun loadMode(): NetworkMode {
+		if (!torAvailable) return NetworkMode.DirectOnly
 		val debug = appContext.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0
 		val fallback = if (debug) NetworkMode.DirectOnly else NetworkMode.TorOnly
 		return NetworkMode.fromStored(prefs.getString(KEY_MODE, fallback.name))
 	}
 
     private companion object {
+        /**
+         * Arti ships for arm64-v8a, so a 64-bit process always counts it as packaged: a
+         * missing library there fails Tor closed instead of switching to Direct. Elsewhere
+         * the class loader is asked for the library path without loading it.
+         */
+        fun artiPackaged(context: Context): Boolean =
+            android.os.Process.is64Bit() ||
+                (context.classLoader as? dalvik.system.BaseDexClassLoader)?.findLibrary("arti_android") != null
+
         const val PREFS = "network"
         const val KEY_MODE = "mode"
     }

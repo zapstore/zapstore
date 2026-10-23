@@ -66,7 +66,7 @@ fun SettingsScreen(
 
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             SectionLabel(stringResource(R.string.network))
-            FlowRow(
+            if (state.torAvailable) FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth(),
@@ -91,7 +91,8 @@ fun SettingsScreen(
                 )
             }
             StatusText(
-                networkStatusText(state.networkMode, state.torState),
+                if (state.torAvailable) networkStatusText(state.networkMode, state.torState)
+                else stringResource(R.string.tor_unavailable),
                 Modifier.testTag("networkStatus"),
             )
         }

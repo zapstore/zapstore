@@ -91,6 +91,24 @@ class InstallPolicyTest {
     }
 
     @Test
+    fun blocksListedTargetSdkBelowTheFloorBeforeDownload() {
+        val origin = InstallOrigin(installed = false)
+        assertEquals(
+            InstallPlan.Blocked(BlockReason.Platform),
+            installPlan(34, ours, "com.example.app", origin, 2, "aa", "cert", listedTargetSdk = 22),
+        )
+        assertEquals(
+            InstallPlan.FirstInstall,
+            installPlan(34, ours, "com.example.app", origin, 2, "aa", "cert", listedTargetSdk = 23),
+        )
+        // The downloaded file decides over the listing.
+        assertEquals(
+            InstallPlan.FirstInstall,
+            installPlan(34, ours, "com.example.app", origin, 2, "aa", "cert", apk = apk.copy(targetSdk = 30), listedTargetSdk = 22),
+        )
+    }
+
+    @Test
     fun blocksDowngradeMissingFileAndBan() {
         val installed = InstallOrigin(installed = true, versionCode = 5, installingPackage = ours, certificates = setOf("cert"))
         assertEquals(

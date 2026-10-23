@@ -10,6 +10,13 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+// Android TV boxes often run a 32-bit userspace on 64-bit chips. A TV build adds
+// armeabi-v7a: `./gradlew assembleTv -Pzapstore.abis=armeabi-v7a` (or ZAPSTORE_ABIS).
+// Arti ships for arm64-v8a only, so other ABIs run Direct only.
+val zapstoreAbis: List<String> =
+    (providers.gradleProperty("zapstore.abis").orNull ?: System.getenv("ZAPSTORE_ABIS") ?: "arm64-v8a")
+        .split(',').map { it.trim() }.filter { it.isNotEmpty() }
+
 android {
     namespace = "dev.zapstore.app"
     compileSdk = providers.gradleProperty("iolite.compileSdk").orElse("37").get().toInt()
@@ -22,7 +29,7 @@ android {
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
-            abiFilters += "arm64-v8a"
+            abiFilters += zapstoreAbis
         }
     }
 
@@ -81,6 +88,14 @@ android {
             )
             buildConfigField("boolean", "RELAYS_ENABLED", "true")
             buildConfigField("String", "CATALOG_RELAY", catalogRelayField)
+        }
+        // Release code (R8, not debuggable) signed with the debug key, so it installs
+        // over a debug build. Debug Compose is several times slower than release; on a
+        // weak Android TV, measure performance here.
+        create("tv") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += "release"
         }
     }
 

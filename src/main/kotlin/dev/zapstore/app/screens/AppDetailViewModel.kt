@@ -11,6 +11,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import dev.zapstore.app.AppConfig
 import dev.zapstore.app.R
 import dev.zapstore.app.ZapstoreApplication
+import dev.zapstore.app.install.mustAskInstallPermission
 import dev.zapstore.app.install.BlockReason
 import dev.zapstore.app.install.InstallEvents
 import dev.zapstore.app.install.InstallOrigin
@@ -219,7 +220,7 @@ class AppDetailViewModel(
         val record = uiState.value.app ?: return
         val origin = originState.value ?: return
         if (installUi.value.dialog == null || installUi.value.busy) return
-        if (!appContext.packageManager.canRequestPackageInstalls()) {
+        if (appContext.mustAskInstallPermission()) {
             installUi.update { it.copy(dialog = null, message = appContext.getString(R.string.install_permission)) }
             return
         }
@@ -293,6 +294,7 @@ class AppDetailViewModel(
         listedHash = record.apkHash,
         listedCertificate = record.certificateHash,
         apk = apk,
+        listedTargetSdk = record.targetSdk,
     )
 
     private fun blockMessage(reason: BlockReason): String = appContext.getString(

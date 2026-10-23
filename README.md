@@ -20,7 +20,7 @@ The production APK is still published from the [Flutter client](https://github.c
 
 - JDK **21**
 - Android SDK (compile / target API **37**, min SDK **29**)
-- An **arm64-v8a** device for `make run` (this is the only ABI the app ships).
+- An **arm64-v8a** device for `make run`. That is the default ABI; see [32-bit devices and Android TV](#32-bit-devices-and-android-tv) for others.
 
 ## Build from source
 
@@ -46,6 +46,20 @@ make run-release    # assembleRelease (R8), install, launch
 `make install` clears app data and embeds `CATALOG_BUNDLE` when that path is set. `make build` only builds.
 
 The catalog relay URLs and signer come from that bundle's signed manifest, not from the build. `make run-release` reverses port 3334 so a bundle that lists `ws://127.0.0.1:3334` can reach a relay on the host.
+
+### 32-bit devices and Android TV
+
+Many Android TV boxes run a 32-bit userspace. Add their ABI with `-Pzapstore.abis` (or `ZAPSTORE_ABIS`), comma-separated:
+
+```bash
+./gradlew assembleTv -Pzapstore.abis=armeabi-v7a
+```
+
+`tv` is release code (R8, not debuggable) signed with the local debug key, so it installs over a debug build. It is for testing, not distribution. Measure performance on weak devices with it, not with a debug build.
+
+Arti ships for arm64-v8a only. On any other ABI the app runs Direct only, and Settings says so.
+
+On a leanback device the app shows a navigation rail (Home, Updates, Settings), draws a focus ring on the focused element, and keeps the search field read-only until OK is pressed. Phones are unchanged.
 
 Release builds run R8 (minify + optimize + shrink resources, English locales only). Mapping lands in `build/outputs/mapping/release/`.
 
