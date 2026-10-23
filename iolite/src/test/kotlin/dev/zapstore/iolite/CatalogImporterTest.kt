@@ -473,6 +473,28 @@ class CatalogImporterTest {
     }
 
     @Test
+    fun sameVersionAssetsPreferThePrimaryAbi() {
+        val secret = Hex.decode("11".repeat(32))
+        val ditto = fixtureListing(secret, "pub.ditto.app", "Ditto", "1.0.0", 10)
+        val arm32 = assetEvent(secret, "pub.ditto.app", "2.0.0", 20, 1_700_000_100, hash = "a3".repeat(32), platform = "android-armeabi-v7a")
+        val arm64 = assetEvent(secret, "pub.ditto.app", "2.0.0", 20, 1_700_000_100, hash = "a6".repeat(32))
+        val phone = DeviceProfile(abis = listOf("arm64-v8a", "armeabi-v7a"), sdk = 34)
+        val tv = DeviceProfile(abis = listOf("armeabi-v7a"), sdk = 34)
+        for (order in listOf(listOf(arm32, arm64), listOf(arm64, arm32))) {
+            withStore { store, _ ->
+                store.insertFixtureCatalog()
+                import(store, ditto.events + order, 1, phone)
+                assertEquals(arm64.tagValue("x"), store.apps().single().apkHash)
+            }
+        }
+        withStore { store, _ ->
+            store.insertFixtureCatalog()
+            import(store, ditto.events + arm64 + arm32, 1, tv)
+            assertEquals(arm32.tagValue("x"), store.apps().single().apkHash)
+        }
+    }
+
+    @Test
     fun malformedListingDoesNotAbortSync() {
         withStore { store, _ ->
             store.insertFixtureCatalog()
@@ -533,7 +555,12 @@ class CatalogImporterTest {
         }
     }
 
-    private fun import(store: IoliteStore, events: List<Event>, epoch: Long) {
+    private fun import(
+        store: IoliteStore,
+        events: List<Event>,
+        epoch: Long,
+        device: DeviceProfile = DeviceProfile(abis = listOf("arm64-v8a"), sdk = 34),
+    ) {
         if (store.catalog(1)!!.manifestPubkey == null) {
             store.pinManifestPubkeyIfAbsent(1, fixtureManifest)
         }
@@ -543,7 +570,7 @@ class CatalogImporterTest {
             deletes = emptyList(),
             replaceAll = false,
             toEpoch = epoch,
-            device = DeviceProfile(abis = listOf("arm64-v8a"), sdk = 34),
+            device = device,
             now = 1_700_000_000,
         )
     }
@@ -600,6 +627,7 @@ class CatalogImporterTest {
         versionCode: Long,
         createdAt: Long,
         hash: String = "ab".repeat(32),
+        platform: String = "android-arm64-v8a",
     ): Event = Event.sign(
         secret,
         createdAt,
@@ -609,7 +637,7 @@ class CatalogImporterTest {
             listOf("x", hash),
             listOf("version", version),
             listOf("m", "application/vnd.android.package-archive"),
-            listOf("f", "android-arm64-v8a"),
+            listOf("f", platform),
             listOf("version_code", versionCode.toString()),
             listOf("apk_certificate_hash", "cd".repeat(32)),
             listOf("url", "https://example.invalid/$appId.apk"),

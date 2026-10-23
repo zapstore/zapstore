@@ -83,6 +83,7 @@ class CatalogSync(
                     pulled
                 }
             }
+            result.exceptionOrNull()?.let { Log.w(TAG, "catalog sync failed", it) }
             refreshInstalledApps()
             _status.update {
                 val pulled = result.getOrNull()

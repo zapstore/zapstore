@@ -89,6 +89,7 @@
     <string name="tor_failed">Tor failed. Direct is not used as a fallback.</string>
     <string name="tor_failed_fallback">Tor failed. Using Direct.</string>
     <string name="tor_stopped">Tor stopped</string>
+    <string name="tor_unavailable">Tor is not available on this device. Direct exposes your IP address to relays, catalog relays, and download hosts.</string>
     <string name="install">Install</string>
     <string name="update_app">Update</string>
     <string name="installed">Installed</string>

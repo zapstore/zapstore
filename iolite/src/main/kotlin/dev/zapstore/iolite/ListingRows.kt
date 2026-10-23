@@ -49,7 +49,12 @@ internal object ListingRows {
             ?: releases.firstOrNull()
         val asset = events
             .filter { it.kind == Kinds.Asset && it.tagValue("i") == appId && assetMatchesDevice(it, device) }
-            .maxWithOrNull(compareBy<Event> { it.tagValue("version_code")?.toLongOrNull() ?: -1 }.thenBy { it.id })
+            .maxWithOrNull(
+                compareBy<Event> { it.tagValue("version_code")?.toLongOrNull() ?: -1 }
+                    // Same version for several ABIs: the device's primary ABI first.
+                    .thenByDescending { abiRank(it, device) }
+                    .thenBy { it.id },
+            )
         if (app == null && release == null && asset == null) return
         val stored = storedListing(db, catalog.id, appId)
         val certificate = asset?.tagValue("apk_certificate_hash")?.takeIf { Hex.isHex(it, 64) }
@@ -310,6 +315,13 @@ internal object ListingRows {
     }
 
     // --- validation --------------------------------------------------------------------------------
+
+    /** Index of the asset's best ABI in [DeviceProfile.platforms]; 0 for an asset without `f` tags. */
+    private fun abiRank(event: Event, device: DeviceProfile): Int {
+        val platforms = event.tagValues("f").filter { it.startsWith("android-") }
+        if (platforms.isEmpty()) return 0
+        return platforms.minOf { device.platforms.indexOf(it).takeIf { i -> i >= 0 } ?: Int.MAX_VALUE }
+    }
 
     private fun assetMatchesDevice(event: Event, device: DeviceProfile): Boolean {
         if (!event.tagValue("variant").isNullOrBlank()) return false

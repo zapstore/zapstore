@@ -30,6 +30,7 @@ data class SettingsUiState(
     val localStorageBytes: Long = 0,
     val networkMode: NetworkMode = NetworkMode.TorOnly,
     val torState: TorRuntimeState = TorRuntimeState.Stopped,
+    val torAvailable: Boolean = true,
 )
 
 class SettingsViewModel(
@@ -60,6 +61,7 @@ class SettingsViewModel(
             localStorageBytes = snapshot.localStorageBytes,
             networkMode = mode,
             torState = torState,
+            torAvailable = network.torAvailable,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), SettingsUiState())
 
