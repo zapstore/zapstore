@@ -25,7 +25,7 @@ import dev.zapstore.app.R
 import dev.zapstore.app.ZapRadius
 import dev.zapstore.app.ZapSpacing
 import dev.zapstore.app.ZapSurface2
-import dev.zapstore.app.ZapTextSecondary
+import dev.zapstore.app.ZapText2
 import dev.zapstore.app.ZapTitle3Style
 import dev.zapstore.iolite.AppRecord
 import dev.zapstore.iolite.StackRecord
@@ -86,7 +86,7 @@ fun StackCard(
         )
         Text(
             text = pluralStringResource(R.plurals.curated_apps, stack.catalogCount(apps), stack.catalogCount(apps)),
-            color = ZapTextSecondary,
+            color = ZapText2,
             style = MaterialTheme.typography.bodySmall,
             maxLines = 1,
         )
@@ -115,7 +115,7 @@ fun StackShelfCard(
             Text(stack.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
                 stack.description.ifBlank { pluralStringResource(R.plurals.curated_apps, stack.catalogCount(apps), stack.catalogCount(apps)) },
-                color = ZapTextSecondary,
+                color = ZapText2,
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -134,7 +134,7 @@ fun StackHead(stack: StackRecord, apps: Map<String, AppRecord>, modifier: Modifi
             Text(stack.name, style = ZapTitle3Style)
             Text(
                 stack.description.ifBlank { pluralStringResource(R.plurals.curated_apps, stack.catalogCount(apps), stack.catalogCount(apps)) },
-                color = ZapTextSecondary,
+                color = ZapText2,
                 style = MaterialTheme.typography.bodyMedium,
             )
         }

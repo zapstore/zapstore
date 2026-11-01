@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class StacksUiState(
@@ -42,7 +43,9 @@ data class StacksUiState(
 @OptIn(ExperimentalCoroutinesApi::class)
 class StacksViewModel(private val iolite: Iolite) : ViewModel() {
     private val limit = MutableStateFlow(PAGE_SIZE)
-    private val loadingMore = MutableStateFlow(false)
+    /** Older pages still inside their one-shot window. */
+    private val loadingMore = MutableStateFlow(0)
+    private val requestedPages = mutableSetOf<Long>()
 
     private val stacks = limit.flatMapLatest { limit ->
         iolite.query(Query.socialStacks(AppConfig.platforms, limit), AppConfig.socialStacksQuery)
@@ -62,25 +65,26 @@ class StacksViewModel(private val iolite: Iolite) : ViewModel() {
             stacks = state.items.filter { stack -> stack.appIds.any(apps::containsKey) },
             apps = apps,
             profiles = profiles,
-            loading = state.items.isEmpty() && state.isLoading,
-            loadingMore = more,
+            loading = state.items.isEmpty() && !state.settled,
+            loadingMore = more > 0,
             canLoadMore = state.items.size >= limit,
-            error = state.error?.message,
+            error = state.relayError(),
             oldest = state.items.lastOrNull()?.updatedAt,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), StacksUiState())
 
+    /** Shows one more page now; the older stacks are fetched alongside and appear as they land. */
     fun loadMore() {
-        if (loadingMore.value) return
         val oldest = uiState.value.oldest ?: return
-        loadingMore.value = true
+        if (!requestedPages.add(oldest)) return
+        limit.value += PAGE_SIZE
+        loadingMore.update { it + 1 }
         viewModelScope.launch {
             try {
                 val older = Query.socialStacks(AppConfig.platforms, PAGE_SIZE, until = oldest - 1)
-                iolite.query(older, AppConfig.olderStacksQuery).first { it.isTerminal }
-                limit.value += PAGE_SIZE
+                iolite.query(older, AppConfig.olderStacksQuery).first { it.settled }
             } finally {
-                loadingMore.value = false
+                loadingMore.update { it - 1 }
             }
         }
     }

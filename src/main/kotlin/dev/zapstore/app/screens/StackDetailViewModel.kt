@@ -79,14 +79,14 @@ class StackDetailViewModel(
             own = own,
             edit = edit,
             stack = stack,
-            stackLoading = stack == null && stackState.isLoading,
+            stackLoading = stack == null && !stackState.settled,
             apps = AppListState(
                 apps = stack?.appIds.orEmpty().mapNotNull(appsById::get),
                 profiles = profiles,
                 loading = false,
             ),
             appsById = appsById,
-            error = stackState.error?.message,
+            error = stackState.relayError(),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), StackDetailUiState())
 

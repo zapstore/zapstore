@@ -51,11 +51,11 @@ class ProfileViewModel(
         ProfileUiState(
             pubkey = pubkey,
             profile = profileState.items,
-            profileLoading = profileState.items == null && profileState.isLoading,
+            profileLoading = profileState.items == null && !profileState.settled,
             apps = AppListState(apps = apps, loading = false),
             stacks = stacks.filter { stack -> stack.appIds.any(stackApps::containsKey) },
             stackApps = stackApps,
-            error = profileState.error?.message,
+            error = profileState.relayError(),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), ProfileUiState(pubkey))
 

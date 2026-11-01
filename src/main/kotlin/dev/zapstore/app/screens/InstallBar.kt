@@ -45,7 +45,7 @@ import dev.zapstore.app.ZapOnDangerFill
 import dev.zapstore.app.ZapSize
 import dev.zapstore.app.ZapButtonShape
 import dev.zapstore.app.ZapSurface4
-import dev.zapstore.app.ZapTextPrimary
+import dev.zapstore.app.ZapText
 import dev.zapstore.iolite.AppRecord
 import java.util.Locale
 
@@ -208,7 +208,7 @@ private fun SimpleButton(button: BarButton.Simple) {
 private fun ProgressButton(button: BarButton.Progress) {
     val base = if (button.paused) ZapSurface4 else ZapAction
     val fill = Color.Black.copy(alpha = if (button.paused) 0.35f else 0.22f).compositeOver(base)
-    val content = if (button.paused) ZapTextPrimary.copy(alpha = 0.85f) else Color.White
+    val content = if (button.paused) ZapText.copy(alpha = 0.85f) else Color.White
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier

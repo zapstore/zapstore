@@ -7,7 +7,7 @@ import androidx.compose.foundation.background
 import dev.zapstore.iolite.AppRecord
 import dev.zapstore.app.components.pressScale
 import dev.zapstore.app.components.AppIcon
-import dev.zapstore.app.ZapTextPrimary
+import dev.zapstore.app.ZapText
 import dev.zapstore.app.ZapSurface3
 import dev.zapstore.app.ZapActionTint
 import dev.zapstore.app.ZapActionText
@@ -73,8 +73,8 @@ import dev.zapstore.app.ZapSize
 import dev.zapstore.app.ZapSpacing
 import dev.zapstore.app.ZapSurface2
 import dev.zapstore.app.ZapSurface4
-import dev.zapstore.app.ZapTextSecondary
-import dev.zapstore.app.ZapTextTertiary
+import dev.zapstore.app.ZapText2
+import dev.zapstore.app.ZapText3
 import dev.zapstore.app.cdnImageUrl
 import dev.zapstore.app.components.BadgeTone
 import dev.zapstore.app.components.GroupHeader
@@ -141,7 +141,7 @@ internal fun AppActionSheet(
                 AppIcon(title = app.name, iconUrl = app.iconUrl, iconFile = app.iconFile, size = 28.dp)
                 Text(
                     app.name,
-                    color = ZapTextPrimary,
+                    color = ZapText,
                     style = MaterialTheme.typography.titleSmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -210,7 +210,7 @@ internal fun AddToStackSheet(
                 .testTag("addToStack"),
         ) {
             Text(stringResource(R.string.add_to_stack_title, app.name), style = MaterialTheme.typography.titleLarge)
-            Text(stringResource(R.string.stacks_are_public), color = ZapTextSecondary, style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.stacks_are_public), color = ZapText2, style = MaterialTheme.typography.bodyMedium)
             if (state.loading && state.stacks.isEmpty()) LoadingIndicator(Modifier.size(20.dp))
             StacksPicker(app.appId, state, onToggle, onCreate)
             ZapButton(
@@ -296,7 +296,7 @@ private fun StackPickerRow(label: String, icon: Int?, busy: Boolean, onClick: ()
     ) {
         Text(
             label,
-            color = ZapTextPrimary,
+            color = ZapText,
             style = MaterialTheme.typography.bodyMedium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -324,7 +324,7 @@ private fun ActionTile(
     val tint = when {
         danger -> ZapDanger
         selected -> ZapActionText
-        else -> ZapTextPrimary
+        else -> ZapText
     }
     val interaction = remember { MutableInteractionSource() }
     Column(
@@ -367,7 +367,7 @@ internal fun ConfirmSheet(
             modifier = Modifier.fillMaxWidth().padding(start = ZapSpacing.space5, end = ZapSpacing.space5, bottom = ZapSpacing.space5),
         ) {
             Text(title, style = MaterialTheme.typography.titleLarge)
-            body.forEach { Text(it, color = ZapTextSecondary, style = MaterialTheme.typography.bodyMedium) }
+            body.forEach { Text(it, color = ZapText2, style = MaterialTheme.typography.bodyMedium) }
             ZapButton(
                 text = confirm,
                 onClick = onConfirm,
@@ -431,7 +431,7 @@ internal fun InstallSheet(
                         },
                     )
                 },
-                color = ZapTextSecondary,
+                color = ZapText2,
                 style = MaterialTheme.typography.bodyMedium,
             )
             if (plan is InstallPlan.FirstInstall && trustName != null) {
@@ -472,13 +472,13 @@ internal fun CatalogSignedNote(name: String, downloadUrl: String?, modifier: Mod
         downloadUrl?.let { url ->
             Text(
                 stringResource(R.string.downloads_from),
-                color = ZapTextSecondary,
+                color = ZapText2,
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(start = 26.dp),
             )
             Text(
                 downloadLabel(url),
-                color = ZapTextPrimary,
+                color = ZapText,
                 style = MaterialTheme.typography.labelMedium,
                 modifier = Modifier.padding(start = 26.dp).testTag("downloadUrl"),
             )
@@ -502,7 +502,7 @@ internal fun MarkdownSheet(title: String, markdown: String, onOpenUrl: (String) 
                 .padding(start = ZapSpacing.space5, end = ZapSpacing.space5, bottom = ZapSpacing.space5),
         ) {
             Text(title, style = MaterialTheme.typography.titleLarge)
-            MarkdownText(value = markdown, color = ZapTextSecondary, style = MaterialTheme.typography.bodyLarge, onOpenUrl = onOpenUrl)
+            MarkdownText(value = markdown, color = ZapText2, style = MaterialTheme.typography.bodyLarge, onOpenUrl = onOpenUrl)
         }
     }
 }
@@ -534,7 +534,7 @@ internal fun ScreenshotCarousel(screenshots: List<String>, initialPage: Int, app
             }
             Text(
                 "${pagerState.currentPage + 1}/${screenshots.size}",
-                color = ZapTextTertiary,
+                color = ZapText3,
                 style = MaterialTheme.typography.labelMedium,
                 modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 18.dp),
             )

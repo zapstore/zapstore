@@ -38,8 +38,8 @@ import dev.zapstore.app.ZapRadius
 import dev.zapstore.app.components.ZapSegmented
 import dev.zapstore.app.ZapDanger
 import dev.zapstore.app.ZapSpacing
-import dev.zapstore.app.ZapTextSecondary
-import dev.zapstore.app.ZapTextTertiary
+import dev.zapstore.app.ZapText2
+import dev.zapstore.app.ZapText3
 import dev.zapstore.app.catalog.AvailableUpdate
 import dev.zapstore.app.catalog.InstalledApp
 import dev.zapstore.app.components.AppIcon
@@ -139,7 +139,7 @@ fun UpdatesScreen(
                             .semantics { contentDescription = clearDescription }
                             .testTag("clearMyAppsSearch"),
                     ) {
-                        Icon(painterResource(R.drawable.ic_close), contentDescription = null, tint = ZapTextTertiary, modifier = Modifier.size(16.dp))
+                        Icon(painterResource(R.drawable.ic_close), contentDescription = null, tint = ZapText3, modifier = Modifier.size(16.dp))
                     }
                 }
             },
@@ -147,7 +147,7 @@ fun UpdatesScreen(
                 Icon(
                     painter = painterResource(R.drawable.ic_search),
                     contentDescription = null,
-                    tint = ZapTextTertiary,
+                    tint = ZapText3,
                     modifier = Modifier.size(18.dp),
                 )
             },
@@ -468,7 +468,7 @@ private fun OtherInstalledRow(installed: InstalledApp, onUninstall: () -> Unit) 
         AppIcon(title = installed.label, iconUrl = null, size = 40.dp)
         Column(Modifier.weight(1f)) {
             Text(installed.label, style = MaterialTheme.typography.titleSmall, maxLines = 1)
-            Text(installed.packageId, color = ZapTextSecondary, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+            Text(installed.packageId, color = ZapText2, style = MaterialTheme.typography.labelMedium, maxLines = 1)
         }
         UninstallButton(installed.packageId, onUninstall)
     }

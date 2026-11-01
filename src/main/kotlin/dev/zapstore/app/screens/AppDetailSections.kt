@@ -19,7 +19,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyRow
-import dev.zapstore.app.ZapTextTertiary
+import dev.zapstore.app.ZapText3
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
@@ -53,8 +53,8 @@ import dev.zapstore.app.R
 import dev.zapstore.app.ZapLine
 import dev.zapstore.app.ZapSpacing
 import dev.zapstore.app.ZapSurface3
-import dev.zapstore.app.ZapTextPrimary
-import dev.zapstore.app.ZapTextSecondary
+import dev.zapstore.app.ZapText
+import dev.zapstore.app.ZapText2
 import dev.zapstore.app.components.AuthorByline
 import dev.zapstore.app.components.BadgeTone
 import dev.zapstore.app.components.EmptyRow
@@ -75,6 +75,7 @@ import dev.zapstore.app.facts.FactCatalog
 import dev.zapstore.iolite.AppRecord
 import dev.zapstore.iolite.CommentRecord
 import dev.zapstore.iolite.ProfileRecord
+import dev.zapstore.iolite.ZapRecord
 import java.text.DateFormat
 import java.text.NumberFormat
 import java.util.Date
@@ -137,7 +138,7 @@ internal fun SecurityCard(app: AppRecord, onOpenUrl: (String) -> Unit, modifier:
             Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2), modifier = Modifier.testTag("securityFlags")) {
                 flags.forEach { (label, note) ->
                     ZapBadge(label, BadgeTone.Warning)
-                    if (note.isNotBlank()) Text(note, color = ZapTextSecondary, style = MaterialTheme.typography.bodyMedium)
+                    if (note.isNotBlank()) Text(note, color = ZapText2, style = MaterialTheme.typography.bodyMedium)
                 }
             }
         }
@@ -161,12 +162,12 @@ internal fun SecurityCard(app: AppRecord, onOpenUrl: (String) -> Unit, modifier:
         if (app.securityWarnings.isNotBlank()) {
             app.securityWarnings.lineSequence().map { it.trim().removePrefix("⚠️").removePrefix("⚠").trim() }
                 .filter { it.isNotEmpty() }
-                .forEach { Text(it, color = ZapTextPrimary, style = MaterialTheme.typography.bodyMedium) }
+                .forEach { Text(it, color = ZapText, style = MaterialTheme.typography.bodyMedium) }
         }
         if (app.securityBody.isNotBlank()) {
             MarkdownText(
                 value = app.securityBody,
-                color = ZapTextSecondary,
+                color = ZapText2,
                 style = MaterialTheme.typography.bodyMedium,
                 onOpenUrl = onOpenUrl,
             )
@@ -187,7 +188,7 @@ internal fun SecurityCard(app: AppRecord, onOpenUrl: (String) -> Unit, modifier:
                     if (expanded) {
                         Text(
                             other.joinToString(" · ") { it.id.orEmpty() },
-                            color = ZapTextTertiary,
+                            color = ZapText3,
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.testTag("otherPermissions"),
                         )
@@ -201,8 +202,8 @@ internal fun SecurityCard(app: AppRecord, onOpenUrl: (String) -> Unit, modifier:
 @Composable
 private fun PermissionRow(line: PermissionLine) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(line.label ?: line.id.orEmpty(), color = ZapTextPrimary, style = MaterialTheme.typography.bodyMedium)
-        if (line.note.isNotBlank()) Text(line.note, color = ZapTextSecondary, style = MaterialTheme.typography.bodySmall)
+        Text(line.label ?: line.id.orEmpty(), color = ZapText, style = MaterialTheme.typography.bodyMedium)
+        if (line.note.isNotBlank()) Text(line.note, color = ZapText2, style = MaterialTheme.typography.bodySmall)
     }
 }
 
@@ -219,7 +220,7 @@ internal fun ReleaseCard(
     EvidenceCard(stringResource(R.string.latest_release), modifier.fillMaxWidth().testTag("releaseCard")) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2)) {
             VersionPill(app.version)
-            Text(formatDate(app.releasedAt), color = ZapTextSecondary, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+            Text(formatDate(app.releasedAt), color = ZapText2, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
             if (app.releaseNotes.isNotBlank()) {
                 ZapTextLink(stringResource(R.string.release_notes), onReleaseNotes, Modifier.testTag("releaseNotes"))
             }
@@ -280,7 +281,7 @@ internal fun ZapCard(summary: ZapSummary, appName: String, modifier: Modifier = 
                         Text(stringResource(R.string.zap_none), style = ZapTitle3Style)
                         Text(
                             summary.error ?: stringResource(R.string.zap_be_first, appName),
-                            color = ZapTextSecondary,
+                            color = ZapText2,
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
@@ -292,7 +293,7 @@ internal fun ZapCard(summary: ZapSummary, appName: String, modifier: Modifier = 
                         )
                         Text(
                             pluralStringResource(R.plurals.zap_count, summary.count, summary.count),
-                            color = ZapTextSecondary,
+                            color = ZapText2,
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
@@ -309,7 +310,7 @@ internal fun ZapCard(summary: ZapSummary, appName: String, modifier: Modifier = 
                 val name = shortDisplayName(recipient.pubkey, profile)
                 Text(
                     if (recipient.catalog) stringResource(R.string.zap_goes_to_catalog, name) else stringResource(R.string.zap_goes_to_developer, name),
-                    color = ZapTextSecondary,
+                    color = ZapText2,
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -432,11 +433,92 @@ internal fun CommentRow(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            Text(formatDate(comment.createdAt), color = ZapTextSecondary, style = MaterialTheme.typography.bodySmall)
+            Text(formatDate(comment.createdAt), color = ZapText2, style = MaterialTheme.typography.bodySmall)
         }
-        MarkdownText(value = comment.content, color = ZapTextSecondary, style = MaterialTheme.typography.bodyMedium, onOpenUrl = onOpenUrl)
+        MarkdownText(value = comment.content, color = ZapText2, style = MaterialTheme.typography.bodyMedium, onOpenUrl = onOpenUrl)
     }
     }
+}
+
+/**
+ * A zap as an entry of the feed, beside the comments. With a note it reads like a comment with
+ * the amount next to the name; without one it is a line: name, "zapped", the amount.
+ */
+@Composable
+internal fun ZapEntryRow(
+    zap: ZapRecord,
+    author: ProfileRecord?,
+    onOpenUrl: (String) -> Unit,
+    onAuthorClick: (String) -> Unit,
+) {
+    val name = shortDisplayName(zap.pubkey, author)
+    Column(
+        verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = ZapSpacing.space2, bottom = ZapSpacing.space2)
+            .testTag("zapEntry:${zap.eventId}"),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onAuthorClick(zap.pubkey) }
+                .testTag("zapAuthor:${zap.pubkey}"),
+        ) {
+            Box(Modifier.size(28.dp).clip(CircleShape).background(ZapSurface3)) {
+                ProfileImage(
+                    pubkey = zap.pubkey,
+                    pictureUrl = author?.picture,
+                    profileVersion = author?.eventId,
+                    contentDescription = stringResource(R.string.profile_avatar_description, name),
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            Text(
+                name,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            if (zap.note.isEmpty()) {
+                Text(stringResource(R.string.feed_zapped), color = ZapText2, style = MaterialTheme.typography.bodySmall)
+            }
+            Icon(painterResource(R.drawable.ic_bolt), contentDescription = null, tint = ZapWarning, modifier = Modifier.size(14.dp))
+            Text(
+                remember(zap.amountSats) { NumberFormat.getInstance().format(zap.amountSats) },
+                color = ZapWarning,
+                style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"),
+                modifier = Modifier.testTag("zapSats:${zap.eventId}"),
+            )
+            Box(Modifier.weight(1f))
+            Text(formatDate(zap.createdAt), color = ZapText2, style = MaterialTheme.typography.bodySmall)
+        }
+        if (zap.note.isNotEmpty()) {
+            MarkdownText(value = zap.note, color = ZapText2, style = MaterialTheme.typography.bodyMedium, onOpenUrl = onOpenUrl)
+        }
+    }
+}
+
+/** `82 comments · 94 zaps · ⚡ 1,200,000 sats`: what the feed below holds. */
+@Composable
+internal fun FeedTally(feed: List<FeedEntry>, sats: Long) {
+    val comments = feed.count { it is FeedEntry.Comment }
+    val zaps = feed.count { it is FeedEntry.Zap }
+    val format = remember { NumberFormat.getInstance() }
+    val parts = buildList {
+        add(pluralStringResource(R.plurals.feed_comments, comments, comments))
+        add(pluralStringResource(R.plurals.feed_zaps, zaps, zaps))
+        if (sats > 0) add("⚡ " + pluralStringResource(R.plurals.zap_total, sats.coerceIn(0, Int.MAX_VALUE.toLong()).toInt(), format.format(sats)))
+    }
+    Text(
+        parts.joinToString(" · "),
+        color = ZapText2,
+        style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
+        modifier = Modifier.padding(bottom = ZapSpacing.space2).testTag("feedTally"),
+    )
 }
 
 internal fun formatDate(createdAt: Long): String =
@@ -473,14 +555,14 @@ internal fun StackedByRow(stackedBy: StackedByUi, onStackClick: (StackRecord) ->
                     Column {
                         Text(
                             shortDisplayName(stack.pubkey, profile),
-                            color = ZapTextPrimary,
+                            color = ZapText,
                             style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
                             stack.name.ifBlank { stack.identifier },
-                            color = ZapTextTertiary,
+                            color = ZapText3,
                             style = MaterialTheme.typography.bodySmall,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,

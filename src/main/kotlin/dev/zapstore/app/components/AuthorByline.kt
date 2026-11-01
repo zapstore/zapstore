@@ -20,7 +20,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.zapstore.app.R
 import dev.zapstore.app.ZapSurface3
-import dev.zapstore.app.ZapTextSecondary
+import dev.zapstore.app.ZapText2
 import dev.zapstore.iolite.ProfileRecord
 import dev.zapstore.iolite.toNpub
 
@@ -43,7 +43,7 @@ fun AuthorByline(
         if (showBy) {
             Text(
                 text = stringResource(R.string.app_by_author, ""),
-                color = ZapTextSecondary,
+                color = ZapText2,
                 style = MaterialTheme.typography.bodySmall,
             )
         }
@@ -60,7 +60,7 @@ fun AuthorByline(
         val style = MaterialTheme.typography.bodySmall
         Text(
             text = name,
-            color = ZapTextSecondary,
+            color = ZapText2,
             style = if (name.startsWith("npub1")) style.copy(fontWeight = FontWeight.Medium, fontFeatureSettings = "tnum") else style.copy(fontWeight = FontWeight.SemiBold),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

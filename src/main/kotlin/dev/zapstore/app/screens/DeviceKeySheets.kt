@@ -33,9 +33,9 @@ import dev.zapstore.app.ZapRadius
 import dev.zapstore.app.ZapSize
 import dev.zapstore.app.ZapSpacing
 import dev.zapstore.app.ZapSurface1
-import dev.zapstore.app.ZapTextPrimary
-import dev.zapstore.app.ZapTextSecondary
-import dev.zapstore.app.ZapTextTertiary
+import dev.zapstore.app.ZapText
+import dev.zapstore.app.ZapText2
+import dev.zapstore.app.ZapText3
 import dev.zapstore.app.components.StatusText
 import dev.zapstore.app.components.ZapButton
 import dev.zapstore.app.components.ZapButtonStyle
@@ -70,9 +70,9 @@ internal fun PasteSecretSheet(
             modifier = Modifier.fillMaxWidth().padding(start = ZapSpacing.space5, end = ZapSpacing.space5, bottom = ZapSpacing.space5),
         ) {
             Text(title, style = MaterialTheme.typography.titleLarge)
-            Text(body, color = ZapTextSecondary, style = MaterialTheme.typography.bodyMedium)
+            Text(body, color = ZapText2, style = MaterialTheme.typography.bodyMedium)
             val shape = RoundedCornerShape(ZapRadius.control)
-            val style = MaterialTheme.typography.bodyMedium.copy(color = ZapTextPrimary)
+            val style = MaterialTheme.typography.bodyMedium.copy(color = ZapText)
             BasicTextField(
                 value = value,
                 onValueChange = { value = it },
@@ -89,7 +89,7 @@ internal fun PasteSecretSheet(
                     .testTag("${tag}Field"),
                 decorationBox = { inner ->
                     Box(Modifier.padding(horizontal = ZapSpacing.space3), contentAlignment = Alignment.CenterStart) {
-                        if (value.isEmpty()) Text(placeholder, style = style, color = ZapTextTertiary)
+                        if (value.isEmpty()) Text(placeholder, style = style, color = ZapText3)
                         inner()
                     }
                 },

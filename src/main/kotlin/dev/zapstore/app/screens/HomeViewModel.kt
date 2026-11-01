@@ -15,7 +15,6 @@ import dev.zapstore.iolite.AppRecord
 import dev.zapstore.iolite.Iolite
 import dev.zapstore.iolite.ProfileRecord
 import dev.zapstore.iolite.Query
-import dev.zapstore.iolite.QueryPhase
 import dev.zapstore.iolite.QueryState
 import dev.zapstore.iolite.StackRecord
 import dev.zapstore.iolite.SearchFact
@@ -75,8 +74,8 @@ data class ActivityItem(
 )
 
 /**
- * Home: local search, catalog stacks, and the recently-updated feed. Every flow here is a SQLite
- * observer and stops with the collector.
+ * Home: local search, Zapstore Community stacks that name a catalog app, and the recently-updated feed.
+ * Every flow here is a SQLite observer and stops with the collector.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class HomeViewModel(
@@ -152,15 +151,14 @@ class HomeViewModel(
         iolite.observeApps(AppFilter(limit = limit)).map { FeedPage(it, limit) }
     }
 
-    private val stacks: Flow<QueryState<List<StackRecord>>> =
-        iolite.observeCatalogs()
-            .map { catalogs -> catalogs.firstOrNull()?.manifestPubkey }
-            .distinctUntilChanged()
-            .flatMapLatest { pubkey -> stackLimit.map { pubkey to it } }
-            .flatMapLatest { (pubkey, limit) ->
-                if (pubkey == null) flowOf(QueryState(emptyList(), QueryPhase.LocalOnly))
-                else iolite.query(Query.stacks(pubkey, limit = limit))
-            }
+    /** The catalog's own stacks, shipped in its bundle and read locally. The shelf keeps the ones that name a catalog app. */
+    private val stacks: Flow<QueryState<List<StackRecord>>> = iolite.observeCatalogs()
+        .map { catalogs -> catalogs.firstOrNull()?.manifestPubkey }
+        .distinctUntilChanged()
+        .flatMapLatest { catalogKey ->
+            if (catalogKey == null) flowOf(QueryState(emptyList<StackRecord>()))
+            else stackLimit.flatMapLatest { limit -> iolite.query(Query.stacks(catalogKey, limit)) }
+        }
 
     private val stackApps: Flow<Map<String, AppRecord>> = stacks
         .map { state -> state.items.flatMap(StackRecord::appIds).toSet() }
@@ -186,7 +184,7 @@ class HomeViewModel(
                         apps[zap.appId]?.let { ActivityItem(zap.eventId, zap.pubkey, zap.createdAt, it, sats = zap.amountSats) }
                     }
                     ActivityPage(
-                        QueryState(items.sortedByDescending { it.createdAt }.take(limit), state.phase, error = state.error),
+                        QueryState(items.sortedByDescending { it.createdAt }.take(limit), state.relays, state.settled),
                         canLoadMore = record.comments.size >= limit || record.zaps.size >= limit,
                     )
                 }
@@ -211,13 +209,14 @@ class HomeViewModel(
             submittedQuery = submitted,
             searchResults = snapshot.results,
             searchFacts = snapshot.facts,
-            stacks = stackState.items,
+            stacks = stackState.items.filter { stack -> stack.appIds.any(stackApps::containsKey) },
             stackApps = stackApps,
-            stacksLoading = stackState.items.isEmpty() && stackState.isLoading,
-            stacksError = stackState.error?.message,
+            stacksLoading = (stackState.items.isEmpty() && !stackState.settled) ||
+                (stackState.items.isNotEmpty() && stackApps.isEmpty()),
+            stacksError = stackState.relayError(),
             stacksCanLoadMore = stackState.items.size >= stackCap,
             activity = activity.state.items,
-            activityLoading = activity.state.items.isEmpty() && activity.state.isLoading,
+            activityLoading = activity.state.items.isEmpty() && !activity.state.settled,
             activityCanLoadMore = activity.canLoadMore,
             feed = AppListState(
                 apps = page.apps,

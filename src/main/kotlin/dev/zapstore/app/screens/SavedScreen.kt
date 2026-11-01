@@ -29,7 +29,7 @@ import dev.zapstore.app.R
 import dev.zapstore.app.ZapCanvas
 import dev.zapstore.app.ZapRadius
 import dev.zapstore.app.ZapSpacing
-import dev.zapstore.app.ZapTextSecondary
+import dev.zapstore.app.ZapText2
 import dev.zapstore.app.components.AppRow
 import dev.zapstore.app.components.EmptyRow
 import dev.zapstore.app.components.StackTile
@@ -70,7 +70,7 @@ internal fun SavedStackCard(saved: SavedApps, onClick: () -> Unit, modifier: Mod
         Text(stringResource(R.string.saved), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text(
             pluralStringResource(R.plurals.saved_count, saved.ids.size, saved.ids.size),
-            color = ZapTextSecondary,
+            color = ZapText2,
             style = MaterialTheme.typography.bodySmall,
             maxLines = 1,
         )

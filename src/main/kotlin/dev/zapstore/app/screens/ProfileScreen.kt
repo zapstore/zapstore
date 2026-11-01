@@ -43,7 +43,7 @@ import dev.zapstore.app.ZapLine
 import dev.zapstore.app.ZapSurface1
 import dev.zapstore.app.ZapSurface2
 import dev.zapstore.app.ZapSpacing
-import dev.zapstore.app.ZapTextSecondary
+import dev.zapstore.app.ZapText2
 import dev.zapstore.app.components.GroupHeader
 import dev.zapstore.app.components.StackCard
 import dev.zapstore.app.components.InfoRow
@@ -128,7 +128,7 @@ fun ProfileScreen(
             item {
                 MarkdownText(
                     value = about,
-                    color = ZapTextSecondary,
+                    color = ZapText2,
                     style = MaterialTheme.typography.bodyLarge,
                     onOpenUrl = onOpenUrl,
                     collapsible = true,

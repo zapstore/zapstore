@@ -84,8 +84,10 @@ data class ZapRecipient(val pubkey: String, val catalog: Boolean)
 
 const val TOP_ZAPPERS = 5
 
+/** Comments and zaps as the page shows them: one feed, built from [threads] and [zaps] by [feedEntries]. */
 data class CommentsState(
     val threads: List<CommentThread> = emptyList(),
+    val zaps: List<ZapRecord> = emptyList(),
     val profiles: Map<String, ProfileRecord> = emptyMap(),
     val loading: Boolean = true,
     val error: CommentsError? = null,
@@ -188,26 +190,22 @@ class AppDetailViewModel(
             if (pubkey == null) flowOf(null) else iolite.query(Query.profile(pubkey), AppConfig.profileQuery).map { it.items }
         }
 
-    private val zaps: Flow<QueryState<List<ZapRecord>>?> = app
-        .map { it?.anchors }
-        .distinctUntilChanged()
-        .flatMapLatest { anchors ->
-            if (anchors == null) flowOf(null) else iolite.query(Query.zaps(anchors, limit = ZAP_LIMIT), AppConfig.zapQuery)
-        }
+    private val reach: Flow<SocialReach?> = app.map { it?.let(SocialReach::of) }.distinctUntilChanged()
 
-    private val comments: Flow<QueryState<List<CommentRecord>>?> = app
-        .map { it?.anchors }
-        .distinctUntilChanged()
-        .flatMapLatest { anchors ->
-            if (anchors == null) {
-                flowOf(null)
-            } else {
-                iolite.query(Query.comments(anchors, limit = COMMENT_LIMIT), AppConfig.commentQuery)
-            }
-        }
+    private val zaps: Flow<QueryState<List<ZapRecord>>?> = reach.flatMapLatest { reach ->
+        if (reach == null) flowOf(null)
+        else iolite.query(Query.zaps(reach.anchors, reach.recipients, reach.lists, limit = ZAP_LIMIT), AppConfig.zapQuery)
+    }
 
-    private val commentProfiles: Flow<Map<String, ProfileRecord>> = comments
-        .map { state -> state?.items.orEmpty().map(CommentRecord::pubkey).toSet() }
+    private val comments: Flow<QueryState<List<CommentRecord>>?> = reach.flatMapLatest { reach ->
+        if (reach == null) flowOf(null)
+        else iolite.query(Query.comments(reach.anchors, reach.lists, limit = COMMENT_LIMIT), AppConfig.commentQuery)
+    }
+
+    /** Names and pictures for everyone in the feed: comment authors and zap senders. */
+    private val commentProfiles: Flow<Map<String, ProfileRecord>> = combine(comments, zaps) { comments, zaps ->
+        comments?.items.orEmpty().map(CommentRecord::pubkey).toSet() + zaps?.items.orEmpty().map(ZapRecord::pubkey)
+    }
         .distinctUntilChanged()
         .flatMapLatest { pubkeys ->
             if (pubkeys.isEmpty()) {
@@ -233,17 +231,19 @@ class AppDetailViewModel(
             zaps = ZapSummary(
                 count = zaps?.items?.size ?: 0,
                 totalSats = zaps?.items?.sumOf(ZapRecord::amountSats) ?: 0,
-                loading = zaps?.isLoading ?: false,
-                error = zaps?.error?.message,
+                loading = zaps?.let { !it.settled } ?: false,
+                error = zaps?.relayError(),
                 zappers = topZappers(zaps?.items.orEmpty()),
                 recipient = app?.zapRecipient?.let { ZapRecipient(it, catalog = app.proofPubkey == null) },
                 profiles = zapProfiles,
             ),
             comments = CommentsState(
                 threads = threadComments(comments?.items.orEmpty()),
+                zaps = zaps?.items.orEmpty(),
                 profiles = commentProfiles,
-                loading = comments?.isLoading ?: false,
-                error = comments?.error.toCommentsError(),
+                // The feed is settled once both of its reads are, as on the web page.
+                loading = comments?.let { !it.settled } == true || zaps?.let { !it.settled } == true,
+                error = comments.toCommentsError(),
             ),
         )
     }
@@ -274,7 +274,7 @@ class AppDetailViewModel(
         .flatMapLatest { pubkey ->
             if (pubkey == null) flowOf(null)
             else combine(iolite.query(Query.stacks(pubkey), AppConfig.authorStacksQuery), stackWrite) { state, write ->
-                write.copy(stacks = state.items.filter { it.apps.isNotEmpty() }, loading = state.items.isEmpty() && state.isLoading)
+                write.copy(stacks = state.items.filter { it.apps.isNotEmpty() }, loading = state.items.isEmpty() && !state.settled)
             }
         }
 
@@ -432,7 +432,7 @@ class AppDetailViewModel(
                 val connection = appContext.wallet.connection.value ?: error(appContext.getString(R.string.zap_no_wallet))
                 val signer = appContext.account.signer() ?: error(appContext.getString(R.string.sign_in_first))
                 val address = withTimeoutOrNull(PROFILE_WAIT) {
-                    iolite.query(Query.profile(owner), AppConfig.profileQuery).first { it.items?.lud16 != null || it.isTerminal }.items?.lud16
+                    iolite.query(Query.profile(owner), AppConfig.profileQuery).first { it.items?.lud16 != null || it.settled }.items?.lud16
                 } ?: throw ZapException(ZapFailure.NoAddress)
                 val pay = lnurl.pay(address)
                 val msat = sats * 1_000
@@ -643,6 +643,26 @@ class AppDetailViewModel(
                 )
             }
         }
+    }
+}
+
+/**
+ * Where an app's comments and zaps are read, as `specs/catalog.md` defines them. [anchors] are the
+ * coordinates of the catalog key, the listing signer, and the earlier Zapstore key. [recipients] are the
+ * pubkeys a zap is paid to, which the receipts are read by when they carry no `a` tag. [lists] are the
+ * pubkeys whose NIP-65 inboxes are read as well: the catalog key, and the C1 owner or else the signer.
+ */
+internal data class SocialReach(
+    val anchors: List<AppCoordinate>,
+    val recipients: List<String>,
+    val lists: List<String>,
+) {
+    companion object {
+        fun of(app: AppRecord) = SocialReach(
+            anchors = (app.anchors + AppCoordinate(AppConfig.LEGACY_CATALOG_PUBKEY, app.appId)).distinct(),
+            recipients = (app.zapRecipients + AppConfig.LEGACY_CATALOG_PUBKEY).distinct(),
+            lists = app.socialLists,
+        )
     }
 }
 

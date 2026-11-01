@@ -43,9 +43,9 @@ import dev.zapstore.app.ZapRadius
 import dev.zapstore.app.ZapSize
 import dev.zapstore.app.ZapSpacing
 import dev.zapstore.app.ZapSurface1
-import dev.zapstore.app.ZapTextPrimary
-import dev.zapstore.app.ZapTextSecondary
-import dev.zapstore.app.ZapTextTertiary
+import dev.zapstore.app.ZapText
+import dev.zapstore.app.ZapText2
+import dev.zapstore.app.ZapText3
 import dev.zapstore.app.components.StatusText
 import dev.zapstore.app.components.ZapButton
 import dev.zapstore.app.components.ZapButtonStyle
@@ -92,7 +92,7 @@ internal fun ZapTextArea(
     maxLines: Int = 4,
 ) {
     val shape = RoundedCornerShape(ZapRadius.control)
-    val style = MaterialTheme.typography.bodyMedium.copy(color = ZapTextPrimary)
+    val style = MaterialTheme.typography.bodyMedium.copy(color = ZapText)
     BasicTextField(
         value = value,
         onValueChange = onValueChange,
@@ -107,7 +107,7 @@ internal fun ZapTextArea(
             .border(1.dp, ZapLine, shape),
         decorationBox = { inner ->
             Box(Modifier.padding(horizontal = ZapSpacing.space3, vertical = 11.dp)) {
-                if (value.isEmpty()) Text(placeholder, style = style, color = ZapTextTertiary)
+                if (value.isEmpty()) Text(placeholder, style = style, color = ZapText3)
                 inner()
             }
         },
@@ -139,11 +139,11 @@ internal fun ReportSheet(
             Text(stringResource(R.string.report_title, appName), style = MaterialTheme.typography.titleLarge)
             when {
                 social.reported -> {
-                    Text(stringResource(R.string.report_sent), color = ZapTextSecondary, style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.report_sent), color = ZapText2, style = MaterialTheme.typography.bodyMedium)
                     ZapButton(stringResource(R.string.close), onDismiss, Modifier.fillMaxWidth(), style = ZapButtonStyle.Tonal)
                 }
                 !social.signedIn -> {
-                    Text(stringResource(R.string.report_sign_in), color = ZapTextSecondary, style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.report_sign_in), color = ZapText2, style = MaterialTheme.typography.bodyMedium)
                     ZapButton(
                         stringResource(R.string.sign_in_with_signer),
                         onSignIn,
@@ -151,7 +151,7 @@ internal fun ReportSheet(
                     )
                 }
                 else -> {
-                    Text(stringResource(R.string.report_body), color = ZapTextSecondary, style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.report_body), color = ZapText2, style = MaterialTheme.typography.bodyMedium)
                     Column {
                         Social.reportTypes.forEach { option ->
                             Row(
@@ -165,7 +165,7 @@ internal fun ReportSheet(
                                 RadioButton(
                                     selected = option == type,
                                     onClick = null,
-                                    colors = RadioButtonDefaults.colors(selectedColor = ZapAction, unselectedColor = ZapTextTertiary),
+                                    colors = RadioButtonDefaults.colors(selectedColor = ZapAction, unselectedColor = ZapText3),
                                 )
                                 Text(
                                     stringResource(option.reportLabel()),
@@ -222,14 +222,14 @@ internal fun ZapAppSheet(
                 social.zapped != null -> {
                     Text(
                         stringResource(R.string.zap_sent, format.format(social.zapped), recipientName),
-                        color = ZapTextSecondary,
+                        color = ZapText2,
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.testTag("zapSent"),
                     )
                     ZapButton(stringResource(R.string.close), onDismiss, Modifier.fillMaxWidth(), style = ZapButtonStyle.Tonal)
                 }
                 !social.signedIn || !social.walletConnected -> {
-                    Text(stringResource(R.string.zap_needs), color = ZapTextSecondary, style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.zap_needs), color = ZapText2, style = MaterialTheme.typography.bodyMedium)
                     ZapButton(
                         stringResource(if (!social.signedIn) R.string.zap_sign_in else R.string.zap_open_wallet),
                         onSettings,
@@ -240,7 +240,7 @@ internal fun ZapAppSheet(
                     Text(
                         if (recipient?.catalog == true) stringResource(R.string.zap_body_catalog, recipientName)
                         else stringResource(R.string.zap_body, recipientName),
-                        color = ZapTextSecondary,
+                        color = ZapText2,
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.testTag("zapBody"),
                     )

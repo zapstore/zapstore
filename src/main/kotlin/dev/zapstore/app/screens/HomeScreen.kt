@@ -4,7 +4,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.res.pluralStringResource
 import dev.zapstore.app.components.AuthorByline
-import dev.zapstore.app.ZapTextPrimary
+import dev.zapstore.app.ZapText
 import dev.zapstore.app.ZapWarning
 import androidx.compose.foundation.lazy.itemsIndexed
 import dev.zapstore.iolite.ProfileRecord
@@ -36,7 +36,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import dev.zapstore.app.ZapLine
-import dev.zapstore.app.ZapTextSecondary
+import dev.zapstore.app.ZapText2
 import dev.zapstore.app.ZapTitle3Style
 import dev.zapstore.app.components.SettingsGroup
 import dev.zapstore.app.components.listItemMotion
@@ -74,7 +74,7 @@ import androidx.compose.ui.unit.dp
 import dev.zapstore.app.R
 import dev.zapstore.app.ZapSize
 import dev.zapstore.app.ZapSpacing
-import dev.zapstore.app.ZapTextTertiary
+import dev.zapstore.app.ZapText3
 import dev.zapstore.app.components.AppRow
 import dev.zapstore.app.components.EmptyRow
 import dev.zapstore.app.components.GroupHeader
@@ -143,7 +143,7 @@ fun HomeScreen(
                 Icon(
                     painter = painterResource(R.drawable.ic_search),
                     contentDescription = null,
-                    tint = ZapTextTertiary,
+                    tint = ZapText3,
                     modifier = Modifier.size(18.dp),
                 )
             },
@@ -163,7 +163,7 @@ fun HomeScreen(
                         Icon(
                             painter = painterResource(R.drawable.ic_close),
                             contentDescription = null,
-                            tint = ZapTextTertiary,
+                            tint = ZapText3,
                             modifier = Modifier.size(16.dp),
                         )
                     }
@@ -373,7 +373,7 @@ private fun ActivityRow(item: ActivityItem, profile: ProfileRecord?, onClick: ()
                         DateUtils.MINUTE_IN_MILLIS,
                         DateUtils.FORMAT_ABBREV_RELATIVE,
                     ).toString(),
-                    color = ZapTextTertiary,
+                    color = ZapText3,
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 1,
                 )
@@ -393,13 +393,13 @@ private fun ActivityRow(item: ActivityItem, profile: ProfileRecord?, onClick: ()
                         maxLines = 1,
                     )
                 } else {
-                    Text(stringResource(R.string.activity_commented), color = ZapTextTertiary, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                    Text(stringResource(R.string.activity_commented), color = ZapText3, style = MaterialTheme.typography.bodySmall, maxLines = 1)
                 }
             }
             item.comment?.takeIf { it.isNotBlank() }?.let {
                 Text(
                     it,
-                    color = ZapTextPrimary,
+                    color = ZapText,
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
@@ -439,7 +439,7 @@ private fun FilterSheet(active: List<SearchFact>, onToggle: (SearchFact) -> Unit
             modifier = Modifier.padding(start = ZapSpacing.space4, end = ZapSpacing.space4, bottom = ZapSpacing.space6),
         ) {
             Text(stringResource(R.string.filters), style = ZapTitle3Style)
-            Text(stringResource(R.string.filters_hint), color = ZapTextSecondary, style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.filters_hint), color = ZapText2, style = MaterialTheme.typography.bodyMedium)
             SettingsGroup(Modifier.padding(top = ZapSpacing.space2)) {
                 SearchFact.entries.forEachIndexed { index, fact ->
                     if (index > 0) HorizontalDivider(color = ZapLine)

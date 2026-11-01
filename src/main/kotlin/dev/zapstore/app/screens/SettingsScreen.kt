@@ -29,7 +29,7 @@ import dev.zapstore.app.R
 import dev.zapstore.app.UpdateInterval
 import dev.zapstore.app.ZapLine
 import dev.zapstore.app.ZapSpacing
-import dev.zapstore.app.ZapTextSecondary
+import dev.zapstore.app.ZapText2
 import dev.zapstore.app.components.EvidenceText
 import dev.zapstore.app.components.GroupHeader
 import dev.zapstore.app.AppConfig
@@ -242,7 +242,7 @@ fun SettingsScreen(
 
         GroupHeader(stringResource(R.string.catalog), Modifier.padding(top = ZapSpacing.space4))
         Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space1)) {
-            EvidenceText(state.catalogUrl, color = ZapTextSecondary)
+            EvidenceText(state.catalogUrl, color = ZapText2)
             StatusText(stringResource(R.string.catalog_apps, state.appCount))
             StatusText(stringResource(R.string.catalog_epoch, state.catalogEpoch))
             state.status.lastSyncedAtMillis?.let { syncedAt ->
@@ -266,7 +266,7 @@ fun SettingsScreen(
             }
             EvidenceText(
                 stringResource(R.string.local_storage, Formatter.formatFileSize(context, state.localStorageBytes)),
-                color = ZapTextSecondary,
+                color = ZapText2,
                 modifier = Modifier.testTag("localStorage"),
             )
             state.status.error?.let { StatusText(it, Modifier.testTag("catalogError")) }

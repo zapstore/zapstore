@@ -167,9 +167,9 @@ class ScreensTest {
             ZapstoreTheme {
                 HomeScreen(
                     state = HomeUiState(
-                        searchQuery = "offline e2ee chat",
+                        searchQuery = "offline open source chat",
                         searchResults = emptyList(),
-                        searchFacts = listOf(SearchFact.WorksOffline, SearchFact.E2ee),
+                        searchFacts = listOf(SearchFact.WorksOffline, SearchFact.SourceAvailable),
                         feed = AppListState(loading = false),
                     ),
                     onSearchQueryChanged = {},
@@ -183,8 +183,8 @@ class ScreensTest {
         }
         composeRule.onNodeWithTag("filter:WorksOffline").assertIsDisplayed()
         composeRule.onNodeWithText("No apps match with these filters. Remove one to see more.").assertIsDisplayed()
-        composeRule.onNodeWithTag("relax:E2ee").performClick()
-        assertEquals(SearchFact.E2ee, removed)
+        composeRule.onNodeWithTag("relax:SourceAvailable").performClick()
+        assertEquals(SearchFact.SourceAvailable, removed)
     }
 
     @Test

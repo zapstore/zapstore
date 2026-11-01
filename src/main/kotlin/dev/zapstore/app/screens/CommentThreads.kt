@@ -1,16 +1,13 @@
 package dev.zapstore.app.screens
 
 import dev.zapstore.iolite.CommentRecord
-import dev.zapstore.iolite.QueryError
+import dev.zapstore.iolite.QueryState
+import dev.zapstore.iolite.RelayStatus
+import dev.zapstore.iolite.ZapRecord
 
 data class CommentThread(
     val comment: CommentRecord,
     val replies: List<CommentThread>,
-)
-
-data class ThreadedComment(
-    val comment: CommentRecord,
-    val depth: Int,
 )
 
 enum class CommentsError {
@@ -37,15 +34,42 @@ fun threadComments(items: List<CommentRecord>): List<CommentThread> {
         .map { build(it, emptySet()) }
 }
 
-fun List<CommentThread>.flattenComments(maxDepth: Int = 4): List<ThreadedComment> =
-    flatMap { it.flatten(0, maxDepth) }
+/** One row of the feed under an app: a comment at its depth, or a zap as an entry of its own. */
+sealed interface FeedEntry {
+    val key: String
 
-private fun CommentThread.flatten(depth: Int, maxDepth: Int): List<ThreadedComment> =
-    listOf(ThreadedComment(comment, depth.coerceAtMost(maxDepth))) +
-        replies.flatMap { it.flatten(depth + 1, maxDepth) }
+    data class Comment(val comment: CommentRecord, val depth: Int) : FeedEntry {
+        override val key: String get() = "comment:${comment.eventId}"
+    }
 
-internal fun QueryError?.toCommentsError(): CommentsError? = when (this) {
-    is QueryError.Timeout -> CommentsError.TimedOut
-    is QueryError.RelayFailure, is QueryError.IncompatibleDependency -> CommentsError.RelaysUnreachable
-    else -> null
+    data class Zap(val zap: ZapRecord) : FeedEntry {
+        override val key: String get() = "zap:${zap.eventId}"
+    }
 }
+
+/**
+ * Comments and zaps as one list, newest first, as the web page shows them: each root comment (with
+ * its replies under it, oldest first) and each zap sorts by its own date. A zap is never threaded.
+ */
+fun feedEntries(threads: List<CommentThread>, zaps: List<ZapRecord>, maxDepth: Int = 4): List<FeedEntry> {
+    val roots = threads.map { thread -> thread.comment.createdAt to thread.flattenToEntries(0, maxDepth) }
+    val singles = zaps.map { zap -> zap.createdAt to listOf<FeedEntry>(FeedEntry.Zap(zap)) }
+    return (roots + singles).sortedByDescending { it.first }.flatMap { it.second }
+}
+
+private fun CommentThread.flattenToEntries(depth: Int, maxDepth: Int): List<FeedEntry> =
+    listOf<FeedEntry>(FeedEntry.Comment(comment, depth.coerceAtMost(maxDepth))) +
+        replies.flatMap { it.flattenToEntries(depth + 1, maxDepth) }
+
+/** Only when every relay failed: one failing relay among several is not an error. */
+internal fun QueryState<*>?.toCommentsError(): CommentsError? {
+    if (this == null || !unreachable) return null
+    val silent = relays.values.all { (it as? RelayStatus.Failed)?.reason in TIMEOUT_REASONS }
+    return if (silent) CommentsError.TimedOut else CommentsError.RelaysUnreachable
+}
+
+private val TIMEOUT_REASONS = setOf("timed out", "no response")
+
+/** The first relay's failure, only when every relay failed. */
+internal fun QueryState<*>.relayError(): String? =
+    if (unreachable) relays.values.firstNotNullOfOrNull { (it as? RelayStatus.Failed)?.reason } else null

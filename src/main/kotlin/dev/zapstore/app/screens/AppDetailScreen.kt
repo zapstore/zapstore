@@ -61,7 +61,7 @@ import dev.zapstore.app.ZapRadius
 import dev.zapstore.app.ZapSize
 import dev.zapstore.app.ZapSpacing
 import dev.zapstore.app.ZapSurface3
-import dev.zapstore.app.ZapTextSecondary
+import dev.zapstore.app.ZapText2
 import dev.zapstore.app.cdnImageUrl
 import dev.zapstore.app.components.AppDetailHead
 import dev.zapstore.app.components.ZapMotion
@@ -139,7 +139,7 @@ fun AppDetailScreen(
     }
     val app = state.app
     val comments = state.comments
-    val threaded = remember(comments.threads) { comments.threads.flattenComments() }
+    val feed = remember(comments.threads, comments.zaps) { feedEntries(comments.threads, comments.zaps) }
     val developerDescription = stringResource(R.string.developer_description)
     val releaseNotes = stringResource(R.string.release_notes)
 
@@ -211,7 +211,7 @@ fun AppDetailScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space1)) {
                         MarkdownText(
                             value = about,
-                            color = ZapTextSecondary,
+                            color = ZapText2,
                             style = MaterialTheme.typography.bodyLarge,
                             onOpenUrl = onOpenUrl,
                             collapsible = app.about.isBlank(),
@@ -260,26 +260,37 @@ fun AppDetailScreen(
                 Column {
                     HorizontalDivider(color = ZapLine)
                     GroupHeader(stringResource(R.string.comments), Modifier.padding(top = ZapSpacing.space2))
+                    if (feed.isNotEmpty()) {
+                        FeedTally(feed, state.zaps.totalSats)
+                    }
                 }
             }
             item(key = "commentComposer", contentType = "composer") {
                 CommentComposer(state.social, onPostComment, onSettingsClick)
             }
             when {
-                comments.loading && threaded.isEmpty() -> item(contentType = "loading") {
+                comments.loading && feed.isEmpty() -> item(contentType = "loading") {
                     LoadingIndicator(Modifier.padding(vertical = ZapSpacing.space3).testTag("commentsLoading"))
                 }
-                threaded.isEmpty() -> item(contentType = "empty") {
+                feed.isEmpty() -> item(contentType = "empty") {
                     CommentsEmpty(error = comments.error, onRetry = onRetryComments, onSettings = onSettingsClick)
                 }
-                else -> items(threaded, key = { it.comment.eventId }, contentType = { "comment" }) { entry ->
-                    CommentRow(
-                        comment = entry.comment,
-                        author = comments.profiles[entry.comment.pubkey],
-                        depth = entry.depth,
-                        onOpenUrl = onOpenUrl,
-                        onAuthorClick = onProfileClick,
-                    )
+                else -> items(feed, key = FeedEntry::key, contentType = { if (it is FeedEntry.Zap) "zap" else "comment" }) { entry ->
+                    when (entry) {
+                        is FeedEntry.Comment -> CommentRow(
+                            comment = entry.comment,
+                            author = comments.profiles[entry.comment.pubkey],
+                            depth = entry.depth,
+                            onOpenUrl = onOpenUrl,
+                            onAuthorClick = onProfileClick,
+                        )
+                        is FeedEntry.Zap -> ZapEntryRow(
+                            zap = entry.zap,
+                            author = comments.profiles[entry.zap.pubkey],
+                            onOpenUrl = onOpenUrl,
+                            onAuthorClick = onProfileClick,
+                        )
+                    }
                 }
             }
         }

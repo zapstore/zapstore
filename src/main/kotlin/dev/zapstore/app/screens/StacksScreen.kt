@@ -26,7 +26,7 @@ import androidx.compose.ui.unit.dp
 import dev.zapstore.app.R
 import dev.zapstore.app.ZapRadius
 import dev.zapstore.app.ZapSpacing
-import dev.zapstore.app.ZapTextSecondary
+import dev.zapstore.app.ZapText2
 import dev.zapstore.app.components.AppListState
 import dev.zapstore.app.components.EmptyRow
 import dev.zapstore.app.components.LoadMoreWhenNearEnd
@@ -99,13 +99,13 @@ private fun StackRow(stack: StackRecord, state: StacksUiState, onClick: () -> Un
             val count = pluralStringResource(R.plurals.curated_apps, resolved, resolved)
             Text(
                 if (curator != null) stringResource(R.string.stack_by, count, curator) else count,
-                color = ZapTextSecondary,
+                color = ZapText2,
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             if (stack.description.isNotBlank()) {
-                Text(stack.description, color = ZapTextSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(stack.description, color = ZapText2, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
     }

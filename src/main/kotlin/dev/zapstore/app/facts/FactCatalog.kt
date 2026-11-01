@@ -36,10 +36,9 @@ object FactCatalog {
 
     private val pillByKey: Map<String, Pill> = listOf(
         Pill("google_services", "Google services", "No Google services", yesIsGood = false),
-        Pill("tracking", "Tracking", null, yesIsGood = false),
+        Pill("tracking", "Shares data", null, yesIsGood = false),
         Pill("ads", "Ads", null, yesIsGood = false),
         Pill("offline_capable", "Works offline", null, yesIsGood = true),
-        Pill("e2ee", "E2EE", null, yesIsGood = true),
         Pill("source_available", "Source available", "No source", yesIsGood = true),
     ).associateBy { it.key }
 
@@ -88,5 +87,4 @@ fun SearchFact.label(): String = when (this) {
     SearchFact.SourceAvailable -> FactCatalog.pill("source_available")!!.label(true)
     SearchFact.GoogleServices -> FactCatalog.pill("google_services")!!.label(false)
     SearchFact.WorksOffline -> FactCatalog.pill("offline_capable")!!.label(true)
-    SearchFact.E2ee -> FactCatalog.pill("e2ee")!!.label(true)
 }

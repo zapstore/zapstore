@@ -2,8 +2,8 @@ package dev.zapstore.app.components
 
 import dev.zapstore.app.R
 import dev.zapstore.app.ZapActionText
-import dev.zapstore.app.ZapTextPrimary
-import dev.zapstore.app.ZapTextTertiary
+import dev.zapstore.app.ZapText
+import dev.zapstore.app.ZapText3
 import dev.zapstore.app.isHttpUrl
 
 import androidx.compose.foundation.clickable
@@ -61,7 +61,7 @@ fun InfoRow(
             } else {
                 Text(
                     text = value,
-                    color = ZapTextPrimary,
+                    color = ZapText,
                     style = MaterialTheme.typography.bodyMedium,
                     textAlign = TextAlign.End,
                     maxLines = 1,
@@ -77,7 +77,7 @@ fun InfoRow(
                 Icon(
                     painter = painterResource(R.drawable.ic_copy),
                     contentDescription = stringResource(R.string.copy),
-                    tint = ZapTextTertiary,
+                    tint = ZapText3,
                     modifier = Modifier.size(14.dp),
                 )
             }

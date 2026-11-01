@@ -23,7 +23,7 @@ class FactPillTest {
         assertEquals("No source", source.label(false))
 
         val tracking = FactCatalog.pill("tracking")!!
-        assertEquals("Tracking", tracking.label(true))
+        assertEquals("Shares data", tracking.label(true))
         assertFalse(tracking.visible(false))
         val ads = FactCatalog.pill("ads")!!
         assertEquals("Ads", ads.label(true))
@@ -43,15 +43,15 @@ class FactPillTest {
 
     @Test
     fun factsWithoutAnInverseHideANo() {
-        for (key in listOf("e2ee", "offline_capable")) {
+        for (key in listOf("tracking", "offline_capable")) {
             val pill = FactCatalog.pill(key)!!
             assertTrue(pill.visible(yes = true))
             assertFalse(pill.visible(yes = false))
         }
-        assertEquals("E2EE", FactCatalog.pill("e2ee")!!.label(true))
         assertEquals("Works offline", FactCatalog.pill("offline_capable")!!.label(true))
         assertNull(FactCatalog.pill("decentralized"))
         assertNull(FactCatalog.pill("accountless"))
+        assertNull(FactCatalog.pill("e2ee"))
     }
 
     @Test

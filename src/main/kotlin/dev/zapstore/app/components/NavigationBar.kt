@@ -52,7 +52,7 @@ import dev.zapstore.app.ZapBadge
 import dev.zapstore.app.ZapLineStrong
 import dev.zapstore.app.ZapSurface2
 import dev.zapstore.app.ZapSurface4
-import dev.zapstore.app.ZapTextSecondary
+import dev.zapstore.app.ZapText2
 import dev.zapstore.app.screens.Routes
 
 private data class Destination(val route: String, val label: Int, val icon: Int, val tag: String)
@@ -113,7 +113,7 @@ fun ZapNavigationBar(
                     val selected = destination.route == current
                     val label = stringResource(destination.label)
                     val tint by animateColorAsState(
-                        if (selected) ZapActionText else ZapTextSecondary,
+                        if (selected) ZapActionText else ZapText2,
                         if (animate) ZapMotion.base() else snap(),
                         label = "navTint",
                     )

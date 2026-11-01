@@ -7,9 +7,9 @@ import dev.zapstore.app.ZapRadius
 import dev.zapstore.app.ZapSize
 import dev.zapstore.app.ZapSpacing
 import dev.zapstore.app.ZapSurface1
-import dev.zapstore.app.ZapTextPrimary
-import dev.zapstore.app.ZapTextSecondary
-import dev.zapstore.app.ZapTextTertiary
+import dev.zapstore.app.ZapText
+import dev.zapstore.app.ZapText2
+import dev.zapstore.app.ZapText3
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -59,7 +59,7 @@ fun SectionLabel(
 ) {
     Text(
         text = value.uppercase(),
-        color = ZapTextTertiary,
+        color = ZapText3,
         style = MaterialTheme.typography.labelSmall,
         modifier = modifier,
     )
@@ -72,7 +72,7 @@ fun StatusText(
 ) {
     Text(
         text = value,
-        color = ZapTextSecondary,
+        color = ZapText2,
         style = MaterialTheme.typography.labelMedium,
         modifier = modifier,
     )
@@ -86,7 +86,7 @@ fun StatusText(
 fun EvidenceText(
     value: String,
     modifier: Modifier = Modifier,
-    color: Color = ZapTextPrimary,
+    color: Color = ZapText,
 ) {
     Text(
         text = value,
@@ -113,7 +113,7 @@ fun ZapSearchField(
     val interactionSource = remember { MutableInteractionSource() }
     val keyboardController = LocalSoftwareKeyboardController.current
     val shape = RoundedCornerShape(ZapRadius.control)
-    val textStyle = MaterialTheme.typography.bodyMedium.copy(color = ZapTextPrimary)
+    val textStyle = MaterialTheme.typography.bodyMedium.copy(color = ZapText)
 
     BasicTextField(
         value = value,
@@ -143,7 +143,7 @@ fun ZapSearchField(
                 leadingIcon()
                 Box(modifier = Modifier.weight(1f)) {
                     if (value.isEmpty()) {
-                        Text(text = placeholder, style = textStyle, color = ZapTextTertiary)
+                        Text(text = placeholder, style = textStyle, color = ZapText3)
                     }
                     innerTextField()
                 }

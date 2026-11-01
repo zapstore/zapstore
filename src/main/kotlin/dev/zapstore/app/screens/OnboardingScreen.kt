@@ -49,8 +49,8 @@ import dev.zapstore.app.ZapRadius
 import dev.zapstore.app.ZapSpacing
 import dev.zapstore.app.ZapSurface1
 import dev.zapstore.app.ZapSurface3
-import dev.zapstore.app.ZapTextPrimary
-import dev.zapstore.app.ZapTextSecondary
+import dev.zapstore.app.ZapText
+import dev.zapstore.app.ZapText2
 import dev.zapstore.app.components.StatusText
 import dev.zapstore.app.components.ZapButton
 import dev.zapstore.app.components.ZapMotion
@@ -113,7 +113,7 @@ fun OnboardingScreen(
                 Text(
                     stringResource(if (shown == OnboardingStep.Signer && !state.hasSigner) R.string.onboarding_get_signer_body else shown.body()),
                     style = MaterialTheme.typography.bodyLarge,
-                    color = ZapTextSecondary,
+                    color = ZapText2,
                 )
                 if (shown == OnboardingStep.Network) {
                     NetworkChoice(state.networkMode, onNetworkModeChange)
@@ -146,7 +146,7 @@ private fun StepIndicator(index: Int, count: Int, modifier: Modifier = Modifier)
         Text(
             stringResource(R.string.onboarding_step, index + 1, count),
             style = MaterialTheme.typography.bodySmall,
-            color = ZapTextSecondary,
+            color = ZapText2,
             modifier = Modifier.testTag("onboardingCount"),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space1)) {
@@ -222,13 +222,13 @@ private fun NetworkOption(title: String, body: String, selected: Boolean, onClic
                 .padding(top = 2.dp)
                 .size(20.dp)
                 .clip(RoundedCornerShape(ZapRadius.full))
-                .border(2.dp, if (selected) ZapAction else ZapTextSecondary, RoundedCornerShape(ZapRadius.full)),
+                .border(2.dp, if (selected) ZapAction else ZapText2, RoundedCornerShape(ZapRadius.full)),
         ) {
             if (selected) Box(Modifier.size(10.dp).clip(RoundedCornerShape(ZapRadius.full)).background(ZapAction))
         }
         Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space1), modifier = Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleSmall, color = ZapTextPrimary)
-            Text(body, style = MaterialTheme.typography.bodyMedium, color = ZapTextSecondary)
+            Text(title, style = MaterialTheme.typography.titleSmall, color = ZapText)
+            Text(body, style = MaterialTheme.typography.bodyMedium, color = ZapText2)
         }
     }
 }

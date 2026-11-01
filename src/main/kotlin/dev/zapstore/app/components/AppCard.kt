@@ -40,8 +40,8 @@ import dev.zapstore.app.ZapMarkdown
 import dev.zapstore.app.ZapRadius
 import dev.zapstore.app.ZapSpacing
 import dev.zapstore.app.ZapSurface3
-import dev.zapstore.app.ZapTextPrimary
-import dev.zapstore.app.ZapTextSecondary
+import dev.zapstore.app.ZapText
+import dev.zapstore.app.ZapText2
 import dev.zapstore.app.ZapTitle3Style
 import dev.zapstore.app.ZapVerified
 import dev.zapstore.app.cdnImageUrl
@@ -75,7 +75,7 @@ fun AppIcon(
     ) {
         Text(
             text = title.take(1).uppercase(),
-            color = ZapTextSecondary,
+            color = ZapText2,
             style = if (size >= 56.dp) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleSmall,
         )
         if (model != null) {
@@ -126,7 +126,7 @@ fun AppRow(
         Column(Modifier.weight(1f)) {
             Text(
                 app.name,
-                color = ZapTextPrimary,
+                color = ZapText,
                 style = MaterialTheme.typography.titleSmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -135,7 +135,7 @@ fun AppRow(
             if (description != null) {
                 Text(
                     description,
-                    color = ZapTextSecondary,
+                    color = ZapText2,
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = supportingLines,
                     overflow = TextOverflow.Ellipsis,
@@ -176,12 +176,12 @@ fun AppShelfTile(app: AppRecord, onClick: () -> Unit, modifier: Modifier = Modif
     ) {
         AppIcon(title = app.name, iconUrl = app.iconUrl, iconFile = app.iconFile, size = 56.dp)
         Column(Modifier.weight(1f)) {
-            Text(app.name, color = ZapTextPrimary, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(app.name, color = ZapText, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val description = app.rowLine().takeIf { it.isNotBlank() }?.let { remember(it) { ZapMarkdown.parse(it).text } }
             if (description != null) {
                 Text(
                     description,
-                    color = ZapTextSecondary,
+                    color = ZapText2,
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -257,7 +257,7 @@ fun AppDetailHead(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2)) {
                 version?.takeIf { it.isNotBlank() }?.let { VersionPill(it) }
                 caption?.let {
-                    Text(it, color = ZapTextSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 1, softWrap = false)
+                    Text(it, color = ZapText2, style = MaterialTheme.typography.bodySmall, maxLines = 1, softWrap = false)
                 }
             }
             authorPubkey?.let {

@@ -73,9 +73,9 @@ import dev.zapstore.app.ZapSurface1
 import dev.zapstore.app.ZapSurface2
 import dev.zapstore.app.ZapSurface3
 import dev.zapstore.app.ZapSurface4
-import dev.zapstore.app.ZapTextPrimary
-import dev.zapstore.app.ZapTextSecondary
-import dev.zapstore.app.ZapTextTertiary
+import dev.zapstore.app.ZapText
+import dev.zapstore.app.ZapText2
+import dev.zapstore.app.ZapText3
 import dev.zapstore.app.ZapVerified
 import dev.zapstore.app.ZapVerifiedTint
 import dev.zapstore.app.ZapWarning
@@ -105,7 +105,7 @@ fun ZapButton(
             CircularProgressIndicator(
                 modifier = Modifier.size(16.dp),
                 strokeWidth = 2.dp,
-                color = if (style == ZapButtonStyle.Primary) ZapOnAction else ZapTextSecondary,
+                color = if (style == ZapButtonStyle.Primary) ZapOnAction else ZapText2,
             )
         } else {
             icon?.let {
@@ -124,9 +124,9 @@ fun ZapButton(
             shape = shape,
             border = BorderStroke(1.dp, ZapLineStrong),
             colors = ButtonDefaults.outlinedButtonColors(
-                contentColor = ZapTextPrimary,
+                contentColor = ZapText,
                 disabledContainerColor = ZapSurface2,
-                disabledContentColor = ZapTextTertiary,
+                disabledContentColor = ZapText3,
             ),
             contentPadding = ButtonPadding,
             modifier = sized,
@@ -137,8 +137,8 @@ fun ZapButton(
             enabled = clickable,
             shape = shape,
             colors = ButtonDefaults.textButtonColors(
-                contentColor = ZapTextSecondary,
-                disabledContentColor = ZapTextTertiary,
+                contentColor = ZapText2,
+                disabledContentColor = ZapText3,
             ),
             contentPadding = ButtonPadding,
             modifier = sized,
@@ -147,7 +147,7 @@ fun ZapButton(
         else -> {
             val (container, onContainer) = when (style) {
                 ZapButtonStyle.Primary -> ZapAction to ZapOnAction
-                ZapButtonStyle.Tonal -> ZapSurface3 to ZapTextPrimary
+                ZapButtonStyle.Tonal -> ZapSurface3 to ZapText
                 else -> ZapDangerFill to ZapOnDangerFill
             }
             Button(
@@ -159,7 +159,7 @@ fun ZapButton(
                     containerColor = container,
                     contentColor = onContainer,
                     disabledContainerColor = if (loading) container else ZapSurface2,
-                    disabledContentColor = if (loading) onContainer else ZapTextTertiary,
+                    disabledContentColor = if (loading) onContainer else ZapText3,
                 ),
                 contentPadding = ButtonPadding,
                 modifier = sized,
@@ -196,7 +196,7 @@ fun ZapProgressButton(
         }
         Text(
             text,
-            color = if (enabled || running) ZapOnAction else ZapTextTertiary,
+            color = if (enabled || running) ZapOnAction else ZapText3,
             style = MaterialTheme.typography.labelLarge,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -217,8 +217,8 @@ fun ZapIconButton(
     val (container, content) = when (style) {
         ZapButtonStyle.Primary -> ZapAction to ZapOnAction
         ZapButtonStyle.Danger -> ZapDangerTint to ZapDanger
-        ZapButtonStyle.Ghost -> Color.Transparent to ZapTextSecondary
-        else -> ZapSurface3 to ZapTextPrimary
+        ZapButtonStyle.Ghost -> Color.Transparent to ZapText2
+        else -> ZapSurface3 to ZapText
     }
     Box(
         contentAlignment = Alignment.Center,
@@ -240,7 +240,7 @@ fun ZapTextLink(text: String, onClick: () -> Unit, modifier: Modifier = Modifier
         onClick = onClick,
         enabled = enabled,
         shape = ZapButtonShape,
-        colors = ButtonDefaults.textButtonColors(contentColor = ZapActionText, disabledContentColor = ZapTextTertiary),
+        colors = ButtonDefaults.textButtonColors(contentColor = ZapActionText, disabledContentColor = ZapText3),
         contentPadding = PaddingValues(horizontal = ZapSpacing.space2),
         modifier = modifier,
     ) {
@@ -259,7 +259,7 @@ fun ZapBadge(text: String, tone: BadgeTone, modifier: Modifier = Modifier, icon:
         BadgeTone.Verified -> ZapVerifiedTint to ZapVerified
         BadgeTone.Warning -> ZapWarningTint to ZapWarning
         BadgeTone.Danger -> ZapDangerTint to ZapDanger
-        BadgeTone.Neutral -> ZapSurface3 to ZapTextSecondary
+        BadgeTone.Neutral -> ZapSurface3 to ZapText2
     }
     Box(
         contentAlignment = Alignment.Center,
@@ -286,7 +286,7 @@ fun ZapChip(
     leadingIcon: Int? = null,
     trailingIcon: Int? = null,
 ) {
-    val foreground = if (selected) ZapActionText else ZapTextSecondary
+    val foreground = if (selected) ZapActionText else ZapText2
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -376,13 +376,13 @@ fun EvidenceLine(text: String, checked: Boolean, modifier: Modifier = Modifier, 
         Icon(
             painterResource(if (checked) R.drawable.ic_check else R.drawable.ic_info),
             contentDescription = null,
-            tint = if (checked) ZapVerified else ZapTextTertiary,
+            tint = if (checked) ZapVerified else ZapText3,
             modifier = Modifier.size(18.dp).padding(top = 1.dp),
         )
         Column(Modifier.weight(1f)) {
-            Text(text, style = MaterialTheme.typography.bodyMedium, color = ZapTextPrimary)
+            Text(text, style = MaterialTheme.typography.bodyMedium, color = ZapText)
             detail?.takeIf { it.isNotBlank() }?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall, color = ZapTextSecondary)
+                Text(it, style = MaterialTheme.typography.bodySmall, color = ZapText2)
             }
         }
     }
@@ -392,8 +392,8 @@ fun EvidenceLine(text: String, checked: Boolean, modifier: Modifier = Modifier, 
 @Composable
 fun EvidenceValue(label: String, value: String, modifier: Modifier = Modifier) {
     Row(horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3), modifier = modifier.fillMaxWidth()) {
-        Text(label, color = ZapTextTertiary, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(0.4f))
-        Text(value, color = ZapTextPrimary, style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(0.6f))
+        Text(label, color = ZapText3, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(0.4f))
+        Text(value, color = ZapText, style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(0.6f))
     }
 }
 
@@ -403,7 +403,7 @@ fun EmptyRow(
     text: String,
     modifier: Modifier = Modifier,
     icon: Int = R.drawable.ic_info,
-    iconTint: Color = ZapTextTertiary,
+    iconTint: Color = ZapText3,
     onClick: (() -> Unit)? = null,
 ) {
     Row(
@@ -417,9 +417,9 @@ fun EmptyRow(
             .padding(ZapSpacing.space4),
     ) {
         Icon(painterResource(icon), contentDescription = null, tint = iconTint, modifier = Modifier.size(20.dp))
-        Text(text, color = ZapTextSecondary, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        Text(text, color = ZapText2, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
         if (onClick != null) {
-            Icon(painterResource(R.drawable.ic_chevron_right), null, tint = ZapTextTertiary, modifier = Modifier.size(18.dp))
+            Icon(painterResource(R.drawable.ic_chevron_right), null, tint = ZapText3, modifier = Modifier.size(18.dp))
         }
     }
 }
@@ -450,9 +450,9 @@ fun SettingsRow(
     modifier: Modifier = Modifier,
     subtitle: String? = null,
     onClick: (() -> Unit)? = null,
-    titleColor: Color = ZapTextPrimary,
+    titleColor: Color = ZapText,
     trailing: (@Composable () -> Unit)? = if (onClick != null) {
-        { Icon(painterResource(R.drawable.ic_chevron_right), null, tint = ZapTextTertiary, modifier = Modifier.size(18.dp)) }
+        { Icon(painterResource(R.drawable.ic_chevron_right), null, tint = ZapText3, modifier = Modifier.size(18.dp)) }
     } else {
         null
     },
@@ -468,7 +468,7 @@ fun SettingsRow(
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(title, color = titleColor, style = MaterialTheme.typography.bodyLarge)
-            subtitle?.let { Text(it, color = ZapTextSecondary, style = MaterialTheme.typography.bodySmall) }
+            subtitle?.let { Text(it, color = ZapText2, style = MaterialTheme.typography.bodySmall) }
         }
         trailing?.invoke()
     }
@@ -556,7 +556,7 @@ fun <T> ZapSegmented(
             ) {
                 Text(
                     label(option),
-                    color = if (active) ZapTextPrimary else ZapTextSecondary,
+                    color = if (active) ZapText else ZapText2,
                     style = MaterialTheme.typography.labelLarge,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -564,7 +564,7 @@ fun <T> ZapSegmented(
                 count(option)?.takeIf { it > 0 }?.let {
                     Text(
                         " $it",
-                        color = if (active) ZapActionText else ZapTextTertiary,
+                        color = if (active) ZapActionText else ZapText3,
                         style = MaterialTheme.typography.labelMedium,
                     )
                 }

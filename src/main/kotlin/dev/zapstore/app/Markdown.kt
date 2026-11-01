@@ -424,7 +424,7 @@ fun MarkdownText(
             ) {
                 Text(
                     text = stringResource(R.string.read_more),
-                    color = ZapTextPrimary,
+                    color = ZapText,
                     style = MaterialTheme.typography.labelMedium,
                     modifier = Modifier
                         .clip(RoundedCornerShape(ZapRadius.full))
@@ -446,7 +446,7 @@ private fun MarkdownBlocks(blocks: List<MdBlock>, color: Color, style: TextStyle
                 is MdBlock.CodeBlock -> Quoted(block.quote) {
                     Text(
                         block.code,
-                        color = ZapTextPrimary,
+                        color = ZapText,
                         style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
                         softWrap = false,
                         modifier = Modifier
@@ -491,7 +491,7 @@ private fun Quoted(depth: Int, content: @Composable () -> Unit) {
 
 @Composable
 private fun ProseBlock(block: MdBlock.Prose, color: Color, style: TextStyle) {
-    val textColor = if (block.heading > 0) ZapTextPrimary else color
+    val textColor = if (block.heading > 0) ZapText else color
     val textStyle = if (block.heading > 0) style.merge(TextStyle(fontWeight = FontWeight.SemiBold, fontSize = ZapMarkdown.headingStyle(block.heading).fontSize)) else style
     val marker = block.marker
     if (marker == null) {
@@ -525,7 +525,7 @@ private fun TableBlockView(block: MdBlock.Table, color: Color, style: TextStyle)
                 (0 until columns).forEach { col ->
                     Text(
                         row.getOrNull(col) ?: AnnotatedString(""),
-                        color = if (rowIndex == 0) ZapTextPrimary else color,
+                        color = if (rowIndex == 0) ZapText else color,
                         style = if (rowIndex == 0) style.merge(TextStyle(fontWeight = FontWeight.SemiBold)) else style,
                         textAlign = block.align.getOrNull(col) ?: TextAlign.Start,
                         modifier = Modifier.width(widths[col]).padding(horizontal = ZapSpacing.space3, vertical = ZapSpacing.space2),

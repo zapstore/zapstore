@@ -27,7 +27,7 @@ import dev.zapstore.app.R
 import dev.zapstore.app.ZapRadius
 import dev.zapstore.app.ZapSpacing
 import dev.zapstore.app.ZapSurface1
-import dev.zapstore.app.ZapTextSecondary
+import dev.zapstore.app.ZapText2
 import dev.zapstore.app.components.EmptyRow
 import dev.zapstore.app.components.LoadingIndicator
 import dev.zapstore.app.components.ZapButton
@@ -84,7 +84,7 @@ fun DiagnosticsScreen(
         verticalArrangement = Arrangement.spacedBy(ZapSpacing.space3),
     ) {
         Text(stringResource(R.string.diagnostics), style = MaterialTheme.typography.headlineSmall)
-        Text(stringResource(R.string.diagnostics_hint), color = ZapTextSecondary, style = MaterialTheme.typography.bodyMedium)
+        Text(stringResource(R.string.diagnostics_hint), color = ZapText2, style = MaterialTheme.typography.bodyMedium)
         when {
             log == null -> LoadingIndicator()
             log.isBlank() -> EmptyRow(stringResource(R.string.diagnostics_empty))
@@ -98,7 +98,7 @@ fun DiagnosticsScreen(
                 Text(
                     text = log,
                     style = MaterialTheme.typography.bodySmall,
-                    color = ZapTextSecondary,
+                    color = ZapText2,
                     modifier = Modifier
                         .verticalScroll(scroll)
                         .horizontalScroll(rememberScrollState())

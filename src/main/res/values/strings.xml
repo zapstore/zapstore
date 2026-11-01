@@ -322,6 +322,15 @@
         <item quantity="one">from %d zap</item>
         <item quantity="other">from %d zaps</item>
     </plurals>
+    <plurals name="feed_comments">
+        <item quantity="one">%d comment</item>
+        <item quantity="other">%d comments</item>
+    </plurals>
+    <plurals name="feed_zaps">
+        <item quantity="one">%d zap</item>
+        <item quantity="other">%d zaps</item>
+    </plurals>
+    <string name="feed_zapped">zapped</string>
     <string name="zap_note">Add a note (optional)</string>
     <string name="zap_send">Zap %1$s sats</string>
     <string name="zap_sent">Sent %1$s sats to %2$s. Thank you!</string>
