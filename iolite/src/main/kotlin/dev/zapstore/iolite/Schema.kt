@@ -1,7 +1,7 @@
 package dev.zapstore.iolite
 
 internal object Schema {
-    const val USER_VERSION = 4
+    const val USER_VERSION = 1
 
     const val APPS_SEARCH = """
         CREATE TABLE apps_search (
@@ -141,7 +141,16 @@ internal object Schema {
         )
         """.trimIndent(),
         """
-        CREATE TABLE outbox (
+        CREATE TABLE relay_reports (
+            relay_url       TEXT NOT NULL,
+            monitor         BLOB NOT NULL,
+            created_at      INTEGER NOT NULL,
+            payment         INTEGER NOT NULL DEFAULT 0 CHECK (payment IN (0, 1)),
+            PRIMARY KEY (relay_url, monitor)
+        )
+        """.trimIndent(),
+        """
+        CREATE TABLE publish_queue (
             event_id        BLOB PRIMARY KEY,
             event_json      TEXT NOT NULL
         )

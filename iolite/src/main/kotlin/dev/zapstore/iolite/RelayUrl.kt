@@ -1,5 +1,6 @@
 package dev.zapstore.iolite
 
+import java.net.URI
 import java.net.URLEncoder
 
 @JvmInline
@@ -7,14 +8,31 @@ value class RelayUrl(val url: String) {
     override fun toString(): String = url
 }
 
+/**
+ * One spelling per relay: lowercase scheme and host, no default port, no fragment, no repeated or
+ * trailing slashes. Throws unless this is a single ws:// or wss:// URL; a joined list such as
+ * `wss://a wss://b` or `wss://a,wss://b` is rejected rather than merged into one URL.
+ */
 fun String.normalizeRelayUrl(): RelayUrl {
     val trimmed = trim()
-    require(trimmed.startsWith("ws://") || trimmed.startsWith("wss://")) {
-        "relay URL must be ws:// or wss://"
+    require(trimmed.length <= MAX_RELAY_URL && trimmed.none { it.isWhitespace() || it.isISOControl() || it == ',' }) {
+        "relay URL must be a single URL"
     }
-    val withoutTrailing = trimmed.trimEnd('/')
-    return RelayUrl(withoutTrailing)
+    val uri = runCatching { URI(trimmed) }.getOrElse { throw IllegalArgumentException("invalid relay URL", it) }
+    val scheme = uri.scheme?.lowercase()
+    require(scheme == "ws" || scheme == "wss") { "relay URL must be ws:// or wss://" }
+    val host = uri.host?.lowercase()?.takeIf { it.isNotEmpty() } ?: throw IllegalArgumentException("relay URL needs a host")
+    require(uri.rawUserInfo == null) { "relay URL must not carry credentials" }
+    val port = uri.port.takeUnless { it == -1 || (scheme == "wss" && it == 443) || (scheme == "ws" && it == 80) }
+    val path = uri.rawPath.orEmpty().replace(Regex("/{2,}"), "/").trimEnd('/')
+    val query = uri.rawQuery?.let { "?$it" }.orEmpty()
+    return RelayUrl("$scheme://$host${port?.let { ":$it" }.orEmpty()}$path$query")
 }
+
+/** [normalizeRelayUrl], or null for anything that is not one WebSocket URL. */
+fun String.relayUrlOrNull(): RelayUrl? = runCatching { normalizeRelayUrl() }.getOrNull()
+
+private const val MAX_RELAY_URL = 4_096
 
 fun String.httpOriginToRelayUrl(): RelayUrl {
     val trimmed = trim().trimEnd('/')
@@ -38,7 +56,17 @@ fun RelayUrl.bundleUrl(from: Long, client: String = ""): String {
 
 /** True when the host is a Tor onion service. */
 val RelayUrl.isOnion: Boolean
-    get() = url.substringAfter("://").substringBefore('/').substringBefore(':').endsWith(".onion")
+    get() = host().endsWith(".onion")
+
+/** True for a relay on this machine. Its address is the one the bundle was fetched from. */
+val RelayUrl.isLoopback: Boolean
+    get() = host().let { it == "127.0.0.1" || it == "localhost" || it == "::1" }
+
+private fun RelayUrl.host(): String {
+    val authority = url.substringAfter("://").substringBefore('/')
+    if (authority.startsWith("[")) return authority.substringBefore(']').substringAfter('[')
+    return authority.substringBefore(':')
+}
 
 private fun RelayUrl.origin(): String {
     val http = originHttpUrl().substringBefore('#').substringBefore('?')

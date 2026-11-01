@@ -209,7 +209,8 @@ class IoliteContractsTest {
             iolite.ingest(listOf(newZap))
             delay(80)
             val zaps = iolite.query(Query.zaps(listOf(AppCoordinate(signer.publicKey, "com.example.app")))).first { true }
-            assertEquals(QueryPhase.LocalOnly, zaps.phase)
+            assertTrue(zaps.settled)
+            assertTrue(zaps.relays.isEmpty())
             assertEquals(listOf(newZap.id), zaps.items.map { it.eventId })
             assertEquals(2_000L, zaps.items.single().amountSats)
         }
@@ -232,6 +233,58 @@ class IoliteContractsTest {
             val zaps = iolite.query(Query.zaps(listOf(AppCoordinate(wallet.publicKey, "com.example.app")))).first { it.items.isNotEmpty() }
             assertEquals(sender, zaps.items.single().pubkey)
         }
+    }
+
+    @Test
+    fun aReceiptWithoutATagIsForTheAppItsZapRequestNames() = runBlocking {
+        val wallet = LocalSigner(SECRET)
+        val sender = "ab".repeat(32)
+        val coordinate = AppCoordinate("cd".repeat(32), "com.example.app")
+        withIolite(signer = wallet) { iolite ->
+            val request = JSONObject()
+                .put("kind", 9734)
+                .put("pubkey", sender)
+                .put("content", "thanks for the app")
+                .put("tags", JSONArray().put(JSONArray().put("a").put(coordinate.toString())))
+                .toString()
+            val receipt = wallet.sign(
+                1_700_000_000,
+                Kinds.Zap,
+                listOf(listOf("p", "ee".repeat(32)), listOf("amount", "21000"), listOf("description", request)),
+                "",
+            )
+            val stranger = wallet.sign(1_700_000_001, Kinds.Zap, listOf(listOf("amount", "21000")), "")
+            iolite.ingest(listOf(receipt, stranger))
+            val zaps = iolite.query(Query.zaps(listOf(coordinate))).first { it.items.isNotEmpty() }
+            assertEquals(listOf(receipt.id), zaps.items.map { it.eventId })
+            assertEquals(sender, zaps.items.single().pubkey)
+            assertEquals("thanks for the app", zaps.items.single().note)
+        }
+    }
+
+    @Test
+    fun zapsAreReadByTheAppsCoordinatesAndByWhoTheyArePaidTo() {
+        val coordinate = AppCoordinate("cd".repeat(32), "com.example.app")
+        val catalog = "cd".repeat(32)
+        val owner = "ef".repeat(32)
+        val query = Query.zaps(listOf(coordinate), recipients = listOf(catalog, owner, catalog), lists = listOf(catalog, owner), limit = 500)
+        assertEquals(
+            listOf(
+                Filter(kinds = listOf(Kinds.Zap), tags = mapOf("a" to listOf(coordinate.toString())), limit = 500),
+                Filter(kinds = listOf(Kinds.Zap), tags = mapOf("p" to listOf(catalog, owner)), limit = Query.RECEIPT_LIMIT),
+            ),
+            query.filters,
+        )
+        assertEquals(listOf(catalog, owner), query.inboxAuthors)
+        assertEquals(1, Query.zaps(listOf(coordinate)).filters.size)
+    }
+
+    @Test
+    fun commentsAreReadFromTheInboxesOfTheNamedLists() {
+        val coordinate = AppCoordinate("cd".repeat(32), "com.example.app")
+        val owner = "ef".repeat(32)
+        assertEquals(listOf(coordinate.pubkey), Query.comments(listOf(coordinate)).inboxAuthors)
+        assertEquals(listOf(coordinate.pubkey, owner), Query.comments(listOf(coordinate), lists = listOf(coordinate.pubkey, owner)).inboxAuthors)
     }
 
     @Test
@@ -347,12 +400,12 @@ class IoliteContractsTest {
         insertApp(store, 2, "app.chatgoogle", "Chat Google", vector = null)
         insertApp(store, 3, "app.chatplain", "Chat Plain", vector = null)
         store.write { tx ->
-            tx.db.execSQL("UPDATE apps SET fact_bits = ${FACT_E2EE or FACT_SOURCE_AVAILABLE}, repository = 'https://github.com/a/chat.git' WHERE app_id = 'app.chat'")
-            tx.db.execSQL("UPDATE apps SET fact_bits = ${FACT_E2EE or FACT_GOOGLE} WHERE app_id = 'app.chatgoogle'")
+            tx.db.execSQL("UPDATE apps SET fact_bits = ${FACT_OFFLINE or FACT_SOURCE_AVAILABLE}, repository = 'https://github.com/a/chat.git' WHERE app_id = 'app.chat'")
+            tx.db.execSQL("UPDATE apps SET fact_bits = ${FACT_OFFLINE or FACT_GOOGLE} WHERE app_id = 'app.chatgoogle'")
         }
         assertEquals(
             listOf("app.chat", "app.chatgoogle"),
-            store.apps(AppFilter(search = "chat", hard = FACT_E2EE)).map { it.appId },
+            store.apps(AppFilter(search = "chat", hard = FACT_OFFLINE)).map { it.appId },
         )
         assertEquals(
             listOf("app.chat", "app.chatplain"),

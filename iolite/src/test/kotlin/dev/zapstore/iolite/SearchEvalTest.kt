@@ -38,7 +38,7 @@ class SearchEvalTest {
             assertEquals(item.getString("query"), wanted, parsed.boost or parsed.penalty)
             val mask = bits(item.optJSONArray("filters")) or parsed.hard
             val rows = apps.filter { it.bits and mask == mask && it.bits and parsed.exclude == 0 }
-            val ranked = rank(rows, parsed.residual, vector(vectors, item.optString("vector", "")), parsed.boost, parsed.penalty, mask != 0)
+            val ranked = rank(rows, parsed.residual, vector(vectors, item.optString("vector", "")), parsed.boost, parsed.penalty)
             val top = item.getJSONArray("top").strings()
             if (top != ranked) mismatches += "${item.getString("query")}: expected $top, ranked $ranked"
             val relevant = item.optJSONArray("relevant")?.strings().orEmpty()
@@ -58,14 +58,14 @@ class SearchEvalTest {
 
 private data class EvalApp(val id: String, val name: String, val bits: Int, val keywords: List<String>, val vector: ByteArray?)
 
-private fun rank(apps: List<EvalApp>, query: String, vector: ByteArray?, boost: Int, penalty: Int, filtered: Boolean): List<String> {
+private fun rank(apps: List<EvalApp>, query: String, vector: ByteArray?, boost: Int, penalty: Int): List<String> {
     val ranker = SearchRanker(
         query = query,
         queryVector = vector,
         limit = null,
         boost = boost,
         penalty = penalty,
-        admitAll = filtered || query.isEmpty(),
+        admitAll = query.isEmpty(),
     )
     for (app in apps) {
         ranker.consider(app.id.encodeToByteArray(), app.id, app.name, app.vector, app.bits, app.keywords)
@@ -92,7 +92,6 @@ private fun bits(names: JSONArray?): Int {
             "open_source" -> FACT_SOURCE_AVAILABLE
             "google_services" -> FACT_GOOGLE
             "offline_capable" -> FACT_OFFLINE
-            "e2ee" -> FACT_E2EE
             else -> 0
         }
     }

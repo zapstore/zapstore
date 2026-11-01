@@ -83,7 +83,7 @@ internal fun foldSearchText(value: String): String {
 /**
  * A name, app-id, or keyword hit stays in the list without a vector.
  * Other listings are included only when [queryVector] clears [MIN_VECTOR_DOT].
- * [admitAll] keeps every row, used when a hard fact filter already chose the set.
+ * [admitAll] keeps every row, used when the query is only fact phrases. A hard filter alone does not set it: it narrows text results, never widens them.
  * Keeps ids only, and at most [limit] of them, so the caller can load full rows for the survivors.
  */
 internal class SearchRanker(

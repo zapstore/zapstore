@@ -61,7 +61,10 @@ class CatalogImporter(
         val artifacts = CatalogArtifacts.fromMembers(verified, config.maxIconBytes, skipped)
 
         val published = catalogKeyRelays(events, catalogPubkey)
-        if (published.isNotEmpty()) {
+        // A local relay often serves a snapshot whose kind 10067 names the public catalog. The phone
+        // fetched this bundle from the local relay, so that address stays the one it syncs.
+        val fetched = endpoint ?: existing?.relayUrl
+        if (published.isNotEmpty() && fetched?.isLoopback != true) {
             store.upsertCatalogRelays(catalogId, published, replaceIdentity = true)
         } else if (existing == null || existing.relays.isEmpty()) {
             val relay = endpoint ?: throw CatalogImportException("catalog relay is missing")

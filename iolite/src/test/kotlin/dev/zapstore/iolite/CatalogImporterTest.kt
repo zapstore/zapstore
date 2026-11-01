@@ -323,7 +323,7 @@ class CatalogImporterTest {
                     "ws://abcdefghijklmnopqrstuvwxyz234567.onion",
                 ),
             )
-            importer.importBundle(1, bundle, localRelay)
+            importer.importBundle(1, bundle, "wss://relay.example.com".normalizeRelayUrl())
             val catalog = store.catalog(1)!!
             assertEquals(
                 listOf("wss://relay.zapstore.dev", "ws://abcdefghijklmnopqrstuvwxyz234567.onion"),
@@ -336,7 +336,7 @@ class CatalogImporterTest {
     @Test
     fun laterCatalogRelayListUpdatesStoredRelays() {
         withStore { store, importer ->
-            importer.importBundle(1, golden("bundle-0-1.tar.zst"), localRelay)
+            importer.importBundle(1, golden("bundle-0-1.tar.zst"), "wss://relay.example.com".normalizeRelayUrl())
             val delta = withCatalogRelays(golden("bundle-1-2.tar.zst"), listOf("wss://relay.zapstore.dev"))
             importer.importBundle(1, delta)
             assertEquals(listOf("wss://relay.zapstore.dev"), store.catalog(1)!!.relays.map { it.url })
@@ -376,7 +376,7 @@ class CatalogImporterTest {
             openConnection = ::JdbcSqliteConnection,
         )
         val bundle = withCatalogRelays(golden("bundle-0-1.tar.zst"), listOf("wss://relay.zapstore.dev"))
-        iolite.syncCatalog(catalogId = 1, bundled = bundle, endpoint = localRelay)
+        iolite.syncCatalog(catalogId = 1, bundled = bundle, endpoint = "wss://relay.example.com".normalizeRelayUrl())
         assertEquals(listOf("wss://relay.zapstore.dev"), iolite.defaultCatalog().relays.map { it.url })
         iolite.syncCatalog()
         assertEquals(
@@ -384,6 +384,33 @@ class CatalogImporterTest {
                 "https://relay.zapstore.dev/v1/bundle?from=1",
                 "https://relay.zapstore.dev/v1/bundle?from=1",
             ),
+            requested,
+        )
+        iolite.close()
+        scope.coroutineContext.job.cancel()
+    }
+
+    @Test
+    fun loopbackFetchStaysThere() = runBlocking {
+        val dir = File("build/tmp/iolite-loopback-${System.nanoTime()}").apply { mkdirs() }
+        val scope = CoroutineScope(SupervisorJob())
+        val requested = mutableListOf<String>()
+        val http = HttpTransport { url, _ ->
+            requested += url
+            HttpResponse(304, emptyMap(), null)
+        }
+        val iolite = Iolite.createForTesting(
+            databasePath = File(dir, "iolite.db").absolutePath,
+            parentScope = scope,
+            http = http,
+            openConnection = ::JdbcSqliteConnection,
+        )
+        val bundle = withCatalogRelays(golden("bundle-0-1.tar.zst"), listOf("wss://relay.zapstore.dev"))
+        iolite.syncCatalog(catalogId = 1, bundled = bundle, endpoint = localRelay)
+        assertEquals(listOf(localRelay.url), iolite.defaultCatalog().relays.map { it.url })
+        iolite.syncCatalog()
+        assertEquals(
+            listOf("http://127.0.0.1:3334/v1/bundle?from=1", "http://127.0.0.1:3334/v1/bundle?from=1"),
             requested,
         )
         iolite.close()

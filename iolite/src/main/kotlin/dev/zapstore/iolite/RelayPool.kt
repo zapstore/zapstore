@@ -3,7 +3,6 @@ package dev.zapstore.iolite
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -11,14 +10,30 @@ import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 
+/** What one relay says about one subscription. */
+internal interface SubscriptionListener {
+    fun onEvent(relay: RelayUrl, event: Event)
+    fun onEose(relay: RelayUrl)
+
+    /** The relay ended the subscription with `CLOSED`. Not an answer: nothing says the data is complete. */
+    fun onClosed(relay: RelayUrl, reason: String)
+
+    /** The connection failed or dropped; the pool reconnects and resends the `REQ`. */
+    fun onConnectionError(relay: RelayUrl, reason: String)
+}
+
 internal class RelayPool(
     private val factory: WebSocketFactory,
     private val scope: CoroutineScope,
     private val signer: Signer?,
     private val nowSeconds: () -> Long,
+    val liveness: RelayLiveness,
 ) {
     private val connections = ConcurrentHashMap<RelayUrl, RelayConnection>()
     private val trafficEnabled = AtomicBoolean(true)
+
+    /** Whether a relay's `auth-required:` can be met. */
+    val canAuthenticate: Boolean get() = signer != null
 
     fun setTrafficEnabled(enabled: Boolean) {
         trafficEnabled.set(enabled)
@@ -33,19 +48,19 @@ internal class RelayPool(
         connections.values.forEach { it.reconnect("refresh") }
     }
 
-    fun subscribe(
-        id: String,
-        filters: List<Filter>,
-        relays: Set<RelayUrl>,
-        onEvent: (RelayUrl, Event) -> Unit,
-        onEose: (RelayUrl) -> Unit,
-        onState: (RelayUrl, RelayQueryState) -> Unit,
-    ): () -> Unit {
-        val subscription = Subscription(id, filters, onEvent, onEose, onState)
-        relays.forEach { url -> connection(url).add(subscription) }
-        return {
-            relays.forEach { url -> connections[url]?.remove(id) }
-        }
+    /** Opens or replaces subscription [id] on [relay]; the same id sends a new `REQ` that replaces the old one. */
+    fun subscribe(relay: RelayUrl, id: String, filters: List<Filter>, listener: SubscriptionListener) {
+        connection(relay).add(Subscription(id, filters, listener))
+    }
+
+    fun unsubscribe(relay: RelayUrl, id: String) {
+        connections[relay]?.remove(id)
+    }
+
+    /** The same subscription on every relay in [relays]. Returns the closer. */
+    fun subscribe(id: String, filters: List<Filter>, relays: Set<RelayUrl>, listener: SubscriptionListener): () -> Unit {
+        relays.forEach { subscribe(it, id, filters, listener) }
+        return { relays.forEach { unsubscribe(it, id) } }
     }
 
     fun publish(event: Event, relays: Set<RelayUrl>, onOk: (RelayUrl, Boolean, String) -> Unit) {
@@ -67,6 +82,7 @@ internal class RelayPool(
                 signer = signer,
                 nowSeconds = nowSeconds,
                 trafficEnabled = trafficEnabled,
+                liveness = liveness,
             )
         }.also { it.ensureOpen() }
 }
@@ -74,9 +90,7 @@ internal class RelayPool(
 private class Subscription(
     val id: String,
     val filters: List<Filter>,
-    val onEvent: (RelayUrl, Event) -> Unit,
-    val onEose: (RelayUrl) -> Unit,
-    val onState: (RelayUrl, RelayQueryState) -> Unit,
+    val listener: SubscriptionListener,
 )
 
 private class RelayConnection(
@@ -86,16 +100,15 @@ private class RelayConnection(
     private val signer: Signer?,
     private val nowSeconds: () -> Long,
     private val trafficEnabled: AtomicBoolean,
+    private val liveness: RelayLiveness,
 ) {
     private val lock = Any()
     private val subscriptions = ConcurrentHashMap<String, Subscription>()
     private val okWaiters = ConcurrentHashMap<String, CopyOnWriteArrayList<(RelayUrl, Boolean, String) -> Unit>>()
     private val pendingEvents = ConcurrentHashMap<String, Event>()
-    private val generation = AtomicLong(0)
     private var session: WebSocketSession? = null
     private var reconnectJob: Job? = null
     private var authEventId: String? = null
-    private var lastError: String? = null
     private var connected = false
 
     fun add(subscription: Subscription) {
@@ -104,7 +117,6 @@ private class RelayConnection(
         synchronized(lock) {
             if (connected) sendReq(subscription)
         }
-        emitState(RelayConnectionState.Connecting, eose = false)
     }
 
     fun remove(id: String) {
@@ -143,57 +155,61 @@ private class RelayConnection(
         synchronized(lock) {
             reconnectJob?.cancel()
             reconnectJob = null
-            runCatching { session?.close() }
+            val closing = session
             session = null
             connected = false
             authEventId = null
+            runCatching { closing?.close() }
         }
-        emitState(RelayConnectionState.Disconnected, eose = false, error = reason)
     }
 
     private fun openLocked() {
-        emitState(RelayConnectionState.Connecting, eose = false)
         val listener = object : WebSocketListener {
             override fun onOpen() {
                 synchronized(lock) {
                     connected = true
-                    lastError = null
-                    generation.incrementAndGet()
                     subscriptions.values.forEach(::sendReq)
                     pendingEvents.values.forEach(::sendEvent)
                 }
-                emitState(RelayConnectionState.Connected, eose = false)
+                liveness.recordSuccess(url)
             }
 
             override fun onMessage(text: String) = handle(text)
 
             override fun onClosing(code: Int, reason: String) {
-                synchronized(lock) {
+                val wasOpen = synchronized(lock) {
+                    val open = session != null
                     connected = false
                     session = null
+                    open
                 }
-                emitState(RelayConnectionState.Disconnected, eose = false, error = reason)
-                scheduleReconnect()
+                // Our own close clears the session first; a close we did not ask for is the relay's.
+                if (!wasOpen) return
+                if (code != NORMAL_CLOSURE && code != GOING_AWAY) liveness.recordFailure(url)
+                lost(reason.ifBlank { "closed ($code)" })
             }
 
             override fun onFailure(error: Throwable) {
                 synchronized(lock) {
                     connected = false
                     session = null
-                    lastError = error.message
                 }
-                emitState(RelayConnectionState.Disconnected, eose = false, error = error.message)
-                scheduleReconnect()
+                liveness.recordFailure(url)
+                lost(error.message ?: "connection failed")
             }
         }
         session = try {
             factory.open(url.url, listener)
         } catch (failure: Throwable) {
-            lastError = failure.message
-            emitState(RelayConnectionState.Disconnected, eose = false, error = failure.message)
-            scheduleReconnect()
+            liveness.recordFailure(url)
+            scope.launch { lost(failure.message ?: "connection failed") }
             null
         }
+    }
+
+    private fun lost(reason: String) {
+        subscriptions.values.forEach { it.listener.onConnectionError(url, reason) }
+        scheduleReconnect()
     }
 
     private fun handle(text: String) {
@@ -203,22 +219,26 @@ private class RelayConnection(
             return
         }
         if (message.length() < 2) return
-        when (message.optString(0)) {
+        val type = message.optString(0)
+        if (type in RELAY_MESSAGES) liveness.recordSuccess(url)
+        when (type) {
             "EVENT" -> {
                 if (message.length() < 3) return
                 val subId = message.optString(1)
                 val raw = message.opt(2) as? JSONObject ?: return
                 val event = runCatching { Event.parse(raw) }.getOrNull() ?: return
-                val subscription = subscriptions[subId] ?: return
-                subscription.onEvent(url, event)
+                subscriptions[subId]?.listener?.onEvent(url, event)
             }
-            "EOSE" -> subscriptions[message.optString(1)]?.onEose(url)
+            "EOSE" -> subscriptions[message.optString(1)]?.listener?.onEose(url)
             "OK" -> {
                 val eventId = message.optString(1)
                 val accepted = message.optBoolean(2)
                 val reason = message.optString(3)
                 if (eventId == authEventId && accepted) {
-                    synchronized(lock) { subscriptions.values.forEach(::sendReq) }
+                    synchronized(lock) {
+                        subscriptions.values.forEach(::sendReq)
+                        pendingEvents.values.forEach(::sendEvent)
+                    }
                 }
                 val waiters = okWaiters.remove(eventId)
                 if (accepted) pendingEvents.remove(eventId)
@@ -226,28 +246,21 @@ private class RelayConnection(
             }
             "AUTH" -> {
                 val challenge = message.optString(1)
-                val current = signer
-                if (current == null) {
-                    lastError = "auth required"
-                    emitState(RelayConnectionState.Connected, eose = false, error = lastError)
-                    return
-                }
+                val current = signer ?: return
                 scope.launch {
                     runCatching {
                         val event = Nip42.auth(current, url, challenge, nowSeconds())
                         authEventId = event.id
                         synchronized(lock) { session?.send(Nip42.wire(event)) }
-                    }.onFailure { failure ->
-                        lastError = failure.message
-                        emitState(RelayConnectionState.Connected, eose = false, error = lastError)
                     }
                 }
             }
             "CLOSED" -> {
-                val subId = message.optString(1)
-                lastError = message.optString(2).ifBlank { "closed" }
-                subscriptions[subId]?.onEose(url)
-                emitState(RelayConnectionState.Connected, eose = true, error = lastError)
+                val subscription = subscriptions[message.optString(1)] ?: return
+                val reason = message.optString(2).ifBlank { "closed" }
+                // An auth-gated REQ is resent once AUTH is accepted, so the subscription stays.
+                if (!(reason.startsWith(AUTH_REQUIRED) && signer != null)) subscriptions.remove(subscription.id)
+                subscription.listener.onClosed(url, reason)
             }
         }
     }
@@ -262,13 +275,14 @@ private class RelayConnection(
         session?.send(JSONArray().put("EVENT").put(event.toJsonObject()).toString())
     }
 
+    /** Waits out the relay's backoff, never less than [MIN_RECONNECT_DELAY_MS]. */
     private fun scheduleReconnect() {
         if (!trafficEnabled.get()) return
         if (subscriptions.isEmpty() && pendingEvents.isEmpty()) return
         synchronized(lock) {
             if (reconnectJob?.isActive == true || session != null) return
             reconnectJob = scope.launch {
-                delay(500)
+                delay(maxOf(MIN_RECONNECT_DELAY_MS, liveness.backoffRemaining(url)))
                 synchronized(lock) {
                     reconnectJob = null
                     if (session == null && trafficEnabled.get()) openLocked()
@@ -277,10 +291,14 @@ private class RelayConnection(
         }
     }
 
-    private fun emitState(connection: RelayConnectionState, eose: Boolean, error: String? = lastError) {
-        val state = RelayQueryState(generation.get(), connection, eose, error)
-        subscriptions.values.forEach { it.onState(url, state) }
+    private companion object {
+        const val NORMAL_CLOSURE = 1000
+        const val GOING_AWAY = 1001
+        const val MIN_RECONNECT_DELAY_MS = 500L
+        val RELAY_MESSAGES = setOf("EVENT", "EOSE", "OK", "CLOSED", "AUTH", "NOTICE", "COUNT")
     }
 }
+
+internal const val AUTH_REQUIRED = "auth-required:"
 
 internal fun okThreshold(relayCount: Int): Int = if (relayCount <= 2) 1 else 2

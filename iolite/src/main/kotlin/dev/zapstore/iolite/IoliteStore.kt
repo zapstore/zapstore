@@ -310,26 +310,26 @@ class IoliteStore internal constructor(
         }
     }
 
-    /** Signing path: derived rows and the outbox row commit together. */
+    /** Signing path: derived rows and the publish queue row commit together. */
     internal fun commitPublish(event: Event, context: IngestContext) {
-        require(event.kind != Kinds.Auth) { "NIP-42 AUTH is never added to the outbox" }
+        require(event.kind != Kinds.Auth) { "NIP-42 AUTH is never added to the publish queue" }
         require(event.verify()) { "published event failed verification" }
         write { tx ->
             EventRows.persist(tx, event, context)
-            EventRows.insertOutbox(tx, event)
+            EventRows.enqueuePublish(tx, event)
         }
     }
 
-    /** Swaps an outbox draft for its mined form; the derived row follows the mined event. */
-    internal fun replaceOutbox(draftId: String, mined: Event, context: IngestContext) {
+    /** Swaps a queued draft for its mined form; the derived row follows the mined event. */
+    internal fun replaceQueuedPublish(draftId: String, mined: Event, context: IngestContext) {
         require(mined.verify()) { "mined event failed verification" }
         write { tx ->
-            tx.db.prepare("DELETE FROM outbox WHERE event_id = ?").use { statement ->
+            tx.db.prepare("DELETE FROM publish_queue WHERE event_id = ?").use { statement ->
                 statement.bindBlob(1, Hex.decode(draftId))
                 statement.step()
             }
             EventRows.persist(tx, mined, context)
-            EventRows.insertOutbox(tx, mined)
+            EventRows.enqueuePublish(tx, mined)
         }
     }
 
@@ -364,7 +364,7 @@ class IoliteStore internal constructor(
 
     fun wipe() {
         write { tx ->
-            listOf("comments", "zaps", "stacks", "profiles", "outbox", "preferences", "certificate_proofs", "apps", "query_refresh")
+            listOf("comments", "zaps", "stacks", "profiles", "publish_queue", "relay_reports", "preferences", "certificate_proofs", "apps", "query_refresh")
                 .forEach { tx.db.execSQL("DELETE FROM $it") }
             tx.db.execSQL("UPDATE catalogs SET epoch = 0")
             tx.db.execSQL("UPDATE catalogs SET manifest_pubkey = NULL WHERE id = 1")
@@ -526,7 +526,7 @@ class IoliteStore internal constructor(
             boost = filter.boost,
             soft = filter.soft,
             penalty = filter.penalty,
-            admitAll = filter.hard != 0 || query == null,
+            admitAll = query == null,
         )
         db.prepare("$SELECT_SEARCH_KEY$where").use { statement ->
             binds.forEachIndexed { index, bind -> bind(statement, index + 1) }
@@ -620,13 +620,36 @@ class IoliteStore internal constructor(
         }
     }
 
-    /** NIP-65 read relays for [pubkey], or null when no relay list is stored. */
-    fun readRelays(pubkey: String): Set<RelayUrl>? = read { db ->
-        EventRows.profileMetadata(db, pubkey)?.second
-            ?.takeIf { it.has("nip65_id") }
-            ?.optJSONArray("nip65_tags").toStringLists()
-            .takeIf { it.isNotEmpty() }
-            ?.readRelayUrls()
+    /** Stored NIP-65 lists by pubkey; a pubkey without a stored kind 10002 is absent. */
+    fun mailboxes(pubkeys: Collection<String>): Map<String, Mailboxes> = read { db ->
+        buildMap {
+            for (pubkey in pubkeys.distinct()) {
+                val metadata = EventRows.profileMetadata(db, pubkey)?.second?.takeIf { it.has("nip65_id") } ?: continue
+                put(pubkey, Mailboxes.parse(metadata.optJSONArray("nip65_tags").toStringLists()))
+            }
+        }
+    }
+
+    /** What trusted monitors last said about each of [relays]; unreported relays are absent. */
+    fun relayStandings(relays: Collection<RelayUrl>): Map<RelayUrl, RelayStanding> = read { db ->
+        val reports = ArrayList<RelayReport>()
+        relays.distinct().chunked(500).forEach { chunk ->
+            val placeholders = chunk.joinToString(",") { "?" }
+            db.prepare(
+                "SELECT relay_url, monitor, created_at, payment FROM relay_reports WHERE relay_url IN ($placeholders)",
+            ).use { statement ->
+                chunk.forEachIndexed { index, relay -> statement.bindText(index + 1, relay.url) }
+                while (statement.step()) {
+                    reports += RelayReport(
+                        relay = RelayUrl(statement.getText(0)),
+                        monitor = Hex.encode(statement.getBlob(1)),
+                        createdAt = statement.getLong(2),
+                        requiresPayment = statement.getLong(3) == 1L,
+                    )
+                }
+            }
+        }
+        reports.groupBy { it.relay }.mapNotNull { (relay, list) -> RelayStanding.of(list)?.let { relay to it } }.toMap()
     }
 
     // --- stacks, zaps, comments --------------------------------------------------------------------
@@ -712,11 +735,13 @@ class IoliteStore internal constructor(
     fun zaps(appId: String, limit: Int? = null): List<ZapRecord> = read { db ->
         val limitSql = limit?.let { " LIMIT $it" } ?: ""
         db.prepare(
-            "SELECT event_id, pubkey, amount_sats, created_at FROM zaps WHERE app_id = ? ORDER BY created_at DESC$limitSql",
+            "SELECT event_id, pubkey, amount_sats, created_at, metadata FROM zaps WHERE app_id = ? ORDER BY created_at DESC$limitSql",
         ).use { statement ->
             statement.bindText(1, appId)
             statement.rows {
-                ZapRecord(Hex.encode(getBlob(0)), Hex.encode(getBlob(1)), getLong(2), getLong(3), appId)
+                val tags = runCatching { JSONObject(getText(4)).optJSONArray("tags") }.getOrNull()
+                val note = EventRows.zapNote(tags.toStringLists())
+                ZapRecord(Hex.encode(getBlob(0)), Hex.encode(getBlob(1)), getLong(2), getLong(3), appId, note)
             }
         }
     }
@@ -771,19 +796,19 @@ class IoliteStore internal constructor(
         }
     }
 
-    // --- outbox ------------------------------------------------------------------------------------
+    // --- publish queue -----------------------------------------------------------------------------
 
-    fun pendingOutbox(): List<Event> = read { db ->
-        db.prepare("SELECT event_json FROM outbox").use { it.rows { Event.parse(getText(0)) } }
+    fun pendingPublishes(): List<Event> = read { db ->
+        db.prepare("SELECT event_json FROM publish_queue").use { it.rows { Event.parse(getText(0)) } }
     }
 
-    fun deleteOutbox(eventId: String) {
+    fun dequeuePublish(eventId: String) {
         write { tx ->
-            tx.db.prepare("DELETE FROM outbox WHERE event_id = ?").use { statement ->
+            tx.db.prepare("DELETE FROM publish_queue WHERE event_id = ?").use { statement ->
                 statement.bindBlob(1, Hex.decode(eventId))
                 statement.step()
             }
-            tx.touch(Table.Outbox)
+            tx.touch(Table.PublishQueue)
         }
     }
 
@@ -932,66 +957,12 @@ class IoliteStore internal constructor(
             when (version) {
                 Schema.USER_VERSION -> Unit
                 0 -> applySchema(connection) { Schema.statements.forEach(connection::execSQL) }
-                1 -> applySchema(connection) {
-                    recomputeFactBits(connection)
-                    addProofSignatures(connection)
-                    setZapSenders(connection)
-                }
-                2 -> applySchema(connection) {
-                    addProofSignatures(connection)
-                    setZapSenders(connection)
-                }
-                3 -> applySchema(connection) { setZapSenders(connection) }
                 else -> error("unsupported Iolite schema version $version")
             }
             runCatching {
                 connection.prepare("PRAGMA wal_checkpoint(TRUNCATE)").use { it.step() }
             }
             return connection
-        }
-
-        /** Version 2 added the e2ee bit; rows imported earlier lack it. */
-        private fun recomputeFactBits(connection: SQLiteConnection) {
-            val rows = connection.prepare("SELECT id, facts FROM apps WHERE facts IS NOT NULL").use { statement ->
-                buildList { while (statement.step()) add(statement.getBlob(0) to statement.getText(1)) }
-            }
-            connection.prepare("UPDATE apps SET fact_bits = ? WHERE id = ?").use { statement ->
-                for ((id, facts) in rows) {
-                    statement.bindLong(1, factBits(facts).toLong())
-                    statement.bindBlob(2, id)
-                    statement.step()
-                    statement.reset()
-                }
-            }
-        }
-
-        /**
-         * Version 3 stores the proof signature. Older rows lack it, so catalog rows are dropped
-         * and the epoch reset: the embedded seed shows at once and the next sync rebuilds them.
-         */
-        private fun addProofSignatures(connection: SQLiteConnection) {
-            connection.execSQL("ALTER TABLE certificate_proofs ADD COLUMN signature TEXT NOT NULL DEFAULT ''")
-            connection.execSQL("DELETE FROM apps_search")
-            connection.execSQL("DELETE FROM apps")
-            connection.execSQL("DELETE FROM certificate_proofs")
-            connection.execSQL("UPDATE catalogs SET epoch = 0")
-        }
-
-        /** Version 4 keys a zap by its sender rather than the wallet service that signed the receipt. */
-        private fun setZapSenders(connection: SQLiteConnection) {
-            val rows = connection.prepare("SELECT event_id, metadata FROM zaps").use { statement ->
-                buildList { while (statement.step()) add(statement.getBlob(0) to statement.getText(1)) }
-            }
-            connection.prepare("UPDATE zaps SET pubkey = ? WHERE event_id = ?").use { statement ->
-                for ((id, metadata) in rows) {
-                    val tags = runCatching { JSONObject(metadata).getJSONArray("tags").toStringLists() }.getOrNull() ?: continue
-                    val sender = EventRows.zapSender(tags) ?: continue
-                    statement.bindBlob(1, Hex.decode(sender))
-                    statement.bindBlob(2, id)
-                    statement.step()
-                    statement.reset()
-                }
-            }
         }
 
         private fun applySchema(connection: SQLiteConnection, create: () -> Unit) {

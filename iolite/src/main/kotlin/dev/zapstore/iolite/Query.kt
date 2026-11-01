@@ -7,8 +7,10 @@ package dev.zapstore.iolite
 class Query<T> internal constructor(
     val filters: List<Filter>,
     internal val tables: Set<Table>,
-    /** Authors whose NIP-65 read relays are added when `QueryOptions.useAuthorRelays` is set. */
-    internal val authors: List<String>,
+    /** Authors of the events asked for; with `QueryOptions.useAuthorRelays`, read from their NIP-65 outboxes. */
+    internal val outboxAuthors: List<String>,
+    /** Users the events are addressed to; with `QueryOptions.useAuthorRelays`, read from their NIP-65 inboxes. */
+    internal val inboxAuthors: List<String>,
     /** Items shown by a `Remote` query before the relays answer. */
     internal val empty: T,
     internal val read: (IoliteStore, LocalSigner?) -> T,
@@ -19,7 +21,8 @@ class Query<T> internal constructor(
             return Query(
                 filters = listOf(Filter(authors = distinct, kinds = listOf(Kinds.Profile))),
                 tables = setOf(Table.Profiles),
-                authors = distinct,
+                outboxAuthors = distinct,
+                inboxAuthors = emptyList(),
                 empty = emptyMap(),
                 read = { store, _ -> store.profiles(distinct) },
             )
@@ -27,18 +30,20 @@ class Query<T> internal constructor(
 
         fun profile(pubkey: String): Query<ProfileRecord?> = profiles(listOf(pubkey)).map { it[pubkey] }
 
-        fun relayList(pubkey: String): Query<Set<RelayUrl>?> = Query(
+        fun mailboxes(pubkey: String): Query<Mailboxes?> = Query(
             filters = listOf(Filter(authors = listOf(pubkey), kinds = listOf(Kinds.RelayList), limit = 1)),
             tables = setOf(Table.Profiles),
-            authors = emptyList(),
+            outboxAuthors = emptyList(),
+            inboxAuthors = emptyList(),
             empty = null,
-            read = { store, _ -> store.readRelays(pubkey) },
+            read = { store, _ -> store.mailboxes(listOf(pubkey))[pubkey] },
         )
 
         fun stacks(author: String, limit: Int? = null): Query<List<StackRecord>> = Query(
             filters = listOf(Filter(authors = listOf(author), kinds = listOf(Kinds.AppStack), limit = limit)),
             tables = setOf(Table.Stacks),
-            authors = listOf(author),
+            outboxAuthors = listOf(author),
+            inboxAuthors = emptyList(),
             empty = emptyList(),
             read = { store, signer -> store.stacks(author, limit = limit, deviceSigner = signer) },
         )
@@ -57,7 +62,8 @@ class Query<T> internal constructor(
                 ),
             ),
             tables = setOf(Table.Stacks),
-            authors = emptyList(),
+            outboxAuthors = emptyList(),
+            inboxAuthors = emptyList(),
             empty = emptyList(),
             read = { store, signer -> store.publicStacks(limit = limit, until = until, excluding = signer?.publicKey) },
         )
@@ -67,7 +73,8 @@ class Query<T> internal constructor(
                 Filter(authors = listOf(author), kinds = listOf(Kinds.AppStack), tags = mapOf("d" to listOf(identifier)), limit = 1),
             ),
             tables = setOf(Table.Stacks),
-            authors = listOf(author),
+            outboxAuthors = listOf(author),
+            inboxAuthors = emptyList(),
             empty = null,
             read = { store, signer -> store.stacks(author, identifier, limit = 1, deviceSigner = signer).firstOrNull() },
         )
@@ -78,7 +85,8 @@ class Query<T> internal constructor(
                 Filter(kinds = listOf(Kinds.AppStack), tags = mapOf("a" to anchors.map(AppCoordinate::toString)), limit = limit),
             ),
             tables = setOf(Table.Stacks),
-            authors = emptyList(),
+            outboxAuthors = emptyList(),
+            inboxAuthors = emptyList(),
             empty = emptyList(),
             read = { store, _ -> store.stacksListing(anchors, limit) },
         )
@@ -99,27 +107,52 @@ class Query<T> internal constructor(
                 ),
             ),
             tables = setOf(Table.Preferences, Table.Stacks),
-            authors = emptyList(),
+            outboxAuthors = emptyList(),
+            inboxAuthors = emptyList(),
             empty = null,
             read = { store, signer -> store.devicePreference(DeviceEvents.STATE, signer) },
         )
 
-        fun zaps(anchors: List<AppCoordinate>, limit: Int? = null): Query<List<ZapRecord>> = Query(
-            filters = listOf(
+        /** Receipts read by `p` for [recipients], per relay. A recipient may be paid for every app. */
+        const val RECEIPT_LIMIT = 2000
+
+        /**
+         * Zap receipts for one app. Most Lightning servers drop the `a` tag from the receipt, so a
+         * filter by `a` misses them: a second filter reads receipts by the pubkeys they are paid to
+         * ([recipients]), and storing one takes the `a` tag of the zap request inside it. [lists]
+         * are the pubkeys whose NIP-65 inboxes are asked as well, with `useAuthorRelays`.
+         */
+        fun zaps(
+            anchors: List<AppCoordinate>,
+            recipients: List<String> = emptyList(),
+            lists: List<String> = emptyList(),
+            limit: Int? = null,
+        ): Query<List<ZapRecord>> = Query(
+            filters = listOfNotNull(
                 Filter(kinds = listOf(Kinds.Zap), tags = mapOf("a" to anchors.map(AppCoordinate::toString)), limit = limit),
+                recipients.distinct().takeIf { it.isNotEmpty() }?.let {
+                    Filter(kinds = listOf(Kinds.Zap), tags = mapOf("p" to it), limit = RECEIPT_LIMIT)
+                },
             ),
             tables = setOf(Table.Zaps),
-            authors = emptyList(),
+            outboxAuthors = emptyList(),
+            inboxAuthors = lists.distinct(),
             empty = emptyList(),
             read = { store, _ -> store.zaps(anchors.first().appId, limit) },
         )
 
-        fun comments(anchors: List<AppCoordinate>, limit: Int? = null): Query<List<CommentRecord>> = Query(
+        /** Comments on one app. [lists] are the pubkeys whose NIP-65 inboxes are asked as well, with `useAuthorRelays`. */
+        fun comments(
+            anchors: List<AppCoordinate>,
+            lists: List<String> = anchors.map(AppCoordinate::pubkey),
+            limit: Int? = null,
+        ): Query<List<CommentRecord>> = Query(
             filters = listOf(
                 Filter(kinds = listOf(Kinds.Comment), tags = mapOf("A" to anchors.map(AppCoordinate::toString)), limit = limit),
             ),
             tables = setOf(Table.Comments),
-            authors = anchors.map(AppCoordinate::pubkey),
+            outboxAuthors = emptyList(),
+            inboxAuthors = lists.distinct(),
             empty = emptyList(),
             read = { store, _ -> store.comments(anchors.first().appId) },
         )
@@ -136,12 +169,13 @@ class Query<T> internal constructor(
                 },
             ),
             tables = setOf(Table.Comments, Table.Zaps),
-            authors = emptyList(),
+            outboxAuthors = emptyList(),
+            inboxAuthors = emptyList(),
             empty = ActivityRecord(),
             read = { store, _ -> ActivityRecord(store.recentComments(limit), store.recentZaps(limit)) },
         )
     }
 
     fun <R> map(transform: (T) -> R): Query<R> =
-        Query(filters, tables, authors, transform(empty)) { store, signer -> transform(read(store, signer)) }
+        Query(filters, tables, outboxAuthors, inboxAuthors, transform(empty)) { store, signer -> transform(read(store, signer)) }
 }

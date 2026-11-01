@@ -20,7 +20,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class RelayOutboxTest {
+class RelayPublishTest {
     @Test
     fun localSignerRoundTripAndNip42Auth() = runBlocking {
         val signer = LocalSigner(SECRET)
@@ -65,7 +65,7 @@ class RelayOutboxTest {
                     iolite.query(
                         Query.profile(signer.publicKey),
                         QueryOptions.localAndRemote(setOf(relay), RemoteMode.OneShot(2.seconds)),
-                    ).first { state -> state.phase == QueryPhase.Complete && state.items?.name == "Ada" }
+                    ).first { state -> state.settled && state.items?.name == "Ada" }
                 }
             }
             network.awaitOpen(relay.url)
@@ -74,13 +74,13 @@ class RelayOutboxTest {
             network.push(relay.url, JSONArray().put("EVENT").put(subId).put(profile.toJsonObject()).toString())
             network.push(relay.url, JSONArray().put("EOSE").put(subId).toString())
             val complete = states.await()
-            assertEquals(QueryPhase.Complete, complete.phase)
+            assertEquals(RelayStatus.Answered, complete.relays[relay])
             assertEquals("Ada", complete.items!!.name)
         }
     }
 
     @Test
-    fun durableOutboxDeletesAfterOkThreshold() = runBlocking {
+    fun publishQueueDeletesAfterOkThreshold() = runBlocking {
         val network = MemoryNetwork()
         val signer = LocalSigner(SECRET)
         val one = "ws://one.test".normalizeRelayUrl()
@@ -88,21 +88,21 @@ class RelayOutboxTest {
         val three = "ws://three.test".normalizeRelayUrl()
         withIolite(webSocket = network.factory(), writeRelays = setOf(one, two, three), signer = signer) { iolite ->
             val event = iolite.publish(1, emptyList(), "note", signer, relays = setOf(one, two, three))
-            assertEquals(1, iolite.pendingOutbox().size)
+            assertEquals(1, iolite.pendingPublishes().size)
             network.awaitOpen(one.url)
             network.awaitOpen(two.url)
             fun ok(url: RelayUrl) {
                 network.push(url.url, JSONArray().put("OK").put(event.id).put(true).put("").toString())
             }
             ok(one)
-            assertEquals(1, iolite.pendingOutbox().size)
+            assertEquals(1, iolite.pendingPublishes().size)
             ok(two)
-            assertTrue(iolite.pendingOutbox().isEmpty())
+            assertTrue(iolite.pendingPublishes().isEmpty())
         }
     }
 
     @Test
-    fun oneFailedRelayIsNotAQueryError() = runBlocking {
+    fun oneFailedRelayIsNotUnreachable() = runBlocking {
         val network = MemoryNetwork()
         val signer = LocalSigner(SECRET)
         val down = "ws://down.test".normalizeRelayUrl()
@@ -111,7 +111,7 @@ class RelayOutboxTest {
             val live = async {
                 withTimeout(5_000) {
                     iolite.query(Query.profile(signer.publicKey), QueryOptions.localAndRemote(setOf(down, up), RemoteMode.Stream))
-                        .first { it.phase == QueryPhase.Live }
+                        .first { it.settled }
                 }
             }
             network.awaitOpen(down.url)
@@ -122,7 +122,10 @@ class RelayOutboxTest {
                 JSONArray(network.relays.getValue(up.url).sent.first { it.startsWith("[\"REQ\"") })
             }
             network.push(up.url, JSONArray().put("EOSE").put(req.getString(1)).toString())
-            assertEquals(null, live.await().error)
+            val settled = live.await()
+            assertTrue(settled.relays[down] is RelayStatus.Failed)
+            assertEquals(RelayStatus.Answered, settled.relays[up])
+            assertTrue(!settled.unreachable)
         }
     }
 
@@ -135,7 +138,7 @@ class RelayOutboxTest {
             val event = iolite.publish(1, emptyList(), "note", signer)
             network.awaitOpen(relay.url)
             network.push(relay.url, JSONArray().put("OK").put(event.id).put(true).put("").toString())
-            assertTrue(iolite.pendingOutbox().isEmpty())
+            assertTrue(iolite.pendingPublishes().isEmpty())
         }
     }
 
@@ -163,7 +166,7 @@ class RelayOutboxTest {
     }
 
     @Test
-    fun authChallengeIsNotOutboxed() = runBlocking {
+    fun authChallengeIsNotQueued() = runBlocking {
         val network = MemoryNetwork()
         val signer = LocalSigner(SECRET)
         val relay = "ws://auth.test".normalizeRelayUrl()
@@ -186,7 +189,7 @@ class RelayOutboxTest {
             }
             val event = Event.parse(JSONArray(auth).getJSONObject(1))
             assertEquals(Kinds.Auth, event.kind)
-            assertTrue(iolite.pendingOutbox().none { it.kind == Kinds.Auth })
+            assertTrue(iolite.pendingPublishes().none { it.kind == Kinds.Auth })
             collected.cancel()
         }
     }
@@ -209,7 +212,7 @@ class RelayOutboxTest {
                 iolite.query(
                     Query.profile(signer.publicKey),
                     QueryOptions.localAndRemote(setOf(relay), RemoteMode.OneShot(2.seconds), cachedFor = 30.seconds),
-                ).first { it.phase == QueryPhase.Complete }
+                ).first { it.settled && it.items != null }
             }
             network.awaitOpen(relay.url)
             val req = network.relays.getValue(relay.url).sent.first { it.startsWith("""["REQ"""") }
@@ -222,11 +225,123 @@ class RelayOutboxTest {
             val cached = iolite.query(
                 Query.profile(signer.publicKey),
                 QueryOptions.localAndRemote(setOf(relay), RemoteMode.OneShot(2.seconds), cachedFor = 30.seconds),
-            ).first { it.phase == QueryPhase.Cached }
+            ).first()
+            assertTrue(cached.settled)
             assertEquals("Ada", cached.items!!.name)
             assertEquals(sentAfter, network.relays.getValue(relay.url).sent.size)
         }
     }
+
+    @Test
+    fun oneShotReadsTheAuthorsOutboxOnceTheirRelayListLands() = runBlocking {
+        val network = MemoryNetwork()
+        val signer = LocalSigner(SECRET)
+        val base = "ws://base.test".normalizeRelayUrl()
+        val outbox = "ws://outbox.test".normalizeRelayUrl()
+        val relayList = signer.sign(1_700_000_000, Kinds.RelayList, listOf(listOf("r", outbox.url, "write")), "")
+        val profile = signer.sign(1_700_000_000, Kinds.Profile, emptyList(), """{"name":"Ada"}""")
+        withIolite(webSocket = network.factory(), writeRelays = setOf(base), signer = signer) { iolite ->
+            val settled = async {
+                withTimeout(5_000) {
+                    iolite.query(
+                        Query.profile(signer.publicKey),
+                        QueryOptions.localAndRemote(setOf(base), RemoteMode.OneShot(3.seconds), useAuthorRelays = true),
+                    ).first { it.settled }
+                }
+            }
+            val profileReq = network.awaitReq(base.url, Kinds.Profile)
+            network.push(base.url, eose(profileReq))
+            val listReq = network.awaitReq(base.url, Kinds.RelayList)
+            network.push(base.url, event(listReq, relayList))
+            network.push(base.url, eose(listReq))
+            val outboxReq = network.awaitReq(outbox.url, Kinds.Profile)
+            network.push(outbox.url, event(outboxReq, profile))
+            network.push(outbox.url, eose(outboxReq))
+            val state = settled.await()
+            assertEquals("Ada", state.items!!.name)
+            assertEquals(RelayStatus.Answered, state.relays[outbox])
+        }
+    }
+
+    @Test
+    fun publishReachesTaggedUsersInboxes() = runBlocking {
+        val network = MemoryNetwork()
+        val signer = LocalSigner(SECRET)
+        val other = LocalSigner(Hex.decode("0000000000000000000000000000000000000000000000000000000000000003"))
+        val write = "ws://write.test".normalizeRelayUrl()
+        val inbox = "ws://inbox.test".normalizeRelayUrl()
+        withIolite(webSocket = network.factory(), writeRelays = setOf(write), signer = signer) { iolite ->
+            iolite.ingest(listOf(other.sign(1, Kinds.RelayList, listOf(listOf("r", inbox.url, "read")), "")))
+            val reply = iolite.publish(1111, listOf(listOf("p", other.publicKey)), "hi", signer)
+            network.awaitSent(inbox.url) { reply.id in it && it.startsWith("""["EVENT"""") }
+            network.awaitSent(write.url) { reply.id in it && it.startsWith("""["EVENT"""") }
+        }
+    }
+
+    @Test
+    fun silentRelayFailsAfterFirstResponseTimeout() = runBlocking {
+        val network = MemoryNetwork()
+        val signer = LocalSigner(SECRET)
+        val silent = "ws://silent.test".normalizeRelayUrl()
+        val config = IoliteConfig(eoseGrace = 5.milliseconds, oneShotTimeout = 5.seconds, firstResponseTimeout = 100.milliseconds)
+        withIolite(webSocket = network.factory(), writeRelays = setOf(silent), signer = signer, config = config) { iolite ->
+            val state = withTimeout(3_000) {
+                iolite.query(Query.profile(signer.publicKey), QueryOptions.localAndRemote(setOf(silent), RemoteMode.OneShot(5.seconds)))
+                    .first { it.settled }
+            }
+            assertEquals(RelayStatus.Failed("no response"), state.relays[silent])
+            assertTrue(state.unreachable)
+        }
+    }
+
+    @Test
+    fun closedIsAFailureNotAnAnswer() = runBlocking {
+        val network = MemoryNetwork()
+        val signer = LocalSigner(SECRET)
+        val relay = "ws://closed.test".normalizeRelayUrl()
+        withIolite(webSocket = network.factory(), writeRelays = setOf(relay), signer = signer) { iolite ->
+            val settled = async {
+                withTimeout(3_000) {
+                    iolite.query(Query.profile(signer.publicKey), QueryOptions.localAndRemote(setOf(relay), RemoteMode.OneShot(2.seconds)))
+                        .first { it.settled }
+                }
+            }
+            val req = network.awaitReq(relay.url, Kinds.Profile)
+            network.push(relay.url, JSONArray().put("CLOSED").put(req).put("blocked: no").toString())
+            val state = settled.await()
+            assertEquals(RelayStatus.Failed("blocked: no"), state.relays[relay])
+            assertTrue(state.unreachable)
+        }
+    }
+
+    @Test
+    fun windowClosesEveryRelayAfterTheFirstEosePlusGrace() = runBlocking {
+        val network = MemoryNetwork()
+        val signer = LocalSigner(SECRET)
+        val fast = "ws://fast.test".normalizeRelayUrl()
+        val slow = "ws://slow.test".normalizeRelayUrl()
+        val config = IoliteConfig(eoseGrace = 50.milliseconds, oneShotTimeout = 5.seconds)
+        withIolite(webSocket = network.factory(), writeRelays = setOf(fast), signer = signer, config = config) { iolite ->
+            val settled = async {
+                withTimeout(3_000) {
+                    iolite.query(Query.profile(signer.publicKey), QueryOptions.localAndRemote(setOf(fast, slow), RemoteMode.OneShot(5.seconds)))
+                        .first { it.settled }
+                }
+            }
+            val fastReq = network.awaitReq(fast.url, Kinds.Profile)
+            val slowReq = network.awaitReq(slow.url, Kinds.Profile)
+            network.push(fast.url, eose(fastReq))
+            val state = settled.await()
+            assertEquals(RelayStatus.Answered, state.relays[fast])
+            assertEquals(RelayStatus.Pending, state.relays[slow])
+            network.awaitSent(slow.url) { it == JSONArray().put("CLOSE").put(slowReq).toString() }
+            network.awaitSent(fast.url) { it == JSONArray().put("CLOSE").put(fastReq).toString() }
+        }
+    }
+
+    private fun eose(subId: String) = JSONArray().put("EOSE").put(subId).toString()
+
+    private fun event(subId: String, event: Event) = JSONArray().put("EVENT").put(subId).put(event.toJsonObject()).toString()
 
     private suspend fun withIolite(
         webSocket: WebSocketFactory,
@@ -262,7 +377,7 @@ class RelayOutboxTest {
 }
 
 internal class MemoryNetwork {
-    val relays = mutableMapOf<String, MemoryRelay>()
+    val relays = java.util.concurrent.ConcurrentHashMap<String, MemoryRelay>()
 
     fun factory(): WebSocketFactory = WebSocketFactory { url, listener ->
         relays.getOrPut(url) { MemoryRelay(url) }.connect(listener)
@@ -270,6 +385,25 @@ internal class MemoryNetwork {
 
     fun push(url: String, text: String) {
         relays.getValue(url).listener?.onMessage(text)
+    }
+
+    /** The id of the first REQ to [url] asking for [kind]. */
+    suspend fun awaitReq(url: String, kind: Int): String =
+        JSONArray(awaitSent(url) { text ->
+            if (!text.startsWith("""["REQ"""")) return@awaitSent false
+            val req = JSONArray(text)
+            (2 until req.length()).any { index ->
+                val kinds = req.getJSONObject(index).optJSONArray("kinds") ?: return@any false
+                (0 until kinds.length()).any { kinds.getInt(it) == kind }
+            }
+        }).getString(1)
+
+    suspend fun awaitSent(url: String, predicate: (String) -> Boolean): String = withTimeout(2_000) {
+        while (true) {
+            relays[url]?.sent?.firstOrNull(predicate)?.let { return@withTimeout it }
+            kotlinx.coroutines.delay(5)
+        }
+        @Suppress("UNREACHABLE_CODE") error("unreachable")
     }
 
     suspend fun awaitOpen(url: String) {

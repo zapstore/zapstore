@@ -14,7 +14,8 @@ enum class Table {
     Zaps,
     Comments,
     Preferences,
-    Outbox,
+    PublishQueue,
+    RelayReports,
 }
 
 data class CatalogRecord(
@@ -116,6 +117,17 @@ class AppRecord(
     val zapRecipient: String? get() = proofPubkey ?: catalogManifestPubkey
     val anchors: List<AppCoordinate>
         get() = listOfNotNull(catalogManifestPubkey, eventPubkey).distinct().map { AppCoordinate(it, appId) }
+
+    /**
+     * Whose NIP-65 inboxes also carry this app's comments and zaps: the catalog key, and the C1
+     * owner or else the listing signer. The C1 owner is read because zaps are paid to it.
+     */
+    val socialLists: List<String>
+        get() = listOfNotNull(catalogManifestPubkey, proofPubkey ?: eventPubkey).distinct()
+
+    /** Pubkeys a zap for this app is paid to: the catalog key, the listing signer, the C1 owner. */
+    val zapRecipients: List<String>
+        get() = listOfNotNull(catalogManifestPubkey, eventPubkey, proofPubkey).distinct()
     val isVerified: Boolean get() = proofPubkey != null
     /** The catalog key signed this listing: Zapstore indexed it, the developer did not publish it. */
     val isCatalogSigned: Boolean get() = catalogManifestPubkey != null && eventPubkey == catalogManifestPubkey
@@ -224,7 +236,6 @@ private val pillKeys = listOf(
     "tracking",
     "ads",
     "offline_capable",
-    "e2ee",
     SOURCE_AVAILABLE,
 )
 
@@ -440,13 +451,14 @@ data class StackRecord(
     val appIds: List<String> get() = apps.map(AppCoordinate::appId)
 }
 
-/** Kind 9735 projection. */
+/** Kind 9735 projection. [note] is the comment of the zap request inside the receipt, often empty. */
 data class ZapRecord(
     val eventId: String,
     val pubkey: String,
     val amountSats: Long,
     val createdAt: Long,
     val appId: String,
+    val note: String = "",
 )
 
 /** Kind 1111 projection. */

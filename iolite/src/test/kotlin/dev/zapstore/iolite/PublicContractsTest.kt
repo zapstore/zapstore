@@ -44,15 +44,14 @@ class PublicContractsTest {
     }
 
     @Test
-    fun queryPhasesRejectTransitionsOutOfTerminalStates() {
-        assertTrue(isLegalPhaseTransition(null, QueryPhase.Connecting))
-        assertTrue(isLegalPhaseTransition(QueryPhase.Connecting, QueryPhase.CatchingUp))
-        assertTrue(isLegalPhaseTransition(QueryPhase.CatchingUp, QueryPhase.Live))
-        assertTrue(isLegalPhaseTransition(QueryPhase.Live, QueryPhase.Connecting))
-        assertTrue(isLegalPhaseTransition(QueryPhase.Cached, QueryPhase.Connecting))
-        assertTrue(!isLegalPhaseTransition(QueryPhase.Complete, QueryPhase.Live))
-        assertTrue(!isLegalPhaseTransition(QueryPhase.TimedOut, QueryPhase.Connecting))
-        assertTrue(!isLegalPhaseTransition(QueryPhase.Failed, QueryPhase.Connecting))
+    fun queryIsUnreachableOnlyWhenEveryRelayFailed() {
+        val one = "wss://one.example".normalizeRelayUrl()
+        val two = "wss://two.example".normalizeRelayUrl()
+        val failed = RelayStatus.Failed("refused")
+        assertTrue(!QueryState(Unit).unreachable)
+        assertTrue(!QueryState(Unit, mapOf(one to failed, two to RelayStatus.Pending), settled = false).unreachable)
+        assertTrue(!QueryState(Unit, mapOf(one to failed, two to RelayStatus.Answered)).unreachable)
+        assertTrue(QueryState(Unit, mapOf(one to failed, two to failed)).unreachable)
     }
 
     @Test

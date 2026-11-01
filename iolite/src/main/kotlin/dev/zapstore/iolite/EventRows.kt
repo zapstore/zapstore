@@ -10,6 +10,8 @@ import org.json.JSONObject
 internal class IngestContext(
     val device: DeviceProfile,
     val deviceSigner: LocalSigner?,
+    /** NIP-66 monitors whose kind 30166 reports are kept. */
+    val relayMonitors: Set<String> = emptySet(),
 )
 
 /**
@@ -61,6 +63,13 @@ internal object EventRows {
                     tx.touch(Table.Catalogs, Table.Preferences)
                 }
             }
+            Kinds.RelayDiscovery -> {
+                if (event.pubkey !in context.relayMonitors) return false
+                val report = RelayReport.parse(event) ?: return false
+                if (!upsertRelayReport(db, report)) return false
+                tx.touch(Table.RelayReports)
+                true
+            }
             Kinds.Preferences -> {
                 val identifier = event.dTag() ?: return false
                 if (isCatalogManifest(event)) return false
@@ -75,13 +84,13 @@ internal object EventRows {
         }
     }
 
-    fun insertOutbox(tx: Tx, event: Event) {
-        tx.db.prepare("INSERT OR REPLACE INTO outbox (event_id, event_json) VALUES (?, ?)").use { statement ->
+    fun enqueuePublish(tx: Tx, event: Event) {
+        tx.db.prepare("INSERT OR REPLACE INTO publish_queue (event_id, event_json) VALUES (?, ?)").use { statement ->
             statement.bindBlob(1, Hex.decode(event.id))
             statement.bindText(2, event.toJson())
             statement.step()
         }
-        tx.touch(Table.Outbox)
+        tx.touch(Table.PublishQueue)
     }
 
     // --- replaceable-event versions -------------------------------------------------------------
@@ -126,6 +135,27 @@ internal object EventRows {
         }
 
     // --- writers -----------------------------------------------------------------------------------
+
+    /** Keeps the newest report per relay and monitor. Returns whether the row changed. */
+    private fun upsertRelayReport(db: SQLiteConnection, report: RelayReport): Boolean {
+        db.prepare(
+            """
+            INSERT INTO relay_reports (relay_url, monitor, created_at, payment)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(relay_url, monitor) DO UPDATE SET
+                created_at = excluded.created_at,
+                payment = excluded.payment
+            WHERE excluded.created_at > relay_reports.created_at
+            """.trimIndent(),
+        ).use { statement ->
+            statement.bindText(1, report.relay.url)
+            statement.bindBlob(2, Hex.decode(report.monitor))
+            statement.bindLong(3, report.createdAt)
+            statement.bindLong(4, if (report.requiresPayment) 1 else 0)
+            statement.step()
+        }
+        return db.prepare("SELECT changes()").use { it.step() && it.getLong(0) > 0 }
+    }
 
     private fun upsertProfile(db: SQLiteConnection, event: Event) {
         val content = runCatching { JSONObject(event.content) }.getOrElse { JSONObject() }
@@ -333,13 +363,36 @@ internal object EventRows {
      * the receipt itself is signed by the recipient's wallet service.
      */
     fun zapSender(tags: List<List<String>>): String? {
-        val request = tags.firstOrNull { it.firstOrNull() == "description" }?.getOrNull(1) ?: return null
-        val pubkey = runCatching { JSONObject(request).optString("pubkey") }.getOrNull() ?: return null
+        val pubkey = zapRequest(tags)?.optString("pubkey") ?: return null
         return pubkey.lowercase().takeIf { it.length == 64 && it.all { c -> c in '0'..'9' || c in 'a'..'f' } }
     }
 
+    /** The comment a zapper wrote on the zap request inside the receipt; empty when there is none. */
+    fun zapNote(tags: List<List<String>>): String = zapRequest(tags)?.optString("content").orEmpty().trim()
+
+    /** The zap request a receipt carries in its `description` tag. */
+    private fun zapRequest(tags: List<List<String>>): JSONObject? =
+        tags.firstOrNull { it.firstOrNull() == "description" }?.getOrNull(1)
+            ?.let { runCatching { JSONObject(it) }.getOrNull() }
+
+    /**
+     * The app a receipt is for: its own `a` tag, or else the `a` tag of the zap request inside it.
+     * The recipient's Lightning server writes the receipt and often leaves `a` out.
+     */
     private fun zapAppId(event: Event): String? =
-        event.tagValue("i") ?: event.tagValue("a")?.let { AppCoordinate.parse(it)?.appId }
+        event.tagValue("i")
+            ?: event.tagValue("a")?.let { AppCoordinate.parse(it)?.appId }
+            ?: requestAppId(event.tags)
+
+    private fun requestAppId(tags: List<List<String>>): String? {
+        val requestTags = zapRequest(tags)?.optJSONArray("tags") ?: return null
+        for (index in 0 until requestTags.length()) {
+            val tag = requestTags.optJSONArray(index) ?: continue
+            if (tag.optString(0) != "a") continue
+            AppCoordinate.parse(tag.optString(1))?.let { return it.appId }
+        }
+        return null
+    }
 
     private fun zapAmountSats(event: Event): Long {
         event.tagValue("bolt11")?.let { invoice ->

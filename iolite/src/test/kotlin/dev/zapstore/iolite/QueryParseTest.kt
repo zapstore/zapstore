@@ -5,17 +5,12 @@ import org.junit.Test
 
 class QueryParseTest {
     @Test
-    fun offlineAndE2eeAreHardFilters() {
+    fun offlineIsAHardFilter() {
         val offline = parseSearchQuery("offline maps")
         assertEquals("maps", offline.residual)
         assertEquals(FACT_OFFLINE, offline.hard)
         assertEquals(FACT_OFFLINE, offline.boost)
         assertEquals(listOf(SearchFact.WorksOffline), offline.facts)
-
-        val e2ee = parseSearchQuery("e2ee chat")
-        assertEquals("chat", e2ee.residual)
-        assertEquals(FACT_E2EE, e2ee.hard)
-        assertEquals(listOf(SearchFact.E2ee), e2ee.facts)
         assertEquals(emptyList<SearchFact>(), parseSearchQuery("encrypted chat").facts)
     }
 
@@ -53,6 +48,8 @@ class QueryParseTest {
         assertEquals(0, parseSearchQuery("accountless notes").boost)
         assertEquals("decentralized chat", parseSearchQuery("decentralized chat").residual)
         assertEquals(0, parseSearchQuery("decentralized chat").boost)
+        assertEquals("e2ee chat", parseSearchQuery("e2ee chat").residual)
+        assertEquals(0, parseSearchQuery("e2ee chat").hard)
     }
 
     @Test
@@ -85,11 +82,11 @@ class QueryParseTest {
             "camera","yes","CAMERA. No shown use."
         """.trimIndent()
         assertEquals(
-            FACT_SOURCE_AVAILABLE or FACT_GOOGLE or FACT_OFFLINE or FACT_E2EE,
+            FACT_SOURCE_AVAILABLE or FACT_GOOGLE or FACT_OFFLINE,
             factBits(csv),
         )
         assertEquals(0, factBits("\"accountless\",\"yes\",\"\"\n"))
-        assertEquals(FACT_E2EE, factBits("\"e2ee\",\"yes\",\"\"\n"))
+        assertEquals(0, factBits("\"e2ee\",\"yes\",\"\"\n"))
         assertEquals(0, factBits("\"google_services\",\"no\",\"\"\n"))
     }
 

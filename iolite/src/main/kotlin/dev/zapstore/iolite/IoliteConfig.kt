@@ -18,6 +18,21 @@ data class IoliteConfig(
     /** How long a resolved NIP-65 relay list is trusted before relays are asked again. */
     val relayListCacheFor: Duration = 6.hours,
     val relayListTimeout: Duration = 10.seconds,
+    /** Where kind 10002 lists are fetched. Empty falls back to each query's own relays. */
+    val indexerRelays: Set<RelayUrl> = emptySet(),
+    /** Most outbox relays one read connects to, beyond the query's own relays. */
+    val maxConnections: Int = 12,
+    /** Most of one user's relays a read or publish uses. */
+    val maxRelaysPerUser: Int = 3,
+    /** A relay that sends nothing for this long after a `REQ` counts as failed. */
+    val firstResponseTimeout: Duration = 10.seconds,
+    val liveness: LivenessOptions = LivenessOptions(),
+    /** NIP-66 monitor pubkeys whose kind 30166 reports are trusted. Empty turns NIP-66 off. */
+    val relayMonitors: Set<String> = emptySet(),
+    /** Where the monitors' reports are read. */
+    val monitorRelays: Set<RelayUrl> = emptySet(),
+    /** A relay no trusted monitor has reported for this long is skipped. */
+    val relayReportMaxAge: Duration = 12.hours,
     /** A NIP-47 wallet reply; paying can wait on a route. */
     val walletTimeout: Duration = 60.seconds,
     val maxCompressedBytes: Long = 32L * 1024 * 1024,
@@ -50,6 +65,15 @@ data class IoliteConfig(
         require(relayListTimeout.isFinite() && relayListTimeout.isPositive()) {
             "relayListTimeout must be finite and positive"
         }
+        require(maxConnections >= 1 && maxRelaysPerUser >= 1) { "relay selection limits must be at least one" }
+        require(firstResponseTimeout.isFinite() && firstResponseTimeout.isPositive()) {
+            "firstResponseTimeout must be finite and positive"
+        }
+        require(relayReportMaxAge.isFinite() && relayReportMaxAge.isPositive()) {
+            "relayReportMaxAge must be finite and positive"
+        }
+        require(relayMonitors.all { Hex.isHex(it, 64) }) { "relayMonitors must be lowercase hex pubkeys" }
+        liveness.validate()
         require(ingestFlushInterval.isFinite() && ingestFlushInterval.isPositive()) {
             "ingestFlushInterval must be finite and positive"
         }

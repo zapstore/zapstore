@@ -31,7 +31,10 @@ data class QueryOptions(
     val relays: Set<RelayUrl> = emptySet(),
     /** Skip relay work when the same query completed within this duration. Local-and-remote only. */
     val cachedFor: Duration? = null,
-    /** Also query the NIP-65 read relays of the observed authors. */
+    /**
+     * Route by NIP-65 as well: read the query's authors from their outboxes and replies to its
+     * recipients from their inboxes. [relays] are always asked too.
+     */
     val useAuthorRelays: Boolean = false,
 ) {
     init {
@@ -77,75 +80,21 @@ data class QueryOptions(
     }
 }
 
-/** One emission of a collected query: the current SQLite read plus relay progress. */
+/**
+ * One emission of a collected query: the current SQLite read, and which relays have answered. Items
+ * always come from SQLite; relay status only says how much of the network has been heard from.
+ */
 data class QueryState<out T>(
     val items: T,
-    val phase: QueryPhase,
-    val relays: Map<RelayUrl, RelayQueryState> = emptyMap(),
-    val error: QueryError? = null,
+    val relays: Map<RelayUrl, RelayStatus> = emptyMap(),
+    /**
+     * The first EOSE's window has passed, or every relay failed. Always true for local and cached
+     * reads. Before this, an empty [items] means "not heard yet"; after it, "nothing there".
+     */
+    val settled: Boolean = true,
 ) {
-    /** True while the first remote request is still unfinished. */
-    val isLoading: Boolean get() = phase == QueryPhase.Connecting || phase == QueryPhase.CatchingUp
+    /** Every asked relay failed, so [items] holds only what was already on the phone. */
+    val unreachable: Boolean get() = relays.isNotEmpty() && relays.values.all { it is RelayStatus.Failed }
 
-    /** True once no further relay work will happen for this session. */
-    val isTerminal: Boolean get() = phase.isTerminal
-
-    fun <R> map(transform: (T) -> R): QueryState<R> = QueryState(transform(items), phase, relays, error)
-}
-
-sealed interface QueryPhase {
-    data object LocalOnly : QueryPhase
-    data object Cached : QueryPhase
-    data object Connecting : QueryPhase
-    data object CatchingUp : QueryPhase
-    data object Live : QueryPhase
-    data object Complete : QueryPhase
-    data object TimedOut : QueryPhase
-    data object Failed : QueryPhase
-
-    val isTerminal: Boolean
-        get() = this == LocalOnly || this == Cached || this == Complete || this == TimedOut || this == Failed
-}
-
-internal fun isLegalPhaseTransition(from: QueryPhase?, to: QueryPhase): Boolean = when {
-    from == null || from == to -> true
-    from == QueryPhase.LocalOnly -> to == QueryPhase.Failed
-    from == QueryPhase.Cached -> to == QueryPhase.Connecting || to == QueryPhase.Failed
-    from == QueryPhase.Connecting -> to == QueryPhase.CatchingUp ||
-        to == QueryPhase.Live ||
-        to == QueryPhase.Complete ||
-        to == QueryPhase.TimedOut ||
-        to == QueryPhase.Failed
-    from == QueryPhase.CatchingUp -> to == QueryPhase.Connecting ||
-        to == QueryPhase.Live ||
-        to == QueryPhase.Complete ||
-        to == QueryPhase.TimedOut ||
-        to == QueryPhase.Failed
-    from == QueryPhase.Live -> to == QueryPhase.Connecting ||
-        to == QueryPhase.CatchingUp ||
-        to == QueryPhase.Failed
-    else -> false
-}
-
-data class RelayQueryState(
-    val generation: Long,
-    val connection: RelayConnectionState,
-    val eose: Boolean,
-    val lastError: String? = null,
-)
-
-enum class RelayConnectionState {
-    Connecting,
-    Connected,
-    Disconnected,
-    Closed,
-}
-
-sealed interface QueryError {
-    val message: String
-
-    data class RelayFailure(val relay: RelayUrl, override val message: String) : QueryError
-    data class VerificationRejected(val relay: RelayUrl, val eventId: String?, override val message: String) : QueryError
-    data class Timeout(val duration: Duration, override val message: String) : QueryError
-    data class IncompatibleDependency(override val message: String) : QueryError
+    fun <R> map(transform: (T) -> R): QueryState<R> = QueryState(transform(items), relays, settled)
 }

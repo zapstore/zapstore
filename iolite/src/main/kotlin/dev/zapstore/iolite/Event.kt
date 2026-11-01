@@ -215,6 +215,7 @@ object Kinds {
     const val Asset = 3_063
     const val Zap = 9_735
     const val RelayList = 10_002
+    const val RelayDiscovery = 30_166
     const val CatalogRelayList = 10_067
     const val AppStack = 30_267
     const val Preferences = 30_078
@@ -222,15 +223,3 @@ object Kinds {
     const val IdentityProof = 30_509
     const val App = 32_267
 }
-
-/** NIP-65: unmarked or `read`-marked `r` tags. */
-fun List<List<String>>.readRelayUrls(): Set<RelayUrl> = markedRelayUrls("read")
-
-private fun List<List<String>>.markedRelayUrls(marker: String): Set<RelayUrl> =
-    asSequence()
-        .filter { tag -> tag.getOrNull(0) == "r" }
-        .filter { tag -> tag.getOrNull(2).let { it == null || it == marker } }
-        .mapNotNull { tag -> tag.getOrNull(1) }
-        .filter { it.startsWith("ws://") || it.startsWith("wss://") }
-        .mapNotNull { runCatching { it.normalizeRelayUrl() }.getOrNull() }
-        .toSet()

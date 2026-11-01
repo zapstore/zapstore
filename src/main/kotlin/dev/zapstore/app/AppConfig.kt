@@ -36,6 +36,18 @@ object AppConfig {
     /** Where signed events (stacks, preferences, zaps) are published. */
     val writeRelays: Set<RelayUrl> = generalRelays + "wss://brelay.zapstore.dev".normalizeRelayUrl()
 
+    /** Where NIP-65 relay lists are fetched; never the Zapstore relays, which do not carry them. */
+    val indexerRelays: Set<RelayUrl> = setOf("wss://relay.vertexlab.io", "wss://purplepag.es").toRelayUrls()
+
+    /** NIP-66 monitors whose kind 30166 reports exclude down or paid relays: nostr.watch's Fisherman and US-East probe. */
+    val relayMonitors: Set<String> = setOf(
+        "58faef87b34208c74ed36008eb3621a2a91f360c075c83b88e5348ea949df2d7",
+        "9ba6484003e8e88600f97ebffd897b2fe82753082e8e0cd8ea19aac0ff2b712b",
+    )
+
+    /** Where [relayMonitors] publish their reports. */
+    val monitorRelays: Set<RelayUrl> = setOf("wss://relay.nostr.watch", "wss://relaypag.es").toRelayUrls()
+
     /** NIP-82 `f` values for this build's ABIs. */
     val platforms: List<String> = supportedAbis.map { "android-$it" }
 
@@ -71,9 +83,12 @@ object AppConfig {
     /** Where zap receipts are read, so a zap request asks for them there. */
     val zapRelays: Set<RelayUrl> = writeRelays + catalogRelay
 
-    /** Kind 9735: one shot, refreshed at most every few minutes. */
+    /**
+     * Kind 9735 on an app page: streamed like its comments, so the feed fills in as receipts arrive,
+     * and read from the inboxes of the catalog key and the C1 owner or listing signer as well.
+     */
     val zapQuery: QueryOptions = remoteOrLocal {
-        QueryOptions.localAndRemote(zapRelays, RemoteMode.OneShot(), cachedFor = 5.minutes)
+        QueryOptions.localAndRemote(zapRelays, RemoteMode.Stream, useAuthorRelays = true)
     }
 
     /** Home's activity feed: newest comments and zaps across apps, one shot, refreshed every few minutes. */

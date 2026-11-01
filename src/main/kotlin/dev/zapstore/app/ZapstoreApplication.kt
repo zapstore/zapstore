@@ -107,6 +107,9 @@ class ZapstoreApplication : Application() {
             config = IoliteConfig(
                 databaseName = "zapstore.db",
                 pruneRules = mapOf(Kinds.Zap to AppConfig.zapRetention),
+                indexerRelays = AppConfig.indexerRelays,
+                relayMonitors = AppConfig.relayMonitors,
+                monitorRelays = AppConfig.monitorRelays,
             ),
             http = network.http,
             webSocket = network.webSocket,
@@ -197,14 +200,17 @@ class ZapstoreApplication : Application() {
         }
     }
 
-    /** Fetches the carried key's device state and lists once, per `iolite/SPEC.md#device-private-events`. */
+    /**
+     * Fetches the carried key's device state and lists once, per `iolite/SPEC.md#device-private-events`.
+     * Collected only for the one-shot window; the rows land in SQLite and the settings flows react.
+     */
     private fun restoreDevicePrivate() {
         scope.launch {
             runCatching {
                 iolite.query(
                     Query.devicePrivate(deviceSigner.publicKey),
                     QueryOptions.remote(relays = AppConfig.writeRelays + AppConfig.catalogRelay, remoteMode = RemoteMode.OneShot()),
-                ).first { it.isTerminal }
+                ).first { it.settled }
             }
         }
     }

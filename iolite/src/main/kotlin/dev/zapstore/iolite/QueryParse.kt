@@ -15,7 +15,7 @@ internal const val FACT_OFFLINE = 1 shl 2
 
 // 1 shl 6 was ads. Do not reuse it. Old catalogs may still have that bit set.
 
-internal const val FACT_E2EE = 1 shl 7
+// 1 shl 7 was e2ee. Do not reuse it. Old catalogs may still have that bit set.
 
 /**
  * [residual] is the text left for exact matching; the encoder sees the whole normalized query.

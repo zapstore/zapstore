@@ -13,7 +13,9 @@ ASSETS_CATALOG_BUNDLE := src/main/assets/bundle-0-1.tar.zst
 RELAY_PORT := 3334
 # Baked into the APK. Example: CATALOG_RELAY=ws://127.0.0.1:3334 make run
 CATALOG_RELAY ?= wss://brelay.zapstore.dev
-GRADLE_RELAY := -PCATALOG_RELAY="$(CATALOG_RELAY)"
+# A debug build opens no relay sockets without this, so no activity, comments or outbox reads. Example: RELAYS_ENABLED=false make run
+RELAYS_ENABLED ?= true
+GRADLE_RELAY := -PCATALOG_RELAY="$(CATALOG_RELAY)" -PRELAYS_ENABLED=$(RELAYS_ENABLED)
 
 .PHONY: build release install run run-release deploy refresh vendor unbundle-catalog reverse link-adb
 

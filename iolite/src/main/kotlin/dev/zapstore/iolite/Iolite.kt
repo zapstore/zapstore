@@ -1,45 +1,47 @@
 package dev.zapstore.iolite
 
-import kotlin.time.Duration
-import kotlin.time.Duration.Companion.seconds
-import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.coroutines.CompletableDeferred
-import org.json.JSONArray
-import org.json.JSONObject
 import android.content.Context
 import androidx.sqlite.SQLiteConnection
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.channels.ProducerScope
-import kotlinx.coroutines.channels.awaitClose
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.buffer
-import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.withIndex
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * The local-first Nostr client. Every event, whether it arrives in a catalog bundle or over a relay
  * socket, is verified, turned into rows by [IoliteStore], and committed; commits notify the observers
  * reading those tables. UI code reads records and never touches event JSON.
  */
+@OptIn(FlowPreview::class)
 class Iolite private constructor(
     internal val store: IoliteStore,
     private val importer: CatalogImporter,
@@ -55,10 +57,20 @@ class Iolite private constructor(
     private val nowMillis: () -> Long,
 ) : AutoCloseable {
     private val closed = AtomicBoolean(false)
-    private val ingestContext = IngestContext(device, deviceSigner)
-    private val outboxAcks = ConcurrentHashMap<String, MutableSet<RelayUrl>>()
-    private val outboxLock = Mutex()
+    private val ingestContext = IngestContext(device, deviceSigner, config.relayMonitors)
     private val pendingIngest = ArrayList<Event>()
+
+    // Publish queue routing, in memory: rows survive restarts, these are rebuilt from them.
+    private val requestedRelays = ConcurrentHashMap<String, Set<RelayUrl>>()
+    private val sentTo = ConcurrentHashMap<String, MutableSet<RelayUrl>>()
+    private val publishAcks = ConcurrentHashMap<String, MutableSet<RelayUrl>>()
+    private val mining = ConcurrentHashMap.newKeySet<String>()
+
+    // NIP-65 lists and NIP-66 reports being fetched, so concurrent queries ask once.
+    /** Authors whose kind 10002 is being fetched; reads routed by them hold their window open. */
+    private val relayListsInFlight = MutableStateFlow<Set<String>>(emptySet())
+    private val reportCandidates = MutableStateFlow<Set<RelayUrl>>(emptySet())
+    private val reportsRequested = ConcurrentHashMap<RelayUrl, Long>()
 
     // --- catalog listings (local only; catalogs are synced, never queried over sockets) -----------
 
@@ -181,17 +193,21 @@ class Iolite private constructor(
      * Runs [query] under [options]. The flow re-emits after every commit touching the query's tables and
      * completes only when the collector cancels, so scope it to the screen that shows it.
      */
-    fun <T> query(query: Query<T>, options: QueryOptions = QueryOptions.local()): Flow<QueryState<T>> = callbackFlow {
-        if (closed.get()) {
-            close()
-            return@callbackFlow
-        }
-        when (options.sourceMode) {
-            SourceMode.Local -> {
-                emitOnChange(query, QueryPhase.LocalOnly)
-                awaitClose()
-            }
-            SourceMode.LocalAndRemote, SourceMode.Remote -> RemoteQuery(query, options, this).run()
+    fun <T> query(query: Query<T>, options: QueryOptions = QueryOptions.local()): Flow<QueryState<T>> = channelFlow {
+        if (closed.get()) return@channelFlow
+        val status = if (options.isRemote) relayWork(query, options) else MutableStateFlow(SessionStatus(settled = true))
+        // Remote-only shows [Query.empty] until a commit lands after the query starts.
+        var showStored = options.sourceMode != SourceMode.Remote
+        // The first change is the subscription itself, not a commit.
+        val commits = store.changes(query.tables).withIndex().map { it.index > 0 }
+        val relayChanges = status.drop(1).map { false }
+        // SQLite is re-read on every emission, so a settled status never outruns the commit before it.
+        merge(commits, relayChanges).collect { committed ->
+            if (closed.get()) return@collect
+            if (committed) showStored = true
+            val current = status.value
+            val items = if (showStored) query.read(store, deviceSigner) else query.empty
+            send(QueryState(items, current.relays, current.settled))
         }
     }.buffer(Channel.CONFLATED).flowOn(Dispatchers.IO)
 
@@ -220,8 +236,8 @@ class Iolite private constructor(
             tags
         }
         val event = signer.sign(createdAt, kind, template, content)
+        requestedRelays[event.id] = relays
         store.commitPublish(event, ingestContext)
-        scope.launch { outboxLock.withLock { send(event, relays) } }
         return event
     }
 
@@ -263,14 +279,25 @@ class Iolite private constructor(
         val events = ConcurrentHashMap<String, Event>()
         val finished = ConcurrentHashMap.newKeySet<RelayUrl>()
         val done = CompletableDeferred<Unit>()
+        fun finish(relay: RelayUrl) {
+            if (finished.add(relay) && finished.size >= relays.size) done.complete(Unit)
+        }
         val unsubscribe = relayPool.subscribe(
             id = "f" + Hex.encode(Crypto.randomBytes(4)),
             filters = filters,
             relays = relays,
-            onEvent = { _, event -> if (event.verify()) events[event.id] = event },
-            onEose = { relay -> if (finished.add(relay) && finished.size >= relays.size) done.complete(Unit) },
-            onState = { relay, state ->
-                if (state.lastError != null && finished.add(relay) && finished.size >= relays.size) done.complete(Unit)
+            listener = object : SubscriptionListener {
+                override fun onEvent(relay: RelayUrl, event: Event) {
+                    if (event.verify()) events[event.id] = event
+                }
+
+                override fun onEose(relay: RelayUrl) = finish(relay)
+
+                override fun onClosed(relay: RelayUrl, reason: String) {
+                    if (!(reason.startsWith(AUTH_REQUIRED) && relayPool.canAuthenticate)) finish(relay)
+                }
+
+                override fun onConnectionError(relay: RelayUrl, reason: String) = finish(relay)
             },
         )
         try {
@@ -317,9 +344,19 @@ class Iolite private constructor(
                 Filter(authors = listOf(connection.walletPubkey), kinds = listOf(Kinds.WalletResponse), tags = mapOf("e" to listOf(request.id))),
             ),
             relays = connection.relays,
-            onEvent = { _, event -> if (event.verify()) reply.complete(event) },
-            onEose = { if (sent.compareAndSet(false, true)) relayPool.publish(request, connection.relays) { _, _, _ -> } },
-            onState = { _, _ -> },
+            listener = object : SubscriptionListener {
+                override fun onEvent(relay: RelayUrl, event: Event) {
+                    if (event.verify()) reply.complete(event)
+                }
+
+                override fun onEose(relay: RelayUrl) {
+                    if (sent.compareAndSet(false, true)) relayPool.publish(request, connection.relays) { _, _, _ -> }
+                }
+
+                override fun onClosed(relay: RelayUrl, reason: String) = Unit
+
+                override fun onConnectionError(relay: RelayUrl, reason: String) = Unit
+            },
         )
         val event = try {
             withTimeoutOrNull(timeout) { reply.await() } ?: throw NwcException("TIMEOUT", "the wallet did not answer")
@@ -398,24 +435,30 @@ class Iolite private constructor(
         return publish(Kinds.AppStack, tags, content, signer)
     }
 
-    fun pendingOutbox(): List<Event> = store.pendingOutbox()
+    fun pendingPublishes(): List<Event> = store.pendingPublishes()
 
     // --- connectivity ------------------------------------------------------------------------------
 
+    /** The network path changed: reconnect, and stop holding old failures against relays. */
     fun refreshConnections() {
+        pool?.liveness?.networkChanged()
         pool?.refreshConnections()
-        scope.launch { flushOutbox() }
     }
 
+    /**
+     * Sockets open only while enabled (the app is in the foreground). While disabled, failures do not
+     * count against relay health; on enabling, relays that were failing get a clean slate.
+     */
     fun setRelayTrafficEnabled(enabled: Boolean) {
+        pool?.liveness?.setNetworkAvailable(enabled)
         pool?.setTrafficEnabled(enabled)
-        if (enabled) scope.launch { flushOutbox() }
     }
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         flushIngest()
         pool?.close()
+        pool?.liveness?.close()
         job.cancel()
         store.close()
         synchronized(openDatabases) { openDatabases.remove(databasePath) }
@@ -428,155 +471,133 @@ class Iolite private constructor(
     private fun <T> observe(tables: Set<Table>, read: (IoliteStore) -> T): Flow<T> =
         store.changes(tables).map { read(store) }.flowOn(Dispatchers.IO)
 
-    private fun <T> ProducerScope<QueryState<T>>.emitOnChange(query: Query<T>, phase: QueryPhase) {
+    /**
+     * Starts a query's relay work in [this] scope and returns its status. The relay plan is a stream:
+     * it is recomputed whenever relay lists, relay health, or NIP-66 reports change, and the session
+     * applies each plan as it comes. Nothing waits for relay lists; until one arrives, its author is
+     * read from the query's own relays.
+     */
+    private fun CoroutineScope.relayWork(query: Query<*>, options: QueryOptions): StateFlow<SessionStatus> {
+        val relayPool = pool ?: return MutableStateFlow(SessionStatus(settled = true))
+        val fingerprint = QueryFingerprint.create(query.filters, options.relays)
+        val cachedFor = options.cachedFor
+        if (cachedFor != null) {
+            val last = store.lastRefresh(fingerprint)
+            if (last != null && nowMillis() - last < cachedFor.inWholeMilliseconds) return MutableStateFlow(SessionStatus(settled = true))
+        }
+        val oneShot = options.remoteMode as? RemoteMode.OneShot
+        val session = RelaySession(
+            pool = relayPool,
+            scope = this,
+            id = "q" + Hex.encode(Crypto.randomBytes(4)),
+            oneShot = oneShot != null,
+            eoseGrace = config.eoseGrace,
+            firstResponseTimeout = config.firstResponseTimeout,
+            oneShotTimeout = oneShot?.let { it.timeout ?: config.oneShotTimeout },
+            onEvent = { _, event -> if (event.verify()) enqueueIngest(event) },
+            onSettled = { answered ->
+                flushIngest()
+                if (answered && oneShot != null) store.recordRefresh(fingerprint, nowMillis())
+            },
+        )
         launch {
-            store.changes(query.tables).collect {
-                if (!closed.get()) trySend(QueryState(query.read(store, deviceSigner), phase))
+            try {
+                readPlan(query, options, relayPool.liveness).collect { session.reconcile(it.relays, held = it.held) }
+            } finally {
+                session.close()
             }
         }
+        return session.state
     }
 
-    /** One remote-enabled collection: relay lifecycle, phase transitions, and re-reads on commit. */
-    private inner class RemoteQuery<T>(
-        private val query: Query<T>,
-        private val options: QueryOptions,
-        private val producer: ProducerScope<QueryState<T>>,
-    ) {
-        private val lock = Any()
-        @Volatile private var phase: QueryPhase? = null
-        @Volatile private var error: QueryError? = null
-        private val relayStates = ConcurrentHashMap<RelayUrl, RelayQueryState>()
-        private val answered = ConcurrentHashMap.newKeySet<RelayUrl>()
-        private var unsubscribe: (() -> Unit)? = null
-        private var graceJob: Job? = null
-        private var timeoutJob: Job? = null
-
-        suspend fun run() {
-            val fingerprint = QueryFingerprint.create(query.filters, options.relays)
-            val cachedFor = options.cachedFor
-            if (cachedFor != null) {
-                val last = store.lastRefresh(fingerprint)
-                if (last != null && nowMillis() - last < cachedFor.inWholeMilliseconds) {
-                    producer.emitOnChange(query, QueryPhase.Cached)
-                    producer.awaitClose()
-                    return
-                }
-            }
-
-            transition(QueryPhase.Connecting) { if (options.sourceMode == SourceMode.Remote) query.empty else read() }
-            producer.launch {
-                // The first emission is the subscription itself; the snapshot above already covered it.
-                store.changes(query.tables).drop(1).collect { emitCurrent() }
-            }
-
-            val relayPool = pool
-            if (relayPool == null) {
-                error = QueryError.IncompatibleDependency("WebSocket transport is required")
-                transition(QueryPhase.Failed)
-                producer.awaitClose()
-                return
-            }
-
-            val relays = if (options.useAuthorRelays) options.relays + resolveReadRelays(query.authors, options.relays) else options.relays
-            val timeout = (options.remoteMode as? RemoteMode.OneShot)?.timeout ?: config.oneShotTimeout
-            timeoutJob = producer.launch {
-                delay(timeout)
-                if (phase != QueryPhase.Connecting && phase != QueryPhase.CatchingUp) return@launch
-                error = QueryError.Timeout(timeout, "one-shot query timed out after $timeout")
-                transition(QueryPhase.TimedOut)
-                stopRelayWork()
-            }
-            unsubscribe = relayPool.subscribe(
-                id = "q" + Hex.encode(Crypto.randomBytes(4)),
+    private fun readPlan(query: Query<*>, options: QueryOptions, liveness: RelayLiveness): Flow<ReadPlan> {
+        val routed = options.useAuthorRelays && (query.outboxAuthors.isNotEmpty() || query.inboxAuthors.isNotEmpty())
+        if (!routed) {
+            return liveness.unhealthy.map { unhealthy ->
+                ReadPlan(RelayRouting.read(query.filters, options.relays, emptyList(), emptyList(), emptyMap(), { it in unhealthy }, config.maxConnections, config.maxRelaysPerUser))
+            }.distinctUntilChanged()
+        }
+        val pubkeys = (query.outboxAuthors + query.inboxAuthors).distinct()
+        requestRelayLists(pubkeys, options.relays)
+        val profiles = store.changes(setOf(Table.Profiles))
+        val reports = store.changes(setOf(Table.RelayReports))
+        // Mailboxes are read from SQLite on every emission: a fetch counts as done only after its commit.
+        return combine(profiles, liveness.unhealthy, reports, relayListsInFlight) { _, unhealthy, _, inFlight ->
+            val boxes = store.mailboxes(pubkeys)
+            val candidates = boxes.values.flatMapTo(LinkedHashSet(options.relays)) { it.outboxes + it.inboxes }
+            val standings = if (config.relayMonitors.isEmpty()) emptyMap() else store.relayStandings(candidates)
+            if (config.relayMonitors.isNotEmpty()) reportCandidates.update { it + candidates }
+            val newest = standings.values.maxOfOrNull { it.lastSeen } ?: 0
+            val maxAge = config.relayReportMaxAge.inWholeSeconds
+            RelayRouting.read(
                 filters = query.filters,
-                relays = relays,
-                onEvent = { relay, event ->
-                    if (!event.verify()) {
-                        error = QueryError.VerificationRejected(relay, event.id, "event failed verification")
-                        return@subscribe
-                    }
-                    enqueueIngest(event)
-                    if (phase == QueryPhase.Connecting) transition(QueryPhase.CatchingUp)
-                },
-                onEose = { relay ->
-                    answered += relay
-                    if (error is QueryError.RelayFailure) error = null
-                    synchronized(lock) {
-                        if (graceJob != null) return@subscribe
-                        graceJob = producer.launch {
-                            delay(config.eoseGrace)
-                            flushIngest()
-                            when (options.remoteMode) {
-                                is RemoteMode.OneShot -> {
-                                    store.recordRefresh(fingerprint, nowMillis())
-                                    transition(QueryPhase.Complete)
-                                    stopRelayWork()
-                                }
-                                RemoteMode.Stream -> {
-                                    timeoutJob?.cancel()
-                                    transition(QueryPhase.Live)
-                                }
-                                null -> Unit
-                            }
-                        }
-                    }
-                },
-                onState = { relay, state ->
-                    relayStates[relay] = state
-                    val allFailed = answered.isEmpty() && relays.all { relayStates[it]?.lastError != null }
-                    if (state.lastError != null && phase == QueryPhase.Connecting && allFailed) {
-                        error = QueryError.RelayFailure(relay, state.lastError)
-                    }
-                    emitCurrent()
-                },
-            )
-            producer.awaitClose { stopRelayWork() }
+                base = options.relays,
+                outboxAuthors = query.outboxAuthors,
+                inboxAuthors = query.inboxAuthors,
+                mailboxes = boxes,
+                skip = { it in unhealthy || standings[it]?.excludes(newest, maxAge) == true },
+                maxConnections = config.maxConnections,
+                maxRelaysPerUser = config.maxRelaysPerUser,
+            ).let { ReadPlan(it, held = pubkeys.any { it in inFlight }) }
+        }.distinctUntilChanged()
+    }
+
+    /** Fetches kind 10002 for [pubkeys] whose lists are older than `relayListCacheFor`, without waiting. */
+    private fun requestRelayLists(pubkeys: List<String>, base: Set<RelayUrl>) {
+        val relayPool = pool ?: return
+        val now = nowMillis()
+        val due = pubkeys.filter { pubkey ->
+            val last = store.lastRefresh(relayListKey(pubkey))
+            last == null || now - last >= config.relayListCacheFor.inWholeMilliseconds
         }
-
-        private fun read(): T = query.read(store, deviceSigner)
-
-        private fun emitCurrent() {
-            if (closed.get()) return
-            val current = phase ?: return
-            producer.trySend(QueryState(read(), current, relayStates.toMap(), error))
-        }
-
-        private fun transition(next: QueryPhase, items: () -> T = ::read) {
-            synchronized(lock) {
-                if (!isLegalPhaseTransition(phase, next)) return
-                phase = next
-            }
-            if (closed.get()) return
-            producer.trySend(QueryState(items(), next, relayStates.toMap(), error))
-        }
-
-        private fun stopRelayWork() {
-            timeoutJob?.cancel()
-            graceJob?.cancel()
-            unsubscribe?.invoke()
-            unsubscribe = null
+        var stale = emptyList<String>()
+        relayListsInFlight.update { inFlight -> stale = due.filterNot(inFlight::contains); inFlight + stale }
+        if (stale.isEmpty()) return
+        val relays = config.indexerRelays.ifEmpty { base }.let { all -> relayPool.liveness.filter(all).ifEmpty { all.toList() } }
+        val filters = stale.chunked(MAX_AUTHORS_PER_FILTER).map { Filter(authors = it, kinds = listOf(Kinds.RelayList)) }
+        oneShot("m", relays.associateWith { filters }, config.relayListTimeout) { answered ->
+            if (answered) stale.forEach { store.recordRefresh(relayListKey(it), nowMillis()) }
+            relayListsInFlight.update { it - stale.toSet() }
         }
     }
 
-    /** NIP-65 read relays of [authors], from SQLite when fresh, else asked of [bootstrap]. */
-    private suspend fun resolveReadRelays(authors: List<String>, bootstrap: Set<RelayUrl>): Set<RelayUrl> {
-        if (authors.isEmpty()) return emptySet()
-        return coroutineScope {
-            authors.distinct().map { author ->
-                async {
-                    runCatching {
-                        query(
-                            Query.relayList(author),
-                            QueryOptions.localAndRemote(
-                                relays = bootstrap,
-                                remoteMode = RemoteMode.OneShot(config.relayListTimeout),
-                                cachedFor = config.relayListCacheFor,
-                            ),
-                        ).first { it.isTerminal }.items.orEmpty()
-                    }.getOrDefault(emptySet())
-                }
-            }.awaitAll().flatten().toSet()
+    /** Fetches NIP-66 reports for relays not asked about within half of `relayReportMaxAge`. */
+    private fun requestRelayReports(candidates: Set<RelayUrl>) {
+        if (config.relayMonitors.isEmpty() || config.monitorRelays.isEmpty()) return
+        val now = nowMillis()
+        val interval = config.relayReportMaxAge.inWholeMilliseconds / 2
+        val due = candidates.filter { relay ->
+            val last = reportsRequested[relay]
+            (last == null || now - last >= interval).also { if (it) reportsRequested[relay] = now }
         }
+        if (due.isEmpty()) return
+        // Monitors write the `d` tag with or without the trailing slash. The two spellings go in separate
+        // filters: relay.nostr.watch answers nothing when one `#d` list mixes them.
+        val filters = due.chunked(MAX_RELAYS_PER_REPORT_FILTER).flatMap { chunk ->
+            listOf(chunk.map { it.url + "/" }, chunk.map { it.url }).map { spellings ->
+                Filter(authors = config.relayMonitors.toList(), kinds = listOf(Kinds.RelayDiscovery), tags = mapOf("d" to spellings))
+            }
+        }
+        oneShot("r", config.monitorRelays.associateWith { filters }, config.relayListTimeout) {}
+    }
+
+    /** A background one-shot fetch whose events land in SQLite like any other. */
+    private fun oneShot(prefix: String, plan: Map<RelayUrl, List<Filter>>, timeout: Duration, onSettled: (Boolean) -> Unit) {
+        val relayPool = pool ?: return
+        RelaySession(
+            pool = relayPool,
+            scope = scope,
+            id = prefix + Hex.encode(Crypto.randomBytes(4)),
+            oneShot = true,
+            eoseGrace = config.eoseGrace,
+            firstResponseTimeout = config.firstResponseTimeout,
+            oneShotTimeout = timeout,
+            onEvent = { _, event -> if (event.verify()) enqueueIngest(event) },
+            onSettled = { answered ->
+                flushIngest()
+                onSettled(answered)
+            },
+        ).reconcile(plan)
     }
 
     private fun enqueueIngest(event: Event) {
@@ -598,7 +619,10 @@ class Iolite private constructor(
     private fun start() {
         // Off the caller's thread: opening the store must not wait on proof expiry.
         scope.launch { store.recomputeProofs(nowMillis() / 1_000) }
-        scope.launch { flushOutbox() }
+        scope.launch { routePublishQueue() }
+        if (config.relayMonitors.isNotEmpty()) {
+            scope.launch { reportCandidates.debounce(REPORT_REQUEST_DEBOUNCE).collect(::requestRelayReports) }
+        }
         scope.launch {
             while (isActive) {
                 delay(config.ingestFlushInterval)
@@ -630,65 +654,96 @@ class Iolite private constructor(
         }
     }
 
-    private suspend fun flushOutbox() {
-        outboxLock.withLock {
-            store.pendingOutbox().forEach { send(it, writeRelays) }
+    /**
+     * The publish queue as a stream: whenever a row, a relay list, the catalogs, or relay health
+     * changes, every pending event goes to destinations it has not been sent to yet. The pool keeps
+     * resending unacknowledged events on reconnect; a row is deleted once enough relays accept it.
+     */
+    private suspend fun routePublishQueue() {
+        val relayPool = pool ?: return
+        combine(
+            store.changes(setOf(Table.PublishQueue, Table.Profiles, Table.Catalogs)),
+            relayPool.liveness.unhealthy,
+        ) { _, unhealthy -> unhealthy }.collect { unhealthy -> routePending(relayPool, unhealthy) }
+    }
+
+    private fun routePending(relayPool: RelayPool, unhealthy: Set<RelayUrl>) {
+        val pending = store.pendingPublishes()
+        val ids = pending.mapTo(HashSet()) { it.id }
+        sentTo.keys.retainAll(ids)
+        publishAcks.keys.retainAll(ids)
+        if (pending.isEmpty()) return
+        val catalogRelays = store.selectedCatalogs().map { it.relayUrl }.toSet()
+        val mailboxes = store.mailboxes(pending.flatMap { listOf(it.pubkey) + RelayRouting.recipients(it) })
+        for (event in pending) {
+            val work = Pow.required(event.kind, event.content)
+            if (work > 0 && !Pow.meets(event, work)) {
+                mine(event, work)
+                continue
+            }
+            val destinations = if (work > 0 && catalogRelays.isNotEmpty()) {
+                // Device-private events go only to the catalog relays, per `SPEC.md#device-private-events`.
+                catalogRelays
+            } else {
+                RelayRouting.write(
+                    event = event,
+                    requested = requestedRelays[event.id].orEmpty(),
+                    mailboxes = mailboxes,
+                    fallback = writeRelays,
+                    skip = { it in unhealthy },
+                    maxRelaysPerUser = config.maxRelaysPerUser,
+                )
+            }
+            val sent = sentTo.getOrPut(event.id) { ConcurrentHashMap.newKeySet() }
+            val fresh = destinations.filterTo(HashSet()) { sent.add(it) }
+            if (fresh.isEmpty()) continue
+            relayPool.publish(event, fresh) { relay, accepted, _ -> if (accepted) acknowledge(event.id, relay) }
         }
+    }
+
+    private fun acknowledge(eventId: String, relay: RelayUrl) {
+        val acks = publishAcks.getOrPut(eventId) { mutableSetOf() }
+        synchronized(acks) {
+            acks += relay
+            if (acks.size < okThreshold(sentTo[eventId]?.size ?: acks.size)) return
+        }
+        store.dequeuePublish(eventId)
+        publishAcks.remove(eventId)
+        sentTo.remove(eventId)
+        requestedRelays.remove(eventId)
     }
 
     /**
-     * Device-private events (the ones that need proof of work) go only to the catalog relays,
-     * per `SPEC.md#device-private-events`; everything else goes where the caller asked.
+     * A device-key draft is committed without work so the screen updates at once; the work is added
+     * before it leaves the phone. Replacing the row re-runs routing with the mined event. A draft no
+     * local key can re-sign stays queued.
      */
-    private fun destinations(event: Event, relays: Set<RelayUrl>): Set<RelayUrl> {
-        if (Pow.required(event.kind, event.content) > 0) {
-            val catalogRelays = store.selectedCatalogs().map { it.relayUrl }.toSet()
-            if (catalogRelays.isNotEmpty()) return catalogRelays
-        }
-        return relays.ifEmpty { writeRelays }
-    }
-
-    private suspend fun send(event: Event, relays: Set<RelayUrl>) {
-        if (pool == null) return
-        val ready = withWork(event) ?: return
-        publishOutbox(ready, relays)
-    }
-
-    /**
-     * A device-key draft is committed without work so the screen updates at once; the work is added here,
-     * before it leaves the phone. Null when it needs work and no local key can re-sign it.
-     */
-    private suspend fun withWork(event: Event): Event? {
-        val work = Pow.required(event.kind, event.content)
-        if (work == 0 || Pow.meets(event, work)) return event
-        val signer = deviceSigner?.takeIf { it.publicKey == event.pubkey } ?: return null
-        val tags = withContext(Dispatchers.Default) {
-            Pow.mine(event.pubkey, event.createdAt, event.kind, event.tags, event.content, work)
-        }
-        val mined = signer.sign(event.createdAt, event.kind, tags, event.content)
-        store.replaceOutbox(event.id, mined, ingestContext)
-        return mined
-    }
-
-    private fun publishOutbox(event: Event, relays: Set<RelayUrl>) {
-        val dest = destinations(event, relays)
-        if (dest.isEmpty() || pool == null) return
-        val needed = okThreshold(dest.size)
-        pool.publish(event, dest) { relay, accepted, _ ->
-            if (!accepted) return@publish
-            val acks = outboxAcks.getOrPut(event.id) { mutableSetOf() }
-            synchronized(acks) {
-                acks += relay
-                if (acks.size >= needed) {
-                    store.deleteOutbox(event.id)
-                    outboxAcks.remove(event.id)
-                }
+    private fun mine(event: Event, work: Int) {
+        val signer = deviceSigner?.takeIf { it.publicKey == event.pubkey } ?: return
+        if (!mining.add(event.id)) return
+        scope.launch(Dispatchers.Default) {
+            try {
+                val tags = Pow.mine(event.pubkey, event.createdAt, event.kind, event.tags, event.content, work)
+                val mined = signer.sign(event.createdAt, event.kind, tags, event.content)
+                requestedRelays[event.id]?.let { requestedRelays[mined.id] = it }
+                store.replaceQueuedPublish(event.id, mined, ingestContext)
+                requestedRelays.remove(event.id)
+            } finally {
+                mining.remove(event.id)
             }
         }
     }
 
+    /** Where a read goes; [held] while the relay lists that could widen it are still being fetched. */
+    private data class ReadPlan(val relays: Map<RelayUrl, List<Filter>>, val held: Boolean = false)
+
     companion object {
         private val APP_TABLES = setOf(Table.Apps, Table.Proofs, Table.Catalogs)
+        private const val MAX_AUTHORS_PER_FILTER = 500
+        private const val MAX_RELAYS_PER_REPORT_FILTER = 100
+        private val REPORT_REQUEST_DEBOUNCE = 1.seconds
+
+        private fun relayListKey(pubkey: String) = "nip65:$pubkey"
         private val openDatabases = mutableSetOf<String>()
 
         fun create(
@@ -781,7 +836,9 @@ class Iolite private constructor(
                     job = job,
                     databasePath = databasePath,
                     http = http,
-                    pool = webSocket?.let { RelayPool(it, scope, signer, nowSeconds) },
+                    pool = webSocket?.let {
+                        RelayPool(it, scope, signer, nowSeconds, RelayLiveness(config.liveness, scope, nowMillis))
+                    },
                     config = config,
                     device = device,
                     deviceSigner = deviceSigner,
