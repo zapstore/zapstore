@@ -19,8 +19,8 @@ android {
         applicationId = "dev.zapstore.beta"
         minSdk = 31
         targetSdk = 37
-        // Flutter's last release is 1009; this installs over it.
-        versionCode = 2000
+        // Above every Flutter 1.1.3 split (armeabi-v7a 2010, arm64-v8a 3010, x86_64 5010).
+        versionCode = 6000
         versionName = "2.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
