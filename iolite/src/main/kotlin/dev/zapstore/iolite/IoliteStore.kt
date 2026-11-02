@@ -238,11 +238,17 @@ class IoliteStore internal constructor(
         if (artifacts.apps.isEmpty() && artifacts.avatars.isEmpty()) return
         val db = tx.db
         for (artifact in artifacts.apps) guard("files for ${artifact.appId}") appFiles@{
-            val appRow = db.prepare("SELECT id FROM apps WHERE catalog_id = ? AND app_id = ?").use { statement ->
+            val (appRow, publisher) = db.prepare("SELECT id, pubkey FROM apps WHERE catalog_id = ? AND app_id = ?").use { statement ->
                 statement.bindLong(1, catalog.id)
                 statement.bindText(2, artifact.appId)
-                if (statement.step()) statement.getBlob(0) else null
+                if (statement.step()) statement.getBlob(0) to statement.blobHexOrNull(1) else null
             } ?: return@appFiles
+            // Followers belong to the C1 publisher. Without a proof there is no publisher, so nothing is kept.
+            val trust = artifact.trust
+            if (trust != null && publisher != null && publisher != catalog.manifestPubkey) {
+                EventRows.putTrust(db, publisher, trust)
+                tx.touch(Table.Profiles)
+            }
             artifact.about?.let { about ->
                 db.prepare("UPDATE apps SET about = ? WHERE catalog_id = ? AND app_id = ?").use { statement ->
                     statement.bindText(1, about)
@@ -349,6 +355,12 @@ class IoliteStore internal constructor(
             else -> null
         }
     }
+
+    /** The followers the catalog listed for [publisher], or null. A kind 0 update leaves them be. */
+    fun trust(publisher: String): Trust? =
+        read { db -> EventRows.profileMetadata(db, publisher)?.second?.optString("trust") }
+            ?.takeIf(String::isNotEmpty)
+            ?.let(Trust::parse)
 
     fun devicePreference(identifier: String, deviceSigner: LocalSigner?): String? {
         deviceSigner ?: return null

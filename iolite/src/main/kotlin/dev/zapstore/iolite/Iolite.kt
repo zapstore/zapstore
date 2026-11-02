@@ -369,6 +369,73 @@ class Iolite private constructor(
         return json.optJSONObject("result") ?: JSONObject()
     }
 
+    /**
+     * Who ranks highest among the people [target] is followed by, as [source] sees the graph: one
+     * Vertex DVM request (kind 5312) signed by [signer]. Returns up to [limit] pubkeys without [target].
+     * Throws when Vertex answers with an error or does not answer within [timeout]. Nothing is stored.
+     */
+    suspend fun reputation(
+        relays: Set<RelayUrl>,
+        source: String,
+        target: String,
+        signer: Signer,
+        limit: Int = 7,
+        timeout: Duration = config.oneShotTimeout,
+    ): List<String> {
+        checkOpen()
+        val relayPool = pool ?: throw IllegalStateException("relays are off")
+        val tags = listOf(
+            listOf("param", "target", target),
+            listOf("param", "source", source),
+            listOf("param", "sort", "personalizedPagerank"),
+            listOf("param", "limit", limit.toString()),
+        )
+        val request = signer.sign(nowMillis() / 1_000, Kinds.VerifyReputation, tags, "")
+        val reply = CompletableDeferred<Event>()
+        val sent = AtomicBoolean(false)
+        val unsubscribe = relayPool.subscribe(
+            id = "v" + Hex.encode(Crypto.randomBytes(4)),
+            filters = listOf(Filter(kinds = listOf(Kinds.ReputationResponse, Kinds.DvmError), tags = mapOf("e" to listOf(request.id)))),
+            relays = relays,
+            listener = object : SubscriptionListener {
+                override fun onEvent(relay: RelayUrl, event: Event) {
+                    if (event.verify()) reply.complete(event)
+                }
+
+                override fun onEose(relay: RelayUrl) {
+                    if (sent.compareAndSet(false, true)) relayPool.publish(request, relays) { _, _, _ -> }
+                }
+
+                override fun onClosed(relay: RelayUrl, reason: String) = Unit
+
+                override fun onConnectionError(relay: RelayUrl, reason: String) = Unit
+            },
+        )
+        val event = try {
+            withTimeoutOrNull(timeout) { reply.await() } ?: throw IllegalStateException("Vertex did not answer")
+        } finally {
+            unsubscribe()
+        }
+        if (event.kind == Kinds.DvmError) {
+            throw IllegalStateException(event.tags.firstOrNull { it.firstOrNull() == "status" }?.getOrNull(2) ?: "Vertex error")
+        }
+        val ranked = JSONArray(event.content)
+        return (0 until ranked.length()).mapNotNull { ranked.optJSONObject(it)?.optString("pubkey")?.takeIf(String::isNotEmpty) }
+            .filter { it != target }
+            .take(limit)
+    }
+
+    /** The pubkeys [pubkey] follows, from the newest kind 3 on [relays]; empty when none was found. */
+    suspend fun follows(pubkey: String, relays: Set<RelayUrl>, timeout: Duration = config.oneShotTimeout): Set<String> {
+        val list = fetch(listOf(Filter(authors = listOf(pubkey), kinds = listOf(Kinds.ContactList), limit = 1)), relays, timeout)
+            .filter { it.verify() }.maxByOrNull { it.createdAt } ?: return emptySet()
+        return list.tags.filter { it.firstOrNull() == "p" && it.getOrNull(1)?.let { key -> Hex.isHex(key, 64) } == true }
+            .map { it[1] }.toSet()
+    }
+
+    /** What the catalog says about who follows [publisher], or null when it sent nothing. */
+    fun observeTrust(publisher: String): Flow<Trust?> = observe(setOf(Table.Profiles)) { it.trust(publisher) }
+
     /** Plaintext of a kind 30078 the device key signed, or null. */
     fun observeDevicePreference(identifier: String): Flow<String?> =
         observe(setOf(Table.Preferences)) { it.devicePreference(identifier, deviceSigner) }

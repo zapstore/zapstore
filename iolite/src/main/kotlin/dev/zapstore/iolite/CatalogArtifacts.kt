@@ -1,7 +1,7 @@
 package dev.zapstore.iolite
 
 /**
- * Artifact members of a catalog bundle. App files are `<app-id>/about`, `security`,
+ * Artifact members of a catalog bundle. App files are `<app-id>/about`, `security`, `trust`,
  * `vector`, and `icon.webp`. Avatars are `<64 hex characters>.webp`.
  * A missing about or security member means that note did not change.
  * The stored text stays. A missing vector or icon does the same.
@@ -21,6 +21,8 @@ internal data class AppArtifact(
     val vector: ByteArray?,
     val about: String?,
     val security: String?,
+    /** Raw `trust` line, already checked to parse. */
+    val trust: String? = null,
 )
 
 internal data class AvatarArtifact(
@@ -58,6 +60,9 @@ internal object CatalogArtifacts {
                 continue
             }
             val problem = when (file) {
+                "trust" -> "trust $appId is not a trust line".takeIf {
+                    member.data.size > MAX_TRUST_BYTES || Trust.parse(member.data.toString(Charsets.UTF_8)) == null
+                }
                 "about", "security" -> "$file $appId contains NUL".takeIf { member.data.any { it == 0.toByte() } }
                 "vector" -> "vector $appId has the wrong size".takeIf { member.data.size != VECTOR_DIMS }
                 else -> "icon $appId is empty or too large".takeIf { member.data.isEmpty() || member.data.size.toLong() > maxIconBytes }
@@ -70,6 +75,7 @@ internal object CatalogArtifacts {
             when (file) {
                 "about" -> app.about = member.data.toString(Charsets.UTF_8)
                 "security" -> app.security = member.data.toString(Charsets.UTF_8)
+                "trust" -> app.trust = member.data.toString(Charsets.UTF_8).trim()
                 "vector" -> app.vector = member.data
                 "icon.webp" -> app.webp = member.data
             }
@@ -106,9 +112,11 @@ internal object CatalogArtifacts {
         var vector: ByteArray? = null
         var about: String? = null
         var security: String? = null
+        var trust: String? = null
 
-        fun toArtifact() = AppArtifact(appId, webp, vector, about, security)
+        fun toArtifact() = AppArtifact(appId, webp, vector, about, security, trust)
     }
 
-    private val APP_FILES = setOf("about", "security", "vector", "icon.webp")
+    private const val MAX_TRUST_BYTES = 4_096
+    private val APP_FILES = setOf("about", "security", "trust", "vector", "icon.webp")
 }

@@ -202,6 +202,7 @@ internal fun JSONArray?.toStringLists(): List<List<String>> {
 
 object Kinds {
     const val Profile = 0
+    const val ContactList = 3
     const val Seal = 13
     const val ChatMessage = 14
     const val GiftWrap = 1_059
@@ -209,6 +210,9 @@ object Kinds {
     const val Report = 1_984
     const val ZapRequest = 9_734
     const val WalletInfo = 13_194
+    const val VerifyReputation = 5_312
+    const val ReputationResponse = 6_312
+    const val DvmError = 7_000
     const val WalletRequest = 23_194
     const val WalletResponse = 23_195
     const val Auth = 22_242

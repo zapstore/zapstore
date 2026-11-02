@@ -182,6 +182,24 @@ internal object EventRows {
         }
     }
 
+    /** Keeps the catalog's follower line in the publisher's profile metadata. No schema of its own. */
+    fun putTrust(db: SQLiteConnection, publisher: String, line: String) {
+        val existing = profileMetadata(db, publisher)
+        val metadata = existing?.second ?: JSONObject()
+        metadata.put("trust", line)
+        db.prepare(
+            """
+            INSERT INTO profiles (pubkey, updated_at, name, picture_url, metadata)
+            VALUES (?, 0, NULL, NULL, ?)
+            ON CONFLICT(pubkey) DO UPDATE SET metadata = excluded.metadata
+            """.trimIndent(),
+        ).use { statement ->
+            statement.bindBlob(1, Hex.decode(publisher))
+            statement.bindText(2, metadata.toString())
+            statement.step()
+        }
+    }
+
     private fun upsertRelayList(db: SQLiteConnection, event: Event) {
         val existing = profileMetadata(db, event.pubkey)
         val metadata = existing?.second ?: JSONObject()
