@@ -13,9 +13,6 @@
     <string name="settings">Settings</string>
     <string name="catalog">Catalog</string>
     <string name="no_updates">No apps installed yet.</string>
-    <string name="tab_new">New</string>
-    <string name="tab_installed">Installed</string>
-    <string name="updates_section_progress">In progress</string>
     <string name="updates_section_updates">Updates</string>
     <string name="updates_section_manual">Manual updates</string>
     <string name="updates_section_installed">Installed</string>
@@ -79,6 +76,9 @@
     <string name="no_activity">No recent comments or zaps.</string>
     <string name="stacked_by">Stacked by</string>
     <string name="activity_commented">commented</string>
+    <string name="activity_updated_stack">updated the stack</string>
+    <string name="no_person_activity">No comments or zaps yet.</string>
+    <string name="no_stack_comments">No comments on this stack yet.</string>
     <plurals name="activity_sats">
         <item quantity="one">%s sat</item>
         <item quantity="other">%s sats</item>
@@ -101,6 +101,8 @@
     <string name="latest_release">Latest release</string>
     <string name="comments">Comments</string>
     <string name="no_comments">No comments yet.</string>
+    <string name="other_comments">Other comments</string>
+    <string name="other_comments_hint">Written on this app\'s id elsewhere, such as in another catalog.</string>
     <string name="comments_error_relays">Couldn\'t reach comment relays. Try again, or check Network in Settings.</string>
     <string name="comments_error_timeout">Comment relays timed out. Try again, or check Network in Settings.</string>
     <string name="try_again">Try again</string>
@@ -191,7 +193,6 @@
     <string name="installed_by">Installed by %1$s</string>
     <string name="installed_by_unknown">Installer unknown</string>
     <string name="downloading">Downloading</string>
-    <string name="installing">Installing</string>
     <string name="downloading_percent">Downloading %1$d%%</string>
     <string name="open_app">Open</string>
     <string name="install_queued">Queued for download</string>
@@ -203,7 +204,6 @@
     <string name="install_updating">Updating…</string>
     <string name="install_requesting">Requesting installation</string>
     <string name="install_requesting_update">Requesting update</string>
-    <string name="install_retry">Install (retry)</string>
     <string name="install_error_details">Error (tap for details)</string>
     <string name="install_title">Install %1$s</string>
     <string name="update_title">Update %1$s</string>
@@ -246,6 +246,15 @@
     <string name="toast_untrusted">No longer trusted</string>
     <string name="trusted_developers">Trusted developers</string>
     <string name="trusted_developers_hint">Their apps install without the confirmation step. Backed up with this device\'s settings.</string>
+    <string name="trust_checking">Checking who follows %1$s…</string>
+    <string name="trust_failed">Could not check who follows this publisher.</string>
+    <string name="trust_none">None of the accounts you may know follow %1$s.</string>
+    <string name="trust_you_follow">You follow %1$s.</string>
+    <string name="trust_followed_by">Followed by %1$s.</string>
+    <string name="trust_zapped_by">Zapped by people you follow: %1$s.</string>
+    <string name="trust_you_zapped">You zapped this app.</string>
+    <string name="trust_disclaimer">Follows are not endorsements. Install only what you trust.</string>
+    <string name="trust_sign_in">Not signed in, so this is from Zapstore\'s point of view. Sign in to see people you follow.</string>
     <string name="always_trust_hint">Their other apps install without this step.</string>
     <string name="catalog_signed">Listed by Zapstore</string>
     <string name="catalog_signed_body">Zapstore makes %1$s available but did not develop it or sign its APK.</string>
@@ -265,6 +274,22 @@
     <string name="download_progress_total">%1$.1f / %2$.1f MB</string>
     <string name="install_notification_channel">Installs</string>
     <string name="install_notification">Confirm install</string>
+    <string name="confirm_update">Confirm update</string>
+    <string name="confirm">Confirm</string>
+    <string name="pause">Pause</string>
+    <string name="paused">Paused</string>
+    <string name="install_waiting">Waiting for you to confirm</string>
+    <string name="install_ready">Downloaded · ready to install</string>
+    <string name="install_signed_differently">The installed copy is signed by a different key, so Zapstore cannot update it.</string>
+    <plurals name="confirm_waiting">
+        <item quantity="one">%1$d app waiting for you to confirm</item>
+        <item quantity="other">%1$d apps waiting for you to confirm</item>
+    </plurals>
+    <string name="downloads_notification_channel">Downloads</string>
+    <plurals name="downloading_apps">
+        <item quantity="one">Downloading %1$d app</item>
+        <item quantity="other">Downloading %1$d apps</item>
+    </plurals>
     <string name="uninstall">Uninstall</string>
     <string name="show">Show</string>
     <string name="hide">Hide</string>
@@ -275,8 +300,6 @@
     <string name="uninstall_other_profiles">This removes the app from this profile. You may still need to remove it from other Android profiles.</string>
     <string name="update_all">Update all</string>
     <string name="update_all_body">These install without another prompt.</string>
-    <string name="update_all_progress">Updating %1$d of %2$d · %3$s</string>
-    <string name="install_timeout">The installer timed out</string>
     <plurals name="update_all_title">
         <item quantity="one">Update %d app</item>
         <item quantity="other">Update %d apps</item>

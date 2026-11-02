@@ -27,8 +27,9 @@ object Social {
     }
 
     /**
-     * A NIP-57 zap request for the app. [recipient] is the C1 owner; the receipt lands on
-     * [relays], which must include where the app's zaps are read.
+     * A NIP-57 zap request for the app. It carries the `a` tag only: the recipient's Lightning
+     * server writes the receipt, and the relay ignores `i` on it. [recipient] is the C1 owner,
+     * or else the catalog key; the receipt lands on [relays], which must include where the app's zaps are read.
      */
     fun zapRequestTags(anchor: AppCoordinate, recipient: String, amountMsat: Long, relays: Collection<RelayUrl>): List<List<String>> {
         require(amountMsat > 0) { "amount must be positive" }
@@ -38,7 +39,6 @@ object Social {
             listOf("amount", amountMsat.toString()),
             listOf("p", recipient),
             listOf("a", anchor.toString()),
-            listOf("i", anchor.appId),
         )
     }
 

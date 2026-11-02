@@ -23,6 +23,12 @@ class SocialReachTest {
     }
 
     @Test
+    fun theC1OwnerIsAKnownPubkeyEvenWhenADelegateSignedTheListing() {
+        val reach = SocialReach.of(app(proof = OWNER, signer = DELEGATE))
+        assertEquals(listOf(CATALOG, DELEGATE, OWNER, AppConfig.LEGACY_CATALOG_PUBKEY), reach.anchors.map { it.pubkey })
+    }
+
+    @Test
     fun withoutAProofTheListingSignerIsRead() {
         val reach = SocialReach.of(app(proof = null, signer = DELEGATE))
         assertEquals(listOf(CATALOG, DELEGATE), reach.lists)

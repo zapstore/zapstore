@@ -20,7 +20,11 @@ import dev.zapstore.app.components.AppListState
 import dev.zapstore.iolite.AppRecord
 import dev.zapstore.iolite.Iolite
 import dev.zapstore.app.AppConfig
+import dev.zapstore.iolite.CommentRecord
+import dev.zapstore.iolite.Kinds
+import dev.zapstore.iolite.ProfileRecord
 import dev.zapstore.iolite.Query
+import dev.zapstore.iolite.QueryState
 import dev.zapstore.iolite.StackRecord
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -39,6 +43,11 @@ data class StackDetailUiState(
     val apps: AppListState = AppListState(),
     val appsById: Map<String, AppRecord> = emptyMap(),
     val error: String? = null,
+    /** Comments on this stack, newest first. Zaps on a stack are not read. */
+    val comments: List<ActivityItem> = emptyList(),
+    val commentProfiles: Map<String, ProfileRecord> = emptyMap(),
+    val commentsLoading: Boolean = true,
+    val commentsCanLoadMore: Boolean = false,
     /** The signed-in account wrote this stack, so it can remove apps and rename it. */
     val own: Boolean = false,
     val edit: StackEditUi = StackEditUi(),
@@ -73,7 +82,34 @@ class StackDetailViewModel(
     private val edit = MutableStateFlow(StackEditUi())
     private val own = (account?.account ?: flowOf(null)).map { it?.pubkey.equals(author, ignoreCase = true) }
 
-    val uiState: StateFlow<StackDetailUiState> = combine(stack, appsById, profiles, own, edit) { stackState, appsById, profiles, own, edit ->
+    /** The stack's coordinate, which a comment on it names as its root `A`. */
+    private val root = "${Kinds.AppStack}:$author:$identifier"
+    private val commentLimit = MutableStateFlow(COMMENT_PAGE)
+
+    /** The curator's and the catalog key's inboxes are asked as well, since a comment on the stack tells its curator. */
+    private val comments: Flow<QueryState<List<CommentRecord>>> = combine(
+        iolite.observeCatalogs().map { catalogs -> catalogs.firstOrNull()?.manifestPubkey }.distinctUntilChanged(),
+        commentLimit,
+        ::Pair,
+    ).flatMapLatest { (catalogKey, limit) ->
+        iolite.query(Query.stackComments(root, listOfNotNull(author, catalogKey), limit), AppConfig.commentQuery)
+    }
+
+    private val commentProfiles: Flow<Map<String, ProfileRecord>> = comments
+        .map { state -> state.items.map(CommentRecord::pubkey).toSet() }
+        .distinctUntilChanged()
+        .flatMapLatest(iolite::observeProfiles)
+
+    fun loadMoreComments() {
+        if (uiState.value.commentsCanLoadMore) commentLimit.update { it + COMMENT_PAGE }
+    }
+
+    val uiState: StateFlow<StackDetailUiState> = combine(
+        combine(stack, appsById, profiles, own, edit) { a, b, c, d, e -> Five(a, b, c, d, e) },
+        comments,
+        commentProfiles,
+        commentLimit,
+    ) { (stackState, appsById, profiles, own, edit), comments, commentProfiles, limit ->
         val stack = stackState.items
         StackDetailUiState(
             own = own,
@@ -87,6 +123,10 @@ class StackDetailViewModel(
             ),
             appsById = appsById,
             error = stackState.relayError(),
+            comments = comments.items.filter { it.content.isNotBlank() }.map { ActivityItem(it.eventId, it.pubkey, it.createdAt, comment = it.content) },
+            commentProfiles = commentProfiles,
+            commentsLoading = comments.items.isEmpty() && !comments.settled,
+            commentsCanLoadMore = comments.items.size >= limit,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), StackDetailUiState())
 
@@ -121,7 +161,11 @@ class StackDetailViewModel(
         }
     }
 
+    private data class Five<A, B, C, D, E>(val a: A, val b: B, val c: C, val d: D, val e: E)
+
     companion object {
+        private const val COMMENT_PAGE = 20
+
         fun factory(iolite: Iolite): ViewModelProvider.Factory = viewModelFactory {
             initializer { StackDetailViewModel(iolite, createSavedStateHandle()) }
         }

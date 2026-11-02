@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -68,6 +69,7 @@ fun ProfileScreen(
     /** The device's saved apps, pinned first among the stacks on the Profile tab. */
     saved: SavedApps? = null,
     onSavedClick: () -> Unit = {},
+    onLoadMoreActivity: () -> Unit = {},
 ) {
     val own = onSettingsClick != null
     val noApps = stringResource(R.string.no_profile_apps)
@@ -78,7 +80,15 @@ fun ProfileScreen(
     val profile = state.profile
     val title = shortDisplayName(state.pubkey, profile)
 
+    val listState = rememberLazyListState()
+    LoadMoreNearEnd(
+        { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index to listState.layoutInfo.totalItemsCount },
+        state.activityCanLoadMore,
+        onLoadMoreActivity,
+    )
+    val noActivity = stringResource(R.string.no_person_activity)
     LazyColumn(
+        state = listState,
         modifier = modifier
             .fillMaxSize()
             .background(ZapCanvas)
@@ -180,6 +190,22 @@ fun ProfileScreen(
             )
         }
         state.error?.let { item { StatusText(it, Modifier.padding(horizontal = 16.dp)) } }
+
+        // Every entry is this person's, so each row starts at the app and leaves their name out.
+        item(key = "activityHeader", contentType = "header") {
+            GroupHeader(stringResource(R.string.activity), Modifier.padding(horizontal = 16.dp).testTag("profileActivity"))
+        }
+        activityRows(
+            items = state.activity,
+            loading = state.activityLoading,
+            canLoadMore = state.activityCanLoadMore,
+            profiles = emptyMap(),
+            stackApps = emptyMap(),
+            emptyText = noActivity,
+            onOpen = { item -> item.app?.let(onAppClick) },
+            showWho = false,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
 
         item {
             Column(

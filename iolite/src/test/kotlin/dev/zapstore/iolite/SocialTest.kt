@@ -50,7 +50,6 @@ class SocialTest {
                 listOf("amount", "21000"),
                 listOf("p", owner),
                 listOf("a", "32267:$catalog:dev.zap"),
-                listOf("i", "dev.zap"),
             ),
             tags,
         )

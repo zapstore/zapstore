@@ -1,5 +1,6 @@
 package dev.zapstore.app.screens
 
+import dev.zapstore.iolite.AppCoordinate
 import dev.zapstore.iolite.CommentRecord
 import dev.zapstore.iolite.QueryState
 import dev.zapstore.iolite.RelayStatus
@@ -13,6 +14,21 @@ data class CommentThread(
 enum class CommentsError {
     RelaysUnreachable,
     TimedOut,
+}
+
+/** An app's comments in two lists: the [main] one, and those [other] coordinates carry. */
+data class CommentSplit(val main: List<CommentRecord>, val other: List<CommentRecord>)
+
+/**
+ * Splits the comments read for an app (by `#A` on its known coordinates and by `#i`) as `specs/catalog.md`
+ * says: a comment whose root is one of [known] is in the main list, a comment on any other coordinate, such
+ * as another catalog's, in the other. One with no root is in neither. A reply carries its thread's root, so a
+ * thread stays whole.
+ */
+fun splitComments(items: List<CommentRecord>, known: List<AppCoordinate>): CommentSplit {
+    val coordinates = known.mapTo(hashSetOf(), AppCoordinate::toString)
+    val (main, other) = items.filter { it.root != null }.partition { it.root in coordinates }
+    return CommentSplit(main, other)
 }
 
 /** Roots newest-first; replies stay under their parent, oldest first. Missing parents become roots. */

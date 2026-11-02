@@ -24,6 +24,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import dev.zapstore.app.components.GroupHeader
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -47,6 +49,7 @@ fun StackDetailScreen(
     onProfileClick: (String) -> Unit = {},
     onRemoveApp: (String) -> Unit = {},
     onRename: (String) -> Unit = {},
+    onLoadMoreComments: () -> Unit = {},
 ) {
     val appsTitle = stringResource(R.string.apps)
     val noApps = stringResource(R.string.no_stack_apps)
@@ -54,7 +57,15 @@ fun StackDetailScreen(
     var renaming by rememberSaveable { mutableStateOf(false) }
     var name by rememberSaveable { mutableStateOf("") }
     LaunchedEffect(state.edit.renamed) { renaming = false }
+    val listState = rememberLazyListState()
+    LoadMoreNearEnd(
+        { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index to listState.layoutInfo.totalItemsCount },
+        state.commentsCanLoadMore,
+        onLoadMoreComments,
+    )
+    val noComments = stringResource(R.string.no_stack_comments)
     LazyColumn(
+        state = listState,
         modifier = modifier
             .fillMaxSize()
             .background(ZapCanvas)
@@ -132,6 +143,20 @@ fun StackDetailScreen(
             },
         )
         state.error?.let { item { StatusText(it) } }
+
+        // Comments only: a stack takes no zaps here. The person leads each row, since the stack is the subject.
+        item(key = "commentsHeader", contentType = "header") {
+            GroupHeader(stringResource(R.string.comments), Modifier.padding(top = ZapSpacing.space2).testTag("stackComments"))
+        }
+        activityRows(
+            items = state.comments,
+            loading = state.commentsLoading,
+            canLoadMore = state.commentsCanLoadMore,
+            profiles = state.commentProfiles,
+            stackApps = emptyMap(),
+            emptyText = noComments,
+            onOpen = { item -> onProfileClick(item.pubkey) },
+        )
     }
 }
 

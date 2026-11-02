@@ -331,6 +331,80 @@ class IoliteContractsTest {
     }
 
     @Test
+    fun commentsAreReadByCoordinateAndByAppIdInOneRequest() {
+        val coordinate = AppCoordinate("cd".repeat(32), "com.example.app")
+        val owner = AppCoordinate("ef".repeat(32), "com.example.app")
+        val query = Query.comments(listOf(coordinate, owner), limit = 50)
+        assertEquals(
+            listOf(
+                Filter(kinds = listOf(Kinds.Comment), tags = mapOf("A" to listOf(coordinate.toString(), owner.toString())), limit = 50),
+                Filter(kinds = listOf(Kinds.Comment), tags = mapOf("i" to listOf("com.example.app")), limit = 50),
+            ),
+            query.filters,
+        )
+    }
+
+    @Test
+    fun aCommentOnAnotherCoordinateIsStoredWithItsRootSoTheListsCanBeToldApart() = runBlocking {
+        val signer = LocalSigner(SECRET)
+        withIolite(signer = signer) { iolite ->
+            val ours = AppCoordinate(signer.publicKey, "com.example.app")
+            val theirs = AppCoordinate("ab".repeat(32), "com.example.app")
+            val main = signer.sign(1_700_000_000, Kinds.Comment, listOf(listOf("A", ours.toString()), listOf("i", "com.example.app")), "on ours")
+            val other = signer.sign(1_700_000_100, Kinds.Comment, listOf(listOf("A", theirs.toString()), listOf("i", "com.example.app")), "on theirs")
+            iolite.ingest(listOf(main, other))
+            val comments = iolite.query(Query.comments(listOf(ours))).first { it.items.size == 2 }
+            assertEquals(ours.toString(), comments.items.single { it.eventId == main.id }.root)
+            assertEquals(theirs.pubkey, comments.items.single { it.eventId == other.id }.rootPubkey)
+        }
+    }
+
+    @Test
+    fun stackCommentsAreReadByTheStacksCoordinateAndHaveNoApp() = runBlocking {
+        val signer = LocalSigner(SECRET)
+        withIolite(signer = signer) { iolite ->
+            val root = "${Kinds.AppStack}:${"ab".repeat(32)}:privacy"
+            val query = Query.stackComments(root, lists = listOf("ab".repeat(32), "cd".repeat(32), "ab".repeat(32)), limit = 20)
+            assertEquals(listOf(Filter(kinds = listOf(Kinds.Comment), tags = mapOf("A" to listOf(root)), limit = 20)), query.filters)
+            assertEquals(listOf("ab".repeat(32), "cd".repeat(32)), query.inboxAuthors)
+            val on = signer.sign(1_700_000_000, Kinds.Comment, listOf(listOf("A", root), listOf("K", Kinds.AppStack.toString())), "nice stack")
+            val elsewhere = signer.sign(1_700_000_100, Kinds.Comment, listOf(listOf("A", "${Kinds.AppStack}:${"ab".repeat(32)}:games")), "other stack")
+            iolite.ingest(listOf(on, elsewhere))
+            val comments = iolite.query(query).first { it.items.isNotEmpty() }
+            assertEquals(listOf(on.id), comments.items.map { it.eventId })
+            assertNull(comments.items.single().appId)
+        }
+    }
+
+    @Test
+    fun aPersonsActivityIsTheirCommentsAndTheZapsTheySent() = runBlocking {
+        val signer = LocalSigner(SECRET)
+        val wallet = LocalSigner(ByteArray(32) { (it + 9).toByte() })
+        withIolite(signer = signer) { iolite ->
+            val query = Query.authorActivity(signer.publicKey, 20)
+            assertEquals(
+                listOf(
+                    Filter(authors = listOf(signer.publicKey), kinds = listOf(Kinds.Comment), tags = mapOf("K" to listOf("32267")), limit = 20),
+                    Filter(kinds = listOf(Kinds.Zap), tags = mapOf("P" to listOf(signer.publicKey)), limit = 20),
+                ),
+                query.filters,
+            )
+            assertEquals(listOf(signer.publicKey), query.outboxAuthors)
+            val coordinate = AppCoordinate("cd".repeat(32), "com.example.app")
+            val mine = signer.sign(1_700_000_000, Kinds.Comment, listOf(listOf("A", coordinate.toString()), listOf("i", "com.example.app")), "mine")
+            val onStack = signer.sign(1_700_000_050, Kinds.Comment, listOf(listOf("A", "${Kinds.AppStack}:${"ab".repeat(32)}:privacy")), "on a stack")
+            val request = JSONObject().put("kind", 9734).put("pubkey", signer.publicKey)
+                .put("tags", JSONArray().put(JSONArray().put("a").put(coordinate.toString()))).toString()
+            val receipt = wallet.sign(1_700_000_100, Kinds.Zap, listOf(listOf("amount", "21000"), listOf("description", request)), "")
+            val theirs = wallet.sign(1_700_000_200, Kinds.Zap, listOf(listOf("i", "com.example.app"), listOf("amount", "21000")), "")
+            iolite.ingest(listOf(mine, onStack, receipt, theirs))
+            val activity = iolite.query(query).first { it.items.comments.isNotEmpty() && it.items.zaps.isNotEmpty() }.items
+            assertEquals(listOf(mine.id), activity.comments.map { it.eventId })
+            assertEquals(listOf(receipt.id), activity.zaps.map { it.eventId })
+        }
+    }
+
+    @Test
     fun proofExpiryClearsAppPubkey() {
         val dir = File("build/tmp/iolite-c1-${System.nanoTime()}").apply { mkdirs() }
         val store = jdbcStore(File(dir, "iolite.db").absolutePath)
@@ -440,7 +514,7 @@ class IoliteContractsTest {
     }
 
     @Test
-    fun hardFactFilterDropsUnknownAndKeepsWeakVectors() {
+    fun hardFactFilterDropsUnknownAndDoesNotKeepAWeakVector() {
         val dir = File("build/tmp/iolite-search-hard-${System.nanoTime()}").apply { mkdirs() }
         val store = jdbcStore(File(dir, "iolite.db").absolutePath)
         store.insertFixtureCatalog()
@@ -451,8 +525,9 @@ class IoliteContractsTest {
         setFactBits(store, "app.foss", FACT_SOURCE_AVAILABLE)
         assertEquals(listOf("app.foss"), store.apps(AppFilter(hard = FACT_SOURCE_AVAILABLE)).map { it.appId })
         val vector = ByteArray(VECTOR_DIMS) { 20 }
+        // A hard filter narrows. It does not keep an app whose vector is below the floor when the words miss.
         assertEquals(
-            listOf("app.foss"),
+            emptyList<String>(),
             store.apps(AppFilter(search = "nope", queryVector = vector, hard = FACT_SOURCE_AVAILABLE)).map { it.appId },
         )
         store.close()

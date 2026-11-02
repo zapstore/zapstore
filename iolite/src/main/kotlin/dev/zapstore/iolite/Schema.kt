@@ -97,6 +97,7 @@ internal object Schema {
             created_at          INTEGER NOT NULL,
             content             TEXT NOT NULL,
             app_id              TEXT,
+            -- The NIP-22 root coordinate (`A`): an app's or a stack's. Named for stacks, which it was added for.
             stack               TEXT,
             parent_event_id     BLOB,
             metadata            TEXT NOT NULL DEFAULT '{}'

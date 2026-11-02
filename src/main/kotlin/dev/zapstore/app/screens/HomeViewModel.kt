@@ -55,22 +55,14 @@ data class HomeUiState(
     val stacksLoading: Boolean = true,
     val stacksError: String? = null,
     val stacksCanLoadMore: Boolean = false,
-    /** Newest comments and zaps on catalog apps. */
+    /** Newest comments and zaps on catalog apps, with the stacks their curators last changed. */
     val activity: List<ActivityItem> = emptyList(),
+    /** The apps the tiles of the stacks in [activity] show. */
+    val activityStackApps: Map<String, AppRecord> = emptyMap(),
     val activityLoading: Boolean = true,
     val activityCanLoadMore: Boolean = false,
     val feed: AppListState = AppListState(),
     val profiles: Map<String, ProfileRecord> = emptyMap(),
-)
-
-/** A comment ([comment] set) or a zap ([sats] set) on [app]. */
-data class ActivityItem(
-    val eventId: String,
-    val pubkey: String,
-    val createdAt: Long,
-    val app: AppRecord,
-    val comment: String? = null,
-    val sats: Long? = null,
 )
 
 /**
@@ -166,7 +158,7 @@ class HomeViewModel(
         .flatMapLatest(iolite::observeAppsById)
 
     /** Comments on any app, and zaps on the latest releases (receipts can only be asked for by app). */
-    private val activity: Flow<ActivityPage> =
+    private val comments: Flow<ActivityPage> =
         iolite.observeApps(AppFilter(limit = ACTIVITY_APPS))
             .map { apps -> apps.map { AppCoordinate(it.eventPubkey, it.appId) } }
             .distinctUntilChanged()
@@ -176,19 +168,37 @@ class HomeViewModel(
             }
             .flatMapLatest { (limit, state) ->
                 val record = state.items
-                val ids = (record.comments.mapNotNull { it.appId } + record.zaps.map { it.appId }).toSet()
-                iolite.observeAppsById(ids).map { apps ->
-                    val items = record.comments.mapNotNull { comment ->
-                        apps[comment.appId]?.let { ActivityItem(comment.eventId, comment.pubkey, comment.createdAt, it, comment = comment.content) }
-                    } + record.zaps.mapNotNull { zap ->
-                        apps[zap.appId]?.let { ActivityItem(zap.eventId, zap.pubkey, zap.createdAt, it, sats = zap.amountSats) }
-                    }
+                iolite.observeAppsById(record.appIds).map { apps ->
                     ActivityPage(
-                        QueryState(items.sortedByDescending { it.createdAt }.take(limit), state.relays, state.settled),
+                        QueryState(record.items(apps).take(limit), state.relays, state.settled),
                         canLoadMore = record.comments.size >= limit || record.zaps.size >= limit,
                     )
                 }
             }
+
+    /**
+     * The stacks their curators published or changed last: public, one per curator, and naming at least one
+     * catalog app, newest first. The web page's Activity does the same with six.
+     */
+    private val changedStacks: Flow<Pair<List<StackRecord>, Map<String, AppRecord>>> =
+        iolite.query(Query.socialStacks(AppConfig.platforms, ACTIVITY_STACKS_READ), AppConfig.activityStacksQuery)
+            .map { state -> state.items.filter { it.apps.isNotEmpty() } }
+            .distinctUntilChanged()
+            .flatMapLatest { stacks ->
+                iolite.observeAppsById(stacks.flatMap(StackRecord::appIds).toSet()).map { apps ->
+                    stacks.filter { stack -> stack.appIds.any(apps::containsKey) }.distinctBy(StackRecord::pubkey).take(ACTIVITY_STACKS) to apps
+                }
+            }
+
+    /** Comments, zaps, and changed stacks as one list, newest first. A stack takes a place in the page like any entry. */
+    private val activity: Flow<ActivityPage> = combine(comments, activityLimit, changedStacks) { page, limit, (stacks, apps) ->
+        val items = (page.state.items + stacks.map(StackRecord::activity)).sortedByDescending { it.createdAt }.take(limit)
+        ActivityPage(
+            QueryState(items, page.state.relays, page.state.settled),
+            canLoadMore = page.canLoadMore,
+            stackApps = apps,
+        )
+    }
 
     private val profiles: Flow<Map<String, ProfileRecord>> = combine(
         combine(feedPage, search) { page, snapshot -> page.apps + snapshot.results.orEmpty() }.authorProfiles(iolite),
@@ -216,6 +226,7 @@ class HomeViewModel(
             stacksError = stackState.relayError(),
             stacksCanLoadMore = stackState.items.size >= stackCap,
             activity = activity.state.items,
+            activityStackApps = activity.stackApps,
             activityLoading = activity.state.items.isEmpty() && !activity.state.settled,
             activityCanLoadMore = activity.canLoadMore,
             feed = AppListState(
@@ -285,6 +296,9 @@ class HomeViewModel(
         private const val ACTIVITY_PAGE = 20
         /** Latest releases whose zaps the activity feed asks for. */
         private const val ACTIVITY_APPS = 100
+        /** Stacks the activity feed shows, one per curator, out of the newest it reads. */
+        private const val ACTIVITY_STACKS = 6
+        private const val ACTIVITY_STACKS_READ = 30
 
         fun factory(iolite: Iolite, encodeQuery: (String) -> ByteArray?): ViewModelProvider.Factory = viewModelFactory {
             initializer { HomeViewModel(iolite, createSavedStateHandle(), encodeQuery) }
@@ -294,7 +308,11 @@ class HomeViewModel(
 
 internal const val STOP_TIMEOUT_MILLIS = 5_000L
 
-private class ActivityPage(val state: QueryState<List<ActivityItem>>, val canLoadMore: Boolean)
+internal class ActivityPage(
+    val state: QueryState<List<ActivityItem>>,
+    val canLoadMore: Boolean,
+    val stackApps: Map<String, AppRecord> = emptyMap(),
+)
 
 private data class SearchInput(val submitted: String, val chosen: Set<SearchFact>, val dismissed: Set<SearchFact>)
 

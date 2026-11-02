@@ -297,6 +297,76 @@ class ScreensTest {
     }
 
     @Test
+    fun profileActivityLeadsWithTheAppAndLeavesTheirNameOut() {
+        var opened: String? = null
+        val zap = app("dev.zap", "Zap")
+        composeRule.setContent {
+            ZapstoreTheme {
+                ProfileScreen(
+                    state = ProfileUiState(
+                        pubkey = AUTHOR,
+                        profileLoading = false,
+                        activity = listOf(ActivityItem("c".repeat(64), AUTHOR, 1_750_000_000, zap, comment = "Works great")),
+                        activityLoading = false,
+                    ),
+                    onOpenUrl = {},
+                    onAppClick = { opened = it.appId },
+                )
+            }
+        }
+        composeRule.onNodeWithTag("activity:${"c".repeat(64)}").assertIsDisplayed()
+        composeRule.onNodeWithText("Works great").assertIsDisplayed()
+        assertTrue(composeRule.onAllNodes(hasTestTag("profile:$AUTHOR") and hasAnyAncestor(hasTestTag("activity:${"c".repeat(64)}"))).fetchSemanticsNodes().isEmpty())
+        composeRule.onNodeWithTag("activity:${"c".repeat(64)}").performClick()
+        assertEquals("dev.zap", opened)
+    }
+
+    @Test
+    fun stackCommentsAreListedWithTheCommenterLeading() {
+        var openedProfile: String? = null
+        val stack = StackRecord(AUTHOR, "music", "e1", "Music", "", listOf(AppCoordinate(AUTHOR, "dev.zap")), 1)
+        composeRule.setContent {
+            ZapstoreTheme {
+                StackDetailScreen(
+                    state = StackDetailUiState(
+                        stack = stack,
+                        stackLoading = false,
+                        comments = listOf(ActivityItem("c".repeat(64), AUTHOR, 1_750_000_000, comment = "Nice stack")),
+                        commentsLoading = false,
+                    ),
+                    onAppClick = {},
+                    onProfileClick = { openedProfile = it },
+                )
+            }
+        }
+        composeRule.onNodeWithTag("activity:${"c".repeat(64)}").assertIsDisplayed()
+        composeRule.onNodeWithText("Nice stack").assertIsDisplayed()
+        composeRule.onNodeWithTag("activity:${"c".repeat(64)}").performClick()
+        assertEquals(AUTHOR, openedProfile)
+    }
+
+    @Test
+    fun appDetailShowsOtherCommentsOnlyWhenThereAreSome() {
+        val app = app("dev.zap", "Zap")
+        val elsewhere = CommentRecord("b".repeat(64), AUTHOR, 1_750_000_000, "From another catalog", "dev.zap", "32267:${"b".repeat(64)}:dev.zap", null)
+        composeRule.setContent {
+            ZapstoreTheme {
+                AppDetailScreen(
+                    state = AppDetailUiState(
+                        app = app,
+                        loaded = true,
+                        comments = CommentsState(other = threadComments(listOf(elsewhere)), loading = false),
+                    ),
+                    onOpenUrl = {},
+                )
+            }
+        }
+        composeRule.onNodeWithTag("appDetail").performScrollToNode(hasTestTag("otherComments"))
+        composeRule.onNodeWithTag("otherComments").assertIsDisplayed()
+        composeRule.onNodeWithText("From another catalog").assertIsDisplayed()
+    }
+
+    @Test
     fun profileAppRowsLeaveOutTheirAuthor() {
         composeRule.setContent {
             ZapstoreTheme {
@@ -541,8 +611,8 @@ class ScreensTest {
         composeRule.onNodeWithText("Verifying…").assertIsDisplayed()
         install = install.copy(phase = InstallPhase.Installing, silent = false)
         composeRule.onNodeWithText("Requesting installation").assertIsDisplayed()
-        install = install.copy(phase = InstallPhase.Cancelled)
-        composeRule.onNodeWithText("Install (retry)").performClick()
+        install = install.copy(phase = InstallPhase.Confirm)
+        composeRule.onNodeWithTag("confirmInstall").performClick()
         install = install.copy(phase = InstallPhase.Failed, error = "Not enough free space")
         composeRule.onNodeWithText("Error (tap for details)").performClick()
         install = InstallUi(offer = true, phase = InstallPhase.Installing, silent = true)
@@ -628,7 +698,10 @@ class ScreensTest {
             ZapstoreTheme {
                 UpdatesScreen(
                     state = UpdatesUiState(
-                        updates = listOf(AvailableUpdate(app("dev.silent", "Silent", version = "2.0"), "1.0", 1)),
+                        updates = listOf(
+                            AvailableUpdate(app("dev.silent", "Silent", version = "2.0"), "1.0", 1),
+                            AvailableUpdate(app("dev.silent2", "Silent Two", version = "2.0"), "1.0", 1),
+                        ),
                         manualUpdates = listOf(AvailableUpdate(app("dev.manual", "Manual", version = "3.0"), "2.0", 2)),
                         installedApps = listOf(app("dev.current", "Current")),
                         otherStores = listOf(
@@ -650,30 +723,26 @@ class ScreensTest {
                 )
             }
         }
-        composeRule.onNodeWithTag("myAppsTab:New").assertTextContains("3", substring = true)
-        composeRule.onNodeWithTag("myAppsTab:Installed").assertTextContains("3", substring = true)
         composeRule.onNodeWithTag("updateAll").performClick()
         composeRule.onNodeWithTag("updateOne:dev.silent").performClick()
         composeRule.onNodeWithTag("updateAllManual").performClick()
         composeRule.onNodeWithTag("updateOne:dev.manual").performClick()
         assertEquals(listOf(UpdateGroup.Automatic, UpdateGroup.Manual), updatedAll)
         assertEquals(listOf("dev.silent", "dev.manual"), updatedOne)
-        composeRule.onNodeWithTag("myAppsList").performScrollToNode(hasTestTag("storeUpdate:dev.play"))
+        composeRule.onNodeWithTag("myAppsList").performScrollToNode(hasTestTag("updateOne:dev.play"))
         composeRule.onNodeWithText("Google Play · 1.0 available here", substring = true).assertIsDisplayed()
-        composeRule.onNodeWithTag("storeUpdate:dev.play").performClick()
-        assertEquals("dev.play", opened)
+        composeRule.onNodeWithTag("update:dev.play").assertIsDisplayed()
         composeRule.onNodeWithTag("myAppsList").performScrollToNode(hasTestTag("resume:dev.quiet"))
         composeRule.onNodeWithTag("resume:dev.quiet").performClick()
         assertEquals("dev.quiet", resumed)
         composeRule.onNodeWithTag("sectionStores").assertDoesNotExist()
 
-        composeRule.onNodeWithTag("myAppsTab:Installed").performClick()
+        composeRule.onNodeWithTag("myAppsList").performScrollToNode(hasTestTag("installed:dev.current"))
         composeRule.onNodeWithTag("installed:dev.current").assertIsDisplayed()
         composeRule.onNodeWithTag("store:dev.fdroid").assertIsDisplayed()
         composeRule.onNodeWithTag("store:dev.play").assertDoesNotExist()
         composeRule.onNodeWithTag("myAppsList").performScrollToNode(hasText("Sideloaded"))
         composeRule.onNodeWithText("Sideloaded").assertIsDisplayed()
-        composeRule.onNodeWithTag("sectionUpdates").assertDoesNotExist()
     }
 
     @Test
@@ -694,7 +763,7 @@ class ScreensTest {
         state = state.copy(searchResults = listOf(app("dev.music", "Music Player")))
         composeRule.onNodeWithTag("mine:dev.music").assertIsDisplayed()
         composeRule.onNodeWithTag("sectionIgnored").assertDoesNotExist()
-        composeRule.onNodeWithTag("myAppsTab:New").assertDoesNotExist()
+        composeRule.onNodeWithTag("sectionUpdates").assertDoesNotExist()
         state = state.copy(
             searchResults = emptyList(),
             otherSearchResults = listOf(InstalledApp("dev.tune", 1, "1.0", emptySet(), label = "Tune Box")),
@@ -1013,7 +1082,7 @@ class ScreensTest {
             createdAt = 1_750_000_000,
             content = "Nice release",
             appId = "dev.zap",
-            stack = null,
+            root = null,
             parentEventId = null,
         )
 
@@ -1046,7 +1115,7 @@ class ScreensTest {
             createdAt = 1_750_000_000,
             content = "Root comment",
             appId = "dev.zap",
-            stack = null,
+            root = null,
             parentEventId = null,
         )
         val reply = CommentRecord(
@@ -1055,7 +1124,7 @@ class ScreensTest {
             createdAt = 1_750_000_100,
             content = "Nested reply",
             appId = "dev.zap",
-            stack = null,
+            root = null,
             parentEventId = root.eventId,
         )
 

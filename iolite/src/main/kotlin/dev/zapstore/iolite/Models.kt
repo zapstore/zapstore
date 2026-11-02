@@ -461,16 +461,23 @@ data class ZapRecord(
     val note: String = "",
 )
 
-/** Kind 1111 projection. */
+/**
+ * Kind 1111 projection. [root] is the NIP-22 root coordinate (the `A` tag): an app's, whose pubkey says
+ * whether the comment is in the app's main list, or a stack's. [appId] is the `i` tag, else the app of
+ * the `a` or `A` tag; it is null on a comment on a stack.
+ */
 data class CommentRecord(
     val eventId: String,
     val pubkey: String,
     val createdAt: Long,
     val content: String,
     val appId: String?,
-    val stack: String?,
+    val root: String?,
     val parentEventId: String?,
-)
+) {
+    /** The pubkey in [root], when it is an app coordinate. */
+    val rootPubkey: String? get() = root?.let(AppCoordinate::parse)?.pubkey
+}
 
 /** Recent social activity across apps, newest first within each list. */
 data class ActivityRecord(val comments: List<CommentRecord> = emptyList(), val zaps: List<ZapRecord> = emptyList())

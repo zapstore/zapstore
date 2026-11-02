@@ -37,6 +37,9 @@ object AppConfig {
     val writeRelays: Set<RelayUrl> = generalRelays + "wss://brelay.zapstore.dev".normalizeRelayUrl()
 
     /** Where NIP-65 relay lists are fetched; never the Zapstore relays, which do not carry them. */
+    /** Where the first-install web-of-trust check is asked (Vertex DVM). */
+    val vertexRelays: Set<RelayUrl> = setOf("wss://relay.vertexlab.io").toRelayUrls()
+
     val indexerRelays: Set<RelayUrl> = setOf("wss://relay.vertexlab.io", "wss://purplepag.es").toRelayUrls()
 
     /** NIP-66 monitors whose kind 30166 reports exclude down or paid relays: nostr.watch's Fisherman and US-East probe. */
@@ -94,6 +97,19 @@ object AppConfig {
     /** Home's activity feed: newest comments and zaps across apps, one shot, refreshed every few minutes. */
     val activityQuery: QueryOptions = remoteOrLocal {
         QueryOptions.localAndRemote(commentRelays + zapRelays, RemoteMode.OneShot(), cachedFor = 5.minutes)
+    }
+
+    /** The stacks Home's activity feed shows as changed: one shot, refreshed every few minutes. */
+    val activityStacksQuery: QueryOptions = remoteOrLocal {
+        QueryOptions.localAndRemote(stackRelays, RemoteMode.OneShot(), cachedFor = 5.minutes)
+    }
+
+    /**
+     * One person's activity (their comments and zaps): one shot through their outbox relays and the
+     * relays comments and receipts are read from, refreshed every few minutes.
+     */
+    val profileActivityQuery: QueryOptions = remoteOrLocal {
+        QueryOptions.localAndRemote(commentRelays + zapRelays, RemoteMode.OneShot(), cachedFor = 5.minutes, useAuthorRelays = true)
     }
 
     /** Kind 1111: always LocalAndRemote so comments are fetched even when other relays stay local. */

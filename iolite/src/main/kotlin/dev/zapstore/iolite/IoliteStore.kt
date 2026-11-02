@@ -760,10 +760,63 @@ class IoliteStore internal constructor(
                     createdAt = getLong(2),
                     content = getText(3),
                     appId = appId,
-                    stack = textOrNull(4),
+                    root = textOrNull(4),
                     parentEventId = blobHexOrNull(5),
                 )
             }
+        }
+    }
+
+    /** Comments whose root coordinate is [root], newest first. Their `i` tag, if any, is not read. */
+    fun commentsOnRoot(root: String, limit: Int? = null): List<CommentRecord> = read { db ->
+        val limitSql = limit?.let { " LIMIT $it" } ?: ""
+        db.prepare(
+            "SELECT event_id, pubkey, created_at, content, app_id, parent_event_id FROM comments " +
+                "WHERE stack = ? ORDER BY created_at DESC$limitSql",
+        ).use { statement ->
+            statement.bindText(1, root)
+            statement.rows {
+                CommentRecord(
+                    eventId = Hex.encode(getBlob(0)),
+                    pubkey = Hex.encode(getBlob(1)),
+                    createdAt = getLong(2),
+                    content = getText(3),
+                    appId = textOrNull(4),
+                    root = root,
+                    parentEventId = blobHexOrNull(5),
+                )
+            }
+        }
+    }
+
+    /** What [pubkey] wrote on apps, newest first. */
+    fun commentsBy(pubkey: String, limit: Int): List<CommentRecord> = read { db ->
+        db.prepare(
+            "SELECT event_id, pubkey, created_at, content, app_id, stack, parent_event_id FROM comments " +
+                "WHERE pubkey = ? AND app_id IS NOT NULL ORDER BY created_at DESC LIMIT $limit",
+        ).use { statement ->
+            statement.bindBlob(1, Hex.decode(pubkey))
+            statement.rows {
+                CommentRecord(
+                    eventId = Hex.encode(getBlob(0)),
+                    pubkey = Hex.encode(getBlob(1)),
+                    createdAt = getLong(2),
+                    content = getText(3),
+                    appId = textOrNull(4),
+                    root = textOrNull(5),
+                    parentEventId = blobHexOrNull(6),
+                )
+            }
+        }
+    }
+
+    /** Zaps [pubkey] sent, newest first; a receipt's sender is the pubkey of its zap request. */
+    fun zapsBy(pubkey: String, limit: Int): List<ZapRecord> = read { db ->
+        db.prepare(
+            "SELECT event_id, pubkey, amount_sats, created_at, app_id FROM zaps WHERE pubkey = ? ORDER BY created_at DESC LIMIT $limit",
+        ).use { statement ->
+            statement.bindBlob(1, Hex.decode(pubkey))
+            statement.rows { ZapRecord(Hex.encode(getBlob(0)), Hex.encode(getBlob(1)), getLong(2), getLong(3), getText(4)) }
         }
     }
 
@@ -780,7 +833,7 @@ class IoliteStore internal constructor(
                     createdAt = getLong(2),
                     content = getText(3),
                     appId = textOrNull(4),
-                    stack = textOrNull(5),
+                    root = textOrNull(5),
                     parentEventId = blobHexOrNull(6),
                 )
             }

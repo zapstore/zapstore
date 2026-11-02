@@ -108,6 +108,7 @@ fun HomeScreen(
     onToggleFilter: (SearchFact) -> Unit = {},
     reselected: Flow<String> = emptyFlow(),
 ) {
+    val noActivity = stringResource(R.string.no_activity)
     var filtersOpen by rememberSaveable { mutableStateOf(false) }
     if (filtersOpen) {
         FilterSheet(active = state.searchFacts, onToggle = onToggleFilter, onDismiss = { filtersOpen = false })
@@ -248,25 +249,15 @@ fun HomeScreen(
                 item(key = "activityHeader", contentType = "header") {
                     GroupHeader(stringResource(R.string.activity), Modifier.padding(top = ZapSpacing.space4))
                 }
-                when {
-                    state.activity.isEmpty() && state.activityLoading -> item(key = "activityLoading", contentType = "loading") {
-                        LoadingIndicator(Modifier.padding(vertical = ZapSpacing.space3))
-                    }
-                    state.activity.isEmpty() -> item(key = "noActivity", contentType = "empty") {
-                        EmptyRow(stringResource(R.string.no_activity))
-                    }
-                    else -> {
-                        itemsIndexed(state.activity, key = { _, item -> "activity:${item.eventId}" }, contentType = { _, _ -> "activity" }) { index, item ->
-                            if (index > 0) HorizontalDivider(color = ZapLine, modifier = Modifier.padding(start = ACTIVITY_TEXT_INSET))
-                            ActivityRow(item, state.profiles[item.pubkey], onClick = { onAppClick(item.app) })
-                        }
-                        if (state.activityCanLoadMore) {
-                            item(key = "activityMore", contentType = "loading") {
-                                LoadingIndicator(Modifier.padding(vertical = ZapSpacing.space4).testTag("activityLoadingMore"))
-                            }
-                        }
-                    }
-                }
+                activityRows(
+                    items = state.activity,
+                    loading = state.activityLoading,
+                    canLoadMore = state.activityCanLoadMore,
+                    profiles = state.profiles,
+                    stackApps = state.activityStackApps,
+                    emptyText = noActivity,
+                    onOpen = { item -> item.stack?.let(onStackClick) ?: item.app?.let(onAppClick) },
+                )
             }
         }
     }
@@ -341,94 +332,8 @@ private fun LazyListScope.searchResults(
     }
 }
 
-/** "Name commented on App" or "Name zapped App · N sats", the comment, and when. */
-/**
- * The app leads (icon, name, time); the second line says who did what, with their picture;
- * a comment follows as the row's content.
- */
-@Composable
-private fun ActivityRow(item: ActivityItem, profile: ProfileRecord?, onClick: () -> Unit) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = ZapSpacing.space3)
-            .testTag("activity:${item.eventId}"),
-    ) {
-        AppIcon(title = item.app.name, iconUrl = item.app.iconUrl, iconFile = item.app.iconFile, size = ACTIVITY_ICON)
-        Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2)) {
-                Text(
-                    item.app.name,
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    DateUtils.getRelativeTimeSpanString(
-                        item.createdAt * 1000,
-                        System.currentTimeMillis(),
-                        DateUtils.MINUTE_IN_MILLIS,
-                        DateUtils.FORMAT_ABBREV_RELATIVE,
-                    ).toString(),
-                    color = ZapText3,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1,
-                )
-            }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.padding(top = 2.dp),
-            ) {
-                AuthorByline(item.pubkey, profile, showBy = false, modifier = Modifier.weight(1f, fill = false))
-                if (item.sats != null) {
-                    Icon(painterResource(R.drawable.ic_bolt), contentDescription = null, tint = ZapWarning, modifier = Modifier.size(14.dp))
-                    Text(
-                        pluralStringResource(R.plurals.activity_sats, item.sats.coerceIn(0, Int.MAX_VALUE.toLong()).toInt(), NumberFormat.getIntegerInstance().format(item.sats)),
-                        color = ZapWarning,
-                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold, fontFeatureSettings = "tnum"),
-                        maxLines = 1,
-                    )
-                } else {
-                    Text(stringResource(R.string.activity_commented), color = ZapText3, style = MaterialTheme.typography.bodySmall, maxLines = 1)
-                }
-            }
-            item.comment?.takeIf { it.isNotBlank() }?.let {
-                Text(
-                    it,
-                    color = ZapText,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = ZapSpacing.space2),
-                )
-            }
-        }
-    }
-}
-
-private val ACTIVITY_ICON = 44.dp
-private val ACTIVITY_TEXT_INSET = ACTIVITY_ICON + ZapSpacing.space3
-
-/** Calls [onLoadMore] once the last visible item of a shelf is within a few of the end. */
-@Composable
-private fun LoadMoreNearEnd(position: () -> Pair<Int?, Int>, canLoadMore: Boolean, onLoadMore: () -> Unit) {
-    // The item count rejoins the key so a page that lands still near the end asks for the next.
-    val nearEndAt by remember {
-        derivedStateOf {
-            val (last, total) = position()
-            if (last != null && total > 0 && last >= total - SHELF_PREFETCH) total else null
-        }
-    }
-    LaunchedEffect(nearEndAt, canLoadMore) { if (nearEndAt != null && canLoadMore) onLoadMore() }
-}
-
 private const val SHELF_FRACTION = 0.88f
 private const val SHELF_ROWS = 4
-private const val SHELF_PREFETCH = 6
 private val SHELF_HEIGHT = 64.dp * SHELF_ROWS + ZapSpacing.space1 * (SHELF_ROWS - 1)
 
 @Composable

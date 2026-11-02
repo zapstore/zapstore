@@ -141,7 +141,12 @@ class Query<T> internal constructor(
             read = { store, _ -> store.zaps(anchors.first().appId, limit) },
         )
 
-        /** Comments on one app. [lists] are the pubkeys whose NIP-65 inboxes are asked as well, with `useAuthorRelays`. */
+        /**
+         * Comments on one app, as `specs/catalog.md` reads them: two filters in one REQ, `#A` with the
+         * coordinates of the known pubkeys ([anchors]), and `#i` with the app id, which finds comments on
+         * any other coordinate (another catalog's) and is why a read returns two lists to tell apart by
+         * [CommentRecord.rootPubkey]. [lists] are the pubkeys whose NIP-65 inboxes are asked as well, with `useAuthorRelays`.
+         */
         fun comments(
             anchors: List<AppCoordinate>,
             lists: List<String> = anchors.map(AppCoordinate::pubkey),
@@ -149,12 +154,44 @@ class Query<T> internal constructor(
         ): Query<List<CommentRecord>> = Query(
             filters = listOf(
                 Filter(kinds = listOf(Kinds.Comment), tags = mapOf("A" to anchors.map(AppCoordinate::toString)), limit = limit),
+                Filter(kinds = listOf(Kinds.Comment), tags = mapOf("i" to listOf(anchors.first().appId)), limit = limit),
             ),
             tables = setOf(Table.Comments),
             outboxAuthors = emptyList(),
             inboxAuthors = lists.distinct(),
             empty = emptyList(),
             read = { store, _ -> store.comments(anchors.first().appId) },
+        )
+
+        /**
+         * Comments on one stack: kind `1111` whose root `A` is [root], the stack's coordinate. Zaps on a
+         * stack are not read. [lists] are the pubkeys whose NIP-65 inboxes are asked as well, with
+         * `useAuthorRelays`: the curator, whom a comment on the stack tells, and the catalog key.
+         */
+        fun stackComments(root: String, lists: List<String>, limit: Int? = null): Query<List<CommentRecord>> = Query(
+            filters = listOf(Filter(kinds = listOf(Kinds.Comment), tags = mapOf("A" to listOf(root)), limit = limit)),
+            tables = setOf(Table.Comments),
+            outboxAuthors = emptyList(),
+            inboxAuthors = lists.distinct(),
+            empty = emptyList(),
+            read = { store, _ -> store.commentsOnRoot(root, limit) },
+        )
+
+        /**
+         * What one person did on apps: their comments (NIP-22 root kind `K` = app), read from their outbox
+         * relays, and the receipts of their zaps (`#P`, the sender), whose app is the receipt's `a` tag or
+         * the zap request's. Newest first.
+         */
+        fun authorActivity(author: String, limit: Int): Query<ActivityRecord> = Query(
+            filters = listOf(
+                Filter(authors = listOf(author), kinds = listOf(Kinds.Comment), tags = mapOf("K" to listOf(Kinds.App.toString())), limit = limit),
+                Filter(kinds = listOf(Kinds.Zap), tags = mapOf("P" to listOf(author)), limit = limit),
+            ),
+            tables = setOf(Table.Comments, Table.Zaps),
+            outboxAuthors = listOf(author),
+            inboxAuthors = emptyList(),
+            empty = ActivityRecord(),
+            read = { store, _ -> ActivityRecord(store.commentsBy(author, limit), store.zapsBy(author, limit)) },
         )
 
         /**

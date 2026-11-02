@@ -1,5 +1,6 @@
 package dev.zapstore.app.screens
 
+import dev.zapstore.iolite.AppCoordinate
 import dev.zapstore.iolite.CommentRecord
 import dev.zapstore.iolite.QueryState
 import dev.zapstore.iolite.RelayStatus
@@ -64,6 +65,18 @@ class CommentThreadTest {
         assertNull((null as QueryState<*>?).toCommentsError())
     }
 
+    @Test
+    fun commentsOnAKnownCoordinateAreMainAndOnAnyOtherCoordinateAreOther() {
+        val known = listOf(AppCoordinate("c".repeat(64), "dev.zap"), AppCoordinate("a".repeat(64), "dev.zap"))
+        val main = comment("main", 1, root = known[1].toString())
+        val other = comment("other", 2, root = AppCoordinate("b".repeat(64), "dev.zap").toString())
+        val anotherApp = comment("app", 3, root = AppCoordinate("c".repeat(64), "other.app").toString())
+        val orphan = comment("none", 4, root = null)
+        val split = splitComments(listOf(main, other, anotherApp, orphan), known)
+        assertEquals(listOf("main"), split.main.map { it.eventId })
+        assertEquals(listOf("other", "app"), split.other.map { it.eventId })
+    }
+
     private fun zap(id: String, createdAt: Long, note: String = "") = ZapRecord(
         eventId = id,
         pubkey = "z".repeat(64),
@@ -78,13 +91,14 @@ class CommentThreadTest {
         createdAt: Long,
         content: String = id,
         parent: String? = null,
+        root: String? = null,
     ) = CommentRecord(
         eventId = id,
         pubkey = "p".repeat(64),
         createdAt = createdAt,
         content = content,
         appId = "dev.zap",
-        stack = null,
+        root = root,
         parentEventId = parent,
     )
 }
