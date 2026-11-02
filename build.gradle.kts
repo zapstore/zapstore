@@ -17,7 +17,7 @@ android {
     defaultConfig {
         // Beta id so it installs beside production Zapstore. Revert at launch (product/issues/launch-checklist.md).
         applicationId = "dev.zapstore.beta"
-        minSdk = 31
+        minSdk = 29
         targetSdk = 37
         // Above every Flutter 1.1.3 split (armeabi-v7a 2010, arm64-v8a 3010, x86_64 5010).
         versionCode = 6000

@@ -3,9 +3,9 @@ package dev.zapstore.app.catalog
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
-import android.os.Build
+import dev.zapstore.app.install.certificateHashes
+import dev.zapstore.app.install.installSource
 import dev.zapstore.iolite.AppRecord
-import java.security.MessageDigest
 
 data class InstalledApp(
     val packageId: String,
@@ -32,21 +32,15 @@ fun Context.installedApps(): List<InstalledApp> =
     packageManager.getInstalledPackages(PackageManager.GET_SIGNING_CERTIFICATES).mapNotNull { info ->
         val appInfo = info.applicationInfo ?: return@mapNotNull null
         if (appInfo.flags and ApplicationInfo.FLAG_SYSTEM != 0) return@mapNotNull null
-        val signing = info.signingInfo
-        val certificates = buildSet {
-            signing?.apkContentsSigners?.forEach { add(it.toByteArray().sha256Hex()) }
-            signing?.signingCertificateHistory?.forEach { add(it.toByteArray().sha256Hex()) }
-        }
-        val source = runCatching { packageManager.getInstallSourceInfo(info.packageName) }.getOrNull()
-        val owner = if (Build.VERSION.SDK_INT >= 34) source?.updateOwnerPackageName else null
+        val source = packageManager.installSource(info.packageName)
         val label = appInfo.loadLabel(packageManager).toString().ifBlank { info.packageName }
         InstalledApp(
             packageId = info.packageName,
             versionCode = info.longVersionCode,
             versionName = info.versionName ?: info.longVersionCode.toString(),
-            certificateHashes = certificates,
-            installingPackage = source?.installingPackageName,
-            updateOwner = owner,
+            certificateHashes = info.certificateHashes(),
+            installingPackage = source.installer,
+            updateOwner = source.updateOwner,
             label = label,
         )
     }
@@ -153,6 +147,3 @@ fun updateGroups(
         otherInstalled = installed.filter { it.packageId !in catalog }.sortedBy { it.label.lowercase() },
     )
 }
-
-private fun ByteArray.sha256Hex(): String =
-    MessageDigest.getInstance("SHA-256").digest(this).joinToString("") { "%02x".format(it.toInt() and 0xff) }

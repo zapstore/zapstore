@@ -33,7 +33,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,9 +46,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil3.compose.AsyncImage
 import dev.zapstore.app.CdnImageVariant
 import dev.zapstore.app.MarkdownText
@@ -57,6 +53,7 @@ import dev.zapstore.app.R
 import dev.zapstore.app.ZapCanvas
 import dev.zapstore.app.ZapDanger
 import dev.zapstore.app.ZapLine
+import dev.zapstore.app.ZapText3
 import dev.zapstore.app.ZapRadius
 import dev.zapstore.app.ZapSize
 import dev.zapstore.app.ZapSpacing
@@ -92,9 +89,9 @@ fun AppDetailScreen(
     onInstall: () -> Unit = {},
     onConfirmInstall: (alwaysTrust: Boolean) -> Unit = {},
     onDismissInstall: () -> Unit = {},
+    onPersonalizeTrust: () -> Unit = {},
     onUninstall: () -> Unit = {},
     onOpenApp: () -> Unit = {},
-    onRefreshOrigin: () -> Unit = {},
     onPauseInstall: () -> Unit = {},
     onStartInstall: () -> Unit = {},
     onDismissInstallError: () -> Unit = {},
@@ -112,14 +109,6 @@ fun AppDetailScreen(
     onCreateStack: (String) -> Unit = {},
     onStackClick: (StackRecord) -> Unit = {},
 ) {
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) onRefreshOrigin()
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
     var selectedScreenshot by remember { mutableStateOf<Int?>(null) }
     var sheet by remember { mutableStateOf<Pair<String, String>?>(null) }
     var actions by remember { mutableStateOf(false) }
@@ -140,6 +129,7 @@ fun AppDetailScreen(
     val app = state.app
     val comments = state.comments
     val feed = remember(comments.threads, comments.zaps) { feedEntries(comments.threads, comments.zaps) }
+    val other = remember(comments.other) { feedEntries(comments.other, emptyList()) }
     val developerDescription = stringResource(R.string.developer_description)
     val releaseNotes = stringResource(R.string.release_notes)
 
@@ -177,6 +167,11 @@ fun AppDetailScreen(
             state.install.otherStore?.let { store ->
                 item(key = "otherStore", contentType = "status") {
                     StatusText(stringResource(R.string.installed_by_store, store), Modifier.testTag("installedByStore"))
+                }
+            }
+            if (state.install.signedDifferently) {
+                item(key = "signedDifferently", contentType = "status") {
+                    StatusText(stringResource(R.string.install_signed_differently), Modifier.testTag("signedDifferently"))
                 }
             }
 
@@ -293,6 +288,26 @@ fun AppDetailScreen(
                     }
                 }
             }
+            if (other.isNotEmpty()) {
+                // Comments on this app id from another coordinate, such as another catalog's. Zaps are not in it.
+                item(key = "otherCommentsHeader", contentType = "header") {
+                    Column(Modifier.padding(top = ZapSpacing.space4).testTag("otherComments")) {
+                        GroupHeader(stringResource(R.string.other_comments))
+                        Text(stringResource(R.string.other_comments_hint), color = ZapText3, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                items(other, key = { "other:${it.key}" }, contentType = { "comment" }) { entry ->
+                    if (entry is FeedEntry.Comment) {
+                        CommentRow(
+                            comment = entry.comment,
+                            author = comments.profiles[entry.comment.pubkey],
+                            depth = entry.depth,
+                            onOpenUrl = onOpenUrl,
+                            onAuthorClick = onProfileClick,
+                        )
+                    }
+                }
+            }
         }
 
         if (app != null) {
@@ -333,6 +348,8 @@ fun AppDetailScreen(
                 trustName = app.authorPubkey?.let { shortDisplayName(it, state.author) },
                 catalogSigned = app.isCatalogSigned,
                 downloadUrl = app.downloadUrl,
+                trust = state.install.trust,
+                onPersonalizeTrust = onPersonalizeTrust,
             )
         }
         sheet?.let { (title, markdown) ->

@@ -1,7 +1,5 @@
 package dev.zapstore.app.screens
 
-import kotlinx.coroutines.Job
-import dev.zapstore.app.install.StagePhase
 import dev.zapstore.app.Toasts
 import dev.zapstore.iolite.Social
 import dev.zapstore.iolite.Kinds
@@ -25,19 +23,16 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import dev.zapstore.app.AppConfig
 import dev.zapstore.app.R
 import dev.zapstore.app.ZapstoreApplication
+import dev.zapstore.app.catalog.InstalledApp
 import dev.zapstore.app.catalog.otherStore
 import dev.zapstore.app.install.BlockReason
-import dev.zapstore.app.install.InstallEvents
 import dev.zapstore.app.install.InstallOrigin
 import dev.zapstore.app.install.InstallPlan
-import dev.zapstore.app.install.InstallResult
-import dev.zapstore.app.install.InstallTurn
-import dev.zapstore.app.install.awaitTerminal
-import dev.zapstore.app.install.installFailure
+import dev.zapstore.app.install.InstallTask
+import dev.zapstore.app.install.TaskPhase
 import dev.zapstore.app.install.installOrigin
 import dev.zapstore.app.install.installPlan
 import dev.zapstore.app.install.message
-import dev.zapstore.app.install.stageAndCommit
 import dev.zapstore.iolite.AppCoordinate
 import dev.zapstore.iolite.AppRecord
 import dev.zapstore.iolite.CommentRecord
@@ -46,11 +41,14 @@ import dev.zapstore.iolite.ProfileRecord
 import dev.zapstore.iolite.Query
 import dev.zapstore.iolite.QueryState
 import dev.zapstore.iolite.StackRecord
+import dev.zapstore.iolite.Trust
 import dev.zapstore.iolite.ZapRecord
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -63,7 +61,6 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Call
@@ -83,10 +80,14 @@ data class ZapSummary(
 data class ZapRecipient(val pubkey: String, val catalog: Boolean)
 
 const val TOP_ZAPPERS = 5
+private const val TRUST_FOLLOWERS = 5
 
 /** Comments and zaps as the page shows them: one feed, built from [threads] and [zaps] by [feedEntries]. */
 data class CommentsState(
+    /** Comments on a coordinate of a known pubkey, threaded. */
     val threads: List<CommentThread> = emptyList(),
+    /** Comments on this app id from any other coordinate, such as another catalog's, threaded. Zaps have no such list. */
+    val other: List<CommentThread> = emptyList(),
     val zaps: List<ZapRecord> = emptyList(),
     val profiles: Map<String, ProfileRecord> = emptyMap(),
     val loading: Boolean = true,
@@ -94,9 +95,37 @@ data class CommentsState(
 )
 
 /** Where an install started from the app page is, as the bottom button shows it. */
-enum class InstallPhase { Idle, Queued, Downloading, Paused, Verifying, Installing, Cancelled, Failed }
+enum class InstallPhase { Idle, Queued, Downloading, Paused, Verifying, Installing, Confirm, Failed }
+
+/** An account named on the first-install sheet. [name] is what the catalog knew, often blank. */
+data class TrustPerson(val pubkey: String, val name: String = "")
+
+/**
+ * Who follows the publisher, shown on the first-install sheet. Only a publisher with a C1 identity
+ * has any of this, and Download is never held back for it. It starts as the catalog's list and
+ * becomes [personal] when the signed-in user asks for their own point of view.
+ */
+data class TrustUi(
+    val followers: List<TrustPerson> = emptyList(),
+    /** The publisher's own key is a known leak. */
+    val leaked: Boolean = false,
+    /** Everything below is from the signed-in user's point of view. */
+    val personal: Boolean = false,
+    /** Accounts the user follows that zapped this app. */
+    val zappers: List<TrustPerson> = emptyList(),
+    val youFollow: Boolean = false,
+    val youZapped: Boolean = false,
+    /** The publisher has a C1 identity and the user is signed in, so their own check can be asked for. */
+    val canPersonalize: Boolean = false,
+    val checking: Boolean = false,
+    val failed: Boolean = false,
+    val profiles: Map<String, ProfileRecord> = emptyMap(),
+) {
+    val hasSignals: Boolean get() = leaked || followers.isNotEmpty() || zappers.isNotEmpty() || youFollow || youZapped
+}
 
 data class InstallUi(
+    val trust: TrustUi = TrustUi(),
     val offer: Boolean = false,
     val updating: Boolean = false,
     val installed: Boolean = false,
@@ -104,17 +133,19 @@ data class InstallUi(
     val phase: InstallPhase = InstallPhase.Idle,
     val received: Long = 0,
     val total: Long? = null,
-    /** While [InstallPhase.Installing]: false when Android shows its own prompt. */
+    /** While [InstallPhase.Installing]: false when Android shows its own dialog. */
     val silent: Boolean = true,
     /** What went wrong, while [InstallPhase.Failed]. */
     val error: String? = null,
     /** The name of the store that keeps this app current, when it is not Zapstore. */
     val otherStore: String? = null,
+    /** The installed copy shares no certificate with the listing, so no update is offered. */
+    val signedDifferently: Boolean = false,
 ) {
     val busy: Boolean get() = phase in BUSY_PHASES
 }
 
-private val BUSY_PHASES = setOf(InstallPhase.Queued, InstallPhase.Downloading, InstallPhase.Verifying, InstallPhase.Installing)
+private val BUSY_PHASES = setOf(InstallPhase.Queued, InstallPhase.Downloading, InstallPhase.Verifying, InstallPhase.Installing, InstallPhase.Confirm)
 
 /** Writing about this app as the signed-in account: a comment or a report. */
 data class SocialUi(
@@ -172,16 +203,106 @@ class AppDetailViewModel(
     private val appContext: ZapstoreApplication,
     private val iolite: Iolite,
     private val calls: Call.Factory,
-    private val refreshInstalled: () -> Unit,
+    installedApps: Flow<List<InstalledApp>>,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
     private val appId: String = requireNotNull(savedStateHandle[Routes.APP_ID_ARG])
 
     private val app: Flow<AppRecord?> = iolite.observeApp(appId)
-    private val originTick = MutableStateFlow(0)
+    private val installer = appContext.installer
     private val originState = MutableStateFlow<InstallOrigin?>(null)
-    private val installUi = MutableStateFlow(InstallUi())
-    private var installJob: Job? = null
+
+    /** The trust sheet, and a block found before anything downloads. */
+    private val installDialog = MutableStateFlow<InstallPlan?>(null)
+    private val blocked = MutableStateFlow<String?>(null)
+    private enum class Check { Idle, Running, Failed }
+
+    private class Personal(val ranked: List<String>, val follows: Set<String>, val me: String)
+
+    private class TrustInputs(val catalog: Trust?, val me: String?, val personal: Personal?, val check: Check)
+
+    /** The user's own check, tagged with the publisher it was run for. */
+    private val personal = MutableStateFlow<Pair<String, Personal>?>(null)
+    private val check = MutableStateFlow(Check.Idle)
+    private var checkJob: Job? = null
+
+    /**
+     * Only while the first-install sheet is open, and only for a publisher with a C1 identity: a
+     * listing the catalog signed has nobody to look up. The default is what the bundle carried.
+     */
+    private fun trustUi(): Flow<TrustUi> {
+        val publisher = combine(installDialog.map { it is InstallPlan.FirstInstall }, app) { open, app ->
+            app?.authorPubkey.takeIf { open && app?.isCatalogSigned == false }
+        }.distinctUntilChanged()
+        return publisher.flatMapLatest { author ->
+            if (author == null) return@flatMapLatest flowOf(TrustUi())
+            val inputs = combine(
+                iolite.observeTrust(author),
+                appContext.account.account,
+                personal,
+                check,
+            ) { catalog, account, personal, check ->
+                TrustInputs(catalog, account?.pubkey, personal?.takeIf { it.first == author }?.second, check)
+            }
+            val listed = inputs.map { it.personal?.ranked.orEmpty().toSet() }
+                .distinctUntilChanged()
+                .flatMapLatest { keys ->
+                    if (keys.isEmpty()) flowOf(emptyMap()) else iolite.query(Query.profiles(keys), AppConfig.commentProfileQuery).map { it.items }
+                }
+            combine(inputs, listed, zaps, commentProfiles) { input, listed, zaps, zapProfiles ->
+                val mine = input.personal
+                if (mine == null) {
+                    TrustUi(
+                        followers = input.catalog?.followers.orEmpty().map { TrustPerson(it.pubkey, it.name) },
+                        leaked = input.catalog?.leaked == true,
+                        canPersonalize = input.me != null,
+                        checking = input.check == Check.Running,
+                        failed = input.check == Check.Failed,
+                    )
+                } else {
+                    val senders = zaps?.items.orEmpty().map(ZapRecord::pubkey).distinct()
+                    TrustUi(
+                        followers = mine.ranked.map { TrustPerson(it) },
+                        leaked = input.catalog?.leaked == true,
+                        personal = true,
+                        zappers = senders.filter { it in mine.follows && it != mine.me }.take(TRUST_FOLLOWERS).map { TrustPerson(it) },
+                        youFollow = author in mine.follows,
+                        youZapped = mine.me in senders,
+                        profiles = listed + zapProfiles,
+                    )
+                }
+            }
+        }
+    }
+
+    /** The signed-in user's own check: Vertex ranks the publisher's followers from their point of view. */
+    fun checkTrustPersonally() {
+        val author = uiState.value.app?.authorPubkey ?: return
+        val signer = appContext.account.signer() ?: return
+        if (check.value == Check.Running) return
+        check.value = Check.Running
+        checkJob = viewModelScope.launch {
+            try {
+                val (ranked, follows) = coroutineScope {
+                    val ranked = async { iolite.reputation(AppConfig.vertexRelays, signer.publicKey, author, signer, limit = TRUST_FOLLOWERS + 2) }
+                    val follows = async { runCatching { iolite.follows(signer.publicKey, AppConfig.indexerRelays) }.getOrDefault(emptySet()) }
+                    ranked.await() to follows.await()
+                }
+                personal.value = author to Personal(ranked.take(TRUST_FOLLOWERS), follows, signer.publicKey)
+                check.value = Check.Idle
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                check.value = Check.Failed
+            }
+        }
+    }
+
+    private fun resetTrust() {
+        checkJob?.cancel()
+        personal.value = null
+        check.value = Check.Idle
+    }
 
     private val author: Flow<ProfileRecord?> = app
         .map { it?.authorPubkey }
@@ -215,6 +336,16 @@ class AppDetailViewModel(
             }
         }
 
+    private val installUi: Flow<InstallUi> = combine(
+        installer.tasks.map { it[appId] }.distinctUntilChanged(),
+        app.map { it?.apkHash }.distinctUntilChanged(),
+        installDialog,
+        blocked,
+        trustUi(),
+    ) { task, hash, dialog, blocked, trust ->
+        installUi(task?.takeIf { it.busy || it.hash == hash || it.phase == TaskPhase.Failed }, dialog, blocked, trust)
+    }
+
     private val zapProfiles: Flow<Map<String, ProfileRecord>> = combine(app.map { it?.zapRecipient }, zaps) { recipient, zaps ->
         topZappers(zaps?.items.orEmpty()).toSet() + listOfNotNull(recipient)
     }
@@ -224,6 +355,7 @@ class AppDetailViewModel(
         }
 
     private val catalog = combine(app, author, combine(zaps, zapProfiles, ::Pair), comments, commentProfiles) { app, author, (zaps, zapProfiles), comments, commentProfiles ->
+        val split = splitComments(comments?.items.orEmpty(), app?.let { SocialReach.of(it).anchors }.orEmpty())
         AppDetailUiState(
             app = app,
             loaded = true,
@@ -238,7 +370,8 @@ class AppDetailViewModel(
                 profiles = zapProfiles,
             ),
             comments = CommentsState(
-                threads = threadComments(comments?.items.orEmpty()),
+                threads = threadComments(split.main),
+                other = threadComments(split.other),
                 zaps = zaps?.items.orEmpty(),
                 profiles = commentProfiles,
                 // The feed is settled once both of its reads are, as on the web page.
@@ -289,26 +422,23 @@ class AppDetailViewModel(
         val known = origin != null
         val installed = origin?.installed == true
         val newer = record != null && known && (!installed || record.versionCode > origin.versionCode)
+        val foreign = newer && installed && planFor(record!!, origin!!) == InstallPlan.Blocked(BlockReason.Signer)
         catalog.copy(
             social = social,
             userStacks = stacks,
             install = install.copy(
-                offer = newer,
-                updating = installed && newer,
-                installed = installed && !newer,
+                offer = newer && !foreign,
+                updating = installed && newer && !foreign,
+                installed = installed && (!newer || foreign),
+                signedDifferently = foreign,
                 otherStore = origin?.let { storeLabel(otherStore(it.installingPackage, it.updateOwner, appContext.packageName)) },
             ),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), AppDetailUiState())
 
-    private val stopListening = InstallEvents.listen { result ->
-        if (result.packageId != appId) return@listen
-        viewModelScope.launch { onInstallResult(result) }
-    }
-
     init {
         viewModelScope.launch {
-            combine(app, originTick) { record, _ -> record }
+            combine(app, installedApps) { record, _ -> record }
                 .flatMapLatest { record ->
                     flow {
                         if (record == null) {
@@ -484,131 +614,63 @@ class AppDetailViewModel(
     fun prepareInstall() {
         val record = uiState.value.app ?: return
         val origin = originState.value ?: return
-        if (installUi.value.busy) return
-        val plan = planFor(record, origin, apk = null)
+        if (uiState.value.install.busy) return
+        val plan = planFor(record, origin)
         if (plan is InstallPlan.Blocked) {
-            fail(blockMessage(plan.reason))
+            blocked.value = blockMessage(plan.reason)
             return
         }
         val trusted = plan is InstallPlan.FirstInstall && record.authorPubkey in appContext.settings.state.value.trustedSigners
-        if (plan is InstallPlan.Silent || trusted) startInstall() else installUi.update { it.copy(dialog = plan) }
+        val declined = installer.tasks.value[appId]?.let { it.phase == TaskPhase.Ready && it.hash == record.apkHash } == true
+        if (plan is InstallPlan.Silent || trusted || declined) {
+            startInstall()
+        } else {
+            resetTrust()
+            installDialog.value = plan
+        }
     }
 
     fun dismissInstall() {
-        installUi.update { it.copy(dialog = null) }
-    }
-
-    fun refreshOrigin() {
-        originTick.update { it + 1 }
+        resetTrust()
+        installDialog.value = null
     }
 
     /** [alwaysTrust] adds the verified author to the trusted signers, so their next first install skips the sheet. */
     fun confirmInstall(alwaysTrust: Boolean = false) {
         val record = uiState.value.app ?: return
-        if (installUi.value.dialog == null || installUi.value.busy) return
+        if (installDialog.value == null || uiState.value.install.busy) return
         val author = record.authorPubkey
         if (alwaysTrust && author != null && author !in appContext.settings.state.value.trustedSigners) {
             appContext.settings.update { it.copy(trustedSigners = it.trustedSigners + author) }
             val name = uiState.value.author?.displayNameOrNpub ?: appContext.getString(R.string.this_developer)
             Toasts.show(appContext.getString(R.string.toast_trusted, name))
         }
-        installUi.update { it.copy(dialog = null) }
+        resetTrust()
+        installDialog.value = null
         startInstall()
     }
 
-    /** Starts, resumes, or retries. A paused download continues from its partial file. */
+    /** Starts or resumes, or shows Android's waiting dialog again. A paused download continues from its partial file. */
     fun startInstall() {
         val record = uiState.value.app ?: return
-        val origin = originState.value ?: return
-        if (installUi.value.busy) return
         if (!appContext.packageManager.canRequestPackageInstalls()) {
-            fail(appContext.getString(R.string.install_permission))
+            blocked.value = appContext.getString(R.string.install_permission)
             return
         }
-        installUi.update { it.copy(phase = InstallPhase.Queued, error = null, silent = true) }
-        installJob = viewModelScope.launch {
-            try {
-                val result = InstallTurn.exclusive {
-                    installUi.update { it.copy(phase = InstallPhase.Downloading) }
-                    awaitTerminal(record.appId) {
-                        stageAndCommit(
-                            context = appContext,
-                            calls = calls,
-                            app = record,
-                            origin = origin,
-                            ourPackage = appContext.packageName,
-                            bulk = false,
-                            proofOf = iolite::proof,
-                            onPhase = { stage ->
-                                installUi.update {
-                                    when (stage) {
-                                        StagePhase.Verifying -> it.copy(phase = InstallPhase.Verifying)
-                                        is StagePhase.Committing -> it.copy(phase = InstallPhase.Installing, silent = stage.silent)
-                                    }
-                                }
-                            },
-                        ) { read, total ->
-                            installUi.update { it.copy(received = read, total = total) }
-                        }
-                    }
-                }
-                finish(result)
-            } catch (e: TimeoutCancellationException) {
-                fail(appContext.getString(R.string.install_timeout))
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                if (!isActive) throw e
-                fail(appContext.installFailure(e))
-            }
-        }
+        blocked.value = null
+        installer.install(record)
     }
 
     /** Stops the download and keeps what arrived. */
-    fun pauseInstall() {
-        if (installUi.value.phase != InstallPhase.Downloading) return
-        installUi.update { it.copy(phase = InstallPhase.Paused) }
-        installJob?.cancel()
-    }
+    fun pauseInstall() = installer.pause(appId)
 
     /** The error was shown; back to the normal button. */
     fun dismissError() {
-        installUi.update { it.copy(phase = InstallPhase.Idle, error = null) }
+        blocked.value = null
+        installer.dismiss(appId)
     }
 
-    private fun finish(result: InstallResult) {
-        when {
-            result.success -> {
-                installUi.update { it.copy(phase = InstallPhase.Idle, received = 0, total = null) }
-                refreshInstalled()
-                originTick.update { it + 1 }
-            }
-            result.cancelled -> installUi.update { it.copy(phase = InstallPhase.Cancelled, received = 0, total = null) }
-            else -> fail(result.message ?: appContext.getString(R.string.install_timeout))
-        }
-    }
-
-    private fun fail(message: String) {
-        installUi.update { it.copy(phase = InstallPhase.Failed, error = message, dialog = null, received = 0, total = null) }
-    }
-
-    private fun onInstallResult(result: InstallResult) {
-        if (result.awaitingUser) {
-            if (result.message != null) {
-                installJob?.cancel()
-                fail(result.message)
-            } else {
-                installUi.update { if (it.busy) it.copy(phase = InstallPhase.Installing, silent = false) else it }
-            }
-            return
-        }
-        if (result.success) {
-            refreshInstalled()
-            originTick.update { it + 1 }
-        }
-    }
-
-    private fun planFor(record: AppRecord, origin: InstallOrigin, apk: dev.zapstore.app.apk.ApkIdentity?) = installPlan(
+    private fun planFor(record: AppRecord, origin: InstallOrigin) = installPlan(
         deviceSdk = Build.VERSION.SDK_INT,
         ourPackage = appContext.packageName,
         packageId = record.appId,
@@ -616,14 +678,10 @@ class AppDetailViewModel(
         listedVersionCode = record.versionCode,
         listedHash = record.apkHash,
         listedCertificate = record.certificateHash,
-        apk = apk,
+        listedChain = record.certificateChain(),
     )
 
     private fun blockMessage(reason: BlockReason): String = appContext.getString(reason.message)
-
-    override fun onCleared() {
-        stopListening()
-    }
 
     companion object {
         /** The summary is a recent-activity signal, not a ledger. */
@@ -638,7 +696,7 @@ class AppDetailViewModel(
                     app,
                     app.iolite,
                     app.network.transport.callFactory,
-                    app.catalogSync::refreshInstalled,
+                    app.catalogSync.installedApps,
                     createSavedStateHandle(),
                 )
             }
@@ -648,7 +706,7 @@ class AppDetailViewModel(
 
 /**
  * Where an app's comments and zaps are read, as `specs/catalog.md` defines them. [anchors] are the
- * coordinates of the catalog key, the listing signer, and the earlier Zapstore key. [recipients] are the
+ * coordinates of the known pubkeys: the catalog key, the listing signer, the C1 owner, and the earlier Zapstore key. [recipients] are the
  * pubkeys a zap is paid to, which the receipts are read by when they carry no `a` tag. [lists] are the
  * pubkeys whose NIP-65 inboxes are read as well: the catalog key, and the C1 owner or else the signer.
  */
@@ -659,7 +717,7 @@ internal data class SocialReach(
 ) {
     companion object {
         fun of(app: AppRecord) = SocialReach(
-            anchors = (app.anchors + AppCoordinate(AppConfig.LEGACY_CATALOG_PUBKEY, app.appId)).distinct(),
+            anchors = (app.anchors + listOfNotNull(app.proofPubkey).map { AppCoordinate(it, app.appId) } + AppCoordinate(AppConfig.LEGACY_CATALOG_PUBKEY, app.appId)).distinct(),
             recipients = (app.zapRecipients + AppConfig.LEGACY_CATALOG_PUBKEY).distinct(),
             lists = app.socialLists,
         )
@@ -677,3 +735,26 @@ private fun topZappers(zaps: List<ZapRecord>): List<String> =
         .entries.sortedByDescending { it.value }
         .take(TOP_ZAPPERS)
         .map { it.key }
+
+private fun installUi(task: InstallTask?, dialog: InstallPlan?, blocked: String?, trust: TrustUi): InstallUi = InstallUi(
+    trust = trust,
+    dialog = dialog,
+    phase = when {
+        blocked != null -> InstallPhase.Failed
+        task == null -> InstallPhase.Idle
+        else -> when (task.phase) {
+            TaskPhase.Queued -> InstallPhase.Queued
+            TaskPhase.Downloading -> InstallPhase.Downloading
+            TaskPhase.Paused -> InstallPhase.Paused
+            TaskPhase.Verifying -> InstallPhase.Verifying
+            TaskPhase.Installing -> InstallPhase.Installing
+            TaskPhase.Confirm -> InstallPhase.Confirm
+            TaskPhase.Ready -> InstallPhase.Idle
+            TaskPhase.Failed -> InstallPhase.Failed
+        }
+    },
+    received = task?.received ?: 0,
+    total = task?.total,
+    silent = task?.silent ?: true,
+    error = blocked ?: task?.error,
+)

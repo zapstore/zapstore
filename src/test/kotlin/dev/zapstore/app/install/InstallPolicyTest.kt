@@ -60,8 +60,21 @@ class InstallPolicyTest {
     fun acceptsALineageSuccessor() {
         val successor = ApkIdentity("com.example.app", "aa", setOf("new"), listOf("old", "new"), targetSdk = 34)
         val origin = InstallOrigin(installed = true, versionCode = 1, installingPackage = ours, certificates = setOf("old"))
-        val plan = installPlan(34, ours, "com.example.app", origin, 2, "aa", "new", apk = successor)
+        val plan = installPlan(34, ours, "com.example.app", origin, 2, "aa", "new", listOf("new", "old"), apk = successor)
         assertEquals(InstallPlan.Silent, plan)
+    }
+
+    @Test
+    fun blocksAForeignSignerBeforeDownload() {
+        val origin = InstallOrigin(installed = true, versionCode = 1, installingPackage = "org.fdroid.fdroid", certificates = setOf("fdroid"))
+        assertEquals(
+            InstallPlan.Blocked(BlockReason.Signer),
+            installPlan(34, ours, "com.example.app", origin, 2, "aa", "cert"),
+        )
+        assertEquals(
+            InstallPlan.Takeover,
+            installPlan(34, ours, "com.example.app", origin, 2, "aa", "cert", listOf("cert", "fdroid")),
+        )
     }
 
     @Test

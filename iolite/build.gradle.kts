@@ -9,7 +9,7 @@ android {
     compileSdk = providers.gradleProperty("iolite.compileSdk").orElse("37").get().toInt()
 
     defaultConfig {
-        minSdk = 31
+        minSdk = 29
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
     }

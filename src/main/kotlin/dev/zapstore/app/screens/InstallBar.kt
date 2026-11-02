@@ -38,7 +38,6 @@ import dev.zapstore.app.Toast
 import dev.zapstore.app.ToastKind
 import dev.zapstore.app.Toasts
 import dev.zapstore.app.ZapAction
-import dev.zapstore.app.ZapBadge
 import dev.zapstore.app.ZapDangerFill
 import dev.zapstore.app.ZapOnAction
 import dev.zapstore.app.ZapOnDangerFill
@@ -53,7 +52,7 @@ import java.util.Locale
 data class InstallActions(
     val onInstall: () -> Unit = {},
     val onPause: () -> Unit = {},
-    /** Resumes a paused download or retries a cancelled install. */
+    /** Resumes a paused download, or shows Android's waiting dialog again. */
     val onStart: () -> Unit = {},
     val onDismissError: () -> Unit = {},
     val onOpen: () -> Unit = {},
@@ -61,9 +60,9 @@ data class InstallActions(
 )
 
 /**
- * The app page's fixed bottom bar: one wide button whose label follows the installer — waiting
- * for another install, download (tap to pause, tap again to resume), verify, Android's own
- * prompt, a declined prompt, and failures — with Open beside an update and Uninstall beside any
+ * The app page's fixed bottom bar: one wide button whose label follows the installer — queued,
+ * download (tap to pause, tap again to resume), verify, install, Android's dialog waiting for the
+ * user (tap to show it again), and failures — with Open beside an update and Uninstall beside any
  * installed app at rest. No background of its own.
  */
 @Composable
@@ -101,7 +100,7 @@ fun InstallBar(app: AppRecord, install: InstallUi, actions: InstallActions, modi
     }
 }
 
-private enum class Tone { Action, Warning, Error }
+private enum class Tone { Action, Error }
 
 private sealed interface BarButton {
     data class Simple(
@@ -139,7 +138,11 @@ private fun InstallUi.button(
             null,
             spinner = true,
         )
-        InstallPhase.Cancelled -> BarButton.Simple(stringResource(R.string.install_retry), actions.onStart, Tone.Warning)
+        InstallPhase.Confirm -> BarButton.Simple(
+            stringResource(if (installedHere) R.string.confirm_update else R.string.install_notification),
+            actions.onStart,
+            tag = "confirmInstall",
+        )
         InstallPhase.Failed -> {
             val error = error.orEmpty()
             BarButton.Simple(
@@ -174,8 +177,7 @@ private fun InstallUi.progressText(): String {
 private fun SimpleButton(button: BarButton.Simple) {
     val (background, content) = when (button.tone) {
         Tone.Action -> ZapAction to ZapOnAction
-        Tone.Warning -> WARNING to Color.White
-        Tone.Error -> ZapBadge to Color.White
+        Tone.Error -> ZapDangerFill to ZapOnDangerFill
     }
     Row(
         horizontalArrangement = Arrangement.Center,
@@ -199,7 +201,7 @@ private fun SimpleButton(button: BarButton.Simple) {
         )
         if (button.spinner) {
             Spacer(Modifier.width(8.dp))
-            CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+            CircularProgressIndicator(color = content, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
         }
     }
 }
@@ -208,7 +210,7 @@ private fun SimpleButton(button: BarButton.Simple) {
 private fun ProgressButton(button: BarButton.Progress) {
     val base = if (button.paused) ZapSurface4 else ZapAction
     val fill = Color.Black.copy(alpha = if (button.paused) 0.35f else 0.22f).compositeOver(base)
-    val content = if (button.paused) ZapText.copy(alpha = 0.85f) else Color.White
+    val content = if (button.paused) ZapText.copy(alpha = 0.85f) else ZapOnAction
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
@@ -258,6 +260,3 @@ val INSTALL_BAR_SPACE = 56.dp
 
 private val BUTTON_HEIGHT = ZapSize.button
 private val BUTTON_SHAPE = ZapButtonShape
-
-/** Material amber 700, the Flutter app's warning button. */
-private val WARNING = Color(0xFFFFA000)

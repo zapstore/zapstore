@@ -6,6 +6,10 @@ import dev.zapstore.app.AppConfig
 import dev.zapstore.app.BuildConfig
 import dev.zapstore.iolite.Iolite
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -67,8 +71,16 @@ class CatalogSync(
 
     val updateCount: Flow<Int> = updates.map { it.size }
 
+    private val installedChanges = MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+
     init {
         scope.launch { refreshInstalledApps() }
+        scope.launch {
+            installedChanges.collectLatest {
+                delay(INSTALLED_SETTLE_MS)
+                refreshInstalledApps()
+            }
+        }
     }
 
     /**
@@ -139,8 +151,9 @@ class CatalogSync(
         }
     }
 
+    /** One package change arrives as removed, added and replaced; a burst reads the device once. */
     fun refreshInstalled() {
-        scope.launch { refreshInstalledApps() }
+        installedChanges.tryEmit(Unit)
     }
 
     private suspend fun refreshInstalledApps() {
@@ -151,5 +164,6 @@ class CatalogSync(
         const val TAG = "CatalogSync"
         const val MAX_LOGGED_SKIPS = 20
         const val AUTO_SYNC_COOLDOWN_MS = 15 * 60 * 1000L
+        const val INSTALLED_SETTLE_MS = 250L
     }
 }

@@ -4,6 +4,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import android.app.Application
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ApplicationInfo
 import android.os.Build
 import androidx.lifecycle.DefaultLifecycleObserver
@@ -22,7 +26,7 @@ import dev.zapstore.app.account.Nip55Bridge
 import dev.zapstore.app.catalog.CatalogSync
 import dev.zapstore.app.catalog.CatalogSyncWorker
 import dev.zapstore.app.install.BackgroundUpdateWorker
-import dev.zapstore.app.install.InstallCache
+import dev.zapstore.app.install.Installer
 import dev.zapstore.app.catalog.installedApps
 import dev.zapstore.app.search.QueryEncoder
 import dev.zapstore.app.transport.NetworkMode
@@ -38,6 +42,9 @@ import dev.zapstore.iolite.RemoteMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -73,6 +80,8 @@ class ZapstoreApplication : Application() {
         private set
     lateinit var bugReports: BugReports
         private set
+    lateinit var installer: Installer
+        private set
     private var reportsSent = false
     private var foregroundSync: Job? = null
 
@@ -80,6 +89,7 @@ class ZapstoreApplication : Application() {
     var migratedFromFlutter = false
         private set
 
+    @OptIn(FlowPreview::class)
     override fun onCreate() {
         super.onCreate()
         AppLog.init(this)
@@ -92,7 +102,6 @@ class ZapstoreApplication : Application() {
         wallet = Wallet(secrets)
         scope.launch(Dispatchers.IO) {
             FlutterMigration.cleanUp(this@ZapstoreApplication)
-            InstallCache.sweep(this@ZapstoreApplication)
         }
         val debuggable = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
         settings = DeviceSettings(this, scope, if (debuggable) NetworkMode.DirectOnly else NetworkMode.TorOnly)
@@ -133,6 +142,13 @@ class ZapstoreApplication : Application() {
             useOnion = { network.mode.value.usesTor },
             ourPackage = packageName,
         )
+        installer = Installer(this, scope, { network.transport.callFactory }, iolite::proof)
+        scope.launch {
+            combine(iolite.observeApps(), catalogSync.installedApps, ::Pair)
+                .debounce(1_000)
+                .collect { (apps, installed) -> installer.prune(apps, installed) }
+        }
+        watchPackages()
         settings.attach(iolite)
         scope.launch { settings.state.map { it.networkMode }.distinctUntilChanged().collect(network::setMode) }
         network.onConnectionsReset {
@@ -187,6 +203,21 @@ class ZapstoreApplication : Application() {
                 .collect { BackgroundUpdateWorker.apply(this@ZapstoreApplication, it) }
         }
         if (DeviceKeys.takeRestorePending(this) || carriedFlutterKey) restoreDevicePrivate()
+    }
+
+    /** Installs, updates and removals from any source reach My apps and the app page without polling. */
+    private fun watchPackages() {
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_PACKAGE_ADDED)
+            addAction(Intent.ACTION_PACKAGE_REPLACED)
+            addAction(Intent.ACTION_PACKAGE_REMOVED)
+            addDataScheme("package")
+        }
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) = catalogSync.refreshInstalled()
+        }
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(receiver, filter, RECEIVER_NOT_EXPORTED)
+        else registerReceiver(receiver, filter)
     }
 
     /** Intervals under WorkManager's floor sync on a timer while Zapstore is in the foreground. */

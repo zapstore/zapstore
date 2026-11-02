@@ -21,7 +21,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * On the chosen interval: refresh the catalog, then download and verify each update. Updates that
- * install without a prompt are committed silently; the rest wait in [InstallCache.ready] for a tap,
+ * install without a prompt are committed silently; the rest wait in [InstallCache] for a tap,
  * and [UpdateNotifier] says so once. A failed sync or a dropped download retries with backoff,
  * resuming partial files.
  */
@@ -40,27 +40,9 @@ class BackgroundUpdateWorker(context: Context, params: WorkerParameters) : Corou
             val ready = LinkedHashMap<String, String>()
             for (update in updates) {
                 if (isStopped) break
-                runCatching {
-                    InstallTurn.exclusive {
-                        stageAndCommit(
-                            context = app,
-                            calls = app.network.transport.callFactory,
-                            app = update.app,
-                            origin = InstallOrigin(
-                                installed = true,
-                                versionCode = update.installedVersionCode,
-                                installingPackage = update.installingPackage,
-                                updateOwner = update.updateOwner,
-                                certificates = update.certificateHashes,
-                            ),
-                            ourPackage = app.packageName,
-                            bulk = true,
-                            proofOf = app.iolite::proof,
-                            promptAllowed = false,
-                        ) { _, _ -> }
-                    }
-                }.onSuccess { staged ->
-                    if (staged == Staged.Committed) committed++ else ready["${update.app.appId}@${update.app.apkHash}"] = update.app.name
+                val result = app.installer.runInBackground(update.app) ?: continue
+                result.onSuccess { phase ->
+                    if (phase == TaskPhase.Ready) ready["${update.app.appId}@${update.app.apkHash}"] = update.app.name else committed++
                 }.onFailure {
                     if (it.isTransient()) transient++
                     AppLog.w(TAG, "background update ${update.app.appId} failed", it)

@@ -32,7 +32,7 @@ sealed interface DeepLink {
         }.getOrNull()
 
         private fun web(path: String): DeepLink? {
-            val parts = path.split('/').filter { it.isNotEmpty() }.map { URLDecoder.decode(it, Charsets.UTF_8) }
+            val parts = path.split('/').filter { it.isNotEmpty() }.map { URLDecoder.decode(it, "UTF-8") }
             val first = parts.getOrNull(1) ?: return null
             return when (parts[0]) {
                 "apps" -> first.decodeNaddr()?.takeIf { it.kind == Kinds.App }?.let { App(it.identifier) }
@@ -51,7 +51,7 @@ sealed interface DeepLink {
         private fun URI.query(name: String): String? = rawQuery.orEmpty().split('&')
             .map { it.split('=', limit = 2) }
             .firstOrNull { it.size == 2 && it[0] == name }
-            ?.let { URLDecoder.decode(it[1], Charsets.UTF_8) }
+            ?.let { URLDecoder.decode(it[1], "UTF-8") }
             ?.takeIf { it.isNotBlank() }
     }
 }

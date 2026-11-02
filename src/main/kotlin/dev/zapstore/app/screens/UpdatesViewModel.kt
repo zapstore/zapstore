@@ -18,13 +18,9 @@ import dev.zapstore.iolite.AppFilter
 import dev.zapstore.iolite.AppRecord
 import dev.zapstore.iolite.normalizeSearchQuery
 import dev.zapstore.iolite.ProfileRecord
-import dev.zapstore.app.install.InstallOrigin
-import dev.zapstore.app.install.InstallTurn
-import dev.zapstore.app.install.awaitTerminal
-import dev.zapstore.app.install.installFailure
+import dev.zapstore.app.install.InstallTask
+import dev.zapstore.app.install.SessionInstaller
 import dev.zapstore.app.install.isSilentUpdate
-import dev.zapstore.app.install.stageAndCommit
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -41,25 +37,16 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Silent updates install without a prompt; manual ones make Android ask once each. */
 enum class UpdateGroup { Automatic, Manual }
 
+/** The Update all sheet: how many it would start, for which group. */
 data class UpdateAllUi(
     val group: UpdateGroup = UpdateGroup.Automatic,
     val ready: Int = 0,
     val confirm: Boolean = false,
-    val running: Boolean = false,
-    val done: Int = 0,
-    val total: Int = 0,
-    val currentId: String? = null,
-    val currentName: String? = null,
-    val received: Long = 0,
-    val size: Long? = null,
-    val failures: Map<String, String> = emptyMap(),
 )
 
 /** An installed app whose updates are ignored, and the store Android says installed it. */
@@ -79,14 +66,13 @@ data class UpdatesUiState(
     val profiles: Map<String, ProfileRecord> = emptyMap(),
     val loaded: Boolean = false,
     val updateAll: UpdateAllUi = UpdateAllUi(),
+    /** Installs in flight or waiting, by app id, from [dev.zapstore.app.install.Installer]. */
+    val tasks: Map<String, InstallTask> = emptyMap(),
     /** Ranked matches among installed and ignored apps; null until a query is submitted. */
     val searchResults: List<AppRecord>? = null,
     /** Installed apps outside the catalog whose name or package matches the query; they have no vectors. */
     val otherSearchResults: List<InstalledApp> = emptyList(),
-) {
-    val newCount: Int get() = updates.size + manualUpdates.size + otherStores.count { it.entry.update != null }
-    val installedCount: Int get() = installedApps.size + otherStores.count { it.entry.update == null } + otherInstalled.size
-}
+)
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class UpdatesViewModel(
@@ -125,8 +111,8 @@ class UpdatesViewModel(
         catalogSync.installedApps,
         zapstore.iolite.observeApps(),
         ignoredIds,
-        combine(batch, search, searchQuery, ::Triple),
-    ) { (status, _, profiles), installed, apps, ignored, (batch, search, typed) ->
+        combine(batch, search, searchQuery, zapstore.installer.tasks) { batch, search, typed, tasks -> Quad(batch, search, typed, tasks) },
+    ) { (status, _, profiles), installed, apps, ignored, (batch, search, typed, tasks) ->
         val groups = updateGroups(installed, apps, ignored.toSet(), zapstore.packageName) { update -> update.isReady() }
         val byId = apps.associateBy { it.appId }
         val installedById = installed.associateBy { it.packageId }
@@ -143,6 +129,7 @@ class UpdatesViewModel(
             otherInstalled = groups.otherInstalled,
             loaded = true,
             updateAll = batch,
+            tasks = tasks,
             searchResults = search,
             otherSearchResults = if (search == null) emptyList() else groups.otherInstalled.matching(normalizeSearchQuery(typed)),
         )
@@ -160,6 +147,13 @@ class UpdatesViewModel(
         Toasts.show(zapstore.getString(R.string.toast_unignored))
     }
 
+    fun ignoreUpdates(appId: String) {
+        zapstore.lists.setIgnored(appId, true)
+        Toasts.show(zapstore.getString(R.string.toast_ignored))
+    }
+
+    fun pause(appId: String) = zapstore.installer.pause(appId)
+
     private fun installerLabel(packageName: String?): String? {
         if (packageName.isNullOrBlank()) return null
         return installerLabels.getOrPut(packageName) {
@@ -171,100 +165,26 @@ class UpdatesViewModel(
     }
 
     fun prepareUpdateAll(group: UpdateGroup) {
-        val state = uiState.value
-        val ready = state.group(group).size
-        if (state.updateAll.running || ready == 0) return
-        batch.update {
-            it.copy(group = group, ready = ready, confirm = true, failures = emptyMap(), received = 0, size = null)
-        }
+        val ready = uiState.value.startable(group).size
+        if (ready == 0) return
+        batch.update { it.copy(group = group, ready = ready, confirm = true) }
     }
 
     fun dismissUpdateAll() {
         batch.update { it.copy(confirm = false) }
     }
 
-    fun confirmUpdateAll() = runBatch(uiState.value.group(batch.value.group))
-
-    /** Updates one app; a manual one waits for Android's prompt. */
-    fun updateOne(update: AvailableUpdate) {
-        val state = uiState.value
-        if (update in state.updates || update in state.manualUpdates) runBatch(listOf(update))
+    /** Starts every idle update in the group. Downloads run a few at a time; Android's dialogs follow one by one. */
+    fun confirmUpdateAll() {
+        val ready = uiState.value.startable(batch.value.group)
+        batch.update { it.copy(confirm = false) }
+        ready.forEach { zapstore.installer.install(it.app, bulk = ready.size > 1) }
     }
 
-    private fun runBatch(ready: List<AvailableUpdate>) {
-        if (ready.isEmpty() || batch.value.running) return
-        if (!zapstore.packageManager.canRequestPackageInstalls()) {
-            batch.update { it.copy(confirm = false) }
-            return
-        }
-        batch.update {
-            it.copy(confirm = false, running = true, done = 0, total = ready.size, failures = emptyMap())
-        }
-        viewModelScope.launch {
-            val failures = mutableMapOf<String, String>()
-            try {
-                ready.forEachIndexed { index, update ->
-                    if (!isActive) return@launch
-                    batch.update {
-                        it.copy(
-                            done = index,
-                            currentId = update.app.appId,
-                            currentName = update.app.name,
-                            received = 0,
-                            size = null,
-                            failures = failures.toMap(),
-                        )
-                    }
-                    val failure = runOne(update, bulk = ready.size > 1)
-                    if (failure != null) failures[update.app.appId] = failure
-                    else catalogSync.refreshInstalled()
-                }
-            } finally {
-                batch.update {
-                    it.copy(
-                        running = false,
-                        currentId = null,
-                        currentName = null,
-                        received = 0,
-                        size = null,
-                        done = it.total,
-                        failures = failures.toMap(),
-                    )
-                }
-            }
-        }
-    }
+    /** Starts, resumes or shows Android's waiting dialog for one update. */
+    fun updateOne(update: AvailableUpdate) = zapstore.installer.install(update.app)
 
-    private suspend fun runOne(update: AvailableUpdate, bulk: Boolean): String? = try {
-        val result = InstallTurn.exclusive {
-            awaitTerminal(update.app.appId) {
-                stageAndCommit(
-                    context = zapstore,
-                    calls = zapstore.network.transport.callFactory,
-                    app = update.app,
-                    origin = InstallOrigin(
-                        installed = true,
-                        versionCode = update.installedVersionCode,
-                        installingPackage = update.installingPackage,
-                        updateOwner = update.updateOwner,
-                        certificates = update.certificateHashes,
-                    ),
-                    ourPackage = zapstore.packageName,
-                    bulk = bulk,
-                    proofOf = zapstore.iolite::proof,
-                ) { read, total ->
-                    batch.update { it.copy(received = read, size = total) }
-                }
-            }
-        }
-        if (result.success) null else result.message ?: zapstore.getString(R.string.install_timeout)
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        zapstore.installFailure(e)
-    }
-
-    private fun AvailableUpdate.isReady(): Boolean = isSilentUpdate(
+    private fun AvailableUpdate.isReady(): Boolean = SessionInstaller.silentSupported && isSilentUpdate(
         ourPackage = zapstore.packageName,
         packageId = app.appId,
         installingPackage = installingPackage,
@@ -287,7 +207,9 @@ class UpdatesViewModel(
 private fun List<InstalledApp>.matching(query: String): List<InstalledApp> =
     filter { it.label.contains(query, ignoreCase = true) || it.packageId.contains(query, ignoreCase = true) }
 
-private fun UpdatesUiState.group(group: UpdateGroup): List<AvailableUpdate> = when (group) {
+private fun UpdatesUiState.startable(group: UpdateGroup): List<AvailableUpdate> = when (group) {
     UpdateGroup.Automatic -> updates
-    UpdateGroup.Manual -> manualUpdates
-}
+    UpdateGroup.Manual -> manualUpdates + otherStores.mapNotNull { it.entry.update }
+}.filter { tasks[it.app.appId]?.busy != true }
+
+private data class Quad<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)

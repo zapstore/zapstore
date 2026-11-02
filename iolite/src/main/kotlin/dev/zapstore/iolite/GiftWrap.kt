@@ -1,6 +1,7 @@
 package dev.zapstore.iolite
 
 import org.json.JSONObject
+import kotlin.random.asKotlinRandom
 
 /** An unsigned event inside a seal (NIP-59). */
 data class Rumor(val pubkey: String, val createdAt: Long, val kind: Int, val tags: List<List<String>>, val content: String)
@@ -23,7 +24,7 @@ object GiftWrap {
         now: Long,
         difficulty: Int = 0,
         wrapKey: ByteArray = Crypto.randomBytes(32),
-        tweak: () -> Long = { java.security.SecureRandom().nextLong(TWO_DAYS) },
+        tweak: () -> Long = { java.security.SecureRandom().asKotlinRandom().nextLong(TWO_DAYS) },
     ): Event {
         val recipientKey = Hex.decode(recipient)
         val senderPubkey = Hex.encode(Crypto.xOnlyPubkey(sender))

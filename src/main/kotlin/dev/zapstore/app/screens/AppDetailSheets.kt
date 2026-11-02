@@ -1,6 +1,7 @@
 package dev.zapstore.app.screens
 
 import dev.zapstore.app.components.SwitchRow
+import dev.zapstore.app.components.shortDisplayName
 import dev.zapstore.app.components.SettingsGroup
 import dev.zapstore.app.components.EvidenceLine
 import androidx.compose.foundation.background
@@ -401,6 +402,8 @@ internal fun InstallSheet(
     trustName: String? = null,
     catalogSigned: Boolean = false,
     downloadUrl: String? = null,
+    trust: TrustUi = TrustUi(),
+    onPersonalizeTrust: () -> Unit = {},
 ) {
     val switching = plan is InstallPlan.Takeover && otherStore != null
     var alwaysTrust by rememberSaveable { mutableStateOf(false) }
@@ -434,6 +437,9 @@ internal fun InstallSheet(
                 color = ZapText2,
                 style = MaterialTheme.typography.bodyMedium,
             )
+            if (plan is InstallPlan.FirstInstall && trustName != null && !catalogSigned) {
+                TrustSignals(trustName, trust, onPersonalizeTrust, Modifier.testTag("trustSignals"))
+            }
             if (plan is InstallPlan.FirstInstall && trustName != null) {
                 SettingsGroup {
                     SwitchRow(
@@ -455,6 +461,58 @@ internal fun InstallSheet(
                 onClick = onDismiss,
                 style = ZapButtonStyle.Ghost,
                 modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+/**
+ * Who follows the publisher: the catalog's list, or the user's own after they ask for it. It is
+ * absent when there is nothing to say, fills in without holding back Download, and follows are not
+ * endorsements.
+ */
+@Composable
+private fun TrustSignals(name: String, trust: TrustUi, onPersonalize: () -> Unit, modifier: Modifier = Modifier) {
+    if (!trust.hasSignals && !trust.canPersonalize) return
+    fun label(person: TrustPerson): String {
+        val profile = trust.profiles[person.pubkey]
+        return if (profile == null && person.name.isNotBlank()) person.name else shortDisplayName(person.pubkey, profile)
+    }
+    val lines = buildList {
+        if (trust.youFollow) add(stringResource(R.string.trust_you_follow, name))
+        if (trust.followers.isNotEmpty()) {
+            add(
+                stringResource(
+                    if (trust.personal) R.string.trust_followed_by_yours else R.string.trust_followed_by,
+                    trust.followers.joinToString(", ", transform = ::label),
+                ),
+            )
+        }
+        if (trust.zappers.isNotEmpty()) add(stringResource(R.string.trust_zapped_by, trust.zappers.joinToString(", ", transform = ::label)))
+        if (trust.youZapped) add(stringResource(R.string.trust_you_zapped))
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2), modifier = modifier) {
+        if (trust.leaked) {
+            EvidenceLine(
+                stringResource(R.string.trust_leaked),
+                checked = false,
+                detail = stringResource(R.string.trust_leaked_body, name),
+            )
+        }
+        lines.forEach { Text(it, color = ZapText, style = MaterialTheme.typography.bodyMedium) }
+        if (trust.hasSignals && !trust.leaked) {
+            Text(stringResource(R.string.trust_disclaimer), color = ZapText2, style = MaterialTheme.typography.bodySmall)
+        }
+        if (trust.canPersonalize && !trust.personal) {
+            if (trust.failed) {
+                Text(stringResource(R.string.trust_failed), color = ZapText2, style = MaterialTheme.typography.bodySmall)
+            }
+            ZapButton(
+                text = stringResource(if (trust.checking) R.string.trust_checking else R.string.trust_personalize),
+                onClick = onPersonalize,
+                style = ZapButtonStyle.Outline,
+                enabled = !trust.checking,
+                modifier = Modifier.fillMaxWidth().testTag("trustPersonalize"),
             )
         }
     }

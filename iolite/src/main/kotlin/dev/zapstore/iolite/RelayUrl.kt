@@ -51,7 +51,7 @@ fun RelayUrl.originHttpUrl(): String =
 fun RelayUrl.bundleUrl(from: Long, client: String = ""): String {
     val base = origin() + "/v1/bundle?from=$from"
     if (client.isEmpty()) return base
-    return base + "&v=" + URLEncoder.encode(client, Charsets.UTF_8)
+    return base + "&v=" + URLEncoder.encode(client, "UTF-8")
 }
 
 /** True when the host is a Tor onion service. */

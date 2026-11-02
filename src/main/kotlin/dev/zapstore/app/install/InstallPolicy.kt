@@ -44,7 +44,8 @@ fun platformFloor(deviceSdk: Int): Int? = when {
 /**
  * Classify one install before a session is opened.
  * [apk] is null before download. `targetSdk` is not in the listing, so the platform
- * block is decided only after the file is on disk.
+ * block is decided only after the file is on disk. [listedChain] is the listed signer and
+ * its declared ancestors; an installed app must share one of them before anything downloads.
  */
 fun installPlan(
     deviceSdk: Int,
@@ -54,6 +55,7 @@ fun installPlan(
     listedVersionCode: Long,
     listedHash: String?,
     listedCertificate: String?,
+    listedChain: List<String> = listOfNotNull(listedCertificate),
     banned: Boolean = false,
     apk: ApkIdentity? = null,
 ): InstallPlan {
@@ -63,6 +65,10 @@ fun installPlan(
     }
     if (origin.installed && listedVersionCode < origin.versionCode) {
         return InstallPlan.Blocked(BlockReason.Downgrade)
+    }
+    if (origin.installed && origin.certificates.isNotEmpty()) {
+        val installed = origin.certificates.map { it.lowercase() }
+        if (listedChain.none { it.lowercase() in installed }) return InstallPlan.Blocked(BlockReason.Signer)
     }
     if (apk != null) {
         val floor = platformFloor(deviceSdk)

@@ -130,6 +130,16 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
+    override fun onStart() {
+        super.onStart()
+        zapstore.installer.setVisible(true)
+    }
+
+    override fun onStop() {
+        zapstore.installer.setVisible(false)
+        super.onStop()
+    }
+
     override fun onResume() {
         super.onResume()
         zapstore.iolite.refreshConnections()
@@ -288,6 +298,8 @@ class MainActivity : ComponentActivity() {
                     onConfirmUpdateAll = viewModel::confirmUpdateAll,
                     onDismissUpdateAll = viewModel::dismissUpdateAll,
                     onResumeUpdates = viewModel::resumeUpdates,
+                    onIgnoreUpdates = viewModel::ignoreUpdates,
+                    onPause = viewModel::pause,
                     onSearchQueryChanged = viewModel::setSearchQuery,
                 )
             }
@@ -309,6 +321,7 @@ class MainActivity : ComponentActivity() {
                         onSettingsClick = openSettings,
                         saved = saved,
                         onSavedClick = openSaved,
+                        onLoadMoreActivity = viewModel::loadMoreActivity,
                     )
                 } else {
                     var resumed by remember { mutableIntStateOf(0) }
@@ -430,6 +443,7 @@ class MainActivity : ComponentActivity() {
                     onProfileClick = openProfile,
                     onRemoveApp = viewModel::removeApp,
                     onRename = viewModel::rename,
+                    onLoadMoreComments = viewModel::loadMoreComments,
                 )
             }
 
@@ -480,9 +494,9 @@ class MainActivity : ComponentActivity() {
                     onDismissInstallError = viewModel::dismissError,
                     onConfirmInstall = viewModel::confirmInstall,
                     onDismissInstall = viewModel::dismissInstall,
+                    onPersonalizeTrust = viewModel::checkTrustPersonally,
                     onUninstall = { state.app?.let { requestUninstall(it.appId, it.name) } },
                     onOpenApp = { state.app?.let { app -> packageManager.getLaunchIntentForPackage(app.appId)?.let(::startActivity) } },
-                    onRefreshOrigin = viewModel::refreshOrigin,
                 )
             }
 
@@ -497,6 +511,7 @@ class MainActivity : ComponentActivity() {
                     onOpenUrl = ::openUrl,
                     onAppClick = openApp,
                     onStackClick = { navController.navigate(Routes.stack(it.pubkey, it.identifier)) },
+                    onLoadMoreActivity = viewModel::loadMoreActivity,
                 )
             }
         }

@@ -20,7 +20,7 @@ data class NwcConnection(
             val wallet = (uri.host ?: uri.authority)?.lowercase()?.takeIf { it.isHex(64) } ?: return null
             val params = uri.rawQuery.orEmpty().split('&').filter { '=' in it }.map {
                 val (key, value) = it.split('=', limit = 2)
-                key to URLDecoder.decode(value, Charsets.UTF_8)
+                key to URLDecoder.decode(value, "UTF-8")
             }
             val relays = params.filter { it.first == "relay" }.mapNotNull { runCatching { it.second.normalizeRelayUrl() }.getOrNull() }.toSet()
             val secret = params.firstOrNull { it.first == "secret" }?.second?.lowercase()?.takeIf { it.isHex(64) } ?: return null
