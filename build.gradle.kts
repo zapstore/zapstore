@@ -53,8 +53,8 @@ android {
     }
 
     // `make run` passes -PCATALOG_RELAY. The daemon ignores a new environment, so the property is the input.
-    val catalogRelay = providers.gradleProperty("CATALOG_RELAY").orElse("wss://brelay.zapstore.dev").get().trim()
-        .ifEmpty { "wss://brelay.zapstore.dev" }
+    val catalogRelay = providers.gradleProperty("CATALOG_RELAY").orElse("wss://relay.zapstore.dev").get().trim()
+        .ifEmpty { "wss://relay.zapstore.dev" }
     val catalogRelayField = "\"" + catalogRelay.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
     // ~/.android is not readable in this environment. AGP only stats that
@@ -69,10 +69,8 @@ android {
     }
 
     buildTypes {
-        // Debug builds open no relay sockets unless -PRELAYS_ENABLED=true. Catalog sync uses CATALOG_RELAY.
+        // Catalog sync uses CATALOG_RELAY.
         debug {
-            val relaysEnabled = providers.gradleProperty("RELAYS_ENABLED").orElse("false").get().trim() == "true"
-            buildConfigField("boolean", "RELAYS_ENABLED", relaysEnabled.toString())
             buildConfigField("String", "CATALOG_RELAY", catalogRelayField)
         }
         release {
@@ -82,7 +80,6 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            buildConfigField("boolean", "RELAYS_ENABLED", "true")
             buildConfigField("String", "CATALOG_RELAY", catalogRelayField)
         }
     }

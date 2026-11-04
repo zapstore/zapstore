@@ -12,24 +12,56 @@ DEBUG_KEYSTORE ?= $(abspath debug.keystore)
 ASSETS_CATALOG_BUNDLE := src/main/assets/bundle-0-1.tar.zst
 RELAY_PORT := 3334
 # Baked into the APK. Example: CATALOG_RELAY=ws://127.0.0.1:3334 make run
-CATALOG_RELAY ?= wss://brelay.zapstore.dev
-# A debug build opens no relay sockets without this, so no activity, comments or outbox reads. Example: RELAYS_ENABLED=false make run
-RELAYS_ENABLED ?= true
-GRADLE_RELAY := -PCATALOG_RELAY="$(CATALOG_RELAY)" -PRELAYS_ENABLED=$(RELAYS_ENABLED)
+CATALOG_RELAY ?= wss://relay.zapstore.dev
+GRADLE_RELAY := -PCATALOG_RELAY="$(CATALOG_RELAY)"
+# IoliteConfig.maxCompressedBytes. Import treats a larger file as unreadable.
+CATALOG_BUNDLE_MAX_BYTES := 33554432
+APP_VERSION := $(shell sed -n 's/^[[:space:]]*versionName = "\([^"]*\)".*/\1/p' "$(dir $(abspath $(lastword $(MAKEFILE_LIST))))build.gradle.kts" | head -n 1)
 
-.PHONY: build release install run run-release deploy refresh vendor unbundle-catalog reverse link-adb
+.PHONY: build release install run run-release deploy refresh vendor unbundle-catalog fetch-catalog-bundle reverse link-adb
 
-# Drop leftover seeds so a build without CATALOG_BUNDLE does not package them.
+# Drop leftover seeds so a debug build without CATALOG_BUNDLE does not package them.
 unbundle-catalog:
 	rm -f "$(ASSETS_CATALOG_BUNDLE)" src/main/assets/catalog-delta.tar.zst
 
+# The asset name stays bundle-0-1.tar.zst. The manifest's from and to are the epochs.
+fetch-catalog-bundle:
+	@test -n "$(APP_VERSION)" || { echo "versionName missing from build.gradle.kts" >&2; exit 1; }
+	@origin=$$(printf '%s\n' "$(CATALOG_RELAY)" | sed -E 's|^wss://|https://|; s|^ws://|http://|; s|[?].*||; s|(https?://[^/]+).*|\1|'); \
+	case "$$origin" in \
+		http://*|https://*) ;; \
+		*) echo "CATALOG_RELAY must be ws:// or wss://: $(CATALOG_RELAY)" >&2; exit 1 ;; \
+	esac; \
+	url="$$origin/v1/bundle?from=0&v=$(APP_VERSION)"; \
+	tmp="$(ASSETS_CATALOG_BUNDLE).tmp"; \
+	mkdir -p src/main/assets; \
+	rm -f src/main/assets/catalog-delta.tar.zst; \
+	echo "Fetching $$url"; \
+	curl -fL --retry 3 --retry-delay 2 --connect-timeout 30 --max-time 600 -o "$$tmp" "$$url" || { rm -f "$$tmp"; exit 1; }; \
+	bytes=$$(wc -c < "$$tmp" | tr -d ' '); \
+	sig=$$(od -An -tx1 -N4 "$$tmp" | tr -d ' \n'); \
+	if [ "$$bytes" -eq 0 ] || [ "$$bytes" -gt $(CATALOG_BUNDLE_MAX_BYTES) ] || [ "$$sig" != "28b52ffd" ]; then \
+		rm -f "$$tmp"; \
+		echo "catalog bundle is $$bytes bytes ($$sig); it must be a zstd frame of at most $(CATALOG_BUNDLE_MAX_BYTES) bytes" >&2; \
+		exit 1; \
+	fi; \
+	mv "$$tmp" "$(ASSETS_CATALOG_BUNDLE)"
+
 ifeq ($(CATALOG_BUNDLE),)
-build install release: unbundle-catalog
+build install: unbundle-catalog
+release: fetch-catalog-bundle
 else
 .PHONY: $(ASSETS_CATALOG_BUNDLE)
 $(ASSETS_CATALOG_BUNDLE):
 	@test -f "$(CATALOG_BUNDLE)" || { echo "CATALOG_BUNDLE not found: $(CATALOG_BUNDLE)" >&2; exit 1; }
+	@bytes=$$(wc -c < "$(CATALOG_BUNDLE)" | tr -d ' '); \
+	sig=$$(od -An -tx1 -N4 "$(CATALOG_BUNDLE)" | tr -d ' \n'); \
+	if [ "$$bytes" -eq 0 ] || [ "$$bytes" -gt $(CATALOG_BUNDLE_MAX_BYTES) ] || [ "$$sig" != "28b52ffd" ]; then \
+		echo "catalog bundle is $$bytes bytes ($$sig); it must be a zstd frame of at most $(CATALOG_BUNDLE_MAX_BYTES) bytes" >&2; \
+		exit 1; \
+	fi
 	@mkdir -p src/main/assets
+	rm -f src/main/assets/catalog-delta.tar.zst
 	cp "$(CATALOG_BUNDLE)" "$@"
 
 build install release: $(ASSETS_CATALOG_BUNDLE)
