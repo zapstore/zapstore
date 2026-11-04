@@ -129,6 +129,7 @@ class IoliteStore internal constructor(
         if (admissible.isEmpty()) return 0
         var written = 0
         write { tx -> admissible.forEach { if (EventRows.persist(tx, it, context)) written++ } }
+        if (admissible.any { it.kind == Kinds.CatalogRelayList }) pruneIconDirs()
         return written
     }
 
@@ -374,12 +375,19 @@ class IoliteStore internal constructor(
         return runCatching { deviceSigner.decryptFromSelf(row.optString("content")) }.getOrNull()
     }
 
+    /**
+     * Drops everything downloaded. The user's catalog list stays exactly as it is, empty included, with
+     * each catalog's key: they are choices, not cache. Every catalog is fetched again from epoch 0.
+     */
     fun wipe() {
         write { tx ->
-            listOf("comments", "zaps", "stacks", "profiles", "publish_queue", "relay_reports", "preferences", "certificate_proofs", "apps", "query_refresh")
+            listOf("comments", "zaps", "stacks", "profiles", "publish_queue", "relay_reports", "certificate_proofs", "apps", "query_refresh")
                 .forEach { tx.db.execSQL("DELETE FROM $it") }
+            tx.db.prepare("DELETE FROM preferences WHERE identifier <> ?").use { statement ->
+                statement.bindText(1, EventRows.CATALOG_RELAY_LIST_KEY)
+                statement.step()
+            }
             tx.db.execSQL("UPDATE catalogs SET epoch = 0")
-            tx.db.execSQL("UPDATE catalogs SET manifest_pubkey = NULL WHERE id = 1")
             tx.touch(*Table.values())
         }
         checkpointWal()
@@ -465,6 +473,93 @@ class IoliteStore internal constructor(
             }
             tx.touch(Table.Catalogs)
         }
+    }
+
+    fun catalogByPubkey(pubkey: String): CatalogRecord? = read { db -> CatalogRows.byPubkey(db, pubkey) }
+
+    /**
+     * True once the device's catalog list is decided: its kind 10067 is stored, whether it came from
+     * another device or was published here. Until then the phone has never had a say, and the bundled
+     * default is used. An empty list is a decision too.
+     */
+    fun catalogListDecided(): Boolean = catalogListUpdatedAt() != null
+
+    /** `created_at` of the stored catalog list event, or null when none is stored. */
+    fun catalogListUpdatedAt(): Long? = read { db ->
+        db.prepare("SELECT updated_at FROM preferences WHERE identifier = ?").use { statement ->
+            statement.bindText(1, EventRows.CATALOG_RELAY_LIST_KEY)
+            statement.rowOrNull { it.getLong(0) }
+        }
+    }
+
+    /**
+     * Adds a catalog to the end of the list, or selects it again when it is stored but unselected.
+     * [relays] are its addresses when known; [hints] are relays to ask for them otherwise.
+     */
+    fun addCatalog(pubkey: String, relays: List<RelayUrl>, hints: List<RelayUrl> = emptyList(), isPrivate: Boolean = false): CatalogRecord {
+        var added: CatalogRecord? = null
+        write { tx ->
+            val id = CatalogRows.upsert(tx, pubkey, relays, hints, isPrivate)
+            val selected = CatalogRows.all(tx.db).filter { it.position != null }.map { it.id }
+            if (id !in selected) CatalogRows.setOrder(tx, selected + id)
+            added = CatalogRows.byPubkey(tx.db, pubkey)
+        }
+        return added!!
+    }
+
+    /**
+     * Puts the bundled default on the list when the user has never chosen one. Returns it, or null when
+     * the list was already decided or a catalog is stored.
+     */
+    fun seedCatalog(pubkey: String, relay: RelayUrl): CatalogRecord? {
+        var seeded: CatalogRecord? = null
+        write { tx ->
+            if (catalogListDecided() || CatalogRows.all(tx.db).isNotEmpty()) return@write
+            val id = CatalogRows.upsert(tx, pubkey, listOf(relay), emptyList(), isPrivate = false)
+            CatalogRows.setOrder(tx, listOf(id))
+            seeded = CatalogRows.byPubkey(tx.db, pubkey)
+        }
+        return seeded
+    }
+
+    /** Removes the catalog and everything downloaded from it. False when there was no such catalog. */
+    fun removeCatalog(id: Long): Boolean {
+        var removed = false
+        write { tx ->
+            val catalog = CatalogRows.all(tx.db).firstOrNull { it.id == id } ?: return@write
+            CatalogRows.remove(tx, catalog)
+            removed = true
+        }
+        if (removed) pruneIconDirs()
+        return removed
+    }
+
+    /** Moves a selected catalog [delta] places along the list; the first catalog wins a clash on one app. */
+    fun moveCatalog(id: Long, delta: Int): Boolean {
+        var moved = false
+        write { tx ->
+            val ids = CatalogRows.all(tx.db).filter { it.position != null }.map { it.id }.toMutableList()
+            val from = ids.indexOf(id)
+            if (from < 0) return@write
+            val to = (from + delta).coerceIn(0, ids.lastIndex)
+            if (to == from) return@write
+            ids.add(to, ids.removeAt(from))
+            CatalogRows.setOrder(tx, ids)
+            moved = true
+        }
+        return moved
+    }
+
+    /** Writes the addresses read from the catalog's kind 10067. */
+    fun setCatalogRelays(id: Long, relays: List<RelayUrl>) {
+        require(relays.isNotEmpty()) { "a catalog needs an address" }
+        upsertCatalogRelays(id, relays, replaceIdentity = true)
+    }
+
+    /** Deletes icon folders of catalogs that are gone. */
+    internal fun pruneIconDirs() {
+        val live = read { db -> CatalogRows.all(db).map { it.id.toString() }.toSet() }
+        iconsDir.listFiles().orEmpty().filter { it.isDirectory && it.name !in live }.forEach { it.deleteRecursively() }
     }
 
     // --- apps --------------------------------------------------------------------------------------
@@ -632,6 +727,36 @@ class IoliteStore internal constructor(
         }
     }
 
+    /**
+     * Developers of the visible listings, best match first, as hex keys: the owners of a current NIP-C1 proof,
+     * other than a catalog key, whose stored profile name or display name holds [query], or whose npub does.
+     * A developer with no stored profile can still be found by npub.
+     */
+    fun developers(query: String, limit: Int): List<String> {
+        val needle = normalizeSearchQuery(query)
+        if (needle.length < MIN_DEVELOPER_QUERY) return emptyList()
+        val authors = read { db ->
+            db.prepare(
+                "SELECT DISTINCT a.pubkey, c.manifest_pubkey FROM apps a JOIN catalogs c ON c.id = a.catalog_id " +
+                    "WHERE c.position IS NOT NULL AND a.pubkey IS NOT NULL AND $VISIBLE_LISTING",
+            ).use { statement ->
+                buildSet {
+                    while (statement.step()) {
+                        val key = Hex.encode(statement.getBlob(0))
+                        if (key != statement.blobHexOrNull(1)) add(key)
+                    }
+                }
+            }
+        }
+        if (authors.isEmpty()) return emptyList()
+        val profiles = profiles(authors)
+        return authors.mapNotNull { key ->
+            val profile = profiles[key]
+            val rank = developerRank(listOfNotNull(profile?.name, profile?.displayName), key.toNpub(), needle)
+            if (rank < 0) null else Triple(rank, profile?.displayNameOrNpub ?: key.toNpub(), key)
+        }.sortedWith(compareBy({ it.first }, { it.second.length }, { it.third })).take(limit).map { it.third }
+    }
+
     /** Stored NIP-65 lists by pubkey; a pubkey without a stored kind 10002 is absent. */
     fun mailboxes(pubkeys: Collection<String>): Map<String, Mailboxes> = read { db ->
         buildMap {
@@ -691,6 +816,12 @@ class IoliteStore internal constructor(
                 }
             }
         }
+
+    /** The stacks of every key in [authors], newest first across all of them. The device's own private apps are not added. */
+    fun catalogStacks(authors: List<String>, limit: Int? = null): List<StackRecord> =
+        authors.distinct().flatMap { stacks(it, limit = limit) }
+            .sortedByDescending(StackRecord::updatedAt)
+            .let { all -> if (limit == null) all else all.take(limit) }
 
     /** Stacks with at least one public app, newest first, optionally older than [until] and not signed by [excluding]. */
     fun publicStacks(limit: Int, until: Long? = null, excluding: String? = null): List<StackRecord> = read { db ->
@@ -761,7 +892,7 @@ class IoliteStore internal constructor(
     fun comments(appId: String, limit: Int? = null): List<CommentRecord> = read { db ->
         val limitSql = limit?.let { " LIMIT $it" } ?: ""
         db.prepare(
-            "SELECT event_id, pubkey, created_at, content, stack, parent_event_id FROM comments " +
+            "SELECT event_id, pubkey, created_at, content, stack, parent_event_id, metadata FROM comments " +
                 "WHERE app_id = ? ORDER BY created_at DESC$limitSql",
         ).use { statement ->
             statement.bindText(1, appId)
@@ -774,9 +905,16 @@ class IoliteStore internal constructor(
                     appId = appId,
                     root = textOrNull(4),
                     parentEventId = blobHexOrNull(5),
+                    version = commentVersion(getText(6)),
                 )
             }
         }
+    }
+
+    /** The `v` tag of a stored comment's tags, or null. */
+    private fun commentVersion(metadata: String): String? {
+        val tags = runCatching { JSONObject(metadata).optJSONArray("tags") }.getOrNull().toStringLists()
+        return tags.firstOrNull { it.firstOrNull() == "v" }?.getOrNull(1)?.takeIf { it.isNotBlank() }
     }
 
     /** Comments whose root coordinate is [root], newest first. Their `i` tag, if any, is not read. */
@@ -901,10 +1039,17 @@ class IoliteStore internal constructor(
     // --- rehydration templates ---------------------------------------------------------------------
 
     fun catalogRelayListTemplate(deviceSigner: LocalSigner): Pair<List<List<String>>, String> {
-        val selected = selectedCatalogs()
-        val tags = selected.filter { !it.isPrivate }.map { listOf("r", it.relayUrl.url) }
-        val privateUrls = selected.filter { it.isPrivate }.map { it.relayUrl.url }
-        val content = if (privateUrls.isEmpty()) "" else deviceSigner.encryptToSelf(JSONArray(privateUrls).toString())
+        // A catalog whose key is not pinned yet cannot be named; it joins the list once it is.
+        val selected = selectedCatalogs().filter { it.manifestPubkey != null }
+        fun entry(catalog: CatalogRecord): List<String> =
+            listOfNotNull("p", catalog.manifestPubkey, (catalog.hints.firstOrNull() ?: catalog.relayUrl)?.url)
+        val tags = selected.filter { !it.isPrivate }.map(::entry)
+        val privateEntries = selected.filter { it.isPrivate }.map(::entry)
+        val content = if (privateEntries.isEmpty()) {
+            ""
+        } else {
+            deviceSigner.encryptToSelf(JSONArray(privateEntries.map { JSONArray(it) }).toString())
+        }
         return tags to content
     }
 
@@ -965,10 +1110,10 @@ class IoliteStore internal constructor(
     }
 
     companion object {
-        private const val SELECT_CATALOG =
-            "SELECT id, relay_url, position, is_private, manifest_pubkey, epoch, endpoints FROM catalogs"
+        private const val SELECT_CATALOG = CatalogRows.SELECT
 
         /** A listing is shown once it has a name and the asset's certificate hash. */
+        private const val MIN_DEVELOPER_QUERY = 2
         private const val VISIBLE_LISTING = "a.name <> '' AND a.certificate_hash IS NOT NULL"
 
         /**
@@ -1046,26 +1191,6 @@ class IoliteStore internal constructor(
 
 internal fun openBundled(path: String): SQLiteConnection = BundledSQLiteDriver().open(path)
 
-private fun SQLiteStatement.toCatalog(): CatalogRecord {
-    val relayUrl = getText(1).normalizeRelayUrl()
-    val relays = decodeRelays(if (isNull(6)) "[]" else getText(6)).ifEmpty { listOf(relayUrl) }
-    return CatalogRecord(
-        id = getLong(0),
-        relayUrl = relayUrl,
-        relays = relays,
-        position = if (isNull(2)) null else getInt(2),
-        isPrivate = getLong(3) == 1L,
-        manifestPubkey = blobHexOrNull(4),
-        epoch = getLong(5),
-    )
-}
-
-private fun decodeRelays(raw: String): List<RelayUrl> {
-    if (raw.isBlank() || raw == "[]") return emptyList()
-    val array = JSONArray(raw)
-    return List(array.length()) { index -> array.getString(index).normalizeRelayUrl() }
-}
-
 private fun writeBytes(file: File, bytes: ByteArray) {
     file.parentFile?.mkdirs()
     val tmp = File(file.parentFile, "${file.name}.tmp")
@@ -1100,6 +1225,6 @@ private fun SQLiteStatement.toApp(iconsDir: File): AppRecord = AppRecord(
 
 private fun <T> SQLiteStatement.rowOrNull(map: (SQLiteStatement) -> T): T? = if (step()) map(this) else null
 
-private fun <T> SQLiteStatement.rows(map: SQLiteStatement.() -> T): List<T> = buildList {
+internal fun <T> SQLiteStatement.rows(map: SQLiteStatement.() -> T): List<T> = buildList {
     while (step()) add(map())
 }

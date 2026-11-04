@@ -31,10 +31,11 @@ class DeviceStateTest {
     @Test
     fun rewriteKeepsUnknownFields() {
         val signer = "a".repeat(64)
-        val state = DeviceState(networkMode = NetworkMode.DirectOnly, trustedSigners = listOf(signer))
-        val json = state.toJson(JSONObject("""{"futureField": 1}"""))
+        val state = DeviceState(networkMode = NetworkMode.DirectOnly)
+        val json = state.toJson(JSONObject("""{"futureField": 1, "trustedSigners": ["$signer"]}"""))
         assertEquals("direct", json.getString("networkMode"))
         assertTrue(json.has("futureField"))
+        assertEquals(signer, json.getJSONArray("trustedSigners").getString(0))
         assertEquals(state, DeviceState.fromJson(JSONObject(json.toString())))
     }
 
@@ -46,8 +47,8 @@ class DeviceStateTest {
     }
 
     @Test
-    fun badSignersAreDropped() {
+    fun oldTrustedSignersAreIgnored() {
         val json = JSONObject("""{"trustedSigners": ["short", "${"b".repeat(64)}"]}""")
-        assertEquals(listOf("b".repeat(64)), DeviceState.fromJson(json).trustedSigners)
+        assertEquals(DeviceState(), DeviceState.fromJson(json))
     }
 }

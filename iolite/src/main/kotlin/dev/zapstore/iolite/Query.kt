@@ -48,6 +48,16 @@ class Query<T> internal constructor(
             read = { store, signer -> store.stacks(author, limit = limit, deviceSigner = signer) },
         )
 
+        /** The stacks every catalog in [authors] ships, newest first. No keys means no stacks. */
+        fun catalogStacks(authors: List<String>, limit: Int? = null): Query<List<StackRecord>> = Query(
+            filters = if (authors.isEmpty()) emptyList() else listOf(Filter(authors = authors, kinds = listOf(Kinds.AppStack), limit = limit)),
+            tables = setOf(Table.Stacks),
+            outboxAuthors = authors,
+            inboxAuthors = emptyList(),
+            empty = emptyList(),
+            read = { store, _ -> store.catalogStacks(authors, limit) },
+        )
+
         /**
          * Public stacks from anyone: kind `30267` tagged for this device's [platforms].
          * Private lists (empty public part) and the device's own are skipped.
@@ -105,8 +115,10 @@ class Query<T> internal constructor(
                     kinds = listOf(Kinds.AppStack),
                     tags = mapOf("d" to listOf(DeviceEvents.BOOKMARKS, DeviceEvents.UPDATE_IGNORE)),
                 ),
+                // The catalogs this device uses, in order.
+                Filter(authors = listOf(devicePubkey), kinds = listOf(Kinds.CatalogRelayList), limit = 1),
             ),
-            tables = setOf(Table.Preferences, Table.Stacks),
+            tables = setOf(Table.Preferences, Table.Stacks, Table.Catalogs),
             outboxAuthors = emptyList(),
             inboxAuthors = emptyList(),
             empty = null,
@@ -195,19 +207,30 @@ class Query<T> internal constructor(
         )
 
         /**
-         * Newest comments on any app (NIP-22 root kind `K` = app) and zaps on [zapAnchors]; zap
-         * receipts carry only exact `a` tags, so the caller names the apps, such as the latest releases.
+         * Newest comments on any app (NIP-22 root kind `K` = app) and zaps, [limit] of each per relay.
+         * Zaps are read two ways, as the web page's Activity does: by `a` for [zapAnchors], such as the
+         * latest releases, and by `p` for [recipients] (the catalog key), since most Lightning servers
+         * drop the `a` tag from the receipt and storing one takes the `a` tag of the zap request inside
+         * it. [lists] are the pubkeys whose NIP-65 inboxes are asked as well, with `useAuthorRelays`.
          */
-        fun activity(zapAnchors: List<AppCoordinate>, limit: Int): Query<ActivityRecord> = Query(
+        fun activity(
+            zapAnchors: List<AppCoordinate>,
+            limit: Int,
+            recipients: List<String> = emptyList(),
+            lists: List<String> = emptyList(),
+        ): Query<ActivityRecord> = Query(
             filters = listOfNotNull(
                 Filter(kinds = listOf(Kinds.Comment), tags = mapOf("K" to listOf(Kinds.App.toString())), limit = limit),
                 zapAnchors.takeIf { it.isNotEmpty() }?.let {
                     Filter(kinds = listOf(Kinds.Zap), tags = mapOf("a" to it.map(AppCoordinate::toString)), limit = limit)
                 },
+                recipients.distinct().takeIf { it.isNotEmpty() }?.let {
+                    Filter(kinds = listOf(Kinds.Zap), tags = mapOf("p" to it), limit = limit)
+                },
             ),
             tables = setOf(Table.Comments, Table.Zaps),
             outboxAuthors = emptyList(),
-            inboxAuthors = emptyList(),
+            inboxAuthors = lists.distinct(),
             empty = ActivityRecord(),
             read = { store, _ -> ActivityRecord(store.recentComments(limit), store.recentZaps(limit)) },
         )

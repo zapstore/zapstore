@@ -128,7 +128,12 @@ class ZapstoreApplication : Application() {
             device = DeviceProfile(abis = AppConfig.supportedAbis, sdk = Build.VERSION.SDK_INT),
         )
         lists = DeviceLists(iolite, scope)
-        bugReports = BugReports(this, iolite) { settings.state.value.bugReports }
+        bugReports = BugReports(
+            this,
+            iolite,
+            recipient = { if (::catalogSync.isInitialized) catalogSync.defaultCatalogKey() else null },
+            enabled = { settings.state.value.bugReports },
+        )
         AppLog.onError = bugReports::record
         keyBackup = DeviceKeyBackup(this, secrets, iolite, account)
         catalogSync = CatalogSync(

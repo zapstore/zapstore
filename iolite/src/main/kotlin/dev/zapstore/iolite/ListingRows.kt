@@ -164,6 +164,7 @@ internal object ListingRows {
         asset.tagValue("x")?.takeIf { it.isNotBlank() }?.let { put("apk_hash", it) }
         asset.tagValue("filename")?.let { put("filename", it) }
         asset.tagValue("m")?.let { put("mime", it) }
+        asset.tagValue("size")?.toLongOrNull()?.takeIf { it > 0 }?.let { put("size", it) }
         if (certificate != null) {
             put("apk_certificate_ancestor", JSONArray(assetAncestors(asset, certificate)))
         }

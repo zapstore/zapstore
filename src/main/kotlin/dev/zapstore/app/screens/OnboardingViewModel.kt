@@ -64,7 +64,7 @@ class OnboardingViewModel(private val zapstore: ZapstoreApplication) : ViewModel
         )
     }
 
-    /** Continue and Skip both move on; Skip leaves the setting as it is. */
+    /** Continue and the Signer step's Cancel both move on; neither changes any setting already made. */
     fun next() {
         val state = progress.value
         state.step?.let(onboarding::complete)
@@ -72,6 +72,12 @@ class OnboardingViewModel(private val zapstore: ZapstoreApplication) : ViewModel
         if (index >= state.steps.size) onboarding.finish()
         progress.update { it.copy(index = index, finished = index >= it.steps.size) }
         signer.value = SignerStepUi()
+    }
+
+    /** Ends onboarding right away, leaving any remaining steps (and their settings) untouched. */
+    fun skipAll() {
+        onboarding.finish()
+        progress.update { it.copy(finished = true) }
     }
 
     fun setNetworkMode(mode: NetworkMode) = zapstore.settings.update { it.copy(networkMode = mode) }

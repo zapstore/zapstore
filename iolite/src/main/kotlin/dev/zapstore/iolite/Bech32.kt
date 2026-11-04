@@ -59,9 +59,13 @@ fun String.decodeNaddr(): Naddr? {
 }
 
 /** Hex pubkey of an `nprofile`, or null when it is not one. */
-fun String.decodeNprofile(): String? {
+fun String.decodeNprofile(): String? = decodeNprofileWithRelays()?.first
+
+/** The pubkey of an `nprofile` and the relay hints it carries, in order; null when it is not one. */
+fun String.decodeNprofileWithRelays(): Pair<String, List<String>>? {
     val tlv = decodeTlv(decodeBech32("nprofile", this) ?: return null) ?: return null
-    return tlv[0]?.firstOrNull()?.takeIf { it.size == 32 }?.let(Hex::encode)
+    val pubkey = tlv[0]?.firstOrNull()?.takeIf { it.size == 32 }?.let(Hex::encode) ?: return null
+    return pubkey to tlv[1].orEmpty().map { it.toString(Charsets.UTF_8) }
 }
 
 private fun decodeTlv(bytes: ByteArray): Map<Int, List<ByteArray>>? {

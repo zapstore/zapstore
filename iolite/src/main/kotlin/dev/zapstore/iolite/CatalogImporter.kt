@@ -30,6 +30,19 @@ class CatalogImporter(
     private val device: DeviceProfile,
     private val nowSeconds: () -> Long = { System.currentTimeMillis() / 1_000 },
 ) {
+    /** The key that signed this bundle's manifest, or null when the bundle is unreadable or the manifest is not valid. */
+    fun manifestSigner(compressed: ByteArray): String? = runCatching {
+        val members = TarZstd.read(
+            ByteArrayInputStream(compressed),
+            maxCompressedBytes = config.maxCompressedBytes,
+            maxUncompressedBytes = config.maxUncompressedBytes,
+            maxMembers = config.maxMembers,
+            maxMemberBytes = config.maxUncompressedBytes,
+        )
+        val event = Event.parse(members.first().data.toString(Charsets.UTF_8))
+        event.pubkey.takeIf { event.kind == Kinds.Preferences && event.verify() }
+    }.getOrNull()
+
     /** A full snapshot (`from` 0) replaces the local catalog when its `to` is not behind the local epoch. */
     fun importBundle(catalogId: Long, compressed: ByteArray, endpoint: RelayUrl? = null): CatalogImportResult {
         val existing = store.catalog(catalogId)

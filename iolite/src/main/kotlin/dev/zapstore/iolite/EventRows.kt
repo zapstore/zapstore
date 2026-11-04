@@ -59,7 +59,7 @@ internal object EventRows {
             Kinds.CatalogRelayList -> {
                 if (context.deviceSigner?.publicKey != event.pubkey) return false
                 ifNewer(event, preferenceVersion(db, CATALOG_RELAY_LIST_KEY)) {
-                    upsertCatalogRelayList(db, event, context.deviceSigner)
+                    upsertCatalogList(tx, event, context.deviceSigner)
                     tx.touch(Table.Catalogs, Table.Preferences)
                 }
             }
@@ -294,33 +294,36 @@ internal object EventRows {
         upsertPreferenceRow(db, identifier, event)
     }
 
-    private fun upsertCatalogRelayList(db: SQLiteConnection, event: Event, deviceSigner: LocalSigner?) {
-        val publicUrls = event.tagValues("r").mapNotNull { runCatching { it.normalizeRelayUrl() }.getOrNull() }
-        val privateUrls = decryptJsonArray(event.content, deviceSigner)
-            .mapNotNull { runCatching { it.normalizeRelayUrl() }.getOrNull() }
-        db.execSQL("UPDATE catalogs SET position = NULL")
-        val seen = HashSet<String>()
-        var position = 0
-        fun select(url: RelayUrl, isPrivate: Boolean) {
-            if (!seen.add(url.url)) return
-            db.prepare(
-                """
-                INSERT INTO catalogs (relay_url, position, is_private, epoch)
-                VALUES (?, ?, ?, 0)
-                ON CONFLICT(relay_url) DO UPDATE SET
-                    position = excluded.position,
-                    is_private = excluded.is_private
-                """.trimIndent(),
-            ).use { statement ->
-                statement.bindText(1, url.url)
-                statement.bindLong(2, position.toLong())
-                statement.bindLong(3, if (isPrivate) 1 else 0)
-                statement.step()
-            }
-            position++
+    /** One catalog on a kind 10067 list: its key, and a relay that may hold its own kind 10067. */
+    private class ListedCatalog(val pubkey: String, val hint: RelayUrl?, val isPrivate: Boolean)
+
+    /**
+     * Makes the stored catalogs match the list: listed catalogs are kept or added in list order, public
+     * before private, and every other catalog is deleted with its listings. An empty list leaves none.
+     */
+    private fun upsertCatalogList(tx: Tx, event: Event, deviceSigner: LocalSigner?) {
+        val db = tx.db
+        // Private entries are `p` tags too; content that does not decrypt or parse counts as none.
+        val private = if (event.content.isBlank() || deviceSigner == null) {
+            emptyList()
+        } else {
+            runCatching { JSONArray(deviceSigner.decryptFromSelf(event.content)).toStringLists() }.getOrDefault(emptyList())
         }
-        publicUrls.forEach { select(it, false) }
-        privateUrls.forEach { select(it, true) }
+        val listed = LinkedHashMap<String, ListedCatalog>()
+        fun add(tag: List<String>, isPrivate: Boolean) {
+            if (tag.getOrNull(0) != "p") return
+            val pubkey = tag.getOrNull(1)?.lowercase()?.takeIf { Hex.isHex(it, 64) } ?: return
+            listed.putIfAbsent(pubkey, ListedCatalog(pubkey, tag.getOrNull(2)?.relayUrlOrNull(), isPrivate))
+        }
+        event.tags.forEach { add(it, false) }
+        private.forEach { add(it, true) }
+
+        CatalogRows.all(db).filter { it.manifestPubkey == null || it.manifestPubkey !in listed }
+            .forEach { CatalogRows.remove(tx, it) }
+        val ids = listed.values.map { catalog ->
+            CatalogRows.upsert(tx, catalog.pubkey, emptyList(), listOfNotNull(catalog.hint), catalog.isPrivate)
+        }
+        CatalogRows.setOrder(tx, ids)
         upsertPreferenceRow(db, CATALOG_RELAY_LIST_KEY, event)
     }
 

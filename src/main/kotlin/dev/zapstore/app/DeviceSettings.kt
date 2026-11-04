@@ -12,7 +12,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
-import org.json.JSONArray
 import org.json.JSONObject
 
 /** How often background updates run. [Never] turns them off. */
@@ -43,7 +42,7 @@ enum class SyncInterval(val minutes: Int) {
     ;
 
     companion object {
-        fun fromMinutes(minutes: Int): SyncInterval = entries.firstOrNull { it.minutes == minutes } ?: Hourly
+        fun fromMinutes(minutes: Int): SyncInterval = entries.firstOrNull { it.minutes == minutes } ?: FifteenMinutes
     }
 }
 
@@ -52,9 +51,8 @@ data class DeviceState(
     val backgroundUpdateInterval: UpdateInterval = UpdateInterval.Daily,
     val backgroundAutoUpdatesAnyNetwork: Boolean = false,
     val networkMode: NetworkMode = NetworkMode.TorOnly,
-    val trustedSigners: List<String> = emptyList(),
     val bugReports: Boolean = true,
-    val syncInterval: SyncInterval = SyncInterval.Hourly,
+    val syncInterval: SyncInterval = SyncInterval.FifteenMinutes,
 ) {
     val backgroundAutoUpdates: Boolean get() = backgroundUpdateInterval != UpdateInterval.Never
 
@@ -63,7 +61,6 @@ data class DeviceState(
         put("backgroundAutoUpdatesIntervalHours", backgroundUpdateInterval.hours)
         put("backgroundAutoUpdatesAnyNetwork", backgroundAutoUpdatesAnyNetwork)
         put("networkMode", if (networkMode == NetworkMode.DirectOnly) "direct" else "tor")
-        put("trustedSigners", JSONArray(trustedSigners))
         put("bugReports", bugReports)
         put("catalogSyncIntervalMinutes", syncInterval.minutes)
     }
@@ -87,9 +84,6 @@ data class DeviceState(
                 "tor" -> NetworkMode.TorOnly
                 else -> defaults.networkMode
             },
-            trustedSigners = json.optJSONArray("trustedSigners")?.let { array ->
-                (0 until array.length()).map { array.optString(it) }.filter { it.length == 64 }
-            } ?: defaults.trustedSigners,
             bugReports = json.optBoolean("bugReports", defaults.bugReports),
             syncInterval = if (json.has("catalogSyncIntervalMinutes")) {
                 SyncInterval.fromMinutes(json.optInt("catalogSyncIntervalMinutes"))
@@ -110,7 +104,9 @@ class DeviceSettings(
     private val scope: CoroutineScope,
     defaultMode: NetworkMode,
 ) {
-    private val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).also { stored ->
+        if (stored.contains(KEY_SIGNERS)) stored.edit().remove(KEY_SIGNERS).apply()
+    }
     private val _state = MutableStateFlow(load(defaultMode))
     val state: StateFlow<DeviceState> = _state.asStateFlow()
 
@@ -151,7 +147,6 @@ class DeviceSettings(
             .putString(KEY_MODE, state.networkMode.name)
             .putInt(KEY_INTERVAL, state.backgroundUpdateInterval.hours)
             .putBoolean(KEY_ANY_NETWORK, state.backgroundAutoUpdatesAnyNetwork)
-            .putString(KEY_SIGNERS, state.trustedSigners.joinToString(","))
             .putBoolean(KEY_REPORTS, state.bugReports)
             .putInt(KEY_SYNC, state.syncInterval.minutes)
             .apply()
@@ -166,9 +161,8 @@ class DeviceSettings(
         },
         backgroundAutoUpdatesAnyNetwork = prefs.getBoolean(KEY_ANY_NETWORK, false),
         networkMode = NetworkMode.fromStored(prefs.getString(KEY_MODE, defaultMode.name)),
-        trustedSigners = prefs.getString(KEY_SIGNERS, "").orEmpty().split(',').filter { it.length == 64 },
         bugReports = prefs.getBoolean(KEY_REPORTS, true),
-        syncInterval = SyncInterval.fromMinutes(prefs.getInt(KEY_SYNC, SyncInterval.Hourly.minutes)),
+        syncInterval = SyncInterval.fromMinutes(prefs.getInt(KEY_SYNC, SyncInterval.FifteenMinutes.minutes)),
     )
 
     private companion object {
@@ -179,6 +173,7 @@ class DeviceSettings(
         const val KEY_AUTO = "background_auto_updates"
         const val KEY_INTERVAL = "background_update_interval_hours"
         const val KEY_ANY_NETWORK = "background_any_network"
+        /** Leftover from the always-trust list. Dropped once; no longer read. */
         const val KEY_SIGNERS = "trusted_signers"
         const val KEY_REPORTS = "bug_reports"
         const val KEY_SYNC = "catalog_sync_interval_minutes"

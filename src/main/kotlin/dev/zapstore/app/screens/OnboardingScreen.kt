@@ -53,19 +53,22 @@ import dev.zapstore.app.ZapText
 import dev.zapstore.app.ZapText2
 import dev.zapstore.app.components.StatusText
 import dev.zapstore.app.components.ZapButton
+import dev.zapstore.app.components.ZapButtonStyle
 import dev.zapstore.app.components.ZapMotion
 import dev.zapstore.app.components.ZapTextLink
 import dev.zapstore.app.components.animationsEnabled
 import dev.zapstore.app.transport.NetworkMode
 
 /**
- * First-launch steps, one per screen. Every step has Skip. Permission steps hand off to Android
- * and move on by themselves once the permission is granted.
+ * First-launch steps, one per screen. Skip all ends onboarding right away. The Signer step has
+ * its own Cancel, since it is the only step Skip all cannot otherwise bypass individually.
+ * Permission steps hand off to Android and move on by themselves once the permission is granted.
  */
 @Composable
 fun OnboardingScreen(
     state: OnboardingUiState,
     onNext: () -> Unit,
+    onSkipAll: () -> Unit,
     onNetworkModeChange: (NetworkMode) -> Unit,
     onConnectSigner: () -> Unit,
     onOpenInstallSettings: () -> Unit,
@@ -85,7 +88,7 @@ fun OnboardingScreen(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             StepIndicator(state.index, state.steps.size, Modifier.weight(1f))
-            ZapTextLink(stringResource(R.string.onboarding_skip), onNext, Modifier.testTag("onboardingSkip"))
+            ZapTextLink(stringResource(R.string.onboarding_skip_all), onSkipAll, Modifier.testTag("onboardingSkip"))
         }
         AnimatedContent(
             targetState = step,
@@ -108,10 +111,14 @@ fun OnboardingScreen(
                     .padding(top = ZapSpacing.space8, bottom = ZapSpacing.space4)
                     .testTag("onboarding:${shown.name}"),
             ) {
+                val noSigner = shown == OnboardingStep.Signer && !state.hasSigner
                 StepIcon(shown.icon())
-                Text(stringResource(shown.title()), style = MaterialTheme.typography.headlineSmall)
                 Text(
-                    stringResource(if (shown == OnboardingStep.Signer && !state.hasSigner) R.string.onboarding_get_signer_body else shown.body()),
+                    stringResource(if (noSigner) R.string.onboarding_get_signer_title else shown.title()),
+                    style = MaterialTheme.typography.headlineSmall,
+                )
+                Text(
+                    stringResource(if (noSigner) R.string.onboarding_get_signer_body else shown.body()),
                     style = MaterialTheme.typography.bodyLarge,
                     color = ZapText2,
                 )
@@ -135,6 +142,14 @@ fun OnboardingScreen(
             loading = step == OnboardingStep.Signer && state.signer.busy,
             modifier = Modifier.fillMaxWidth().testTag("onboardingPrimary"),
         )
+        if (step == OnboardingStep.Signer) {
+            ZapButton(
+                text = stringResource(R.string.onboarding_cancel),
+                onClick = onNext,
+                style = ZapButtonStyle.Ghost,
+                modifier = Modifier.fillMaxWidth().padding(top = ZapSpacing.space1).testTag("onboardingCancelSigner"),
+            )
+        }
     }
 }
 

@@ -84,6 +84,27 @@ fun InstalledApp.otherStore(ourPackage: String): String? = otherStore(installing
 
 fun AvailableUpdate.otherStore(ourPackage: String): String? = otherStore(installingPackage, updateOwner, ourPackage)
 
+/** Why Android must ask before an update Zapstore may install. Zapstore owns the app after the first one. */
+enum class ManualReason {
+    /** Below Android 12 every update shows the installer dialog. */
+    OldAndroid,
+    /** Installed from an APK file. */
+    Sideloaded,
+    /** Installed over adb. */
+    Adb,
+    /** Android does not say who installed it. */
+    UnknownInstaller,
+}
+
+/** Null when Zapstore installed the app and Android lets it update silently. */
+fun AvailableUpdate.manualReason(ourPackage: String, silentSupported: Boolean): ManualReason? = when {
+    !silentSupported -> ManualReason.OldAndroid
+    installingPackage == ourPackage -> null
+    installingPackage == "com.android.shell" -> ManualReason.Adb
+    installingPackage in sideloaders -> ManualReason.Sideloaded
+    else -> ManualReason.UnknownInstaller
+}
+
 /** A catalog app another store installed. [update] is set when the catalog build can replace it. */
 data class StoreApp(
     val app: AppRecord,

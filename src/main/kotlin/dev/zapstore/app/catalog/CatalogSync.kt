@@ -4,7 +4,12 @@ import dev.zapstore.app.AppLog
 import android.os.SystemClock
 import dev.zapstore.app.AppConfig
 import dev.zapstore.app.BuildConfig
+import dev.zapstore.iolite.CatalogRecord
+import dev.zapstore.iolite.CatalogReference
+import dev.zapstore.iolite.CatalogSyncResult
 import dev.zapstore.iolite.Iolite
+import dev.zapstore.iolite.toNpub
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
@@ -93,45 +98,129 @@ class CatalogSync(
         scope.launch { sync() }
     }
 
+    /** The key that signed the bundled snapshot. A catalog with this key is the only one the snapshot is imported into. */
+    private val snapshotKey: String? by lazy { iolite.bundleSigner(bundledSnapshot) }
+
+    /**
+     * The Zapstore catalog's key: the bundled snapshot's signer, or, in a build without a snapshot, the key
+     * of the catalog fetched from the build-time relay. Null while neither is known. It does not change
+     * with the user's list, so it names Zapstore even after the user removes it.
+     */
+    fun defaultCatalogKey(): String? =
+        snapshotKey ?: iolite.allCatalogs().firstOrNull { AppConfig.catalogRelay in it.relays }?.manifestPubkey
+
+    /** What one pass over the user's catalogs pulled. */
+    private class Pass(var bytes: Long = 0, var changed: Boolean = false, val errors: MutableList<String> = mutableListOf())
+
+    /**
+     * Syncs every catalog on the user's list, in order. One that fails does not stop the rest; the status
+     * carries the first failure. With no catalogs there is nothing to fetch, and that is not an error.
+     */
     suspend fun sync() {
         mutex.withLock {
             _status.update { it.copy(syncing = true, error = null) }
             var elapsedMs: Long? = null
-            val result = runCatching {
+            val pass = Pass()
+            val failure = runCatching {
                 withContext(Dispatchers.IO) {
                     val started = SystemClock.elapsedRealtime()
-                    val pulled = iolite.syncCatalog(
-                        catalogId = iolite.selectedCatalog()?.id ?: 1L,
-                        useOnion = useOnion(),
-                        bundled = bundledSnapshot,
-                        endpoint = AppConfig.catalogRelay,
-                        client = BuildConfig.VERSION_NAME,
-                    )
+                    syncAll(pass)
                     elapsedMs = SystemClock.elapsedRealtime() - started
                     AppLog.i(
                         TAG,
-                        "catalog sync ${elapsedMs}ms imported=${pulled.imported?.let { "${it.from}->${it.to}" } ?: "304"} bytes=${pulled.bytes} apps=${iolite.apps().size}",
+                        "catalog sync ${elapsedMs}ms changed=${pass.changed} bytes=${pass.bytes} catalogs=${iolite.catalogs().size} apps=${iolite.apps().size}",
                     )
-                    pulled.imported?.skipped?.takeIf { it.isNotEmpty() }?.let { skipped ->
-                        AppLog.w(TAG, "catalog sync skipped ${skipped.size}: ${skipped.take(MAX_LOGGED_SKIPS).joinToString("; ")}")
-                    }
-                    pulled
                 }
-            }
-            result.exceptionOrNull()?.let { AppLog.w(TAG, "catalog sync failed", it) }
+            }.exceptionOrNull()
+            if (failure is CancellationException) throw failure
+            failure?.let { AppLog.w(TAG, "catalog sync failed", it) }
             refreshInstalledApps()
+            val error = failure?.let { it.message ?: it::class.simpleName } ?: pass.errors.firstOrNull()
+            val succeeded = error == null
             _status.update {
-                val pulled = result.getOrNull()
                 it.copy(
                     syncing = false,
-                    lastSyncedAtMillis = if (result.isSuccess) now() else it.lastSyncedAtMillis,
-                    lastSyncDurationMillis = if (result.isSuccess) elapsedMs else it.lastSyncDurationMillis,
-                    lastSyncBytes = pulled?.bytes ?: it.lastSyncBytes,
-                    lastSyncNotModified = pulled?.notModified ?: it.lastSyncNotModified,
-                    error = result.exceptionOrNull()?.let { failure -> failure.message ?: failure::class.simpleName },
+                    lastSyncedAtMillis = if (succeeded) now() else it.lastSyncedAtMillis,
+                    lastSyncDurationMillis = if (succeeded) elapsedMs else it.lastSyncDurationMillis,
+                    lastSyncBytes = if (failure == null) pass.bytes else it.lastSyncBytes,
+                    lastSyncNotModified = if (failure == null) !pass.changed else it.lastSyncNotModified,
+                    error = error,
                 )
             }
         }
+    }
+
+    private suspend fun syncAll(pass: Pass) {
+        if (iolite.needsDefaultCatalog()) seedDefault(pass)
+        for (catalog in iolite.catalogs()) {
+            try {
+                record(pass, syncOne(catalog))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                AppLog.w(TAG, "catalog ${label(catalog)} failed", failure)
+                pass.errors += "${label(catalog)}: ${failure.message ?: failure::class.simpleName}"
+            }
+        }
+    }
+
+    /**
+     * First run: the bundled catalog becomes the list. A build without the snapshot asks the build-time
+     * relay for the whole catalog instead, and the first bundle names its key.
+     */
+    private fun seedDefault(pass: Pass) {
+        if (iolite.seedDefaultCatalog(bundledSnapshot, AppConfig.catalogRelay) != null) return
+        try {
+            record(pass, iolite.syncCatalog(catalogId = 1L, useOnion = useOnion(), endpoint = AppConfig.catalogRelay, client = BuildConfig.VERSION_NAME))
+        } catch (failure: Exception) {
+            AppLog.w(TAG, "default catalog failed", failure)
+            pass.errors += "${AppConfig.catalogRelay.url}: ${failure.message ?: failure::class.simpleName}"
+        }
+    }
+
+    private suspend fun syncOne(listed: CatalogRecord): CatalogSyncResult {
+        val catalog = iolite.ensureCatalogRelays(listed)
+        val isDefault = catalog.manifestPubkey != null && catalog.manifestPubkey == snapshotKey
+        return iolite.syncCatalog(
+            catalogId = catalog.id,
+            useOnion = useOnion(),
+            bundled = if (isDefault) bundledSnapshot else ByteArray(0),
+            endpoint = if (isDefault) AppConfig.catalogRelay else null,
+            client = BuildConfig.VERSION_NAME,
+        )
+    }
+
+    private fun record(pass: Pass, pulled: CatalogSyncResult) {
+        pass.bytes += pulled.bytes
+        if (!pulled.notModified) pass.changed = true
+        pulled.imported?.skipped?.takeIf { it.isNotEmpty() }?.let { skipped ->
+            AppLog.w(TAG, "catalog sync skipped ${skipped.size}: ${skipped.take(MAX_LOGGED_SKIPS).joinToString("; ")}")
+        }
+    }
+
+    private fun label(catalog: CatalogRecord): String =
+        catalog.relayUrl?.url ?: catalog.manifestPubkey?.toNpub()?.let { "${it.take(12)}…" } ?: "catalog ${catalog.id}"
+
+    /**
+     * Adds the catalog [reference] names to the end of the list and syncs it. Throws when no relay serves
+     * a kind 10067 for its key, or none gives a bundle that key signed, so a mistyped key is refused
+     * rather than listed.
+     */
+    suspend fun addCatalog(reference: CatalogReference): CatalogRecord {
+        val catalog = iolite.addCatalog(reference.pubkey, reference.hints, client = BuildConfig.VERSION_NAME, useOnion = useOnion())
+        request(force = true)
+        return catalog
+    }
+
+    /** Removes the catalog and what was downloaded from it. The last one can go too, which empties the app. */
+    suspend fun removeCatalog(id: Long) {
+        mutex.withLock { withContext(Dispatchers.IO) { iolite.removeCatalog(id) } }
+        refreshInstalledApps()
+    }
+
+    /** Moves the catalog [delta] places along the list; where two list one app, the earlier one supplies it. */
+    suspend fun moveCatalog(id: Long, delta: Int) {
+        mutex.withLock { withContext(Dispatchers.IO) { iolite.moveCatalog(id, delta) } }
     }
 
     suspend fun wipe() {

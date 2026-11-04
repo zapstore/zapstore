@@ -19,29 +19,26 @@ import org.junit.Test
 
 class IoliteContractsTest {
     @Test
-    fun catalogRelayListDoesNotPinFromTheNetwork() = runBlocking {
+    fun catalogListNamesCatalogsByKeyAndNeverFetches() = runBlocking {
         val signer = LocalSigner(SECRET)
-        val extra = "wss://relay.example.com"
-        val privateRelay = "wss://private.example"
-        val http = HttpTransport { _, _ -> error("catalog relay list must not fetch NIP-11") }
+        val http = HttpTransport { _, _ -> error("catalog list must not fetch") }
         withIolite(http = http, signer = signer) { iolite ->
-            val content = signer.encryptToSelf(JSONArray().put(privateRelay).toString())
+            val content = signer.encryptToSelf(JSONArray().put(JSONArray(listOf("p", KEY_C))).toString())
             val event = signer.sign(
                 1_700_000_100,
                 Kinds.CatalogRelayList,
-                listOf(listOf("r", "wss://relay.zapstore.dev"), listOf("r", extra)),
+                listOf(listOf("p", KEY_A, "wss://relay.example.com"), listOf("p", KEY_B)),
                 content,
             )
             iolite.ingest(listOf(event))
             val selected = iolite.catalogs()
-            assertEquals(
-                listOf("wss://relay.zapstore.dev", extra, privateRelay),
-                selected.map { it.relayUrl.url },
-            )
+            assertEquals(listOf(KEY_A, KEY_B, KEY_C), selected.map { it.manifestPubkey })
             assertEquals(listOf(false, false, true), selected.map { it.isPrivate })
-            assertTrue(selected.all { it.manifestPubkey == null })
+            assertEquals(listOf(0, 1, 2), selected.map { it.position })
+            assertEquals(listOf("wss://relay.example.com"), selected.first().hints.map { it.url })
+            assertTrue(selected.all { it.relays.isEmpty() && it.relayUrl == null })
             delay(80)
-            assertTrue(iolite.allCatalogs().all { it.manifestPubkey == null })
+            assertEquals(3, iolite.allCatalogs().size)
         }
     }
 
@@ -80,12 +77,11 @@ class IoliteContractsTest {
     fun rehydrateCatalogPreferencesAndStack() = runBlocking {
         val signer = LocalSigner(SECRET)
         withIolite(signer = signer) { iolite ->
-            val privateRelay = "wss://private.example"
             val list = signer.sign(
                 1_700_000_100,
                 Kinds.CatalogRelayList,
-                listOf(listOf("r", "wss://relay.zapstore.dev")),
-                signer.encryptToSelf(JSONArray().put(privateRelay).toString()),
+                listOf(listOf("p", KEY_A, "wss://relay.zapstore.dev")),
+                signer.encryptToSelf(JSONArray().put(JSONArray(listOf("p", KEY_B))).toString()),
             )
             iolite.ingest(listOf(list))
             iolite.ingest(
@@ -112,12 +108,10 @@ class IoliteContractsTest {
 
             val restoredList = iolite.rehydrateCatalogRelayList()
             assertTrue(restoredList.id != list.id)
-            assertEquals(listOf("wss://relay.zapstore.dev"), restoredList.tagValues("r"))
+            assertEquals(listOf(listOf("p", KEY_A, "wss://relay.zapstore.dev")), restoredList.tags)
             assertEquals(
-                listOf(privateRelay),
-                JSONArray(signer.decryptFromSelf(restoredList.content)).let { array ->
-                    List(array.length()) { array.getString(it) }
-                },
+                listOf(listOf("p", KEY_B)),
+                JSONArray(signer.decryptFromSelf(restoredList.content)).toStringLists(),
             )
 
             val restoredPrefs = iolite.rehydratePreferences("ui", signer)
@@ -728,6 +722,9 @@ class IoliteContractsTest {
 
     companion object {
         private val SECRET = Hex.decode("0000000000000000000000000000000000000000000000000000000000000001")
+        private val KEY_A = "aa".repeat(32)
+        private val KEY_B = "bb".repeat(32)
+        private val KEY_C = "cc".repeat(32)
     }
 }
 

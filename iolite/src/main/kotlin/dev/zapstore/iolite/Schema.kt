@@ -22,13 +22,15 @@ internal object Schema {
         """.trimIndent(),
         """
         CREATE TABLE catalogs (
-            id          INTEGER PRIMARY KEY,
-            relay_url   TEXT NOT NULL UNIQUE,
+            -- Never reused, so an icon folder named by id cannot belong to a later catalog.
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            relay_url   TEXT,
             position    INTEGER UNIQUE,
             is_private  INTEGER NOT NULL DEFAULT 0 CHECK (is_private IN (0, 1)),
-            manifest_pubkey BLOB,
+            manifest_pubkey BLOB UNIQUE,
             epoch       INTEGER NOT NULL DEFAULT 0,
-            endpoints   TEXT NOT NULL DEFAULT '[]'
+            endpoints   TEXT NOT NULL DEFAULT '[]',
+            hints       TEXT NOT NULL DEFAULT '[]'
         )
         """.trimIndent(),
         """

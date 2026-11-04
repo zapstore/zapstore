@@ -78,6 +78,14 @@ class Iolite private constructor(
 
     fun observeApp(appId: String): Flow<AppRecord?> = observe(APP_TABLES) { it.app(appId) }
 
+    /** Stacks shipped by the catalogs signed by [authors] that match [query], best match first. Local only. See [searchStacks]. */
+    fun observeStackMatches(authors: List<String>, query: String, limit: Int): Flow<List<StackRecord>> =
+        observe(setOf(Table.Stacks)) { searchStacks(it.catalogStacks(authors), query, limit) }
+
+    /** Developers whose stored profile name or npub holds [query], best match first, as hex keys. See [IoliteStore.developers]. */
+    fun observeDevelopers(query: String, limit: Int): Flow<List<String>> =
+        observe(APP_TABLES + Table.Profiles) { it.developers(query, limit) }
+
     fun apps(filter: AppFilter = AppFilter()): List<AppRecord> = store.apps(filter)
 
     fun app(appId: String): AppRecord? = store.app(appId)
@@ -98,6 +106,157 @@ class Iolite private constructor(
     fun selectedCatalog(): CatalogRecord? = store.selectedCatalogs().firstOrNull()
 
     fun observeCatalogs(): Flow<List<CatalogRecord>> = observe(setOf(Table.Catalogs)) { it.selectedCatalogs() }
+
+    // --- the user's catalogs ------------------------------------------------------------------------
+    // A catalog is its key. The selected ones are an ordered list: where two list the same app, the
+    // first supplies it. The list is the device's kind 10067, so a restored key brings it back.
+
+    /** The key that signed [bundle]'s manifest, or null when it is not a valid bundle. */
+    fun bundleSigner(bundle: ByteArray): String? = importer.manifestSigner(bundle)
+
+    /**
+     * Makes the bundled catalog the only one on the list, once. Does nothing when the list was ever
+     * decided, even to leave it empty, or when a catalog is stored. Returns the catalog it added.
+     */
+    fun seedDefaultCatalog(bundled: ByteArray, endpoint: RelayUrl): CatalogRecord? {
+        checkOpen()
+        val key = bundleSigner(bundled) ?: return null
+        return store.seedCatalog(key, endpoint)
+    }
+
+    /** True when the list was never decided and no catalog is stored. */
+    fun needsDefaultCatalog(): Boolean = !store.catalogListDecided() && store.allCatalogs().isEmpty()
+
+    /**
+     * Where the catalog [pubkey] lives: the `r` tags of its own kind 10067, read from [hints], then
+     * from the outbox relays of its kind 10002. Null when none of them has it.
+     */
+    suspend fun resolveCatalog(pubkey: String, hints: Set<RelayUrl> = emptySet()): List<RelayUrl>? {
+        checkOpen()
+        val key = pubkey.lowercase()
+        suspend fun addressesAt(relays: Set<RelayUrl>): List<RelayUrl>? {
+            if (relays.isEmpty()) return null
+            val filter = Filter(authors = listOf(key), kinds = listOf(Kinds.CatalogRelayList), limit = 1)
+            val event = fetch(listOf(filter), relays, config.relayListTimeout)
+                .filter { it.kind == Kinds.CatalogRelayList && it.pubkey == key }
+                .maxByOrNull { it.createdAt } ?: return null
+            return event.tagValues("r").mapNotNull { it.relayUrlOrNull() }.distinct().takeIf { it.isNotEmpty() }
+        }
+        addressesAt(hints)?.let { return it }
+        val indexers = config.indexerRelays.ifEmpty { writeRelays }
+        if (indexers.isEmpty()) return null
+        val list = fetch(listOf(Filter(authors = listOf(key), kinds = listOf(Kinds.RelayList), limit = 1)), indexers, config.relayListTimeout)
+            .filter { it.kind == Kinds.RelayList && it.pubkey == key }
+            .maxByOrNull { it.createdAt } ?: return null
+        val outboxes = Mailboxes.parse(list.tags).outboxes.take(config.maxRelaysPerUser).toSet()
+        return addressesAt(outboxes - hints)
+    }
+
+    /**
+     * Fills in the addresses of a catalog that arrived on a restored list with only its key. Throws
+     * [CatalogImportException] when they cannot be found; the catalog stays listed and is tried again.
+     */
+    suspend fun ensureCatalogRelays(catalog: CatalogRecord): CatalogRecord {
+        if (catalog.relays.isNotEmpty()) return catalog
+        val key = catalog.manifestPubkey ?: return catalog
+        val relays = resolveCatalog(key, catalog.hints.toSet())
+            ?: throw CatalogImportException("catalog ${key.toNpub()} was not found")
+        store.setCatalogRelays(catalog.id, relays)
+        return store.catalog(catalog.id) ?: catalog
+    }
+
+    /**
+     * Adds the catalog [pubkey] to the end of the list and publishes the list. Its addresses are found,
+     * then a full bundle (`from=0`) is pulled and must be signed by [pubkey]; only then is the catalog
+     * stored, with that bundle imported. A key nobody serves, or one whose relays give no valid bundle,
+     * is refused with [CatalogImportException] and nothing changes. [client] is the `v` query and
+     * [useOnion] prefers a Tor address. Returns the stored catalog, which is already selected, when it
+     * was on the list.
+     */
+    suspend fun addCatalog(
+        pubkey: String,
+        hints: Set<RelayUrl> = emptySet(),
+        client: String = "",
+        useOnion: Boolean = false,
+    ): CatalogRecord {
+        checkOpen()
+        val key = pubkey.lowercase()
+        require(Hex.isHex(key, 64)) { "catalog key must be 32-byte hex" }
+        store.catalogByPubkey(key)?.takeIf { it.position != null }?.let { return it }
+        val relays = resolveCatalog(key, hints) ?: throw CatalogImportException("no catalog was found for ${key.toNpub()}")
+        return addCatalogAt(key, relays, hints, client, useOnion)
+    }
+
+    /** The bundle check and the storing behind [addCatalog], once the catalog's [relays] are known. */
+    internal suspend fun addCatalogAt(
+        key: String,
+        relays: List<RelayUrl>,
+        hints: Set<RelayUrl>,
+        client: String,
+        useOnion: Boolean,
+    ): CatalogRecord {
+        val catalog = withContext(Dispatchers.IO) {
+            val bundle = pullFirstBundle(key, relays, client, useOnion)
+            val stored = store.addCatalog(key, relays, hints.toList())
+            try {
+                importCatalogUpdate(stored.id, bundle)
+            } catch (failure: Exception) {
+                store.removeCatalog(stored.id)
+                throw if (failure is CatalogImportException) failure else CatalogImportException(failure.message ?: "bundle was not accepted")
+            }
+            stored
+        }
+        publishCatalogList()
+        return store.catalog(catalog.id) ?: catalog
+    }
+
+    /** The first full bundle any of [relays] serves that [key] signed. Throws [CatalogImportException] when none does. */
+    private fun pullFirstBundle(key: String, relays: List<RelayUrl>, client: String, useOnion: Boolean): ByteArray {
+        val httpClient = http ?: throw CatalogImportException("HTTP transport is required to check a catalog")
+        val ordered = relays.sortedBy { relay -> if (relay.isOnion == useOnion) 0 else 1 }
+        val failures = mutableListOf<String>()
+        for (relay in ordered) {
+            try {
+                val response = httpClient.get(relay.bundleUrl(0, client), emptyMap())
+                val body = response.body
+                when {
+                    response.status != 200 -> failures += "${relay.url}: HTTP ${response.status}"
+                    body == null || body.isEmpty() -> failures += "${relay.url}: empty bundle"
+                    importer.manifestSigner(body) != key -> failures += "${relay.url}: bundle is not signed by ${key.toNpub()}"
+                    else -> return body
+                }
+            } catch (failure: Exception) {
+                failures += "${relay.url}: ${failure.message ?: failure::class.simpleName}"
+            }
+        }
+        throw CatalogImportException("no bundle from catalog ${key.toNpub()} (${failures.joinToString("; ")})")
+    }
+
+    /** Removes the catalog and what was downloaded from it, then publishes the list. False when it is not stored. */
+    suspend fun removeCatalog(id: Long): Boolean {
+        checkOpen()
+        if (!store.removeCatalog(id)) return false
+        publishCatalogList()
+        return true
+    }
+
+    /** Moves a catalog [delta] places along the list (negative is earlier) and publishes the list. */
+    suspend fun moveCatalog(id: Long, delta: Int): Boolean {
+        checkOpen()
+        if (!store.moveCatalog(id, delta)) return false
+        publishCatalogList()
+        return true
+    }
+
+    /**
+     * Publishes the selected catalogs as the device's kind 10067. Without a device key the list lives
+     * on this phone only.
+     */
+    suspend fun publishCatalogList(): Event? {
+        val signer = deviceSigner ?: return null
+        val (tags, content) = store.catalogRelayListTemplate(signer)
+        return publish(Kinds.CatalogRelayList, tags, content, signer)
+    }
 
     fun importCatalogUpdate(catalogId: Long, bundle: ByteArray, endpoint: RelayUrl? = null): CatalogImportResult {
         checkOpen()
@@ -263,6 +422,11 @@ class Iolite private constructor(
      * so two quick edits could keep the older one.
      */
     private fun afterStored(kind: Int, pubkey: String, tags: List<List<String>>, createdAt: Long): Long {
+        if (kind == Kinds.CatalogRelayList) {
+            // Replaceable with no `d`: the stored list is the device's own.
+            val stored = store.catalogListUpdatedAt() ?: return createdAt
+            return maxOf(createdAt, stored + 1)
+        }
         val identifier = tags.firstOrNull { it.size > 1 && it[0] == "d" }?.get(1) ?: return createdAt
         val stored = store.storedCreatedAt(kind, pubkey, identifier) ?: return createdAt
         return maxOf(createdAt, stored + 1)
@@ -486,11 +650,8 @@ class Iolite private constructor(
         return publish(Kinds.AppStack, tags, content, signer)
     }
 
-    suspend fun rehydrateCatalogRelayList(): Event {
-        val signer = deviceSigner ?: error("device signer is required to rehydrate kind 10067")
-        val (tags, content) = store.catalogRelayListTemplate(signer)
-        return publish(Kinds.CatalogRelayList, tags, content, signer)
-    }
+    suspend fun rehydrateCatalogRelayList(): Event =
+        publishCatalogList() ?: error("device signer is required to rehydrate kind 10067")
 
     suspend fun rehydratePreferences(identifier: String, signer: Signer): Event {
         val (tags, content) = store.preferenceTemplate(identifier)
@@ -740,7 +901,7 @@ class Iolite private constructor(
         sentTo.keys.retainAll(ids)
         publishAcks.keys.retainAll(ids)
         if (pending.isEmpty()) return
-        val catalogRelays = store.selectedCatalogs().map { it.relayUrl }.toSet()
+        val catalogRelays = store.selectedCatalogs().mapNotNull { it.relayUrl }.toSet()
         val mailboxes = store.mailboxes(pending.flatMap { listOf(it.pubkey) + RelayRouting.recipients(it) })
         for (event in pending) {
             val work = Pow.required(event.kind, event.content)

@@ -100,6 +100,19 @@ class InstalledAppsTest {
         assertEquals("org.fdroid.fdroid", groups.otherStores.first { it.app.appId == "dev.owned" }.store)
         assertEquals(listOf("com.other"), groups.otherInstalled.map { it.packageId })
     }
+
+    @Test
+    fun `a manual update names why Android asks`() {
+        val listed = app("dev.one", "One", "1.1", 11, certificateHash = "aa")
+        fun reason(installer: String?, silentSupported: Boolean = true) =
+            AvailableUpdate(listed, "1.0", 10, installingPackage = installer).manualReason("dev.zapstore.app", silentSupported)
+
+        assertEquals(null, reason("dev.zapstore.app"))
+        assertEquals(ManualReason.OldAndroid, reason("dev.zapstore.app", silentSupported = false))
+        assertEquals(ManualReason.Sideloaded, reason("com.google.android.packageinstaller"))
+        assertEquals(ManualReason.Adb, reason("com.android.shell"))
+        assertEquals(ManualReason.UnknownInstaller, reason(null))
+    }
 }
 
 internal fun app(

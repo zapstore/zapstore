@@ -65,15 +65,18 @@ class CatalogImporterTest {
     }
 
     @Test
-    fun wipeClearsAppsAndEpoch() {
+    fun wipeClearsAppsAndEpochButKeepsTheCatalog() {
         withStore { store, importer ->
             importer.importBundle(1, golden("bundle-0-1.tar.zst"), localRelay)
             assertEquals(1, store.catalog(1)!!.epoch)
             assertEquals(1, store.apps().size)
+            val key = store.catalog(1)!!.manifestPubkey
             store.wipe()
             assertEquals(0, store.catalog(1)!!.epoch)
             assertEquals(0, store.apps().size)
-            assertNull(store.catalog(1)!!.manifestPubkey)
+            // The catalog is a choice of the user: its key and place stay, and the bundle is fetched again.
+            assertEquals(key, store.catalog(1)!!.manifestPubkey)
+            assertEquals(0, store.catalog(1)!!.position)
             assertEquals(listOf("ws://127.0.0.1:3334"), store.catalog(1)!!.relays.map { it.url })
         }
     }
@@ -329,7 +332,7 @@ class CatalogImporterTest {
                 listOf("wss://relay.zapstore.dev", "ws://abcdefghijklmnopqrstuvwxyz234567.onion"),
                 catalog.relays.map { it.url },
             )
-            assertEquals("wss://relay.zapstore.dev", catalog.relayUrl.url)
+            assertEquals("wss://relay.zapstore.dev", catalog.relayUrl?.url)
         }
     }
 
@@ -386,6 +389,34 @@ class CatalogImporterTest {
             ),
             requested,
         )
+        iolite.close()
+        scope.coroutineContext.job.cancel()
+    }
+
+    @Test
+    fun seededDefaultTakesItsKeyFromTheBundleAndIsOnlySeededOnce() = runBlocking {
+        val dir = File("build/tmp/iolite-seed-${System.nanoTime()}").apply { mkdirs() }
+        val scope = CoroutineScope(SupervisorJob())
+        val http = HttpTransport { _, _ -> HttpResponse(304, emptyMap(), null) }
+        val iolite = Iolite.createForTesting(
+            databasePath = File(dir, "iolite.db").absolutePath,
+            parentScope = scope,
+            http = http,
+            openConnection = ::JdbcSqliteConnection,
+        )
+        val bundle = golden("bundle-0-1.tar.zst")
+        assertTrue(iolite.needsDefaultCatalog())
+        val seeded = iolite.seedDefaultCatalog(bundle, localRelay)!!
+        assertEquals(iolite.bundleSigner(bundle), seeded.manifestPubkey)
+        assertEquals(0, seeded.epoch)
+        assertEquals(0, seeded.position)
+        assertEquals(listOf(localRelay.url), seeded.relays.map { it.url })
+        assertNull(iolite.seedDefaultCatalog(bundle, localRelay))
+        assertNull(iolite.bundleSigner(byteArrayOf(1, 2, 3)))
+
+        iolite.syncCatalog(catalogId = seeded.id, bundled = bundle)
+        assertEquals(1, iolite.apps().size)
+        assertEquals(seeded.manifestPubkey, iolite.catalogs().single().manifestPubkey)
         iolite.close()
         scope.coroutineContext.job.cancel()
     }
@@ -1103,6 +1134,9 @@ class CatalogImporterTest {
         private val clientFixturesDir: File by lazy { writeClientFixtures() }
 
         private fun clientFixtures(): File = clientFixturesDir
+
+        /** A generated bundle, such as `bundle-0-1.tar.zst`, for other tests that need real catalog bytes. */
+        internal fun goldenBundle(name: String): ByteArray = File(clientFixturesDir, name).readBytes()
 
         /** Same files the webapp imports: tests/fixtures/bundle-<from>-<to>.tar.zst. */
         private fun writeClientFixtures(): File {

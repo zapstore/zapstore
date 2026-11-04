@@ -20,14 +20,19 @@ enum class Table {
 
 data class CatalogRecord(
     val id: Long,
-    /** Canonical endpoint: the first clearnet endpoint, or the first endpoint when every one is onion. */
-    val relayUrl: RelayUrl,
+    /**
+     * Canonical endpoint: the first clearnet endpoint, or the first endpoint when every one is onion.
+     * Null while the catalog's addresses are not known yet.
+     */
+    val relayUrl: RelayUrl?,
     /** Clearnet and Tor addresses for this catalog. */
     val relays: List<RelayUrl>,
     val position: Int?,
     val isPrivate: Boolean,
     val manifestPubkey: String?,
     val epoch: Long,
+    /** Relays that may hold this catalog's kind 10067, asked when [relays] is empty. */
+    val hints: List<RelayUrl> = emptyList(),
 ) {
     /** Onion when Tor is in use and one is published; otherwise the first clearnet endpoint. */
     fun syncRelay(useOnion: Boolean): RelayUrl {
@@ -70,6 +75,16 @@ data class CertificateProof(
     /** The exact UTF-8 message the certificate key signed. */
     fun message(): String =
         "Verifying at $createdAt until $expiry that I control the following Nostr public key: $pubkey"
+}
+
+/** Who the app page header names on the second line. */
+enum class AppByline {
+    /** A C1 proof owner. */
+    Verified,
+    /** The listing signer, with no proof the app is theirs. */
+    Unverified,
+    /** The catalog key signed the listing. */
+    Indexed,
 }
 
 class AppRecord(
@@ -146,14 +161,36 @@ class AppRecord(
     /** The C1 owner of the current certificate, the only claim of authorship. Null without a current proof. */
     val authorPubkey: String? get() = proofPubkey?.takeUnless { it == catalogManifestPubkey }
 
+    /**
+     * Who the header names. A proof owner, else the listing signer when that is not the catalog,
+     * else the indexer.
+     */
+    val byline: AppByline
+        get() = when {
+            authorPubkey != null -> AppByline.Verified
+            !isCatalogSigned -> AppByline.Unverified
+            else -> AppByline.Indexed
+        }
+
+    /** The pubkey [byline] names. Null only when an indexed row has no catalog key. */
+    val bylinePubkey: String?
+        get() = when (byline) {
+            AppByline.Verified -> authorPubkey
+            AppByline.Unverified -> eventPubkey
+            AppByline.Indexed -> catalogManifestPubkey
+        }
+
     val description: String get() = metadata.optString("description").ifBlank { summary }
 
+    /** The listing event's own text. Empty when the developer published none. Does not fall back to [summary]. */
+    val listing: String get() = metadata.optString("description")
+
     /**
-     * One line for listing rows: the summary, else the generated [about], else the first plain
-     * paragraph of the developer description. Empty only when the listing has none of them.
+     * One line for listing rows: the first paragraph of the generated [about], else of the developer's
+     * [listing] description, else the listing's [summary] tag. Empty only when it has none of them.
      */
     val tagline: String by lazy(LazyThreadSafetyMode.NONE) {
-        summary.trim().ifEmpty { plainParagraph(about) }.ifEmpty { plainParagraph(metadata.optString("description")) }
+        plainParagraph(about).ifEmpty { plainParagraph(listing) }.ifEmpty { summary.trim() }
     }
 
     /** Notices before a line that is only `---`. Empty when the prose has no separator. */
@@ -193,6 +230,10 @@ class AppRecord(
     val downloadUrl: String? get() = metadata.string("download_url")
     val apkHash: String? get() = metadata.string("apk_hash")
     val releaseNotes: String get() = metadata.optString("release_notes")
+    /** The release APK's byte count, from the asset's `size` tag. Zero when unknown. */
+    val sizeBytes: Long get() = metadata.optLong("size", 0L)
+    /** `sizeBytes` as "1.2 MB", "840 KB", or "900 B". Empty when [sizeBytes] is zero. */
+    val sizeLabel: String get() = sizeBytes.takeIf { it > 0 }?.let(::formatBytes).orEmpty()
 
     /**
      * Fact rows from the security file, in file order, one row per key.
@@ -474,6 +515,8 @@ data class CommentRecord(
     val appId: String?,
     val root: String?,
     val parentEventId: String?,
+    /** The app version the comment was written on (its `v` tag), when it names one. */
+    val version: String? = null,
 ) {
     /** The pubkey in [root], when it is an app coordinate. */
     val rootPubkey: String? get() = root?.let(AppCoordinate::parse)?.pubkey
@@ -514,6 +557,13 @@ interface WebSocketListener {
 
 fun interface WebSocketFactory {
     fun open(url: String, listener: WebSocketListener): WebSocketSession
+}
+
+/** Matches the web app's `formatBytes`: whole megabytes to one decimal, else whole kilobytes, else bytes. */
+private fun formatBytes(bytes: Long): String = when {
+    bytes >= 1_000_000 -> "%.1f MB".format(java.util.Locale.ROOT, bytes / 1_000_000.0)
+    bytes >= 1_000 -> "${Math.round(bytes / 1_000.0)} KB"
+    else -> "$bytes B"
 }
 
 internal fun JSONObject.string(key: String): String? = optString(key).takeIf { it.isNotBlank() }

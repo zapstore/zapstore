@@ -1,7 +1,6 @@
 package dev.zapstore.app.screens
 
 import dev.zapstore.app.SyncInterval
-import dev.zapstore.app.Toasts
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -22,15 +21,10 @@ import dev.zapstore.app.transport.NetworkMode
 import dev.zapstore.app.transport.NetworkRuntime
 import dev.zapstore.app.transport.TorRuntimeState
 import dev.zapstore.iolite.CatalogRecord
+import dev.zapstore.iolite.CatalogReference
 import dev.zapstore.iolite.Iolite
 import dev.zapstore.iolite.toNpub
-import dev.zapstore.app.AppConfig
-import dev.zapstore.iolite.ProfileRecord
-import dev.zapstore.iolite.Query
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -44,8 +38,9 @@ import kotlinx.coroutines.withContext
 
 data class SettingsUiState(
     val status: SyncStatus = SyncStatus(),
-    val catalogUrl: String = "",
-    val catalogEpoch: Long = 0,
+    /** The user's catalogs in order: the first supplies an app that several list. */
+    val catalogs: List<CatalogUi> = emptyList(),
+    val catalogSheet: CatalogSheetUi = CatalogSheetUi(),
     val appCount: Int = 0,
     val localStorageBytes: Long = 0,
     val networkMode: NetworkMode = NetworkMode.TorOnly,
@@ -56,8 +51,25 @@ data class SettingsUiState(
     val signingIn: Boolean = false,
     val key: DeviceKeyUi = DeviceKeyUi(),
     val wallet: WalletUi = WalletUi(),
-    /** Profiles of the trusted signers that are known; the list itself is [DeviceState.trustedSigners]. */
-    val trustedProfiles: Map<String, ProfileRecord> = emptyMap(),
+)
+
+/** One catalog on the list. [relays] is empty until its addresses are found. */
+data class CatalogUi(
+    val id: Long,
+    val npub: String,
+    val relays: List<String>,
+    val epoch: Long,
+    val isDefault: Boolean,
+    val canMoveUp: Boolean,
+    val canMoveDown: Boolean,
+)
+
+/** The add-a-catalog sheet, and the catalog waiting for a removal to be confirmed. */
+data class CatalogSheetUi(
+    val adding: Boolean = false,
+    val busy: Boolean = false,
+    val error: String? = null,
+    val removing: CatalogUi? = null,
 )
 
 /** The NWC wallet row and its paste sheet. */
@@ -77,7 +89,6 @@ data class DeviceKeyUi(
     val confirmReplace: Boolean = false,
 )
 
-@OptIn(ExperimentalCoroutinesApi::class)
 class SettingsViewModel(
     iolite: Iolite,
     private val catalogSync: CatalogSync,
@@ -98,13 +109,10 @@ class SettingsViewModel(
     private val walletUi = combine(wallet?.connection ?: flowOf(null), walletSheet) { connection, sheet ->
         sheet.copy(connected = connection != null)
     }
+    private val catalogSheet = MutableStateFlow(CatalogSheetUi())
 
-    private val trustedProfiles = settings.state
-        .map { it.trustedSigners }
-        .distinctUntilChanged()
-        .flatMapLatest { pubkeys ->
-            if (pubkeys.isEmpty()) flowOf(emptyMap()) else iolite.query(Query.profiles(pubkeys), AppConfig.profileQuery).map { it.items.orEmpty() }
-        }
+    /** Zapstore's own catalog key, to label it on the list; reading it is off the main thread. */
+    private val defaultKey = MutableStateFlow<String?>(null)
 
     val uiState: StateFlow<SettingsUiState> = combine(
         combine(
@@ -112,20 +120,31 @@ class SettingsViewModel(
             iolite.observeCatalogs(),
             iolite.observeApps().map { it.size },
             localStorageBytes,
-        ) { status, catalogs, appCount, storageBytes ->
-            SettingsSnapshot(status, catalogs.firstOrNull(), appCount, storageBytes)
+            defaultKey,
+        ) { status, catalogs, appCount, storageBytes, defaultKey ->
+            SettingsSnapshot(status, catalogs, appCount, storageBytes, defaultKey)
         },
         network.mode,
         network.torState,
         combine(accounts.account, signIn, settings.state, key) { account, signInState, deviceState, key ->
             AccountSnapshot(account, signInState, deviceState, key)
         },
-        walletUi,
-    ) { snapshot, mode, torState, (account, signInState, deviceState, key), walletUi ->
+        combine(walletUi, catalogSheet, ::Pair),
+    ) { snapshot, mode, torState, (account, signInState, deviceState, key), (walletUi, catalogSheet) ->
         SettingsUiState(
             status = snapshot.status,
-            catalogUrl = snapshot.catalog?.relays?.joinToString("\n") { it.url }.orEmpty(),
-            catalogEpoch = snapshot.catalog?.epoch ?: 0,
+            catalogs = snapshot.catalogs.mapIndexed { index, catalog ->
+                CatalogUi(
+                    id = catalog.id,
+                    npub = catalog.manifestPubkey?.toNpub().orEmpty(),
+                    relays = catalog.relays.map { it.url },
+                    epoch = catalog.epoch,
+                    isDefault = catalog.manifestPubkey != null && catalog.manifestPubkey == snapshot.defaultKey,
+                    canMoveUp = index > 0,
+                    canMoveDown = index < snapshot.catalogs.lastIndex,
+                )
+            },
+            catalogSheet = catalogSheet,
             appCount = snapshot.appCount,
             localStorageBytes = snapshot.localStorageBytes,
             networkMode = mode,
@@ -137,18 +156,58 @@ class SettingsViewModel(
             key = key,
             wallet = walletUi,
         )
-    }.combine(trustedProfiles) { state, profiles -> state.copy(trustedProfiles = profiles) }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), SettingsUiState())
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), SettingsUiState())
 
     init {
         viewModelScope.launch {
             combine(iolite.observeApps(), iolite.observeCatalogs(), catalogSync.status) { _, _, _ -> }
                 .collect { refreshLocalStorage() }
         }
+        viewModelScope.launch {
+            iolite.observeCatalogs().collect { defaultKey.value = withContext(Dispatchers.IO) { catalogSync.defaultCatalogKey() } }
+        }
     }
 
     fun setNetworkMode(mode: NetworkMode) = settings.update { it.copy(networkMode = mode) }
 
     fun sync() = catalogSync.request(force = true)
+
+    fun openAddCatalog() = catalogSheet.update { it.copy(adding = true, error = null) }
+
+    fun closeAddCatalog() = catalogSheet.update { it.copy(adding = false, busy = false, error = null) }
+
+    /** [input] is a hex key, an npub or an nprofile; an nprofile's relays say where to look for the catalog. */
+    fun addCatalog(input: String) {
+        if (catalogSheet.value.busy) return
+        val reference = CatalogReference.parse(input)
+        if (reference == null) {
+            catalogSheet.update { it.copy(error = strings(R.string.catalog_key_invalid)) }
+            return
+        }
+        catalogSheet.update { it.copy(busy = true, error = null) }
+        viewModelScope.launch {
+            val failure = runCatching { catalogSync.addCatalog(reference) }.exceptionOrNull()
+            catalogSheet.update {
+                if (failure == null) it.copy(adding = false, busy = false, error = null)
+                else it.copy(busy = false, error = failure.message ?: strings(R.string.catalog_add_failed))
+            }
+        }
+    }
+
+    fun moveCatalog(id: Long, delta: Int) {
+        viewModelScope.launch { runCatching { catalogSync.moveCatalog(id, delta) } }
+    }
+
+    /** Removing deletes what was downloaded from the catalog, so it asks first. */
+    fun askRemoveCatalog(catalog: CatalogUi) = catalogSheet.update { it.copy(removing = catalog) }
+
+    fun cancelRemoveCatalog() = catalogSheet.update { it.copy(removing = null) }
+
+    fun confirmRemoveCatalog() {
+        val catalog = catalogSheet.value.removing ?: return
+        catalogSheet.update { it.copy(removing = null) }
+        viewModelScope.launch { runCatching { catalogSync.removeCatalog(catalog.id) } }
+    }
 
     fun signIn() {
         if (signIn.value.busy) return
@@ -241,11 +300,6 @@ class SettingsViewModel(
 
     fun setBugReports(enabled: Boolean) = settings.update { it.copy(bugReports = enabled) }
 
-    fun removeTrustedSigner(pubkey: String) {
-        settings.update { it.copy(trustedSigners = it.trustedSigners - pubkey) }
-        Toasts.show(strings(R.string.toast_untrusted))
-    }
-
     fun wipe() {
         viewModelScope.launch {
             catalogSync.wipe()
@@ -280,9 +334,10 @@ class SettingsViewModel(
 
 private data class SettingsSnapshot(
     val status: SyncStatus,
-    val catalog: CatalogRecord?,
+    val catalogs: List<CatalogRecord>,
     val appCount: Int,
     val localStorageBytes: Long,
+    val defaultKey: String?,
 )
 
 private data class AccountSnapshot(
