@@ -79,6 +79,8 @@ import dev.zapstore.app.components.AppRow
 import dev.zapstore.app.components.EmptyRow
 import dev.zapstore.app.components.GroupHeader
 import dev.zapstore.app.components.LoadingIndicator
+import dev.zapstore.app.components.DeveloperResultRow
+import dev.zapstore.app.components.StackResultRow
 import dev.zapstore.app.components.StackShelfCard
 import dev.zapstore.app.components.AppShelfTile
 import dev.zapstore.app.components.AppIcon
@@ -100,6 +102,7 @@ fun HomeScreen(
     onAppClick: (AppRecord) -> Unit,
     onStackClick: (StackRecord) -> Unit,
     modifier: Modifier = Modifier,
+    onDeveloperClick: (String) -> Unit = {},
     onLoadMore: () -> Unit = {},
     onLoadMoreStacks: () -> Unit = {},
     onLoadMoreActivity: () -> Unit = {},
@@ -187,7 +190,7 @@ fun HomeScreen(
                 contentPadding = PaddingValues(start = ZapSpacing.space4, end = ZapSpacing.space4, bottom = ZapSpacing.space8),
                 state = listState,
             ) {
-                state.searchResults?.let { results -> searchResults(state, results, onAppClick, onRemoveFilter) { filtersOpen = true } }
+                state.searchResults?.let { results -> searchResults(state, results, onAppClick, onStackClick, onDeveloperClick, onRemoveFilter) { filtersOpen = true } }
 
                 item(key = "stacksHeader", contentType = "header") {
                     GroupHeader(
@@ -208,7 +211,6 @@ fun HomeScreen(
                                 StackShelfCard(
                                     stack = stack,
                                     apps = state.stackApps,
-                                    author = state.profiles[stack.pubkey],
                                     onClick = { onStackClick(stack) },
                                     modifier = Modifier.width(shelfWidth).testTag("stack:${stack.identifier}"),
                                 )
@@ -263,11 +265,16 @@ fun HomeScreen(
     }
 }
 
-/** Submitted results above the rest of Home: filter chips, matches, or what to relax. */
+/**
+ * Submitted results above the rest of Home: filter chips, then apps, stacks and developers in one list of
+ * the same row, or what to relax. Filters narrow apps only.
+ */
 private fun LazyListScope.searchResults(
     state: HomeUiState,
     results: List<AppRecord>,
     onAppClick: (AppRecord) -> Unit,
+    onStackClick: (StackRecord) -> Unit,
+    onDeveloperClick: (String) -> Unit,
     onRemoveFilter: (SearchFact) -> Unit,
     onOpenFilters: () -> Unit,
 ) {
@@ -298,7 +305,8 @@ private fun LazyListScope.searchResults(
             )
         }
     }
-    if (results.isEmpty()) {
+    val others = state.searchStacks.isNotEmpty() || state.searchDevelopers.isNotEmpty()
+    if (results.isEmpty() && (state.searchFacts.isNotEmpty() || !others)) {
         item(key = "noResults", contentType = "empty") {
             val message = if (state.searchFacts.isEmpty()) R.string.no_search_results else R.string.no_filtered_results
             Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space3)) {
@@ -325,6 +333,22 @@ private fun LazyListScope.searchResults(
             onClick = { onAppClick(app) },
             author = app.authorPubkey?.let(state.profiles::get),
             modifier = listItemMotion().testTag("searchResult:${app.appId}"),
+        )
+    }
+    items(state.searchStacks, key = { "searchStack:${it.eventId}" }, contentType = { "stack" }) { stack ->
+        StackResultRow(
+            stack = stack,
+            apps = state.searchStackApps,
+            onClick = { onStackClick(stack) },
+            modifier = listItemMotion().testTag("searchStack:${stack.identifier}"),
+        )
+    }
+    items(state.searchDevelopers, key = { "searchDeveloper:$it" }, contentType = { "developer" }) { pubkey ->
+        DeveloperResultRow(
+            pubkey = pubkey,
+            profile = state.profiles[pubkey],
+            onClick = { onDeveloperClick(pubkey) },
+            modifier = listItemMotion().testTag("searchDeveloper:$pubkey"),
         )
     }
     item(key = "searchEnd", contentType = "gap") {

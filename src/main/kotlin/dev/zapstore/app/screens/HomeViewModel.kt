@@ -21,7 +21,6 @@ import dev.zapstore.iolite.SearchFact
 import dev.zapstore.iolite.excludeBit
 import dev.zapstore.iolite.hardBit
 import dev.zapstore.iolite.normalizeSearchQuery
-import dev.zapstore.iolite.parseSearchQuery
 import dev.zapstore.iolite.repositoryQuery
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -37,7 +36,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
@@ -48,8 +47,14 @@ data class HomeUiState(
     val submittedQuery: String = "",
     /** Null until a query is submitted; empty when it matched nothing. */
     val searchResults: List<AppRecord>? = null,
-    /** Active hard filters: facts parsed out of [submittedQuery] and not removed, then those chosen in the sheet. */
+    /** Active hard filters: only the ones the user chose. A fact phrase in [submittedQuery] filters nothing. */
     val searchFacts: List<SearchFact> = emptyList(),
+    /** Catalog stacks whose name or description holds the submitted query. Fact filters do not apply to them. */
+    val searchStacks: List<StackRecord> = emptyList(),
+    /** The apps the tiles of [searchStacks] show. */
+    val searchStackApps: Map<String, AppRecord> = emptyMap(),
+    /** Developers (hex keys, best match first) whose profile name or npub holds the submitted query. */
+    val searchDevelopers: List<String> = emptyList(),
     val stacks: List<StackRecord> = emptyList(),
     val stackApps: Map<String, AppRecord> = emptyMap(),
     val stacksLoading: Boolean = true,
@@ -66,7 +71,7 @@ data class HomeUiState(
 )
 
 /**
- * Home: local search, Zapstore Community stacks that name a catalog app, and the recently-updated feed.
+ * Home: local search of apps, stacks and developers, Zapstore Community stacks that name a catalog app, and the recently-updated feed.
  * Every flow here is a SQLite observer and stops with the collector.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -84,14 +89,9 @@ class HomeViewModel(
     /** Filters chosen in the sheet; they outlive a query. */
     private val chosenFilters = MutableStateFlow<Set<SearchFact>>(emptySet())
 
-    /** Parsed facts whose chip was removed; cleared by the next submit. */
-    private val dismissedFacts = MutableStateFlow<Set<SearchFact>>(emptySet())
-
     /** Runs only for a submitted query; typing alone searches nothing. */
     private val search: Flow<SearchSnapshot> =
-        combine(submittedQuery, chosenFilters, dismissedFacts) { submitted, chosen, dismissed ->
-            SearchInput(normalizeSearchQuery(submitted), chosen, dismissed)
-        }
+        combine(submittedQuery, chosenFilters) { submitted, chosen -> SearchInput(normalizeSearchQuery(submitted), chosen) }
             .distinctUntilChanged()
             .flatMapLatest { input ->
                 if (input.submitted.length < MIN_SEARCH_LENGTH) flowOf(SearchSnapshot()) else ranked(input.submitted, input)
@@ -106,14 +106,11 @@ class HomeViewModel(
             facts = emptyList()
             filter = AppFilter(repository = repository, limit = SEARCH_LIMIT)
         } else {
-            val parsed = parseSearchQuery(query)
-            val parsedFacts = if (isAppName(query)) emptyList() else parsed.facts
-            val text = if (parsedFacts.isEmpty()) query else parsed.residual
-            facts = (parsedFacts - input.dismissed + input.chosen).distinct()
+            facts = SearchFact.entries.filter { it in input.chosen }
             val hard = facts.fold(0) { bits, fact -> bits or fact.hardBit }
             filter = AppFilter(
-                search = text.takeIf { it.isNotEmpty() },
-                queryVector = if (text.isEmpty()) null else encode(query),
+                search = query,
+                queryVector = encode(query),
                 hard = hard,
                 exclude = facts.fold(0) { bits, fact -> bits or fact.excludeBit },
                 boost = hard,
@@ -122,11 +119,6 @@ class HomeViewModel(
         }
         emitAll(iolite.observeApps(filter).map { apps -> SearchSnapshot(apps, facts) })
     }
-
-    /** A query that is an app's whole name or app id names that app; fact phrases in it are words. */
-    private suspend fun isAppName(query: String): Boolean =
-        iolite.observeApps(AppFilter(search = query, limit = 1)).first().firstOrNull()
-            ?.let { normalizeSearchQuery(it.name) == query || it.appId.lowercase() == query } == true
 
     private suspend fun encode(query: String): ByteArray? = try {
         withContext(Dispatchers.Default) { encodeQuery(query) }
@@ -143,35 +135,76 @@ class HomeViewModel(
         iolite.observeApps(AppFilter(limit = limit)).map { FeedPage(it, limit) }
     }
 
-    /** The catalog's own stacks, shipped in its bundle and read locally. The shelf keeps the ones that name a catalog app. */
-    private val stacks: Flow<QueryState<List<StackRecord>>> = iolite.observeCatalogs()
-        .map { catalogs -> catalogs.firstOrNull()?.manifestPubkey }
+    /** The keys of every active catalog, in the user's order. */
+    private val catalogKeys: Flow<List<String>> = iolite.observeCatalogs()
+        .map { catalogs -> catalogs.mapNotNull { it.manifestPubkey } }
         .distinctUntilChanged()
-        .flatMapLatest { catalogKey ->
-            if (catalogKey == null) flowOf(QueryState(emptyList<StackRecord>()))
-            else stackLimit.flatMapLatest { limit -> iolite.query(Query.stacks(catalogKey, limit)) }
+
+    /** The stacks of every active catalog, shipped in their bundles and read locally. The shelf keeps the ones that name a catalog app. */
+    private val stacks: Flow<QueryState<List<StackRecord>>> = catalogKeys
+        .flatMapLatest { keys ->
+            if (keys.isEmpty()) flowOf(QueryState(emptyList<StackRecord>()))
+            else stackLimit.flatMapLatest { limit -> iolite.query(Query.catalogStacks(keys, limit)) }
         }
 
-    private val stackApps: Flow<Map<String, AppRecord>> = stacks
+    /** Null until the first local read of these stacks' apps lands; both are local, so that read is never "loading". */
+    private val stackApps: Flow<Map<String, AppRecord>?> = stacks
         .map { state -> state.items.flatMap(StackRecord::appIds).toSet() }
         .distinctUntilChanged()
-        .flatMapLatest(iolite::observeAppsById)
+        .flatMapLatest { ids -> iolite.observeAppsById(ids).map<Map<String, AppRecord>, Map<String, AppRecord>?> { it }.onStart { emit(null) } }
 
-    /** Comments on any app, and zaps on the latest releases (receipts can only be asked for by app). */
-    private val comments: Flow<ActivityPage> =
-        iolite.observeApps(AppFilter(limit = ACTIVITY_APPS))
-            .map { apps -> apps.map { AppCoordinate(it.eventPubkey, it.appId) } }
-            .distinctUntilChanged()
-            .flatMapLatest { anchors -> activityLimit.map { anchors to it } }
-            .flatMapLatest { (anchors, limit) ->
-                iolite.query(Query.activity(anchors, limit), AppConfig.activityQuery).map { limit to it }
+    /**
+     * Stacks and developers for the submitted query, read locally with the same minimum length as apps.
+     * A repository URL matches only the repository, so it finds neither.
+     */
+    private val matches: Flow<SearchMatches> = combine(submittedQuery, catalogKeys) { submitted, keys -> normalizeSearchQuery(submitted) to keys }
+        .distinctUntilChanged()
+        .flatMapLatest { (query, keys) ->
+            if (query.length < MIN_SEARCH_LENGTH || repositoryQuery(query) != null) {
+                flowOf(SearchMatches())
+            } else {
+                combine(
+                    iolite.observeStackMatches(keys, query, STACK_MATCHES),
+                    iolite.observeDevelopers(query, DEVELOPER_MATCHES),
+                    ::Pair,
+                ).flatMapLatest { (stacks, developers) ->
+                    iolite.observeAppsById(stacks.flatMap(StackRecord::appIds).toSet()).map { apps ->
+                        SearchMatches(stacks.filter { stack -> stack.appIds.any(apps::containsKey) }, apps, developers)
+                    }
+                }
             }
-            .flatMapLatest { (limit, state) ->
+        }
+
+    /**
+     * Comments on any app, and zaps: on the latest releases by `a`, and paid to a catalog key by `p`
+     * (most receipts carry no `a`). The relays are asked for more than a page, since entries on apps the
+     * catalog does not show are dropped, as the web page's Activity does.
+     */
+    private val comments: Flow<ActivityPage> =
+        combine(
+            iolite.observeApps(AppFilter(limit = ACTIVITY_APPS))
+                .map { apps -> apps.map { AppCoordinate(it.eventPubkey, it.appId) } }
+                .distinctUntilChanged(),
+            catalogKeys,
+            activityLimit,
+        ) { anchors, keys, limit -> Triple(anchors, keys, limit) }
+            .flatMapLatest { (anchors, keys, limit) ->
+                val read = maxOf(ACTIVITY_READ, limit * ACTIVITY_READ_FACTOR)
+                val query = Query.activity(
+                    zapAnchors = anchors,
+                    limit = read,
+                    recipients = keys + AppConfig.LEGACY_CATALOG_PUBKEY,
+                    lists = keys,
+                )
+                iolite.query(query, AppConfig.activityQuery).map { Triple(limit, read, it) }
+            }
+            .flatMapLatest { (limit, read, state) ->
                 val record = state.items
                 iolite.observeAppsById(record.appIds).map { apps ->
+                    val shown = record.items(apps)
                     ActivityPage(
-                        QueryState(record.items(apps).take(limit), state.relays, state.settled),
-                        canLoadMore = record.comments.size >= limit || record.zaps.size >= limit,
+                        QueryState(shown.take(limit), state.relays, state.settled),
+                        canLoadMore = shown.size > limit || record.comments.size >= read || record.zaps.size >= read,
                     )
                 }
             }
@@ -202,27 +235,34 @@ class HomeViewModel(
 
     private val profiles: Flow<Map<String, ProfileRecord>> = combine(
         combine(feedPage, search) { page, snapshot -> page.apps + snapshot.results.orEmpty() }.authorProfiles(iolite),
+        matches.map { it.developers.toSet() }.distinctUntilChanged().flatMapLatest(iolite::observeProfiles),
         combine(stacks, activity) { stackState, activityState ->
             stackState.items.map { it.pubkey }.toSet() + activityState.state.items.map { it.pubkey }
         }.distinctUntilChanged().flatMapLatest(iolite::observeProfiles),
-    ) { authors, people -> people + authors }
+    ) { authors, developers, people -> people + developers + authors }
 
     val uiState: StateFlow<HomeUiState> = combine(
-        combine(searchQuery, submittedQuery, search, ::Triple),
+        combine(combine(searchQuery, submittedQuery, search, ::Triple), matches, ::Pair),
         feedPage,
         combine(stacks, stackApps, stackLimit, ::Triple),
         combine(profiles, activity, ::Pair),
         requestedPages,
-    ) { (query, submitted, snapshot), page, (stackState, stackApps, stackCap), (profiles, activity), pages ->
+    ) { (searched, found), page, (stackState, stackAppsOrNull, stackCap), (profiles, activity), pages ->
+        val (query, submitted, snapshot) = searched
+        // Not yet joined: show every stack rather than wait, since both reads are local.
+        // Joined: keep only stacks that list a catalog app, as always.
+        val stackApps = stackAppsOrNull ?: emptyMap()
         HomeUiState(
             searchQuery = query,
             submittedQuery = submitted,
             searchResults = snapshot.results,
             searchFacts = snapshot.facts,
-            stacks = stackState.items.filter { stack -> stack.appIds.any(stackApps::containsKey) },
+            searchStacks = found.stacks,
+            searchStackApps = found.stackApps,
+            searchDevelopers = found.developers,
+            stacks = if (stackAppsOrNull == null) stackState.items else stackState.items.filter { stack -> stack.appIds.any(stackApps::containsKey) },
             stackApps = stackApps,
-            stacksLoading = (stackState.items.isEmpty() && !stackState.settled) ||
-                (stackState.items.isNotEmpty() && stackApps.isEmpty()),
+            stacksLoading = stackState.items.isEmpty() && !stackState.settled,
             stacksError = stackState.relayError(),
             stacksCanLoadMore = stackState.items.size >= stackCap,
             activity = activity.state.items,
@@ -250,27 +290,22 @@ class HomeViewModel(
 
     fun submitSearch() {
         val query = searchQuery.value.trim()
-        dismissedFacts.value = emptySet()
         savedStateHandle[SEARCH_QUERY_KEY] = query
         savedStateHandle[SUBMITTED_QUERY_KEY] = query
     }
 
     fun clearSearch() {
-        dismissedFacts.value = emptySet()
         savedStateHandle[SEARCH_QUERY_KEY] = ""
         savedStateHandle[SUBMITTED_QUERY_KEY] = ""
     }
 
-    /** Removes a chip: a sheet filter is unchosen, a parsed fact stops filtering this query. */
+    /** Removes a chip: the filter is unchosen. */
     fun removeFilter(fact: SearchFact) {
-        if (fact in chosenFilters.value) chosenFilters.update { it - fact } else dismissedFacts.update { it + fact }
+        chosenFilters.update { it - fact }
     }
 
     fun toggleFilter(fact: SearchFact) {
-        if (fact in uiState.value.searchFacts) removeFilter(fact) else {
-            dismissedFacts.update { it - fact }
-            chosenFilters.update { it + fact }
-        }
+        chosenFilters.update { if (fact in it) it - fact else it + fact }
     }
 
     fun loadMoreActivity() {
@@ -291,11 +326,18 @@ class HomeViewModel(
         private const val SUBMITTED_QUERY_KEY = "submittedQuery"
         private const val MIN_SEARCH_LENGTH = 2
         private const val SEARCH_LIMIT = 12
+        /** Stacks and developers listed under the apps of a search. */
+        private const val STACK_MATCHES = 8
+        private const val DEVELOPER_MATCHES = 8
         private const val PAGE_SIZE = 20
         private const val STACK_PAGE = 20
         private const val ACTIVITY_PAGE = 20
         /** Latest releases whose zaps the activity feed asks for. */
         private const val ACTIVITY_APPS = 100
+        /** Comments and zaps asked of each relay, at least; the web page asks 60. */
+        private const val ACTIVITY_READ = 60
+        /** Candidates read per entry shown, so a page still fills when some are on apps the catalog hides. */
+        private const val ACTIVITY_READ_FACTOR = 3
         /** Stacks the activity feed shows, one per curator, out of the newest it reads. */
         private const val ACTIVITY_STACKS = 6
         private const val ACTIVITY_STACKS_READ = 30
@@ -314,7 +356,14 @@ internal class ActivityPage(
     val stackApps: Map<String, AppRecord> = emptyMap(),
 )
 
-private data class SearchInput(val submitted: String, val chosen: Set<SearchFact>, val dismissed: Set<SearchFact>)
+private data class SearchInput(val submitted: String, val chosen: Set<SearchFact>)
+
+/** What a submitted query finds besides apps. */
+private class SearchMatches(
+    val stacks: List<StackRecord> = emptyList(),
+    val stackApps: Map<String, AppRecord> = emptyMap(),
+    val developers: List<String> = emptyList(),
+)
 
 /** [results] is null until a submitted query is long enough to run. */
 private data class SearchSnapshot(
