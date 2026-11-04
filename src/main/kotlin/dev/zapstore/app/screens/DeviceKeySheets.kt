@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import dev.zapstore.app.R
 import dev.zapstore.app.ZapActionText
@@ -52,7 +53,11 @@ internal fun PasteKeySheet(error: String?, onSubmit: (String) -> Unit, onDismiss
     onDismiss = onDismiss,
 )
 
-/** Paste a secret. The value is masked: it is shown on a screen others may see. Tags are [tag]Field, [tag]Error, [tag]Submit. */
+/**
+ * Paste a secret. The value is masked: it is shown on a screen others may see. A public value, such as a
+ * catalog key, passes `masked = false`. [busy] keeps the button from sending twice.
+ * Tags are [tag]Field, [tag]Error, [tag]Submit.
+ */
 @Composable
 internal fun PasteSecretSheet(
     title: String,
@@ -62,6 +67,8 @@ internal fun PasteSecretSheet(
     error: String?,
     onSubmit: (String) -> Unit,
     onDismiss: () -> Unit,
+    masked: Boolean = true,
+    busy: Boolean = false,
 ) {
     var value by rememberSaveable { mutableStateOf("") }
     ZapSheet(onDismiss) {
@@ -79,8 +86,11 @@ internal fun PasteSecretSheet(
                 singleLine = true,
                 textStyle = style,
                 cursorBrush = SolidColor(ZapActionText),
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
+                visualTransformation = if (masked) PasswordVisualTransformation() else VisualTransformation.None,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = if (masked) KeyboardType.Password else KeyboardType.Text,
+                    autoCorrectEnabled = false,
+                ),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(ZapSize.control)
@@ -98,7 +108,8 @@ internal fun PasteSecretSheet(
             ZapButton(
                 text = stringResource(R.string.continue_action),
                 onClick = { onSubmit(value) },
-                enabled = value.isNotBlank(),
+                enabled = value.isNotBlank() && !busy,
+                loading = busy,
                 modifier = Modifier.fillMaxWidth().height(ZapSize.controlLarge).testTag("${tag}Submit"),
             )
             ZapButton(

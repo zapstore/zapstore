@@ -14,13 +14,15 @@ import java.time.ZoneOffset
 
 /**
  * Anonymous bug reports: crashes and errors the app logs. Each is queued on disk and sent on a
- * later start as a NIP-17 message gift-wrapped to the catalog key, from a one-time key, so the
+ * later start as a NIP-17 message gift-wrapped to the Zapstore catalog key, from a one-time key, so the
  * relay sees neither the sender nor the text. Off in device state: nothing is queued, and what
  * is queued is deleted.
  */
 class BugReports(
     context: Context,
     private val iolite: Iolite,
+    /** The Zapstore catalog key, whatever catalogs the user lists; null while it is not known. */
+    private val recipient: () -> String?,
     private val enabled: () -> Boolean,
 ) {
     private val dir = File(context.filesDir, "diagnostics/reports")
@@ -50,9 +52,9 @@ class BugReports(
             pending.forEach { (file, _) -> file.delete() }
             return
         }
-        val recipient = iolite.defaultCatalog().manifestPubkey ?: return
+        val to = recipient() ?: return
         for ((file, type) in pending.take(MAX_PER_START)) {
-            val sent = runCatching { send(recipient, type, file.readText().take(MAX_CHARS)) }
+            val sent = runCatching { send(to, type, file.readText().take(MAX_CHARS)) }
                 .onFailure { AppLog.w(TAG, "bug report not sent", it) }
                 .getOrDefault(false)
             if (!sent) {

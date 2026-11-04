@@ -62,14 +62,14 @@ private fun style(size: Int, line: Int, weight: Int, tracking: Double = 0.0) = T
 )
 
 private val ZapTypography = Typography(
-    displayLarge = style(36, 44, 600, -0.03),
-    displayMedium = style(36, 44, 600, -0.03),
-    displaySmall = style(36, 44, 600, -0.03), // Display, Figure
-    headlineLarge = style(28, 36, 600, -0.03),
-    headlineMedium = style(28, 36, 600, -0.03), // Headline
+    displayLarge = style(36, 44, 600, -0.01), // Display
+    displayMedium = style(36, 44, 600, -0.01),
+    displaySmall = style(36, 44, 600, -0.02), // Figure
+    headlineLarge = style(28, 36, 600, -0.01),
+    headlineMedium = style(28, 36, 600, -0.01), // Headline
     headlineSmall = style(28, 34, 600, -0.025), // Title 1: screen titles
     titleLarge = style(22, 28, 600, -0.015), // Title 2: sheet titles
-    titleMedium = style(18, 24, 600), // Title 4: app name in detail heads
+    titleMedium = style(18, 24, 600, -0.015), // Title 4: app name in detail heads
     titleSmall = style(15, 20, 600), // Row title
     bodyLarge = style(16, 24, 400), // Body
     bodyMedium = style(14, 20, 400), // Body small
@@ -83,7 +83,7 @@ private val ZapTypography = Typography(
 val ZapEvidenceStyle: TextStyle = ZapTypography.labelMedium
 
 /** Card and plan titles. */
-val ZapTitle3Style: TextStyle = style(20, 26, 600, -0.01)
+val ZapTitle3Style: TextStyle = style(20, 26, 600, -0.015)
 
 private val ZapColorScheme = darkColorScheme(
     primary = ZapAction,

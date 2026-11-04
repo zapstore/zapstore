@@ -3,6 +3,7 @@ package dev.zapstore.app.components
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Surface
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -13,6 +14,8 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -24,6 +27,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SnackbarData
@@ -38,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.draw.drawBehind
@@ -47,6 +52,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.zapstore.app.R
@@ -99,6 +105,8 @@ fun ZapButton(
     loading: Boolean = false,
     icon: Int? = null,
     shape: Shape = ZapButtonShape,
+    /** Color of [icon] when it should differ from the label, such as the amber bolt on Zap. */
+    iconTint: Color? = null,
 ) {
     val content: @Composable RowScope.() -> Unit = {
         if (loading) {
@@ -109,7 +117,7 @@ fun ZapButton(
             )
         } else {
             icon?.let {
-                Icon(painterResource(it), contentDescription = null, modifier = Modifier.size(18.dp))
+                Icon(painterResource(it), contentDescription = null, tint = iconTint ?: LocalContentColor.current, modifier = Modifier.size(18.dp))
                 Box(Modifier.size(ZapSpacing.space2))
             }
             Text(text, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -323,27 +331,42 @@ fun ZapCountBadge(count: Int, modifier: Modifier = Modifier) {
 @Composable
 fun VersionPill(version: String, modifier: Modifier = Modifier, next: String? = null) {
     val spoken = if (next == null) version else "$version → $next"
+    val fontSize = 13.sp
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         modifier = modifier
-            .heightIn(min = 20.dp)
+            .height(24.dp)
             .clip(RoundedCornerShape(ZapRadius.full))
             .background(ZapBrand)
             .semantics(mergeDescendants = true) { contentDescription = spoken }
-            .padding(horizontal = 8.dp),
+            .padding(horizontal = 10.dp),
     ) {
         val style = MaterialTheme.typography.labelMedium.copy(
-            fontSize = 12.sp,
-            lineHeight = 16.sp,
-            fontWeight = FontWeight.Bold,
+            fontSize = fontSize,
+            lineHeight = fontSize,
+            fontWeight = FontWeight(680),
             fontFeatureSettings = "tnum",
         )
         Text(version.pillText(), color = Color.White, style = style, maxLines = 1)
         if (next != null) {
-            Text("→", color = Color.White.copy(alpha = 0.7f), style = style)
+            VersionPillArrow()
             Text(next.pillText(), color = Color.White, style = style, maxLines = 1)
         }
+    }
+}
+
+/** The small filled triangle between a pair's two versions, matching the web pill's inline SVG. */
+@Composable
+private fun VersionPillArrow() {
+    Canvas(Modifier.size(6.dp, 7.dp)) {
+        val path = Path().apply {
+            moveTo(size.width * 0.2f, 0f)
+            lineTo(size.width, size.height / 2f)
+            lineTo(size.width * 0.2f, size.height)
+            close()
+        }
+        drawPath(path, color = Color.White.copy(alpha = 0.7f))
     }
 }
 
@@ -354,17 +377,27 @@ fun VersionPill(version: String, modifier: Modifier = Modifier, next: String? = 
 fun EvidenceCard(
     title: String,
     modifier: Modifier = Modifier,
+    contentPadding: Dp = ZapSpacing.space4,
+    /** A text link at the end of the title row, for a card whose body is one line. */
+    headerAction: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Column(
-        verticalArrangement = Arrangement.spacedBy(ZapSpacing.space3),
+        verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
         modifier = modifier
             .clip(RoundedCornerShape(ZapRadius.lg))
             .background(ZapSurface2)
             .border(1.dp, ZapLine, RoundedCornerShape(ZapRadius.lg))
-            .padding(ZapSpacing.space4),
+            .padding(contentPadding),
     ) {
-        Text(title, style = MaterialTheme.typography.titleSmall)
+        if (headerAction == null) {
+            Text(title, style = MaterialTheme.typography.titleSmall)
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                headerAction()
+            }
+        }
         content()
     }
 }
@@ -424,21 +457,45 @@ fun EmptyRow(
     }
 }
 
-/** List-group header with an optional action link on the right. */
+/** List-group header with an optional item count beside the title and an action link on the right. */
 @Composable
 fun GroupHeader(
     title: String,
     modifier: Modifier = Modifier,
+    count: Int? = null,
     action: String? = null,
     onAction: () -> Unit = {},
     actionTag: String = "groupAction",
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
         modifier = modifier.fillMaxWidth().heightIn(min = 40.dp),
     ) {
-        SectionLabel(title, Modifier.weight(1f))
+        SectionLabel(title)
+        count?.let { GroupCount(it) }
+        Spacer(Modifier.weight(1f))
         if (action != null) ZapTextLink(action, onAction, Modifier.testTag(actionTag))
+    }
+}
+
+/** Neutral 16 dp count beside a group title; quieter than [ZapCountBadge], which marks updates. */
+@Composable
+private fun GroupCount(count: Int) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .defaultMinSize(minWidth = 16.dp)
+            .height(16.dp)
+            .clip(RoundedCornerShape(ZapRadius.full))
+            .background(ZapSurface3)
+            .padding(horizontal = 5.dp),
+    ) {
+        Text(
+            count.toString(),
+            color = ZapText2,
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 12.sp, fontFeatureSettings = "tnum"),
+        )
     }
 }
 
