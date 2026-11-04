@@ -186,12 +186,15 @@ class AppRecord(
     val listing: String get() = metadata.optString("description")
 
     /**
-     * One line for listing rows: the first paragraph of the generated [about], else of the developer's
-     * [listing] description, else the listing's [summary] tag. Empty only when it has none of them.
+     * One line for listing rows: the first paragraph of the generated about,
+     * else of the developer's [listing] description, else the listing's [summary] tag.
      */
     val tagline: String by lazy(LazyThreadSafetyMode.NONE) {
-        plainParagraph(about).ifEmpty { plainParagraph(listing) }.ifEmpty { summary.trim() }
+        plainParagraph(aboutProse).ifEmpty { plainParagraph(listing) }.ifEmpty { summary.trim() }
     }
+
+    /** The generated about, trimmed. */
+    val aboutProse: String get() = about.trim()
 
     /** Notices before a line that is only `---`. Empty when the prose has no separator. */
     val securityWarnings: String
@@ -225,6 +228,9 @@ class AppRecord(
     private fun securityProse(): String = parseSecurityDocument(security).prose
     val iconUrl: String? get() = metadata.string("icon")
     val screenshots: List<String> get() = metadata.stringList("image")
+
+    /** The listing's `t` tags, lowercase. Empty for a listing stored before tags were kept. */
+    val tags: List<String> get() = metadata.stringList("tag")
     val website: String? get() = metadata.string("url")
     val license: String? get() = metadata.string("license")
     val downloadUrl: String? get() = metadata.string("download_url")

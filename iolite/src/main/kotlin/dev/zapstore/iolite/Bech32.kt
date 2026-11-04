@@ -19,6 +19,20 @@ private fun encodeKey(hrp: String, hex: String): String? {
     }
 }
 
+/** NIP-19 `nevent` for an event id and its author (both 64-char hex), or null when either is not. */
+fun neventOf(eventId: String, author: String): String? {
+    val id = eventId.lowercase()
+    val by = author.lowercase()
+    if (!Hex.isHex(id, 64) || !Hex.isHex(by, 64)) return null
+    val payload = byteArrayOf(0, 32) + Hex.decode(id) + byteArrayOf(2, 32) + Hex.decode(by)
+    val data = convertBits(payload.map { it.toInt() and 0xff }, 8, 5)
+    val checksum = bech32Checksum("nevent", data)
+    return buildString {
+        append("nevent1")
+        (data + checksum).forEach { append(BECH32_CHARSET[it]) }
+    }
+}
+
 private fun convertBits(data: List<Int>, fromBits: Int, toBits: Int): List<Int> {
     var accumulator = 0
     var bits = 0

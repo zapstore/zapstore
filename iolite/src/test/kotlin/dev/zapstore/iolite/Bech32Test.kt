@@ -13,4 +13,15 @@ class Bech32Test {
         assertNull("nsec1jax67srg8a5j4rej3spldsduryn6pdhtfcegcztuhdexyx2v42aq0t4sv6".decodeNpub())
         assertNull(hex.toNpub().decodeNsec())
     }
+
+    @Test
+    fun neventMatchesNak() {
+        val id = "a".repeat(64)
+        val author = "3bf0c63fcb93463407af97a5e5ee64fa883d107ef9e558472c4eb9aaaefa459d"
+        assertEquals(
+            "nevent1qqs242424242424242424242424242424242424242424242424242szyqalp33lewf5vdq847t6te0wvnags0gs0mu72kz8938tn24wlfze6a5j555",
+            neventOf(id, author),
+        )
+        assertNull(neventOf("abc", author))
+    }
 }

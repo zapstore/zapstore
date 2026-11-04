@@ -149,6 +149,7 @@ internal object ListingRows {
         put("url", app.tagValue("url") ?: "")
         put("license", app.tagValue("license") ?: "")
         put("image", JSONArray(app.tagValues("image")))
+        put("tag", JSONArray(app.tagValues("t").map { it.trim().lowercase() }.filter { it.isNotEmpty() }.distinct()))
         put("app_event_id", app.id)
     }
 
