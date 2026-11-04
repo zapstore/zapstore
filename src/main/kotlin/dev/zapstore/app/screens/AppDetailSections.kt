@@ -1,16 +1,10 @@
 package dev.zapstore.app.screens
 
-import dev.zapstore.app.ZapTitle3Style
-import dev.zapstore.app.ZapSize
-import dev.zapstore.app.ZapSurface1
 import dev.zapstore.app.ZapWarning
 import androidx.compose.ui.semantics.Role
 import androidx.compose.runtime.remember
 import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.Icon
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.border
-import androidx.compose.ui.graphics.Brush
 import dev.zapstore.iolite.StackRecord
 import dev.zapstore.app.ZapSurface2
 import dev.zapstore.app.ZapRadius
@@ -21,10 +15,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyRow
 import dev.zapstore.app.ZapText3
 import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -37,7 +27,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -55,16 +44,11 @@ import dev.zapstore.app.ZapSpacing
 import dev.zapstore.app.ZapSurface3
 import dev.zapstore.app.ZapText
 import dev.zapstore.app.ZapText2
-import dev.zapstore.app.components.AuthorByline
 import dev.zapstore.app.components.BadgeTone
 import dev.zapstore.app.components.EmptyRow
 import dev.zapstore.app.components.EvidenceCard
-import dev.zapstore.app.components.EvidenceLine
-import dev.zapstore.app.components.InfoRow
 import dev.zapstore.app.components.ProfileImage
 import dev.zapstore.app.components.SectionLabel
-import dev.zapstore.app.components.SkeletonBlock
-import dev.zapstore.app.components.StatusText
 import dev.zapstore.app.components.VersionPill
 import dev.zapstore.app.components.ZapBadge
 import dev.zapstore.app.components.ZapButton
@@ -79,6 +63,12 @@ import dev.zapstore.iolite.ZapRecord
 import java.text.DateFormat
 import java.text.NumberFormat
 import java.util.Date
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.layout.offset
+import java.util.Locale
 
 /** A requested permission: the Android id, its fact label when the table has one, and the fact's note. */
 internal data class PermissionLine(val id: String?, val label: String?, val note: String)
@@ -115,25 +105,61 @@ internal val AppRecord.spdxLicense: String?
     get() = license?.trim()?.takeIf { it.length <= 48 && spdxPattern.matches(it) }
 
 internal fun AppRecord.hasSecurityCard(): Boolean =
-    isVerified || isCatalogSigned || security.isNotBlank() || factRows.isNotEmpty() || permissionIds.isNotEmpty()
+    isCatalogSigned || security.isNotBlank() || factRows.isNotEmpty() || permissionIds.isNotEmpty()
 
-/**
- * Security: flags first, then the publisher check, the facts as badges, each permission with
- * its reason, and the prose. A verdict leads; the evidence sits under it.
- */
-@Composable
-internal fun SecurityCard(app: AppRecord, onOpenUrl: (String) -> Unit, modifier: Modifier = Modifier) {
-    val pills = app.factRows.mapNotNull { fact ->
-        val pill = FactCatalog.pill(fact.key) ?: return@mapNotNull null
-        if (!pill.visible(fact.yes)) return@mapNotNull null
-        val label = pill.label(fact.yes).let { base ->
-            if (fact.key == "source_available" && fact.yes) app.spdxLicense?.let { "$base · $it" } ?: base else base
-        }
-        Triple(fact.key, label, pill.tone(fact.yes))
+private data class FactPill(val key: String, val label: String, val tone: FactCatalog.Tone)
+
+private fun AppRecord.factPills(): List<FactPill> = factRows.mapNotNull { fact ->
+    val pill = FactCatalog.pill(fact.key) ?: return@mapNotNull null
+    if (!pill.visible(fact.yes)) return@mapNotNull null
+    val label = pill.label(fact.yes).let { base ->
+        if (fact.key == "source_available" && fact.yes) spdxLicense?.let { "$base · $it" } ?: base else base
     }
-    val flags = app.securityFlags.mapNotNull { flag -> FactCatalog.flag(flag.id)?.let { it to flag.note } }
-    val permissions = app.permissionLines()
+    FactPill(fact.key, label, pill.tone(fact.yes))
+}
+
+/** The card: warning flags, fact pills and a short read of the prose. The rest opens from [onSeeFull]. */
+@Composable
+internal fun SecurityReportCard(
+    app: AppRecord,
+    onOpenUrl: (String) -> Unit,
+    onSeeFull: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val flags = app.flagLabels()
     EvidenceCard(stringResource(R.string.privacy_and_security), modifier.fillMaxWidth().testTag("securityCard")) {
+        Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space3), modifier = Modifier.fillMaxWidth()) {
+            if (flags.isNotEmpty()) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+                    verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+                    modifier = Modifier.testTag("cardFlags"),
+                ) { flags.forEach { (label, _) -> ZapBadge(label, BadgeTone.Warning) } }
+            }
+            FactPills(app.factPills())
+            SecurityProse(app, onOpenUrl, brief = true)
+        }
+        ZapTextLink(
+            stringResource(R.string.see_full_report),
+            onSeeFull,
+            Modifier.offset(x = -ZapSpacing.space2).testTag("seeFullReport"),
+        )
+    }
+}
+
+/** Warning flags as label and note, in file order, for the ids the app knows. */
+private fun AppRecord.flagLabels(): List<Pair<String, String>> =
+    securityFlags.mapNotNull { flag -> FactCatalog.flag(flag.id)?.let { it to flag.note } }
+
+/** True when there is a verdict to show: a flag, a pill, or any written report. */
+internal fun AppRecord.hasVerdict(): Boolean =
+    flagLabels().isNotEmpty() || factPills().isNotEmpty() || securityWarnings.isNotBlank() || securityBody.isNotBlank()
+
+/** The verdict half of the full report: flags with their notes, the pills, and all the prose. */
+@Composable
+internal fun SecurityVerdict(app: AppRecord, onOpenUrl: (String) -> Unit) {
+    val flags = app.flagLabels()
+    Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space3), modifier = Modifier.fillMaxWidth().testTag("securityReport")) {
         if (flags.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2), modifier = Modifier.testTag("securityFlags")) {
                 flags.forEach { (label, note) ->
@@ -142,60 +168,73 @@ internal fun SecurityCard(app: AppRecord, onOpenUrl: (String) -> Unit, modifier:
                 }
             }
         }
-        if (app.isVerified) EvidenceLine(stringResource(R.string.verified_author), checked = true)
-        if (app.isCatalogSigned) CatalogSignedNote(app.name, downloadUrl = null, Modifier.testTag("catalogSigned"))
-        if (pills.isNotEmpty()) {
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
-                verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
-                modifier = Modifier.fillMaxWidth().testTag("facts"),
-            ) {
-                pills.forEach { (key, label, tone) ->
-                    when (tone) {
-                        FactCatalog.Tone.Good -> ZapBadge(label, BadgeTone.Verified, Modifier.testTag("fact_$key"), R.drawable.ic_check)
-                        FactCatalog.Tone.Bad -> ZapBadge(label, BadgeTone.Danger, Modifier.testTag("fact_$key"), R.drawable.ic_close)
-                        FactCatalog.Tone.Neutral -> ZapBadge(label, BadgeTone.Neutral, Modifier.testTag("fact_$key"))
-                    }
-                }
-            }
-        }
-        if (app.securityWarnings.isNotBlank()) {
-            app.securityWarnings.lineSequence().map { it.trim().removePrefix("⚠️").removePrefix("⚠").trim() }
-                .filter { it.isNotEmpty() }
-                .forEach { Text(it, color = ZapText, style = MaterialTheme.typography.bodyMedium) }
-        }
-        if (app.securityBody.isNotBlank()) {
-            MarkdownText(
-                value = app.securityBody,
-                color = ZapText2,
-                style = MaterialTheme.typography.bodyMedium,
-                onOpenUrl = onOpenUrl,
+        FactPills(app.factPills())
+        SecurityProse(app, onOpenUrl)
+    }
+}
+
+/** Every permission the app asks for, by label with its note; raw ids with no label follow in one line. */
+@Composable
+internal fun PermissionsList(app: AppRecord) {
+    val (named, other) = app.permissionLines().partition { it.label != null }
+    Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space3), modifier = Modifier.fillMaxWidth().testTag("permissions")) {
+        named.forEach { PermissionRow(it) }
+        if (other.isNotEmpty()) {
+            Text(
+                other.joinToString(" · ") { it.id.orEmpty() },
+                color = ZapText3,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.testTag("otherPermissions"),
             )
         }
-        if (permissions.isNotEmpty()) {
-            HorizontalDivider(color = ZapLine)
-            val (named, other) = permissions.partition { it.label != null }
-            Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space3), modifier = Modifier.testTag("permissions")) {
-                named.forEach { PermissionRow(it) }
-                if (other.isNotEmpty()) {
-                    var expanded by rememberSaveable { mutableStateOf(false) }
-                    ZapTextLink(
-                        if (expanded) stringResource(R.string.hide_other_permissions)
-                        else pluralStringResource(R.plurals.show_other_permissions, other.size, other.size),
-                        { expanded = !expanded },
-                        Modifier.testTag("toggleOtherPermissions"),
-                    )
-                    if (expanded) {
-                        Text(
-                            other.joinToString(" · ") { it.id.orEmpty() },
-                            color = ZapText3,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.testTag("otherPermissions"),
-                        )
-                    }
-                }
+    }
+}
+
+internal fun AppRecord.hasPermissions(): Boolean = permissionLines().isNotEmpty()
+
+@Composable
+private fun FactPills(pills: List<FactPill>) {
+    if (pills.isEmpty()) return
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+        verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+        modifier = Modifier.fillMaxWidth().testTag("facts"),
+    ) {
+        pills.forEach { (key, label, tone) ->
+            when (tone) {
+                FactCatalog.Tone.Good -> ZapBadge(label, BadgeTone.Verified, Modifier.testTag("fact_$key"), R.drawable.ic_check)
+                FactCatalog.Tone.Bad -> ZapBadge(label, BadgeTone.Danger, Modifier.testTag("fact_$key"), R.drawable.ic_close)
+                FactCatalog.Tone.Neutral -> ZapBadge(label, BadgeTone.Neutral, Modifier.testTag("fact_$key"))
             }
         }
+    }
+}
+
+/** The written report. On the page card ([brief]) it is cut short; the full report holds the rest. */
+@Composable
+private fun SecurityProse(app: AppRecord, onOpenUrl: (String) -> Unit, brief: Boolean = false) {
+    if (app.securityWarnings.isNotBlank()) {
+        app.securityWarnings.lineSequence().map { it.trim().removePrefix("⚠️").removePrefix("⚠").trim() }
+            .filter { it.isNotEmpty() }
+            .forEach {
+                Text(
+                    it,
+                    color = ZapText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = if (brief) 2 else Int.MAX_VALUE,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+    }
+    if (app.securityBody.isNotBlank()) {
+        MarkdownText(
+            value = app.securityBody,
+            color = ZapText2,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = if (brief) 3 else Int.MAX_VALUE,
+            overflow = TextOverflow.Ellipsis,
+            onOpenUrl = onOpenUrl,
+        )
     }
 }
 
@@ -207,169 +246,146 @@ private fun PermissionRow(line: PermissionLine) {
     }
 }
 
-/** Releases and the publisher record: key and value pairs, the signer last. */
+/** Latest release: the version pill and the date, with the notes one link away. Size stays in the sheet. */
 @Composable
-internal fun ReleaseCard(
-    app: AppRecord,
-    author: ProfileRecord?,
-    onOpenUrl: (String) -> Unit,
-    onProfileClick: (String) -> Unit,
-    onReleaseNotes: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    EvidenceCard(stringResource(R.string.latest_release), modifier.fillMaxWidth().testTag("releaseCard")) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2)) {
-            VersionPill(app.version)
-            Text(formatDate(app.releasedAt), color = ZapText2, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-            if (app.releaseNotes.isNotBlank()) {
-                ZapTextLink(stringResource(R.string.release_notes), onReleaseNotes, Modifier.testTag("releaseNotes"))
-            }
-        }
-        Column {
-            InfoRow(
-                label = stringResource(R.string.source),
-                value = app.repository ?: stringResource(R.string.not_available),
-                link = app.repository,
-                onOpenUrl = onOpenUrl,
+internal fun ReleaseCard(app: AppRecord, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+    EvidenceCard(stringResource(R.string.release_title), modifier.fillMaxWidth().testTag("releaseCard")) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3)) {
+            if (app.version.isNotBlank()) VersionPill(app.version)
+            Text(
+                formatDate(app.releasedAt),
+                color = ZapText2,
+                style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
             )
-            app.website?.let { InfoRow(stringResource(R.string.website), it, link = it, onOpenUrl = onOpenUrl) }
-            app.license?.let { InfoRow(stringResource(R.string.license), it) }
-            InfoRow(stringResource(R.string.app_id), app.appId)
-            app.authorPubkey?.let { pubkey ->
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
-                ) {
-                    StatusText(stringResource(R.string.verified_author), Modifier.weight(1f))
-                    AuthorByline(pubkey = pubkey, profile = author, showBy = false, onClick = { onProfileClick(pubkey) })
-                }
-            }
+            ZapTextLink(
+                stringResource(R.string.release_details_link),
+                onOpen,
+                Modifier.offset(x = ZapSpacing.space2).testTag("releaseLink"),
+            )
         }
+    }
+}
+
+/** For an app with no security data: who published it, the package and the source still open from here. */
+@Composable
+internal fun PackageCard(onOpen: () -> Unit, modifier: Modifier = Modifier) {
+    EvidenceCard(stringResource(R.string.privacy_and_security), modifier.fillMaxWidth().testTag("packageCard")) {
+        Text(stringResource(R.string.no_security_report), color = ZapText2, style = MaterialTheme.typography.bodyMedium)
+        ZapTextLink(
+            stringResource(R.string.see_full_report),
+            onOpen,
+            Modifier.offset(x = -ZapSpacing.space2).testTag("seeFullReport"),
+        )
     }
 }
 
 /**
- * The zap card: the total, who zapped most, who the sats go to, and one-tap amounts that open
- * the zap sheet with that amount chosen. Without a C1 owner the catalog that lists the app is paid,
- * and the card says so in the catalog's own name.
+ * Zap, as in the reference app: one wide button, then who has zapped, biggest first. Without a
+ * [onZap] (the account can't zap) only the strip shows. Where the sats go is said in the zap sheet.
  */
 @Composable
-internal fun ZapCard(summary: ZapSummary, appName: String, modifier: Modifier = Modifier, onZap: ((Long) -> Unit)? = null) {
-    val format = remember { NumberFormat.getInstance() }
-    val shape = RoundedCornerShape(ZapRadius.lg)
-    Column(
-        verticalArrangement = Arrangement.spacedBy(ZapSpacing.space4),
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(Brush.verticalGradient(listOf(ZapWarning.copy(alpha = 0.10f), ZapSurface1)))
-            .border(1.dp, ZapWarning.copy(alpha = 0.22f), shape)
-            .padding(ZapSpacing.space4)
-            .testTag("zapCard"),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3)) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier.size(44.dp).clip(CircleShape).background(ZapWarning.copy(alpha = 0.16f)),
-            ) {
-                Icon(painterResource(R.drawable.ic_bolt), contentDescription = null, tint = ZapWarning, modifier = Modifier.size(24.dp))
-            }
-            Column(Modifier.weight(1f)) {
-                when {
-                    summary.loading && summary.count == 0 -> SkeletonBlock(width = 120.dp, height = 26.dp, cornerRadius = 6.dp)
-                    summary.count == 0 -> {
-                        Text(stringResource(R.string.zap_none), style = ZapTitle3Style)
-                        Text(
-                            summary.error ?: stringResource(R.string.zap_be_first, appName),
-                            color = ZapText2,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                    else -> {
-                        Text(
-                            pluralStringResource(R.plurals.zap_total, summary.totalSats.coerceIn(0, Int.MAX_VALUE.toLong()).toInt(), format.format(summary.totalSats)),
-                            style = ZapTitle3Style.copy(fontFeatureSettings = "tnum"),
-                            modifier = Modifier.testTag("zapTotal"),
-                        )
-                        Text(
-                            pluralStringResource(R.plurals.zap_count, summary.count, summary.count),
-                            color = ZapText2,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                }
-            }
-            if (summary.zappers.isNotEmpty()) ZapperFaces(summary.zappers, summary.profiles)
+internal fun ZapRow(
+    summary: ZapSummary,
+    onProfileClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    onZap: (() -> Unit)? = null,
+) {
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ZapSpacing.space1)) {
+        onZap?.let { zap ->
+            ZapButton(
+                text = stringResource(R.string.zap),
+                onClick = zap,
+                style = ZapButtonStyle.Tonal,
+                icon = R.drawable.ic_bolt,
+                iconTint = ZapWarning,
+                modifier = Modifier.fillMaxWidth().testTag("zapOpen"),
+            )
         }
-        summary.recipient?.let { recipient ->
-            val profile = summary.profiles[recipient.pubkey]
-            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2), modifier = Modifier.testTag("zapRecipient")) {
-                Box(Modifier.padding(top = 1.dp).size(18.dp).clip(CircleShape).background(ZapSurface3)) {
-                    ProfileImage(pubkey = recipient.pubkey, pictureUrl = profile?.picture, profileVersion = profile?.eventId, contentDescription = null, modifier = Modifier.matchParentSize())
+        if (summary.zappers.isNotEmpty()) ZappersStrip(summary, onProfileClick)
+    }
+}
+
+/** `⚡ 3,400 sats by` then each zapper's face and total, scrolling sideways. A face opens the profile. */
+@Composable
+private fun ZappersStrip(summary: ZapSummary, onProfileClick: (String) -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3),
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).testTag("zappers"),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space1)) {
+            Icon(painterResource(R.drawable.ic_bolt), contentDescription = null, tint = ZapWarning, modifier = Modifier.size(20.dp))
+            Text(
+                pluralStringResource(R.plurals.zap_total, summary.totalSats.coerceIn(0, Int.MAX_VALUE.toLong()).toInt(), compactSats(summary.totalSats)),
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontFeatureSettings = "tnum"),
+                maxLines = 1,
+                modifier = Modifier.testTag("zapTotal"),
+            )
+            Text(
+                stringResource(R.string.zap_sats_by),
+                color = ZapText2,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                modifier = Modifier.padding(start = ZapSpacing.space1),
+            )
+        }
+        summary.zappers.forEach { zapper ->
+            val profile = summary.profiles[zapper.pubkey]
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+                modifier = Modifier
+                    .heightIn(min = ZapSpacing.space12)
+                    .clip(RoundedCornerShape(ZapRadius.full))
+                    .clickable(role = Role.Button) { onProfileClick(zapper.pubkey) }
+                    .testTag("zapper:${zapper.pubkey}"),
+            ) {
+                Box(Modifier.size(ZapSpacing.space6).clip(CircleShape).background(ZapSurface3)) {
+                    ProfileImage(
+                        pubkey = zapper.pubkey,
+                        pictureUrl = profile?.picture,
+                        profileVersion = profile?.eventId,
+                        contentDescription = shortDisplayName(zapper.pubkey, profile),
+                        modifier = Modifier.matchParentSize(),
+                    )
                 }
-                val name = shortDisplayName(recipient.pubkey, profile)
                 Text(
-                    if (recipient.catalog) stringResource(R.string.zap_goes_to_catalog, name) else stringResource(R.string.zap_goes_to_developer, name),
+                    compactSats(zapper.sats),
                     color = ZapText2,
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
+                    maxLines = 1,
                 )
             }
         }
-        onZap?.let { zap ->
-            Row(horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2)) {
-                ZAP_AMOUNTS.forEach { amount ->
-                    Row(
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(ZapSize.button)
-                            .clip(RoundedCornerShape(ZapRadius.full))
-                            .background(ZapWarning.copy(alpha = 0.14f))
-                            .border(1.dp, ZapWarning.copy(alpha = 0.35f), RoundedCornerShape(ZapRadius.full))
-                            .clickable(role = Role.Button) { zap(amount) }
-                            .testTag("zapQuick:$amount"),
-                    ) {
-                        Icon(painterResource(R.drawable.ic_bolt), contentDescription = null, tint = ZapWarning, modifier = Modifier.size(14.dp))
-                        Text(
-                            compactSats(amount),
-                            color = ZapWarning,
-                            style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"),
-                            modifier = Modifier.padding(start = 4.dp),
-                        )
-                    }
-                }
-            }
-        }
     }
 }
 
-/** The biggest zappers, overlapping, each ringed in the card color. */
-@Composable
-private fun ZapperFaces(pubkeys: List<String>, profiles: Map<String, ProfileRecord>) {
-    Row(horizontalArrangement = Arrangement.spacedBy((-8).dp), modifier = Modifier.testTag("zappers")) {
-        pubkeys.forEach { pubkey ->
-            val profile = profiles[pubkey]
-            Box(
-                Modifier
-                    .size(28.dp)
-                    .clip(CircleShape)
-                    .background(ZapSurface1)
-                    .padding(2.dp)
-                    .clip(CircleShape)
-                    .background(ZapSurface3),
-            ) {
-                ProfileImage(pubkey = pubkey, pictureUrl = profile?.picture, profileVersion = profile?.eventId, contentDescription = null, modifier = Modifier.matchParentSize())
-            }
-        }
+/** 1,200 as `1.2k`, 290,180 as `290k`, 2,000,000 as `2m`: one decimal below ten of a unit, none above. */
+internal fun compactSats(sats: Long): String {
+    fun scaled(value: Double, suffix: String): String {
+        val text = if (value >= 10) String.format(Locale.ROOT, "%.0f", value) else String.format(Locale.ROOT, "%.1f", value).removeSuffix(".0")
+        return text + suffix
+    }
+    return when {
+        sats >= 1_000_000 -> scaled(sats / 1_000_000.0, "m")
+        sats >= 1_000 -> scaled(sats / 1_000.0, "k")
+        else -> sats.toString()
     }
 }
 
-/** 21, 100, 1k, 5k. */
-internal fun compactSats(sats: Long): String =
-    if (sats >= 1_000 && sats % 1_000 == 0L) "${sats / 1_000}k" else sats.toString()
+/** A quick zap amount, with the same emoji and label as the reference app so returning users feel at home. */
+internal data class ZapAmountOption(val emoji: String, val label: String, val sats: Long)
 
-internal val ZAP_AMOUNTS = listOf(21L, 100L, 1_000L, 5_000L)
+internal val ZAP_AMOUNTS = listOf(
+    ZapAmountOption("\uD83E\uDD19", "2100", 2_100L),
+    ZapAmountOption("\uD83D\uDC9C", "10k", 10_000L),
+    ZapAmountOption("\uD83E\uDD29", "21k", 21_000L),
+    ZapAmountOption("\uD83C\uDFC3", "42k", 42_000L),
+    ZapAmountOption("\uD83D\uDCAF", "100k", 100_000L),
+)
 
 @Composable
 internal fun CommentsEmpty(error: CommentsError?, onRetry: () -> Unit, onSettings: () -> Unit) {
@@ -390,135 +406,6 @@ internal fun CommentsEmpty(error: CommentsError?, onRetry: () -> Unit, onSetting
             }
         }
     }
-}
-
-/** A comment as a row: avatar, name, date, text. Replies indent; no card behind them. */
-@Composable
-internal fun CommentRow(
-    comment: CommentRecord,
-    author: ProfileRecord?,
-    onOpenUrl: (String) -> Unit,
-    onAuthorClick: (String) -> Unit,
-    depth: Int = 0,
-) {
-    Box(Modifier.fillMaxWidth().testTag("commentDepth:${comment.eventId}:$depth")) {
-    Column(
-        verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = ZapSpacing.space6 * depth, top = ZapSpacing.space2, bottom = ZapSpacing.space2)
-            .testTag("comment:${comment.eventId}"),
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onAuthorClick(comment.pubkey) }
-                .testTag("profile:${comment.pubkey}"),
-        ) {
-            Box(Modifier.size(28.dp).clip(CircleShape).background(ZapSurface3)) {
-                ProfileImage(
-                    pubkey = comment.pubkey,
-                    pictureUrl = author?.picture,
-                    profileVersion = author?.eventId,
-                    contentDescription = stringResource(R.string.profile_avatar_description, shortDisplayName(comment.pubkey, author)),
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
-            Text(
-                shortDisplayName(comment.pubkey, author),
-                style = MaterialTheme.typography.titleSmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            Text(formatDate(comment.createdAt), color = ZapText2, style = MaterialTheme.typography.bodySmall)
-        }
-        MarkdownText(value = comment.content, color = ZapText2, style = MaterialTheme.typography.bodyMedium, onOpenUrl = onOpenUrl)
-    }
-    }
-}
-
-/**
- * A zap as an entry of the feed, beside the comments. With a note it reads like a comment with
- * the amount next to the name; without one it is a line: name, "zapped", the amount.
- */
-@Composable
-internal fun ZapEntryRow(
-    zap: ZapRecord,
-    author: ProfileRecord?,
-    onOpenUrl: (String) -> Unit,
-    onAuthorClick: (String) -> Unit,
-) {
-    val name = shortDisplayName(zap.pubkey, author)
-    Column(
-        verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = ZapSpacing.space2, bottom = ZapSpacing.space2)
-            .testTag("zapEntry:${zap.eventId}"),
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onAuthorClick(zap.pubkey) }
-                .testTag("zapAuthor:${zap.pubkey}"),
-        ) {
-            Box(Modifier.size(28.dp).clip(CircleShape).background(ZapSurface3)) {
-                ProfileImage(
-                    pubkey = zap.pubkey,
-                    pictureUrl = author?.picture,
-                    profileVersion = author?.eventId,
-                    contentDescription = stringResource(R.string.profile_avatar_description, name),
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
-            Text(
-                name,
-                style = MaterialTheme.typography.titleSmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
-            )
-            if (zap.note.isEmpty()) {
-                Text(stringResource(R.string.feed_zapped), color = ZapText2, style = MaterialTheme.typography.bodySmall)
-            }
-            Icon(painterResource(R.drawable.ic_bolt), contentDescription = null, tint = ZapWarning, modifier = Modifier.size(14.dp))
-            Text(
-                remember(zap.amountSats) { NumberFormat.getInstance().format(zap.amountSats) },
-                color = ZapWarning,
-                style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"),
-                modifier = Modifier.testTag("zapSats:${zap.eventId}"),
-            )
-            Box(Modifier.weight(1f))
-            Text(formatDate(zap.createdAt), color = ZapText2, style = MaterialTheme.typography.bodySmall)
-        }
-        if (zap.note.isNotEmpty()) {
-            MarkdownText(value = zap.note, color = ZapText2, style = MaterialTheme.typography.bodyMedium, onOpenUrl = onOpenUrl)
-        }
-    }
-}
-
-/** `82 comments · 94 zaps · ⚡ 1,200,000 sats`: what the feed below holds. */
-@Composable
-internal fun FeedTally(feed: List<FeedEntry>, sats: Long) {
-    val comments = feed.count { it is FeedEntry.Comment }
-    val zaps = feed.count { it is FeedEntry.Zap }
-    val format = remember { NumberFormat.getInstance() }
-    val parts = buildList {
-        add(pluralStringResource(R.plurals.feed_comments, comments, comments))
-        add(pluralStringResource(R.plurals.feed_zaps, zaps, zaps))
-        if (sats > 0) add("⚡ " + pluralStringResource(R.plurals.zap_total, sats.coerceIn(0, Int.MAX_VALUE.toLong()).toInt(), format.format(sats)))
-    }
-    Text(
-        parts.joinToString(" · "),
-        color = ZapText2,
-        style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
-        modifier = Modifier.padding(bottom = ZapSpacing.space2).testTag("feedTally"),
-    )
 }
 
 internal fun formatDate(createdAt: Long): String =

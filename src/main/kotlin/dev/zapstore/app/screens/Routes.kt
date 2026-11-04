@@ -12,7 +12,6 @@ object Routes {
     const val HOME = "home"
     const val UPDATES = "updates"
     const val ME = "me"
-    const val SETTINGS = "settings"
     const val APP = "app/{$APP_ID_ARG}"
     const val STACKS = "stacks"
     const val DIAGNOSTICS = "diagnostics"

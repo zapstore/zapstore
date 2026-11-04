@@ -1,8 +1,6 @@
 package dev.zapstore.app.screens
 
 import dev.zapstore.app.components.shortDisplayName
-import dev.zapstore.app.components.ZapButtonStyle
-import dev.zapstore.app.components.ZapIconButton
 import android.content.ClipData
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -64,14 +62,14 @@ fun ProfileScreen(
     onAppClick: (AppRecord) -> Unit,
     modifier: Modifier = Modifier,
     onStackClick: (StackRecord) -> Unit = {},
-    /** Set on the Profile tab: the signed-in account's own page, with the Settings gear. */
-    onSettingsClick: (() -> Unit)? = null,
+    /** Set on the Profile tab: the signed-in account's own page, ending in the device's settings. */
+    settings: (@Composable () -> Unit)? = null,
     /** The device's saved apps, pinned first among the stacks on the Profile tab. */
     saved: SavedApps? = null,
     onSavedClick: () -> Unit = {},
     onLoadMoreActivity: () -> Unit = {},
 ) {
-    val own = onSettingsClick != null
+    val own = settings != null
     val noApps = stringResource(R.string.no_profile_apps)
     val yourApps = stringResource(R.string.your_apps)
     val clipboard = LocalClipboard.current
@@ -130,7 +128,6 @@ fun ProfileScreen(
                     profile?.name?.takeIf { it != profile.displayName }?.let { StatusText("@$it") }
                     if (profile == null && state.profileLoading) LoadingIndicator(Modifier.padding(top = 8.dp))
                 }
-                onSettingsClick?.let { SettingsGear(it) }
             }
         }
 
@@ -228,16 +225,11 @@ fun ProfileScreen(
                 )
             }
         }
-    }
-}
 
-@Composable
-internal fun SettingsGear(onClick: () -> Unit, modifier: Modifier = Modifier) {
-    ZapIconButton(
-        icon = R.drawable.ic_settings,
-        contentDescription = stringResource(R.string.settings),
-        onClick = onClick,
-        style = ZapButtonStyle.Ghost,
-        modifier = modifier.testTag("openSettings"),
-    )
+        settings?.let { content ->
+            item(key = "settings", contentType = "settings") {
+                Column(Modifier.padding(start = 16.dp, end = 16.dp, top = ZapSpacing.space4)) { content() }
+            }
+        }
+    }
 }

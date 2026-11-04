@@ -46,6 +46,20 @@ class CommentThreadTest {
     }
 
     @Test
+    fun blocksKeepARootAndItsRepliesTogetherAndLeaveAZapAlone() {
+        val old = comment("root-old", createdAt = 100)
+        val new = comment("root-new", createdAt = 500)
+        val reply = comment("reply", createdAt = 900, parent = "root-old")
+        val between = zap("zap-between", createdAt = 300, note = "nice")
+
+        val blocks = feedBlocks(threadComments(listOf(old, new, reply)), listOf(between))
+        assertEquals(
+            listOf(listOf("comment:root-new"), listOf("zap:zap-between"), listOf("comment:root-old", "comment:reply")),
+            blocks.map { block -> block.map(FeedEntry::key) },
+        )
+    }
+
+    @Test
     fun missingParentBecomesRoot() {
         val orphan = comment("orphan", createdAt = 50, parent = "missing")
         val threads = threadComments(listOf(orphan))

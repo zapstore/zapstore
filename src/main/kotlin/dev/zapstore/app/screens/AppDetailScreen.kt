@@ -1,16 +1,9 @@
 package dev.zapstore.app.screens
 
-import androidx.compose.runtime.mutableLongStateOf
 import dev.zapstore.app.components.shortDisplayName
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.ui.platform.LocalDensity
 import dev.zapstore.app.components.animationsEnabled
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -31,12 +24,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,24 +38,27 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import dev.zapstore.app.CdnImageVariant
 import dev.zapstore.app.MarkdownText
 import dev.zapstore.app.R
+import dev.zapstore.app.ZapActionText
 import dev.zapstore.app.ZapCanvas
-import dev.zapstore.app.ZapDanger
 import dev.zapstore.app.ZapLine
 import dev.zapstore.app.ZapText3
 import dev.zapstore.app.ZapRadius
-import dev.zapstore.app.ZapSize
 import dev.zapstore.app.ZapSpacing
 import dev.zapstore.app.ZapSurface3
 import dev.zapstore.app.ZapText2
 import dev.zapstore.app.cdnImageUrl
 import dev.zapstore.app.components.AppDetailHead
-import dev.zapstore.app.components.ZapMotion
 import dev.zapstore.app.components.scrollParallax
 import dev.zapstore.app.components.windowParallax
 import dev.zapstore.app.components.AppIcon
@@ -73,9 +70,9 @@ import dev.zapstore.app.components.SkeletonBlock
 import dev.zapstore.app.components.StatusText
 import dev.zapstore.app.components.ZapButtonStyle
 import dev.zapstore.app.components.ZapIconButton
-import dev.zapstore.app.components.ZapProgressButton
-import dev.zapstore.app.components.ZapTextLink
+import dev.zapstore.iolite.AppByline
 import dev.zapstore.iolite.AppRecord
+import dev.zapstore.iolite.CommentRecord
 import dev.zapstore.iolite.StackRecord
 
 @Composable
@@ -87,7 +84,7 @@ fun AppDetailScreen(
     onRetryComments: () -> Unit = {},
     onSettingsClick: () -> Unit = {},
     onInstall: () -> Unit = {},
-    onConfirmInstall: (alwaysTrust: Boolean) -> Unit = {},
+    onConfirmInstall: () -> Unit = {},
     onDismissInstall: () -> Unit = {},
     onPersonalizeTrust: () -> Unit = {},
     onUninstall: () -> Unit = {},
@@ -100,22 +97,26 @@ fun AppDetailScreen(
     onSave: (Boolean) -> Unit = {},
     onIgnore: (Boolean) -> Unit = {},
     onShare: () -> Unit = {},
-    onPostComment: (String) -> Unit = {},
+    onPostComment: (text: String, parent: CommentRecord?) -> Unit = { _, _ -> },
     onReport: (type: String, note: String) -> Unit = { _, _ -> },
     onReportClosed: () -> Unit = {},
     onZap: (sats: Long, note: String) -> Unit = { _, _ -> },
     onZapClosed: () -> Unit = {},
+    onSignIn: () -> Unit = {},
+    onConnectWallet: (String) -> Boolean = { false },
     onToggleStack: (StackRecord) -> Unit = {},
     onCreateStack: (String) -> Unit = {},
     onStackClick: (StackRecord) -> Unit = {},
 ) {
     var selectedScreenshot by remember { mutableStateOf<Int?>(null) }
-    var sheet by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var releasing by remember { mutableStateOf(false) }
     var actions by remember { mutableStateOf(false) }
     var reporting by remember { mutableStateOf(false) }
     var stacking by remember { mutableStateOf(false) }
     var zapping by remember { mutableStateOf(false) }
-    var zapAmount by remember { mutableLongStateOf(ZAP_AMOUNTS[1]) }
+    var commenting by rememberSaveable { mutableStateOf(false) }
+    var replyingTo by remember { mutableStateOf<CommentRecord?>(null) }
+    var report by remember { mutableStateOf<ReportFocus?>(null) }
     val listState = rememberLazyListState()
     val headCollapse by remember {
         derivedStateOf {
@@ -127,11 +128,12 @@ fun AppDetailScreen(
         }
     }
     val app = state.app
+    var showOriginal by remember(app?.appId) { mutableStateOf(false) }
     val comments = state.comments
-    val feed = remember(comments.threads, comments.zaps) { feedEntries(comments.threads, comments.zaps) }
-    val other = remember(comments.other) { feedEntries(comments.other, emptyList()) }
-    val developerDescription = stringResource(R.string.developer_description)
-    val releaseNotes = stringResource(R.string.release_notes)
+    // Zaps are in the zap row above; only the ones that came with a note are listed among the comments.
+    val feed = remember(comments.threads, comments.zaps) { feedBlocks(comments.threads, comments.zaps.filter { it.note.isNotBlank() }) }
+    val other = remember(comments.other) { feedBlocks(comments.other, emptyList()) }
+    val replyable = state.social.signedIn
 
     Box(modifier.fillMaxSize()) {
         LazyColumn(
@@ -155,11 +157,12 @@ fun AppDetailScreen(
                     name = app.name,
                     iconUrl = app.iconUrl,
                     iconFile = app.iconFile,
-                    version = app.version,
-                    caption = formatDate(app.releasedAt),
-                    authorPubkey = app.authorPubkey,
+                    authorPubkey = app.bylinePubkey,
                     author = state.author,
+                    verified = app.byline == AppByline.Verified,
+                    indexed = app.byline == AppByline.Indexed,
                     onAuthorClick = onProfileClick,
+                    onVerifiedClick = { report = ReportFocus.Developer },
                     onMore = { actions = true },
                     modifier = Modifier.scrollParallax(listState),
                 )
@@ -200,49 +203,47 @@ fun AppDetailScreen(
                 }
             }
 
-            val about = app.about.ifBlank { app.description }
-            if (about.isNotBlank()) {
-                item(key = "about", contentType = "text") {
-                    Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space1)) {
+            val generated = app.about.trim()
+            val listing = app.listing.trim()
+            val both = generated.isNotEmpty() && listing.isNotEmpty()
+            val showingOriginal = both && showOriginal
+            val about = when {
+                showingOriginal -> listing
+                generated.isNotEmpty() -> generated
+                else -> listing.ifBlank { app.summary.trim() }
+            }
+            item(key = "about", contentType = "text") {
+                Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space1)) {
+                    if (about.isNotBlank()) {
                         MarkdownText(
                             value = about,
                             color = ZapText2,
                             style = MaterialTheme.typography.bodyLarge,
                             onOpenUrl = onOpenUrl,
-                            collapsible = app.about.isBlank(),
+                            collapsible = generated.isEmpty(),
                         )
-                        if (app.about.isNotBlank() && app.description.isNotBlank()) {
-                            ZapTextLink(
-                                stringResource(R.string.see_developer_description),
-                                { sheet = developerDescription to app.description },
-                                Modifier.testTag("developerDescription"),
-                            )
-                        }
+                    } else {
+                        // Said out loud, as on the web page, instead of leaving the section out.
+                        Text(stringResource(R.string.no_description), color = ZapText2, style = MaterialTheme.typography.bodyLarge)
+                    }
+                    if (generated.isNotEmpty()) {
+                        AboutSourceNote(
+                            showingOriginal = showingOriginal,
+                            canSwap = both,
+                            onSwap = { showOriginal = !showOriginal },
+                        )
                     }
                 }
             }
 
-            if (state.social.zappable || state.zaps.count > 0) {
+            if (state.social.zappable || state.zaps.zappers.isNotEmpty()) {
                 item(key = "zaps", contentType = "zaps") {
-                    ZapCard(
+                    ZapRow(
                         state.zaps,
-                        appName = app.name,
-                        onZap = if (state.social.zappable) ({ amount -> zapAmount = amount; zapping = true }) else null,
+                        onProfileClick = onProfileClick,
+                        onZap = if (state.social.zappable) ({ zapping = true }) else null,
                     )
                 }
-            }
-
-            if (app.hasSecurityCard()) {
-                item(key = "security", contentType = "card") { SecurityCard(app, onOpenUrl) }
-            }
-            item(key = "release", contentType = "card") {
-                ReleaseCard(
-                    app = app,
-                    author = state.author,
-                    onOpenUrl = onOpenUrl,
-                    onProfileClick = onProfileClick,
-                    onReleaseNotes = { sheet = releaseNotes to app.releaseNotes },
-                )
             }
 
             if (state.stackedBy.stacks.isNotEmpty()) {
@@ -251,41 +252,46 @@ fun AppDetailScreen(
                 }
             }
 
-            item(key = "commentsHeader", contentType = "header") {
-                Column {
-                    HorizontalDivider(color = ZapLine)
-                    GroupHeader(stringResource(R.string.comments), Modifier.padding(top = ZapSpacing.space2))
-                    if (feed.isNotEmpty()) {
-                        FeedTally(feed, state.zaps.totalSats)
-                    }
+            item(key = "release", contentType = "card") {
+                ReleaseCard(app, onOpen = { releasing = true })
+            }
+            if (app.hasSecurityCard()) {
+                item(key = "security", contentType = "card") {
+                    SecurityReportCard(
+                        app = app,
+                        onOpenUrl = onOpenUrl,
+                        onSeeFull = { report = ReportFocus.Top },
+                    )
                 }
+            } else {
+                item(key = "security", contentType = "card") {
+                    PackageCard(onOpen = { report = ReportFocus.Top })
+                }
+            }
+
+            item(key = "commentsHeader", contentType = "header") {
+                // "Activity": the list below is the app's comments, and the zaps that came with a note.
+                GroupHeader(stringResource(R.string.activity), count = feed.sumOf { it.size }.takeIf { it > 0 })
             }
             item(key = "commentComposer", contentType = "composer") {
-                CommentComposer(state.social, onPostComment, onSettingsClick)
+                AddCommentButton({ commenting = true })
             }
             when {
-                comments.loading && feed.isEmpty() -> item(contentType = "loading") {
-                    LoadingIndicator(Modifier.padding(vertical = ZapSpacing.space3).testTag("commentsLoading"))
-                }
-                feed.isEmpty() -> item(contentType = "empty") {
+                comments.error != null && feed.isEmpty() -> item(key = "commentsError", contentType = "error") {
                     CommentsEmpty(error = comments.error, onRetry = onRetryComments, onSettings = onSettingsClick)
                 }
-                else -> items(feed, key = FeedEntry::key, contentType = { if (it is FeedEntry.Zap) "zap" else "comment" }) { entry ->
-                    when (entry) {
-                        is FeedEntry.Comment -> CommentRow(
-                            comment = entry.comment,
-                            author = comments.profiles[entry.comment.pubkey],
-                            depth = entry.depth,
-                            onOpenUrl = onOpenUrl,
-                            onAuthorClick = onProfileClick,
-                        )
-                        is FeedEntry.Zap -> ZapEntryRow(
-                            zap = entry.zap,
-                            author = comments.profiles[entry.zap.pubkey],
-                            onOpenUrl = onOpenUrl,
-                            onAuthorClick = onProfileClick,
-                        )
-                    }
+                comments.loading && feed.isEmpty() -> item(key = "commentsLoading", contentType = "loading") {
+                    LoadingIndicator(Modifier.padding(vertical = ZapSpacing.space3).testTag("commentsLoading"))
+                }
+                else -> items(feed, key = { it.first().key }, contentType = { "thread" }) { block ->
+                    FeedBlock(
+                        block = block,
+                        profiles = comments.profiles,
+                        replyable = replyable,
+                        onReply = { replyingTo = it },
+                        onOpenUrl = onOpenUrl,
+                        onAuthorClick = onProfileClick,
+                    )
                 }
             }
             if (other.isNotEmpty()) {
@@ -296,16 +302,15 @@ fun AppDetailScreen(
                         Text(stringResource(R.string.other_comments_hint), color = ZapText3, style = MaterialTheme.typography.bodySmall)
                     }
                 }
-                items(other, key = { "other:${it.key}" }, contentType = { "comment" }) { entry ->
-                    if (entry is FeedEntry.Comment) {
-                        CommentRow(
-                            comment = entry.comment,
-                            author = comments.profiles[entry.comment.pubkey],
-                            depth = entry.depth,
-                            onOpenUrl = onOpenUrl,
-                            onAuthorClick = onProfileClick,
-                        )
-                    }
+                items(other, key = { "other:${it.first().key}" }, contentType = { "thread" }) { block ->
+                    FeedBlock(
+                        block = block,
+                        profiles = comments.profiles,
+                        replyable = false,
+                        onReply = {},
+                        onOpenUrl = onOpenUrl,
+                        onAuthorClick = onProfileClick,
+                    )
                 }
             }
         }
@@ -314,6 +319,7 @@ fun AppDetailScreen(
             CompactAppHeader(
                 app = app,
                 collapse = { headCollapse },
+                onMore = { actions = true },
                 modifier = Modifier.align(Alignment.TopCenter),
             )
             InstallBar(
@@ -348,12 +354,54 @@ fun AppDetailScreen(
                 trustName = app.authorPubkey?.let { shortDisplayName(it, state.author) },
                 catalogSigned = app.isCatalogSigned,
                 downloadUrl = app.downloadUrl,
+                source = app.repository,
                 trust = state.install.trust,
                 onPersonalizeTrust = onPersonalizeTrust,
             )
         }
-        sheet?.let { (title, markdown) ->
-            MarkdownSheet(title, markdown, onOpenUrl) { sheet = null }
+        if (releasing) {
+            ReleaseSheet(app, onOpenUrl) { releasing = false }
+        }
+        report?.let { focus ->
+            SecurityReportSheet(
+                app = app,
+                author = state.author,
+                proof = state.proof,
+                focus = focus,
+                onOpenUrl = onOpenUrl,
+                onProfileClick = { pubkey ->
+                    report = null
+                    onProfileClick(pubkey)
+                },
+                onDismiss = { report = null },
+            )
+        }
+        if (commenting) {
+            val version = app.version.takeIf { it.isNotBlank() }
+            CommentSheet(
+                title = stringResource(R.string.comment_on, version ?: app.name),
+                hint = stringResource(R.string.comment_hint_app, app.name, version.orEmpty()).trim(),
+                signInMessage = stringResource(R.string.comment_sign_in),
+                postLabel = stringResource(R.string.post_comment),
+                social = state.social,
+                onPost = { onPostComment(it, null) },
+                onSignIn = onSignIn,
+                onDismiss = { commenting = false },
+            )
+        }
+        replyingTo?.let { parent ->
+            val parentAuthor = comments.profiles[parent.pubkey]
+            CommentSheet(
+                title = stringResource(R.string.reply_to, shortDisplayName(parent.pubkey, parentAuthor)),
+                hint = stringResource(R.string.reply_hint),
+                signInMessage = stringResource(R.string.reply_sign_in),
+                postLabel = stringResource(R.string.post_reply),
+                social = state.social,
+                onPost = { onPostComment(it, parent) },
+                onSignIn = onSignIn,
+                onDismiss = { replyingTo = null },
+                preview = parent.content,
+            )
         }
         if (zapping) {
             ZapAppSheet(
@@ -361,13 +409,11 @@ fun AppDetailScreen(
                 social = state.social,
                 recipient = state.zaps.recipient,
                 recipientName = state.zaps.recipient?.let { shortDisplayName(it.pubkey, state.zaps.profiles[it.pubkey]) }.orEmpty(),
-                initialSats = zapAmount,
+                initialSats = ZAP_AMOUNTS[0].sats,
                 onZap = onZap,
-                onSettings = {
-                    zapping = false
-                    onZapClosed()
-                    onSettingsClick()
-                },
+                onSignIn = onSignIn,
+                onConnectWallet = onConnectWallet,
+                onRetry = onZapClosed,
                 onDismiss = {
                     zapping = false
                     onZapClosed()
@@ -418,6 +464,12 @@ fun AppDetailScreen(
                     actions = false
                     if (state.userStacks == null) onSettingsClick() else stacking = true
                 },
+                onWebsite = app.website?.let { site ->
+                    {
+                        actions = false
+                        onOpenUrl(site)
+                    }
+                },
             )
         }
         val userStacks = state.userStacks
@@ -460,6 +512,7 @@ private fun AppDetailSkeleton() {
 private fun CompactAppHeader(
     app: AppRecord,
     collapse: () -> Float,
+    onMore: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val animate = animationsEnabled()
@@ -502,9 +555,41 @@ private fun CompactAppHeader(
                     if (animate) translationX = (1f - reveal()) * 10.dp.toPx()
                 },
             )
+            ZapIconButton(
+                R.drawable.ic_more,
+                stringResource(R.string.more_actions),
+                onMore,
+                style = ZapButtonStyle.Ghost,
+                modifier = Modifier.testTag("compactMore"),
+            )
         }
         HorizontalDivider(color = ZapLine)
     }
+}
+
+/** The web caption under an enriched about: the generated line, and a swap to the developer's own text when it exists. */
+@Composable
+private fun AboutSourceNote(showingOriginal: Boolean, canSwap: Boolean, onSwap: () -> Unit) {
+    val lead = stringResource(if (showingOriginal) R.string.original_description else R.string.summary_generated)
+    val link = if (canSwap) stringResource(if (showingOriginal) R.string.view_summary else R.string.view_original) else null
+    Text(
+        text = buildAnnotatedString {
+            append(lead)
+            if (link != null) {
+                append(" ")
+                withLink(
+                    LinkAnnotation.Clickable(
+                        tag = "about-swap",
+                        styles = TextLinkStyles(SpanStyle(color = ZapActionText)),
+                        linkInteractionListener = { onSwap() },
+                    ),
+                ) { append(link) }
+            }
+        },
+        color = ZapText3,
+        style = MaterialTheme.typography.bodySmall,
+        modifier = Modifier.testTag(if (showingOriginal) "viewSummary" else "summaryGenerated"),
+    )
 }
 
 private const val COMPACT_START = 0.45f

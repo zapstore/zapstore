@@ -40,6 +40,10 @@ import dev.zapstore.app.components.StackHead
 import dev.zapstore.app.components.StatusText
 import dev.zapstore.app.components.appList
 import dev.zapstore.iolite.AppRecord
+import dev.zapstore.iolite.CommentRecord
+import dev.zapstore.app.components.shortDisplayName
+import androidx.compose.foundation.lazy.items
+import androidx.compose.runtime.remember
 
 @Composable
 fun StackDetailScreen(
@@ -50,6 +54,9 @@ fun StackDetailScreen(
     onRemoveApp: (String) -> Unit = {},
     onRename: (String) -> Unit = {},
     onLoadMoreComments: () -> Unit = {},
+    onPostComment: (text: String, parent: CommentRecord?) -> Unit = { _, _ -> },
+    onSignIn: () -> Unit = {},
+    onOpenUrl: (String) -> Unit = {},
 ) {
     val appsTitle = stringResource(R.string.apps)
     val noApps = stringResource(R.string.no_stack_apps)
@@ -57,13 +64,15 @@ fun StackDetailScreen(
     var renaming by rememberSaveable { mutableStateOf(false) }
     var name by rememberSaveable { mutableStateOf("") }
     LaunchedEffect(state.edit.renamed) { renaming = false }
+    var commenting by rememberSaveable { mutableStateOf(false) }
+    var replyingTo by remember { mutableStateOf<CommentRecord?>(null) }
+    val blocks = remember(state.threads) { feedBlocks(state.threads, emptyList()) }
     val listState = rememberLazyListState()
     LoadMoreNearEnd(
         { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index to listState.layoutInfo.totalItemsCount },
         state.commentsCanLoadMore,
         onLoadMoreComments,
     )
-    val noComments = stringResource(R.string.no_stack_comments)
     LazyColumn(
         state = listState,
         modifier = modifier
@@ -144,18 +153,64 @@ fun StackDetailScreen(
         )
         state.error?.let { item { StatusText(it) } }
 
-        // Comments only: a stack takes no zaps here. The person leads each row, since the stack is the subject.
+        // Comments only: a stack takes no zaps here. The same section as an app's, minus the zap notes.
         item(key = "commentsHeader", contentType = "header") {
-            GroupHeader(stringResource(R.string.comments), Modifier.padding(top = ZapSpacing.space2).testTag("stackComments"))
+            GroupHeader(
+                stringResource(R.string.comments),
+                Modifier.padding(top = ZapSpacing.space2).testTag("stackComments"),
+                count = blocks.sumOf { it.size }.takeIf { it > 0 },
+            )
         }
-        activityRows(
-            items = state.comments,
-            loading = state.commentsLoading,
-            canLoadMore = state.commentsCanLoadMore,
-            profiles = state.commentProfiles,
-            stackApps = emptyMap(),
-            emptyText = noComments,
-            onOpen = { item -> onProfileClick(item.pubkey) },
+        item(key = "commentComposer", contentType = "composer") {
+            AddCommentButton({ commenting = true })
+        }
+        if (blocks.isEmpty() && state.commentsLoading) {
+            item(key = "commentsLoading", contentType = "loading") {
+                LoadingIndicator(Modifier.padding(vertical = ZapSpacing.space3).testTag("commentsLoading"))
+            }
+        }
+        items(blocks, key = { it.first().key }, contentType = { "thread" }) { block ->
+            FeedBlock(
+                block = block,
+                profiles = state.commentProfiles,
+                replyable = state.social.signedIn,
+                onReply = { replyingTo = it },
+                onOpenUrl = onOpenUrl,
+                onAuthorClick = onProfileClick,
+                modifier = Modifier.padding(bottom = ZapSpacing.space2),
+            )
+        }
+        if (state.commentsCanLoadMore) {
+            item(key = "commentsMore", contentType = "loading") {
+                LoadingIndicator(Modifier.padding(vertical = ZapSpacing.space4).testTag("activityLoadingMore"))
+            }
+        }
+    }
+
+    val stack = state.stack
+    if (stack != null && commenting) {
+        CommentSheet(
+            title = stringResource(R.string.comment_on_stack, stack.name),
+            hint = stringResource(R.string.comment_hint_stack, stack.name),
+            signInMessage = stringResource(R.string.comment_sign_in_stack),
+            postLabel = stringResource(R.string.post_comment),
+            social = state.social,
+            onPost = { onPostComment(it, null) },
+            onSignIn = onSignIn,
+            onDismiss = { commenting = false },
+        )
+    }
+    replyingTo?.let { parent ->
+        CommentSheet(
+            title = stringResource(R.string.reply_to, shortDisplayName(parent.pubkey, state.commentProfiles[parent.pubkey])),
+            hint = stringResource(R.string.reply_hint),
+            signInMessage = stringResource(R.string.reply_sign_in),
+            postLabel = stringResource(R.string.post_reply),
+            social = state.social,
+            onPost = { onPostComment(it, parent) },
+            onSignIn = onSignIn,
+            onDismiss = { replyingTo = null },
+            preview = parent.content,
         )
     }
 }

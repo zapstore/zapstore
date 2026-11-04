@@ -33,6 +33,30 @@ class SocialTest {
     }
 
     @Test
+    fun commentNamesTheVersionItWasWrittenOn() {
+        assertTrue(listOf("v", "1.2.3") in Social.commentTags(anchor, version = "1.2.3"))
+        assertTrue(Social.commentTags(anchor, version = " ").none { it.first() == "v" })
+    }
+
+    @Test
+    fun stackCommentAddressesTheStackByCoordinate() {
+        val tags = Social.stackCommentTags(catalog, "daily")
+        val root = "30267:$catalog:daily"
+        assertEquals(
+            listOf(
+                listOf("A", root), listOf("K", "30267"), listOf("P", catalog),
+                listOf("a", root), listOf("k", "30267"), listOf("p", catalog),
+            ),
+            tags,
+        )
+        val parent = CommentRecord("e".repeat(64), "b".repeat(64), 1, "hi", null, root, null)
+        val reply = Social.stackCommentTags(catalog, "daily", parent)
+        assertTrue(listOf("e", "e".repeat(64)) in reply)
+        assertTrue(listOf("k", "1111") in reply)
+        assertTrue(listOf("A", root) in reply)
+    }
+
+    @Test
     fun reportCarriesItsTypeOnTheAddress() {
         assertEquals(
             listOf(listOf("a", "32267:$catalog:dev.zap", "malware"), listOf("i", "dev.zap")),

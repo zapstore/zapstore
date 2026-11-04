@@ -4,6 +4,8 @@ import dev.zapstore.app.Toasts
 import dev.zapstore.iolite.Social
 import dev.zapstore.iolite.Kinds
 import dev.zapstore.iolite.Bolt11
+import dev.zapstore.iolite.Crypto
+import dev.zapstore.iolite.LocalSigner
 import dev.zapstore.iolite.NwcException
 import dev.zapstore.app.Lnurl
 import dev.zapstore.app.ZapException
@@ -35,6 +37,7 @@ import dev.zapstore.app.install.installPlan
 import dev.zapstore.app.install.message
 import dev.zapstore.iolite.AppCoordinate
 import dev.zapstore.iolite.AppRecord
+import dev.zapstore.iolite.CertificateProof
 import dev.zapstore.iolite.CommentRecord
 import dev.zapstore.iolite.Iolite
 import dev.zapstore.iolite.ProfileRecord
@@ -71,7 +74,7 @@ data class ZapSummary(
     val loading: Boolean = true,
     val error: String? = null,
     /** Biggest zappers by total, at most [TOP_ZAPPERS]. */
-    val zappers: List<String> = emptyList(),
+    val zappers: List<Zapper> = emptyList(),
     val recipient: ZapRecipient? = null,
     val profiles: Map<String, ProfileRecord> = emptyMap(),
 )
@@ -79,7 +82,10 @@ data class ZapSummary(
 /** Who a zap pays. [catalog] when the app has no C1 owner and the catalog that lists it is paid. */
 data class ZapRecipient(val pubkey: String, val catalog: Boolean)
 
-const val TOP_ZAPPERS = 5
+/** One person's zaps to the app, summed. */
+data class Zapper(val pubkey: String, val sats: Long)
+
+const val TOP_ZAPPERS = 10
 private const val TRUST_FOLLOWERS = 5
 
 /** Comments and zaps as the page shows them: one feed, built from [threads] and [zaps] by [feedEntries]. */
@@ -162,6 +168,10 @@ data class SocialUi(
     val zapError: String? = null,
     /** Sats of the last zap the wallet paid. */
     val zapped: Long? = null,
+    /** Set instead of [zapped] when no wallet is connected: the invoice is shown for the user to pay by hand. */
+    val invoice: String? = null,
+    val signingIn: Boolean = false,
+    val signInError: String? = null,
 )
 
 /** The signed-in account's public stacks, for adding this app. Null while signed out. */
@@ -189,6 +199,7 @@ data class AppDetailUiState(
     val app: AppRecord? = null,
     /** False until the first SQLite read; afterwards a null [app] means "not in the catalog". */
     val loaded: Boolean = false,
+    /** Profile for the header byline: the proof owner, the listing signer, or the indexer. */
     val author: ProfileRecord? = null,
     val zaps: ZapSummary = ZapSummary(),
     val comments: CommentsState = CommentsState(),
@@ -196,6 +207,8 @@ data class AppDetailUiState(
     val social: SocialUi = SocialUi(),
     val userStacks: UserStacksUi? = null,
     val stackedBy: StackedByUi = StackedByUi(),
+    /** The NIP-C1 proof behind [AppRecord.proofPubkey], when one is stored. */
+    val proof: CertificateProof? = null,
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -304,8 +317,10 @@ class AppDetailViewModel(
         check.value = Check.Idle
     }
 
+    private val proof: Flow<CertificateProof?> = app.map { it?.let(iolite::proof) }.distinctUntilChanged()
+
     private val author: Flow<ProfileRecord?> = app
-        .map { it?.authorPubkey }
+        .map { it?.bylinePubkey }
         .distinctUntilChanged()
         .flatMapLatest { pubkey ->
             if (pubkey == null) flowOf(null) else iolite.query(Query.profile(pubkey), AppConfig.profileQuery).map { it.items }
@@ -347,7 +362,7 @@ class AppDetailViewModel(
     }
 
     private val zapProfiles: Flow<Map<String, ProfileRecord>> = combine(app.map { it?.zapRecipient }, zaps) { recipient, zaps ->
-        topZappers(zaps?.items.orEmpty()).toSet() + listOfNotNull(recipient)
+        topZappers(zaps?.items.orEmpty()).map(Zapper::pubkey).toSet() + listOfNotNull(recipient)
     }
         .distinctUntilChanged()
         .flatMapLatest { pubkeys ->
@@ -412,7 +427,7 @@ class AppDetailViewModel(
         }
 
     val uiState: StateFlow<AppDetailUiState> = combine(
-        combine(catalog, stackedBy) { catalog, stackedBy -> catalog.copy(stackedBy = stackedBy) },
+        combine(catalog, stackedBy, proof) { catalog, stackedBy, proof -> catalog.copy(stackedBy = stackedBy, proof = proof) },
         originState,
         installUi,
         socialUi,
@@ -461,7 +476,7 @@ class AppDetailViewModel(
         viewModelScope.launch {
             val result = runCatching {
                 val signer = appContext.account.signer() ?: error(appContext.getString(R.string.sign_in_first))
-                iolite.publish(Kinds.Comment, Social.commentTags(anchor, parent), content, signer, relays = AppConfig.commentWriteRelays)
+                iolite.publish(Kinds.Comment, Social.commentTags(anchor, parent, uiState.value.app?.version), content, signer, relays = AppConfig.commentWriteRelays)
             }
             social.update { state ->
                 result.fold(
@@ -475,15 +490,18 @@ class AppDetailViewModel(
         }
     }
 
-    /** A NIP-56 report on the app, sent only to the catalog relay. */
+    /** A NIP-56 report on the app, sent only to the relays of the catalog that supplied it. */
     fun report(type: String, note: String) {
-        val anchor = uiState.value.app?.catalogAnchor ?: return
+        val app = uiState.value.app ?: return
+        val anchor = app.catalogAnchor ?: return
         if (social.value.posting) return
         social.update { it.copy(posting = true, error = null) }
         viewModelScope.launch {
             val result = runCatching {
                 val signer = appContext.account.signer() ?: error(appContext.getString(R.string.sign_in_first))
-                iolite.publish(Kinds.Report, Social.reportTags(anchor, type), note.trim(), signer, relays = setOf(AppConfig.catalogRelay))
+                val relays = withContext(Dispatchers.IO) { iolite.catalogs().firstOrNull { it.id == app.catalogId }?.relays }
+                    ?.toSet()?.takeIf { it.isNotEmpty() } ?: setOf(AppConfig.catalogRelay)
+                iolite.publish(Kinds.Report, Social.reportTags(anchor, type), note.trim(), signer, relays = relays)
             }
             social.update { state ->
                 result.fold(
@@ -547,20 +565,20 @@ class AppDetailViewModel(
     fun clearReport() = social.update { it.copy(reported = false, error = null) }
 
     /**
-     * Zaps [sats] through the connected wallet to the app's C1 owner, or else to the catalog that
-     * lists it. The zap request names the catalog coordinate and is signed by the account; the
-     * invoice must match the amount.
+     * Zaps [sats] to the app's C1 owner, or else to the catalog that lists it. Signed in or not: without
+     * an account this signs the zap request with a throwaway key, the same anonymous zap every Nostr
+     * client supports. With a connected wallet it pays right away; otherwise the invoice comes back for
+     * the person to pay by hand, instead of blocking the zap on having a wallet connected at all.
      */
     fun zap(sats: Long, note: String) {
         val app = uiState.value.app ?: return
         val anchor = app.catalogAnchor ?: return
         val owner = app.zapRecipient ?: return
         if (sats <= 0 || social.value.zapping) return
-        social.update { it.copy(zapping = true, zapError = null, zapped = null) }
+        social.update { it.copy(zapping = true, zapError = null, zapped = null, invoice = null) }
         viewModelScope.launch {
             val result = runCatching {
-                val connection = appContext.wallet.connection.value ?: error(appContext.getString(R.string.zap_no_wallet))
-                val signer = appContext.account.signer() ?: error(appContext.getString(R.string.sign_in_first))
+                val signer = appContext.account.signer() ?: LocalSigner(Crypto.randomBytes(32))
                 val address = withTimeoutOrNull(PROFILE_WAIT) {
                     iolite.query(Query.profile(owner), AppConfig.profileQuery).first { it.items?.lud16 != null || it.settled }.items?.lud16
                 } ?: throw ZapException(ZapFailure.NoAddress)
@@ -575,18 +593,35 @@ class AppDetailViewModel(
                 )
                 val invoice = lnurl.invoice(pay, msat, request)
                 if (Bolt11.amountSats(invoice) != sats) throw ZapException(ZapFailure.Invoice)
-                iolite.walletRequest(connection, "pay_invoice", JSONObject().put("invoice", invoice))
+                val connection = appContext.wallet.connection.value
+                if (connection != null) iolite.walletRequest(connection, "pay_invoice", JSONObject().put("invoice", invoice))
+                (connection != null) to invoice
             }
             social.update { state ->
                 result.fold(
-                    onSuccess = { state.copy(zapping = false, zapped = sats) },
+                    onSuccess = { (paid, invoice) ->
+                        if (paid) state.copy(zapping = false, zapped = sats) else state.copy(zapping = false, invoice = invoice)
+                    },
                     onFailure = { state.copy(zapping = false, zapError = zapMessage(it)) },
                 )
             }
         }
     }
 
-    fun clearZap() = social.update { it.copy(zapError = null, zapped = null) }
+    fun clearZap() = social.update { it.copy(zapError = null, zapped = null, invoice = null) }
+
+    /** Opens the signer app. Stays on this screen; nothing here sends the person to Settings. */
+    fun signIn() {
+        if (social.value.signingIn) return
+        social.update { it.copy(signingIn = true, signInError = null) }
+        viewModelScope.launch {
+            val error = runCatching { appContext.account.signIn() }.exceptionOrNull()?.message
+            social.update { it.copy(signingIn = false, signInError = error) }
+        }
+    }
+
+    /** False when [input] is not a NWC connection string. */
+    fun connectWallet(input: String): Boolean = appContext.wallet.connect(input)
 
     private fun zapMessage(error: Throwable): String = when (error) {
         is ZapException -> appContext.getString(
@@ -610,7 +645,7 @@ class AppDetailViewModel(
         iolite.refreshConnections()
     }
 
-    /** Install or Update: the trust sheet for a first install from an untrusted author or a takeover, otherwise straight on. */
+    /** Install or Update: the trust sheet for a first install or a takeover, otherwise straight on. */
     fun prepareInstall() {
         val record = uiState.value.app ?: return
         val origin = originState.value ?: return
@@ -620,9 +655,8 @@ class AppDetailViewModel(
             blocked.value = blockMessage(plan.reason)
             return
         }
-        val trusted = plan is InstallPlan.FirstInstall && record.authorPubkey in appContext.settings.state.value.trustedSigners
         val declined = installer.tasks.value[appId]?.let { it.phase == TaskPhase.Ready && it.hash == record.apkHash } == true
-        if (plan is InstallPlan.Silent || trusted || declined) {
+        if (plan is InstallPlan.Silent || declined) {
             startInstall()
         } else {
             resetTrust()
@@ -635,16 +669,8 @@ class AppDetailViewModel(
         installDialog.value = null
     }
 
-    /** [alwaysTrust] adds the verified author to the trusted signers, so their next first install skips the sheet. */
-    fun confirmInstall(alwaysTrust: Boolean = false) {
-        val record = uiState.value.app ?: return
-        if (installDialog.value == null || uiState.value.install.busy) return
-        val author = record.authorPubkey
-        if (alwaysTrust && author != null && author !in appContext.settings.state.value.trustedSigners) {
-            appContext.settings.update { it.copy(trustedSigners = it.trustedSigners + author) }
-            val name = uiState.value.author?.displayNameOrNpub ?: appContext.getString(R.string.this_developer)
-            Toasts.show(appContext.getString(R.string.toast_trusted, name))
-        }
+    fun confirmInstall() {
+        if (uiState.value.app == null || installDialog.value == null || uiState.value.install.busy) return
         resetTrust()
         installDialog.value = null
         startInstall()
@@ -729,12 +755,11 @@ internal fun stackIdentifier(name: String): String =
     name.lowercase().split(Regex("[^\\p{L}\\p{N}]+")).filter { it.isNotEmpty() }.joinToString("-").take(48).trimEnd('-')
         .ifEmpty { "stack" }
 
-private fun topZappers(zaps: List<ZapRecord>): List<String> =
+private fun topZappers(zaps: List<ZapRecord>): List<Zapper> =
     zaps.groupBy(ZapRecord::pubkey)
-        .mapValues { (_, list) -> list.sumOf(ZapRecord::amountSats) }
-        .entries.sortedByDescending { it.value }
+        .map { (pubkey, list) -> Zapper(pubkey, list.sumOf(ZapRecord::amountSats)) }
+        .sortedByDescending(Zapper::sats)
         .take(TOP_ZAPPERS)
-        .map { it.key }
 
 private fun installUi(task: InstallTask?, dialog: InstallPlan?, blocked: String?, trust: TrustUi): InstallUi = InstallUi(
     trust = trust,

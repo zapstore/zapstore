@@ -25,6 +25,7 @@ import dev.zapstore.iolite.Kinds
 import dev.zapstore.iolite.ProfileRecord
 import dev.zapstore.iolite.Query
 import dev.zapstore.iolite.QueryState
+import dev.zapstore.iolite.Social
 import dev.zapstore.iolite.StackRecord
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -43,14 +44,16 @@ data class StackDetailUiState(
     val apps: AppListState = AppListState(),
     val appsById: Map<String, AppRecord> = emptyMap(),
     val error: String? = null,
-    /** Comments on this stack, newest first. Zaps on a stack are not read. */
-    val comments: List<ActivityItem> = emptyList(),
+    /** Comments on this stack: roots newest first, each with its replies. Zaps on a stack are not read. */
+    val threads: List<CommentThread> = emptyList(),
     val commentProfiles: Map<String, ProfileRecord> = emptyMap(),
     val commentsLoading: Boolean = true,
     val commentsCanLoadMore: Boolean = false,
     /** The signed-in account wrote this stack, so it can remove apps and rename it. */
     val own: Boolean = false,
     val edit: StackEditUi = StackEditUi(),
+    /** Writing a comment on this stack as the signed-in account. */
+    val social: SocialUi = SocialUi(),
 )
 
 /** A write to the account's own stack: the app id or [RENAME] in flight, the last failure, and finished renames. */
@@ -80,19 +83,21 @@ class StackDetailViewModel(
     private val profiles = appsById.map { it.values.toList() }.authorProfiles(iolite)
 
     private val edit = MutableStateFlow(StackEditUi())
+    private val social = MutableStateFlow(SocialUi())
+    private val socialUi = combine(social, account?.account ?: flowOf(null)) { social, account -> social.copy(signedIn = account != null) }
     private val own = (account?.account ?: flowOf(null)).map { it?.pubkey.equals(author, ignoreCase = true) }
 
     /** The stack's coordinate, which a comment on it names as its root `A`. */
     private val root = "${Kinds.AppStack}:$author:$identifier"
     private val commentLimit = MutableStateFlow(COMMENT_PAGE)
 
-    /** The curator's and the catalog key's inboxes are asked as well, since a comment on the stack tells its curator. */
+    /** The curator's and the catalog keys' inboxes are asked as well, since a comment on the stack tells its curator. */
     private val comments: Flow<QueryState<List<CommentRecord>>> = combine(
-        iolite.observeCatalogs().map { catalogs -> catalogs.firstOrNull()?.manifestPubkey }.distinctUntilChanged(),
+        iolite.observeCatalogs().map { catalogs -> catalogs.mapNotNull { it.manifestPubkey } }.distinctUntilChanged(),
         commentLimit,
         ::Pair,
-    ).flatMapLatest { (catalogKey, limit) ->
-        iolite.query(Query.stackComments(root, listOfNotNull(author, catalogKey), limit), AppConfig.commentQuery)
+    ).flatMapLatest { (catalogKeys, limit) ->
+        iolite.query(Query.stackComments(root, (listOf(author) + catalogKeys).distinct(), limit), AppConfig.commentQuery)
     }
 
     private val commentProfiles: Flow<Map<String, ProfileRecord>> = comments
@@ -109,7 +114,8 @@ class StackDetailViewModel(
         comments,
         commentProfiles,
         commentLimit,
-    ) { (stackState, appsById, profiles, own, edit), comments, commentProfiles, limit ->
+        socialUi,
+    ) { (stackState, appsById, profiles, own, edit), comments, commentProfiles, limit, social ->
         val stack = stackState.items
         StackDetailUiState(
             own = own,
@@ -123,12 +129,47 @@ class StackDetailViewModel(
             ),
             appsById = appsById,
             error = stackState.relayError(),
-            comments = comments.items.filter { it.content.isNotBlank() }.map { ActivityItem(it.eventId, it.pubkey, it.createdAt, comment = it.content) },
+            threads = threadComments(comments.items.filter { it.content.isNotBlank() }),
+            social = social,
             commentProfiles = commentProfiles,
             commentsLoading = comments.items.isEmpty() && !comments.settled,
             commentsCanLoadMore = comments.items.size >= limit,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), StackDetailUiState())
+
+    /** Publishes a top-level comment on the stack, or a reply to [parent], as the signed-in account. */
+    fun postComment(text: String, parent: CommentRecord? = null) {
+        val content = text.trim()
+        val store = account ?: return
+        if (content.isEmpty() || social.value.posting) return
+        social.update { it.copy(posting = true, error = null) }
+        viewModelScope.launch {
+            val result = runCatching {
+                val signer = store.signer() ?: error(strings(R.string.sign_in_first, emptyArray()))
+                iolite.publish(Kinds.Comment, Social.stackCommentTags(author, identifier, parent), content, signer, relays = AppConfig.commentWriteRelays)
+            }
+            social.update { state ->
+                result.fold(
+                    onSuccess = {
+                        Toasts.show(strings(if (parent == null) R.string.toast_comment_posted else R.string.toast_reply_posted, emptyArray()))
+                        state.copy(posting = false, posted = state.posted + 1)
+                    },
+                    onFailure = { state.copy(posting = false, error = it.message ?: strings(R.string.post_failed, emptyArray())) },
+                )
+            }
+        }
+    }
+
+    /** Opens the signer app, for the comment sheet's sign-in prompt. */
+    fun signIn() {
+        val store = account ?: return
+        if (social.value.signingIn) return
+        social.update { it.copy(signingIn = true, signInError = null) }
+        viewModelScope.launch {
+            val error = runCatching { store.signIn() }.exceptionOrNull()?.message
+            social.update { it.copy(signingIn = false, signInError = error) }
+        }
+    }
 
     fun removeApp(appId: String) {
         val stack = uiState.value.stack ?: return

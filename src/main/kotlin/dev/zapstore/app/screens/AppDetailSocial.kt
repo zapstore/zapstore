@@ -1,11 +1,13 @@
 package dev.zapstore.app.screens
 
+import android.content.ClipData
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,15 +27,23 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.zapstore.app.R
 import dev.zapstore.app.ZapAction
@@ -52,36 +62,8 @@ import dev.zapstore.app.components.ZapButtonStyle
 import dev.zapstore.app.components.ZapChip
 import dev.zapstore.app.components.ZapTextLink
 import dev.zapstore.iolite.Social
+import kotlinx.coroutines.launch
 import java.text.NumberFormat
-
-/** Multiline field that grows to four lines, with Post beside it. Signed out, a link to sign in. */
-@Composable
-internal fun CommentComposer(social: SocialUi, onPost: (String) -> Unit, onSignIn: () -> Unit, modifier: Modifier = Modifier) {
-    if (!social.signedIn) {
-        ZapTextLink(stringResource(R.string.sign_in_to_comment), onSignIn, modifier.testTag("signInToComment"))
-        return
-    }
-    var text by rememberSaveable { mutableStateOf("") }
-    LaunchedEffect(social.posted) { if (social.posted > 0) text = "" }
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(ZapSpacing.space1)) {
-        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2)) {
-            ZapTextArea(
-                value = text,
-                onValueChange = { text = it },
-                placeholder = stringResource(R.string.comment_placeholder),
-                modifier = Modifier.weight(1f).testTag("commentField"),
-            )
-            ZapButton(
-                text = stringResource(R.string.post),
-                onClick = { onPost(text) },
-                enabled = text.isNotBlank() && !social.posting,
-                loading = social.posting,
-                modifier = Modifier.height(ZapSize.control).testTag("postComment"),
-            )
-        }
-        social.error?.let { StatusText(it, Modifier.testTag("commentError")) }
-    }
-}
 
 @Composable
 internal fun ZapTextArea(
@@ -90,18 +72,29 @@ internal fun ZapTextArea(
     placeholder: String,
     modifier: Modifier = Modifier,
     maxLines: Int = 4,
+    keyboardType: KeyboardType = KeyboardType.Text,
+    minLines: Int = 1,
+    /** Takes focus, and so opens the keyboard, when it first shows. */
+    autofocus: Boolean = false,
 ) {
     val shape = RoundedCornerShape(ZapRadius.control)
+    val focus = remember { FocusRequester() }
+    if (autofocus) LaunchedEffect(Unit) { focus.requestFocus() }
     val style = MaterialTheme.typography.bodyMedium.copy(color = ZapText)
     BasicTextField(
         value = value,
         onValueChange = onValueChange,
         textStyle = style,
+        minLines = minLines,
         maxLines = maxLines,
         singleLine = maxLines == 1,
         cursorBrush = SolidColor(ZapActionText),
-        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+        keyboardOptions = KeyboardOptions(
+            capitalization = if (keyboardType == KeyboardType.Text) KeyboardCapitalization.Sentences else KeyboardCapitalization.None,
+            keyboardType = keyboardType,
+        ),
         modifier = modifier
+            .focusRequester(focus)
             .heightIn(min = ZapSize.control)
             .background(ZapSurface1, shape)
             .border(1.dp, ZapLine, shape),
@@ -192,8 +185,9 @@ internal fun ReportSheet(
 }
 
 /**
- * Zap the app's C1 owner, or else its catalog: a preset amount, an optional note, then Zap. Without an account or a
- * wallet it says what is missing and links to Settings; once paid, it says so.
+ * Zap the app's C1 owner, or else its catalog: a preset amount, an optional note, then Zap. Signed out,
+ * it still works, with a throwaway key like any Nostr client's anonymous zap; it just says so. Paid
+ * through a connected wallet when there is one, or else the invoice comes back to pay by hand.
  */
 @Composable
 internal fun ZapAppSheet(
@@ -203,12 +197,25 @@ internal fun ZapAppSheet(
     recipientName: String,
     initialSats: Long,
     onZap: (sats: Long, note: String) -> Unit,
-    onSettings: () -> Unit,
+    onSignIn: () -> Unit,
+    onConnectWallet: (String) -> Boolean,
+    onRetry: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     var sats by rememberSaveable(initialSats) { mutableLongStateOf(initialSats) }
     var note by rememberSaveable { mutableStateOf("") }
+    var customAmount by rememberSaveable { mutableStateOf(false) }
+    var customText by rememberSaveable { mutableStateOf("") }
+    var askSignIn by rememberSaveable { mutableStateOf(false) }
+    var pastingWallet by rememberSaveable { mutableStateOf(false) }
+    var walletText by rememberSaveable { mutableStateOf("") }
+    var walletError by remember { mutableStateOf<String?>(null) }
     val format = remember { NumberFormat.getInstance() }
+    val invalidWallet = stringResource(R.string.wallet_invalid)
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(social.signedIn) { if (social.signedIn) askSignIn = false }
+    LaunchedEffect(social.walletConnected) { if (social.walletConnected) pastingWallet = false }
     ZapSheet(onDismiss) {
         Column(
             verticalArrangement = Arrangement.spacedBy(ZapSpacing.space3),
@@ -217,8 +224,9 @@ internal fun ZapAppSheet(
                 .padding(start = ZapSpacing.space5, end = ZapSpacing.space5, bottom = ZapSpacing.space5)
                 .testTag("zapSheet"),
         ) {
-            Text(stringResource(R.string.zap_title, appName), style = MaterialTheme.typography.titleLarge)
+            Text(stringResource(R.string.zap_title, appName), color = Color.White, style = MaterialTheme.typography.titleLarge)
             when {
+                askSignIn -> SignInPanel(social, onSignIn)
                 social.zapped != null -> {
                     Text(
                         stringResource(R.string.zap_sent, format.format(social.zapped), recipientName),
@@ -228,15 +236,64 @@ internal fun ZapAppSheet(
                     )
                     ZapButton(stringResource(R.string.close), onDismiss, Modifier.fillMaxWidth(), style = ZapButtonStyle.Tonal)
                 }
-                !social.signedIn || !social.walletConnected -> {
-                    Text(stringResource(R.string.zap_needs), color = ZapText2, style = MaterialTheme.typography.bodyMedium)
-                    ZapButton(
-                        stringResource(if (!social.signedIn) R.string.zap_sign_in else R.string.zap_open_wallet),
-                        onSettings,
-                        Modifier.fillMaxWidth().height(ZapSize.controlLarge).testTag("zapSettings"),
+                social.invoice != null -> {
+                    Text(stringResource(R.string.zap_invoice_ready), color = ZapText2, style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        social.invoice,
+                        color = ZapText2,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.MiddleEllipsis,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(ZapSurface1, RoundedCornerShape(ZapRadius.control))
+                            .padding(horizontal = ZapSpacing.space3, vertical = 11.dp)
+                            .testTag("zapInvoice"),
                     )
+                    val invoice = social.invoice
+                    ZapButton(
+                        text = stringResource(R.string.zap_copy_invoice),
+                        onClick = { scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("invoice", invoice))) } },
+                        modifier = Modifier.fillMaxWidth().height(ZapSize.controlLarge).testTag("zapCopyInvoice"),
+                    )
+                    if (pastingWallet) {
+                        Text(stringResource(R.string.wallet_paste_body), color = ZapText2, style = MaterialTheme.typography.bodyMedium)
+                        ZapTextArea(
+                            value = walletText,
+                            onValueChange = { walletText = it },
+                            placeholder = "nostr+walletconnect://…",
+                            maxLines = 3,
+                            modifier = Modifier.fillMaxWidth().testTag("walletPasteField"),
+                        )
+                        walletError?.let { StatusText(it, Modifier.testTag("walletPasteError")) }
+                        ZapButton(
+                            text = stringResource(R.string.zap_open_wallet),
+                            onClick = {
+                                if (onConnectWallet(walletText)) pastingWallet = false
+                                else walletError = invalidWallet
+                            },
+                            modifier = Modifier.fillMaxWidth().testTag("walletPasteSubmit"),
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space4)) {
+                        if (!pastingWallet) {
+                            ZapTextLink(stringResource(R.string.zap_open_wallet), { pastingWallet = true }, Modifier.testTag("zapConnectWallet"))
+                        }
+                        ZapTextLink(stringResource(R.string.try_again), onRetry, Modifier.testTag("zapRetry"))
+                    }
                 }
                 else -> {
+                    if (!social.signedIn) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2)) {
+                            Text(
+                                stringResource(R.string.zap_anonymous),
+                                color = ZapText3,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f),
+                            )
+                            ZapTextLink(stringResource(R.string.zap_sign_in), { askSignIn = true }, Modifier.testTag("zapSignIn"))
+                        }
+                    }
                     Text(
                         if (recipient?.catalog == true) stringResource(R.string.zap_body_catalog, recipientName)
                         else stringResource(R.string.zap_body, recipientName),
@@ -244,15 +301,35 @@ internal fun ZapAppSheet(
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.testTag("zapBody"),
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2)) {
-                        ZAP_AMOUNTS.forEach { amount ->
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2), verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2)) {
+                        ZAP_AMOUNTS.forEach { option ->
                             ZapChip(
-                                text = format.format(amount),
-                                onClick = { sats = amount },
-                                selected = amount == sats,
-                                modifier = Modifier.testTag("zapAmount:$amount"),
+                                text = "${option.emoji} ${option.label}",
+                                onClick = { sats = option.sats; customAmount = false },
+                                selected = !customAmount && sats == option.sats,
+                                modifier = Modifier.testTag("zapAmount:${option.sats}"),
                             )
                         }
+                        ZapChip(
+                            text = if (customAmount && sats > 0) "\uD83D\uDC8E ${format.format(sats)}" else stringResource(R.string.zap_custom),
+                            onClick = { customAmount = true },
+                            selected = customAmount,
+                            modifier = Modifier.testTag("zapAmountCustom"),
+                        )
+                    }
+                    if (customAmount) {
+                        ZapTextArea(
+                            value = customText,
+                            onValueChange = { input ->
+                                val digits = input.filter(Char::isDigit)
+                                customText = digits
+                                digits.toLongOrNull()?.let { sats = it }
+                            },
+                            placeholder = stringResource(R.string.zap_custom_placeholder),
+                            maxLines = 1,
+                            keyboardType = KeyboardType.Number,
+                            modifier = Modifier.fillMaxWidth().testTag("zapCustomAmount"),
+                        )
                     }
                     ZapTextArea(note, { note = it }, stringResource(R.string.zap_note), Modifier.fillMaxWidth().testTag("zapNote"))
                     social.zapError?.let { StatusText(it, Modifier.testTag("zapError")) }
@@ -260,7 +337,7 @@ internal fun ZapAppSheet(
                         text = stringResource(R.string.zap_send, format.format(sats)),
                         onClick = { onZap(sats, note) },
                         loading = social.zapping,
-                        enabled = !social.zapping,
+                        enabled = !social.zapping && sats > 0,
                         icon = R.drawable.ic_bolt,
                         modifier = Modifier.fillMaxWidth().height(ZapSize.controlLarge).testTag("zapSend"),
                     )
@@ -270,6 +347,21 @@ internal fun ZapAppSheet(
     }
 }
 
+
+@Composable
+internal fun SignInPanel(social: SocialUi, onSignIn: () -> Unit, modifier: Modifier = Modifier) {
+    Column(modifier.testTag("signInSheet"), verticalArrangement = Arrangement.spacedBy(ZapSpacing.space3)) {
+        Text(stringResource(R.string.sign_in_here), color = ZapText2, style = MaterialTheme.typography.bodyMedium)
+        social.signInError?.let { StatusText(it, Modifier.testTag("signInError")) }
+        ZapButton(
+            text = stringResource(R.string.sign_in_with_signer),
+            onClick = onSignIn,
+            loading = social.signingIn,
+            enabled = !social.signingIn,
+            modifier = Modifier.fillMaxWidth().height(ZapSize.controlLarge).testTag("signInConfirm"),
+        )
+    }
+}
 
 private fun String.reportLabel(): Int = when (this) {
     "malware" -> R.string.report_malware

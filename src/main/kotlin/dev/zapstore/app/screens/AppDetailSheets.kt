@@ -1,11 +1,11 @@
 package dev.zapstore.app.screens
 
-import dev.zapstore.app.components.SwitchRow
 import dev.zapstore.app.components.shortDisplayName
-import dev.zapstore.app.components.SettingsGroup
 import dev.zapstore.app.components.EvidenceLine
 import androidx.compose.foundation.background
 import dev.zapstore.iolite.AppRecord
+import dev.zapstore.iolite.CertificateProof
+import dev.zapstore.iolite.toNpub
 import dev.zapstore.app.components.pressScale
 import dev.zapstore.app.components.AppIcon
 import dev.zapstore.app.ZapText
@@ -13,7 +13,11 @@ import dev.zapstore.app.ZapSurface3
 import dev.zapstore.app.ZapActionTint
 import dev.zapstore.app.ZapActionText
 import dev.zapstore.app.ZapDanger
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.clip
@@ -51,8 +55,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -78,15 +82,24 @@ import dev.zapstore.app.ZapText2
 import dev.zapstore.app.ZapText3
 import dev.zapstore.app.cdnImageUrl
 import dev.zapstore.app.components.BadgeTone
-import dev.zapstore.app.components.GroupHeader
 import dev.zapstore.app.components.LoadingIndicator
 import dev.zapstore.app.components.StatusText
 import dev.zapstore.iolite.StackRecord
+import dev.zapstore.app.components.InfoRow
 import dev.zapstore.app.components.VersionPill
 import dev.zapstore.app.components.ZapBadge
 import dev.zapstore.app.components.ZapButton
 import dev.zapstore.app.components.ZapButtonStyle
 import dev.zapstore.app.install.InstallPlan
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import dev.zapstore.app.components.SectionLabel
+import dev.zapstore.app.components.EvidenceField
+import dev.zapstore.iolite.AppByline
+import dev.zapstore.iolite.ProfileRecord
+import dev.zapstore.app.ZapLine
 
 /** Surface-2 bottom sheet with a grabber and 28 dp top corners. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -128,6 +141,7 @@ internal fun AppActionSheet(
     onReport: () -> Unit = {},
     onUninstall: (() -> Unit)? = null,
     onAddToStack: () -> Unit = {},
+    onWebsite: (() -> Unit)? = null,
 ) {
     ZapSheet(onDismiss) {
         Column(
@@ -150,30 +164,35 @@ internal fun AppActionSheet(
                 )
                 app.version.takeIf { it.isNotBlank() }?.let { VersionPill(it) }
             }
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
-                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
-            ) {
-                val tile = Modifier.weight(1f).fillMaxHeight()
-                ActionTile(
-                    R.drawable.ic_bookmark,
-                    stringResource(if (saved) R.string.action_saved else R.string.action_save),
-                    onSave,
-                    tile.testTag("actionSave"),
-                    selected = saved,
-                )
+            val saveLabel = stringResource(if (saved) R.string.action_saved else R.string.action_save)
+            val ignoreLabel = stringResource(if (ignored) R.string.action_resume_updates else R.string.action_ignore_updates)
+            val stackLabel = stringResource(R.string.action_add_to_stack)
+            val shareLabel = stringResource(R.string.action_share)
+            val websiteLabel = stringResource(R.string.action_website)
+            val reportLabel = stringResource(R.string.action_report)
+            val tiles = buildList<@Composable (Modifier) -> Unit> {
+                add { ActionTile(R.drawable.ic_bookmark, saveLabel, onSave, it.testTag("actionSave"), selected = saved) }
                 if (installed || ignored) {
-                    ActionTile(
-                        R.drawable.ic_update,
-                        stringResource(if (ignored) R.string.action_resume_updates else R.string.action_ignore_updates),
-                        onIgnore,
-                        tile.testTag("actionIgnore"),
-                        selected = ignored,
-                    )
+                    add { ActionTile(R.drawable.ic_update, ignoreLabel, onIgnore, it.testTag("actionIgnore"), selected = ignored) }
                 }
-                ActionTile(R.drawable.ic_stack, stringResource(R.string.action_add_to_stack), onAddToStack, tile.testTag("actionAddToStack"))
-                ActionTile(R.drawable.ic_share, stringResource(R.string.action_share), onShare, tile.testTag("actionShare"))
-                ActionTile(R.drawable.ic_flag, stringResource(R.string.action_report), onReport, tile.testTag("actionReport"), danger = true)
+                add { ActionTile(R.drawable.ic_stack, stackLabel, onAddToStack, it.testTag("actionAddToStack")) }
+                add { ActionTile(R.drawable.ic_share, shareLabel, onShare, it.testTag("actionShare")) }
+                onWebsite?.let { open -> add { ActionTile(R.drawable.ic_external, websiteLabel, open, it.testTag("actionWebsite")) } }
+                add { ActionTile(R.drawable.ic_flag, reportLabel, onReport, it.testTag("actionReport"), danger = true) }
+            }
+            // Up to four across; more wrap to rows of three so two-line labels keep their room.
+            val perRow = if (tiles.size > 4) 3 else tiles.size
+            Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2)) {
+                tiles.chunked(perRow).forEach { rowTiles ->
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+                        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                    ) {
+                        val tile = Modifier.weight(1f).fillMaxHeight()
+                        rowTiles.forEach { it(tile) }
+                        repeat(perRow - rowTiles.size) { Box(tile) }
+                    }
+                }
             }
             onUninstall?.let {
                 ZapButton(
@@ -386,9 +405,9 @@ internal fun ConfirmSheet(
 }
 
 /**
- * Trust and install: verdict, what Android will ask, then Cancel and the one primary action.
- * [trustName] is the verified author, offered as "Always trust" on a first install.
- * A [catalogSigned] listing says Zapstore did not build it and names the original [downloadUrl].
+ * Trust and install: verdict, then the one primary action. A takeover or silent update says what Android will do.
+ * [trustName] is the verified author, shown with follow signals on a first install.
+ * A [catalogSigned] listing says the indexer tracks it and names the original [downloadUrl].
  */
 @Composable
 internal fun InstallSheet(
@@ -396,17 +415,17 @@ internal fun InstallSheet(
     version: String,
     verified: Boolean,
     plan: InstallPlan,
-    onConfirm: (alwaysTrust: Boolean) -> Unit,
+    onConfirm: () -> Unit,
     onDismiss: () -> Unit,
     otherStore: String? = null,
     trustName: String? = null,
     catalogSigned: Boolean = false,
     downloadUrl: String? = null,
+    source: String? = null,
     trust: TrustUi = TrustUi(),
     onPersonalizeTrust: () -> Unit = {},
 ) {
     val switching = plan is InstallPlan.Takeover && otherStore != null
-    var alwaysTrust by rememberSaveable { mutableStateOf(false) }
     ZapSheet(onDismiss) {
         Column(
             verticalArrangement = Arrangement.spacedBy(ZapSpacing.space3),
@@ -421,46 +440,25 @@ internal fun InstallSheet(
             )
             VersionPill(version)
             if (verified) ZapBadge(stringResource(R.string.verified_author), BadgeTone.Verified)
-            if (catalogSigned) CatalogSignedNote(name, downloadUrl, Modifier.testTag("installCatalogSigned"))
-            Text(
-                if (switching) {
-                    stringResource(R.string.install_takeover_store, otherStore.orEmpty())
-                } else {
-                    stringResource(
-                        when (plan) {
-                            InstallPlan.FirstInstall -> R.string.install_android_confirm
-                            InstallPlan.Takeover -> R.string.install_takeover
-                            else -> R.string.install_silent
-                        },
-                    )
-                },
-                color = ZapText2,
-                style = MaterialTheme.typography.bodyMedium,
-            )
+            if (catalogSigned) CatalogSignedNote(name, downloadUrl, Modifier.testTag("installCatalogSigned"), source = source)
+            if (plan !is InstallPlan.FirstInstall) {
+                Text(
+                    if (switching) {
+                        stringResource(R.string.install_takeover_store, otherStore.orEmpty())
+                    } else {
+                        stringResource(if (plan is InstallPlan.Takeover) R.string.install_takeover else R.string.install_silent)
+                    },
+                    color = ZapText2,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
             if (plan is InstallPlan.FirstInstall && trustName != null && !catalogSigned) {
                 TrustSignals(trustName, trust, onPersonalizeTrust, Modifier.testTag("trustSignals"))
             }
-            if (plan is InstallPlan.FirstInstall && trustName != null) {
-                SettingsGroup {
-                    SwitchRow(
-                        title = stringResource(R.string.always_trust, trustName),
-                        subtitle = stringResource(R.string.always_trust_hint),
-                        checked = alwaysTrust,
-                        onCheckedChange = { alwaysTrust = it },
-                        modifier = Modifier.testTag("alwaysTrust"),
-                    )
-                }
-            }
             ZapButton(
                 text = stringResource(if (switching) R.string.update_with_zapstore else R.string.install_confirm),
-                onClick = { onConfirm(alwaysTrust) },
+                onClick = onConfirm,
                 modifier = Modifier.fillMaxWidth().heightIn(min = ZapSize.controlLarge).testTag("installConfirm"),
-            )
-            ZapButton(
-                text = stringResource(R.string.install_cancel),
-                onClick = onDismiss,
-                style = ZapButtonStyle.Ghost,
-                modifier = Modifier.fillMaxWidth(),
             )
         }
     }
@@ -518,27 +516,42 @@ private fun TrustSignals(name: String, trust: TrustUi, onPersonalize: () -> Unit
     }
 }
 
-/** Zapstore lists this app but did not build or sign it; the APK comes from [downloadUrl]. */
+/** An indexed listing: the catalog key signed it. [source] is the repository the indexer tracks, when known. */
 @Composable
-internal fun CatalogSignedNote(name: String, downloadUrl: String?, modifier: Modifier = Modifier) {
+internal fun CatalogSignedNote(
+    name: String,
+    downloadUrl: String?,
+    modifier: Modifier = Modifier,
+    source: String? = null,
+) {
+    val from = source?.trim().orEmpty()
     Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space1), modifier = modifier) {
-        EvidenceLine(
-            stringResource(R.string.catalog_signed),
-            checked = false,
-            detail = stringResource(R.string.catalog_signed_body, name),
+        Text(
+            buildAnnotatedString {
+                append("📇 ")
+                withStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = ZapText)) {
+                    append(stringResource(R.string.catalog_indexed))
+                    append(" ")
+                }
+                append(
+                    if (from.isEmpty()) stringResource(R.string.catalog_indexed_body, name)
+                    else stringResource(R.string.catalog_indexed_from, name, from),
+                )
+            },
+            color = ZapText2,
+            style = MaterialTheme.typography.bodyMedium,
         )
         downloadUrl?.let { url ->
             Text(
                 stringResource(R.string.downloads_from),
                 color = ZapText2,
                 style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(start = 26.dp),
             )
             Text(
                 downloadLabel(url),
                 color = ZapText,
                 style = MaterialTheme.typography.labelMedium,
-                modifier = Modifier.padding(start = 26.dp).testTag("downloadUrl"),
+                modifier = Modifier.testTag("downloadUrl"),
             )
         }
     }
@@ -547,8 +560,118 @@ internal fun CatalogSignedNote(name: String, downloadUrl: String?, modifier: Mod
 /** The URL without its scheme, so the host leads. */
 internal fun downloadLabel(url: String): String = url.trim().substringAfter("://")
 
+/** Where the full report opens: at the top, or at the developer section when the verified seal was tapped. */
+internal enum class ReportFocus { Top, Developer }
+
+/**
+ * The full report. The verdict first (flags, pills, prose), then who stands behind the app, the exact
+ * package and file, where the source is, and every permission. Each identifier has a copy icon.
+ */
 @Composable
-internal fun MarkdownSheet(title: String, markdown: String, onOpenUrl: (String) -> Unit, onDismiss: () -> Unit) {
+internal fun SecurityReportSheet(
+    app: AppRecord,
+    author: ProfileRecord?,
+    proof: CertificateProof?,
+    focus: ReportFocus,
+    onOpenUrl: (String) -> Unit,
+    onProfileClick: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.8f).dp
+    val developer = remember { BringIntoViewRequester() }
+    LaunchedEffect(focus) { if (focus == ReportFocus.Developer) developer.bringIntoView() }
+    ZapSheet(onDismiss) {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(ZapSpacing.space5),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = maxHeight)
+                .verticalScroll(rememberScrollState())
+                .padding(start = ZapSpacing.space5, end = ZapSpacing.space5, bottom = ZapSpacing.space5)
+                .testTag("securityReportSheet"),
+        ) {
+            Text(stringResource(R.string.privacy_and_security), color = Color.White, style = MaterialTheme.typography.titleLarge)
+            if (app.hasVerdict()) SecurityVerdict(app, onOpenUrl)
+            ReportSection(stringResource(R.string.report_developer), Modifier.bringIntoViewRequester(developer).testTag("reportDeveloper")) {
+                DeveloperSection(app, author, proof, onProfileClick)
+            }
+            ReportSection(stringResource(R.string.report_package), Modifier.testTag("reportPackage")) {
+                EvidenceField(stringResource(R.string.app_id), app.appId)
+                app.apkHash?.let { EvidenceField(stringResource(R.string.apk_sha256), it) }
+                app.downloadUrl?.let { EvidenceField(stringResource(R.string.download_url), it) }
+            }
+            if (app.repository != null || app.license != null) {
+                ReportSection(stringResource(R.string.report_source), Modifier.testTag("reportSource")) {
+                    app.repository?.let { EvidenceField(stringResource(R.string.repository), it, link = it, onOpenUrl = onOpenUrl) }
+                    app.license?.let { EvidenceField(stringResource(R.string.license), it, copyable = false) }
+                }
+            }
+            if (app.hasPermissions()) {
+                ReportSection(stringResource(R.string.report_permissions)) { PermissionsList(app) }
+            }
+        }
+    }
+}
+
+/** A hairline, a small label, then the section's rows. */
+@Composable
+private fun ReportSection(title: String, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ZapSpacing.space3)) {
+        HorizontalDivider(color = ZapLine)
+        SectionLabel(title, Modifier.padding(top = ZapSpacing.space1))
+        content()
+    }
+}
+
+/**
+ * Who the header named. A C1 proof owner is verified; otherwise the listing signer has not proved the
+ * app is theirs, and proof dates are left out. An indexed listing names the catalog key instead.
+ */
+@Composable
+private fun DeveloperSection(
+    app: AppRecord,
+    author: ProfileRecord?,
+    proof: CertificateProof?,
+    onProfileClick: (String) -> Unit,
+) {
+    val byline = app.byline
+    val pubkey = app.bylinePubkey
+    val name = pubkey?.let { shortDisplayName(it, author) }.orEmpty()
+    Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space3)) {
+        when (byline) {
+            AppByline.Verified -> {
+                ZapBadge(stringResource(R.string.verified_author), BadgeTone.Verified, icon = R.drawable.ic_check)
+                Text(stringResource(R.string.verified_body, name, app.name), color = ZapText2, style = MaterialTheme.typography.bodyMedium)
+            }
+            AppByline.Unverified -> {
+                ZapBadge(stringResource(R.string.unverified_author), BadgeTone.Warning)
+                Text(stringResource(R.string.unverified_body, name, app.name), color = ZapText2, style = MaterialTheme.typography.bodyMedium)
+            }
+            AppByline.Indexed -> Unit
+        }
+        if (app.isCatalogSigned) {
+            CatalogSignedNote(name = app.name, downloadUrl = null, source = app.repository, modifier = Modifier.testTag("catalogSigned"))
+        }
+        if (pubkey != null) {
+            if (byline != AppByline.Indexed) {
+                EvidenceField(stringResource(R.string.developer), name, copyable = false, onClick = { onProfileClick(pubkey) })
+            }
+            EvidenceField(stringResource(if (byline == AppByline.Indexed) R.string.catalog_key else R.string.developer_key), pubkey.toNpub())
+        }
+        app.certificateHash?.let { EvidenceField(stringResource(R.string.signing_certificate), it) }
+        app.certificateChain().drop(1).forEach { EvidenceField(stringResource(R.string.previous_certificates), it) }
+        if (byline == AppByline.Verified) {
+            proof?.let {
+                InfoRow(stringResource(R.string.proof_published), formatDate(it.createdAt), verticalPadding = ZapSpacing.space1)
+                if (it.expiry > 0) InfoRow(stringResource(R.string.valid_until), formatDate(it.expiry), verticalPadding = ZapSpacing.space1)
+            }
+        }
+    }
+}
+
+/** The latest release: the fixed facts first, then the notes, which can run long. */
+@Composable
+internal fun ReleaseSheet(app: AppRecord, onOpenUrl: (String) -> Unit, onDismiss: () -> Unit) {
     val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.8f).dp
     ZapSheet(onDismiss) {
         Column(
@@ -557,10 +680,31 @@ internal fun MarkdownSheet(title: String, markdown: String, onOpenUrl: (String) 
                 .fillMaxWidth()
                 .heightIn(max = maxHeight)
                 .verticalScroll(rememberScrollState())
-                .padding(start = ZapSpacing.space5, end = ZapSpacing.space5, bottom = ZapSpacing.space5),
+                .padding(start = ZapSpacing.space5, end = ZapSpacing.space5, bottom = ZapSpacing.space5)
+                .testTag("releaseSheet"),
         ) {
-            Text(title, style = MaterialTheme.typography.titleLarge)
-            MarkdownText(value = markdown, color = ZapText2, style = MaterialTheme.typography.bodyLarge, onOpenUrl = onOpenUrl)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3)) {
+                Text(
+                    app.name,
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                app.version.takeIf { it.isNotBlank() }?.let { VersionPill(it) }
+            }
+            InfoRow(stringResource(R.string.release_date), formatDate(app.releasedAt), verticalPadding = ZapSpacing.space1)
+            app.sizeLabel.takeIf { it.isNotBlank() }?.let { InfoRow(stringResource(R.string.size), it, verticalPadding = ZapSpacing.space1) }
+            app.versionCode.takeIf { it > 0 }?.let { InfoRow(stringResource(R.string.version_code), it.toString(), verticalPadding = ZapSpacing.space1) }
+            app.channel?.takeIf { it.isNotBlank() }?.let { InfoRow(stringResource(R.string.channel), it, verticalPadding = ZapSpacing.space1) }
+            HorizontalDivider(color = ZapLine)
+            SectionLabel(stringResource(R.string.release_notes))
+            if (app.releaseNotes.isNotBlank()) {
+                MarkdownText(value = app.releaseNotes, color = ZapText2, style = MaterialTheme.typography.bodyLarge, onOpenUrl = onOpenUrl)
+            } else {
+                Text(stringResource(R.string.no_release_notes), color = ZapText2, style = MaterialTheme.typography.bodyMedium)
+            }
         }
     }
 }

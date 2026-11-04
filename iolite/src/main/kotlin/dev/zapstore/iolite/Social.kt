@@ -9,7 +9,7 @@ object Social {
      * A NIP-22 comment. A top-level comment's parent is the app; a reply's parent is [parent],
      * which must belong to the same app.
      */
-    fun commentTags(anchor: AppCoordinate, parent: CommentRecord? = null): List<List<String>> = buildList {
+    fun commentTags(anchor: AppCoordinate, parent: CommentRecord? = null, version: String? = null): List<List<String>> = buildList {
         val root = anchor.toString()
         add(listOf("A", root))
         add(listOf("K", Kinds.App.toString()))
@@ -24,6 +24,27 @@ object Social {
             add(listOf("p", parent.pubkey))
         }
         add(listOf("i", anchor.appId))
+        version?.takeIf { it.isNotBlank() }?.let { add(listOf("v", it)) }
+    }
+
+    /**
+     * A NIP-22 comment on a stack: its root is the stack's `30267:<curator>:<identifier>` coordinate. A
+     * top-level comment's parent is the stack; a reply's parent is [parent], on the same stack.
+     */
+    fun stackCommentTags(curator: String, identifier: String, parent: CommentRecord? = null): List<List<String>> = buildList {
+        val root = "${Kinds.AppStack}:$curator:$identifier"
+        add(listOf("A", root))
+        add(listOf("K", Kinds.AppStack.toString()))
+        add(listOf("P", curator))
+        if (parent == null) {
+            add(listOf("a", root))
+            add(listOf("k", Kinds.AppStack.toString()))
+            add(listOf("p", curator))
+        } else {
+            add(listOf("e", parent.eventId))
+            add(listOf("k", Kinds.Comment.toString()))
+            add(listOf("p", parent.pubkey))
+        }
     }
 
     /**

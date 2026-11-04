@@ -67,10 +67,14 @@ sealed interface FeedEntry {
  * Comments and zaps as one list, newest first, as the web page shows them: each root comment (with
  * its replies under it, oldest first) and each zap sorts by its own date. A zap is never threaded.
  */
-fun feedEntries(threads: List<CommentThread>, zaps: List<ZapRecord>, maxDepth: Int = 4): List<FeedEntry> {
+fun feedEntries(threads: List<CommentThread>, zaps: List<ZapRecord>, maxDepth: Int = 4): List<FeedEntry> =
+    feedBlocks(threads, zaps, maxDepth).flatten()
+
+/** [feedEntries] grouped so a root comment and its replies stay together, and a zap stands alone. */
+fun feedBlocks(threads: List<CommentThread>, zaps: List<ZapRecord>, maxDepth: Int = 4): List<List<FeedEntry>> {
     val roots = threads.map { thread -> thread.comment.createdAt to thread.flattenToEntries(0, maxDepth) }
     val singles = zaps.map { zap -> zap.createdAt to listOf<FeedEntry>(FeedEntry.Zap(zap)) }
-    return (roots + singles).sortedByDescending { it.first }.flatMap { it.second }
+    return (roots + singles).sortedByDescending { it.first }.map { it.second }
 }
 
 private fun CommentThread.flattenToEntries(depth: Int, maxDepth: Int): List<FeedEntry> =
