@@ -1,5 +1,6 @@
 package dev.zapstore.app.components
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -9,14 +10,18 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.ui.res.painterResource
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.zapstore.app.R
 import dev.zapstore.app.ZapSurface3
@@ -31,6 +36,8 @@ fun AuthorByline(
     profile: ProfileRecord?,
     modifier: Modifier = Modifier,
     showBy: Boolean = true,
+    /** Replaces the "by" lead. The indexed line passes "indexed by ". */
+    lead: String? = null,
     onClick: (() -> Unit)? = null,
 ) {
     Row(
@@ -42,7 +49,7 @@ fun AuthorByline(
     ) {
         if (showBy) {
             Text(
-                text = stringResource(R.string.app_by_author, ""),
+                text = lead ?: stringResource(R.string.app_by_author, ""),
                 color = ZapText2,
                 style = MaterialTheme.typography.bodySmall,
             )
@@ -65,6 +72,44 @@ fun AuthorByline(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f, fill = false),
+        )
+    }
+}
+
+/** The warning beside a listing signer who has not proved the app is theirs. Tapping it opens that explanation. */
+@Composable
+fun UnverifiedMark(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val label = stringResource(R.string.unverified_author)
+    Text(
+        "⚠️",
+        style = MaterialTheme.typography.bodyLarge,
+        modifier = modifier
+            .clip(CircleShape)
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = label }
+            .testTag("unverifiedAuthor"),
+    )
+}
+
+/** The web verified mark: a blue scalloped badge with a white tick. Tapping it opens how the proof was checked. */
+@Composable
+fun VerifiedSeal(onClick: (() -> Unit)? = null, modifier: Modifier = Modifier, size: Dp = 20.dp) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .size(size + 8.dp)
+            .then(
+                if (onClick != null) {
+                    Modifier.clip(CircleShape).clickable(onClick = onClick).testTag("verifiedSeal")
+                } else {
+                    Modifier
+                },
+            ),
+    ) {
+        Image(
+            painterResource(R.drawable.ic_verified),
+            contentDescription = stringResource(R.string.verified_author),
+            modifier = Modifier.size(size),
         )
     }
 }

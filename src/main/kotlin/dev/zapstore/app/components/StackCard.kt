@@ -1,6 +1,5 @@
 package dev.zapstore.app.components
 
-import dev.zapstore.iolite.ProfileRecord
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -93,12 +92,11 @@ fun StackCard(
     }
 }
 
-/** A stack in a horizontal shelf: tile, name, one line of description, and who curated it. */
+/** A stack in a horizontal shelf on Home: tile, name, and up to two lines of description. Catalog stacks share one curator, so the byline is omitted. */
 @Composable
 fun StackShelfCard(
     stack: StackRecord,
     apps: Map<String, AppRecord>,
-    author: ProfileRecord?,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -117,10 +115,9 @@ fun StackShelfCard(
                 stack.description.ifBlank { pluralStringResource(R.plurals.curated_apps, stack.catalogCount(apps), stack.catalogCount(apps)) },
                 color = ZapText2,
                 style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            AuthorByline(pubkey = stack.pubkey, profile = author, showBy = false, modifier = Modifier.padding(top = ZapSpacing.space1))
         }
     }
 }

@@ -232,18 +232,19 @@ private fun FactsLine(
     }
 }
 
-/** App page head: 64 dp tile, name, version pill, release date, and the C1 author when a proof names one. */
+/** App page head: 64 dp tile, name, then "by" the author or "indexed by" the catalog. */
 @Composable
 fun AppDetailHead(
     name: String,
     iconUrl: String?,
-    version: String?,
     modifier: Modifier = Modifier,
     iconFile: File? = null,
-    caption: String? = null,
     authorPubkey: String? = null,
     author: ProfileRecord? = null,
+    verified: Boolean = false,
+    indexed: Boolean = false,
     onAuthorClick: (String) -> Unit = {},
+    onVerifiedClick: () -> Unit = {},
     onMore: (() -> Unit)? = null,
 ) {
     Row(
@@ -252,21 +253,23 @@ fun AppDetailHead(
         modifier = modifier.fillMaxWidth(),
     ) {
         AppIcon(title = name, iconUrl = iconUrl, iconFile = iconFile, size = 64.dp)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZapSpacing.space1)) {
             Text(name, style = ZapTitle3Style, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2)) {
-                version?.takeIf { it.isNotBlank() }?.let { VersionPill(it) }
-                caption?.let {
-                    Text(it, color = ZapText2, style = MaterialTheme.typography.bodySmall, maxLines = 1, softWrap = false)
-                }
-            }
+            // Always its own line: next to the name it would be the first thing truncated on a narrow screen.
             authorPubkey?.let {
-                AuthorByline(
-                    pubkey = it,
-                    profile = author,
-                    onClick = { onAuthorClick(it) },
-                    modifier = Modifier.heightIn(min = 32.dp),
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    AuthorByline(
+                        pubkey = it,
+                        profile = author,
+                        lead = if (indexed) stringResource(R.string.indexed_by) else null,
+                        onClick = { onAuthorClick(it) },
+                        modifier = Modifier.weight(1f, fill = false).heightIn(min = 32.dp),
+                    )
+                    when {
+                        verified -> VerifiedSeal(onVerifiedClick)
+                        !indexed -> UnverifiedMark(onVerifiedClick)
+                    }
+                }
             }
         }
         onMore?.let {
