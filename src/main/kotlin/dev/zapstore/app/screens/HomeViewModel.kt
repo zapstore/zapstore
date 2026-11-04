@@ -7,7 +7,6 @@ import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import dev.zapstore.app.components.AppListState
 import dev.zapstore.app.AppConfig
 import dev.zapstore.iolite.AppCoordinate
 import dev.zapstore.iolite.AppFilter
@@ -66,12 +65,12 @@ data class HomeUiState(
     val activityStackApps: Map<String, AppRecord> = emptyMap(),
     val activityLoading: Boolean = true,
     val activityCanLoadMore: Boolean = false,
-    val feed: AppListState = AppListState(),
+    val activityFilter: ActivityFilter = ActivityFilter.All,
     val profiles: Map<String, ProfileRecord> = emptyMap(),
 )
 
 /**
- * Home: local search of apps, stacks and developers, Zapstore Community stacks that name a catalog app, and the recently-updated feed.
+ * Home: local search of apps, stacks and developers, Zapstore Community stacks that name a catalog app, and Activity: releases, comments, zaps and changed stacks.
  * Every flow here is a SQLite observer and stops with the collector.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -82,7 +81,7 @@ class HomeViewModel(
 ) : ViewModel() {
     private val searchQuery = savedStateHandle.getStateFlow(SEARCH_QUERY_KEY, "")
     private val submittedQuery = savedStateHandle.getStateFlow(SUBMITTED_QUERY_KEY, "")
-    private val requestedPages = MutableStateFlow(1)
+    private val activityFilter = MutableStateFlow(ActivityFilter.All)
     private val stackLimit = MutableStateFlow(STACK_PAGE)
     private val activityLimit = MutableStateFlow(ACTIVITY_PAGE)
 
@@ -126,13 +125,6 @@ class HomeViewModel(
         throw cancelled
     } catch (_: Throwable) {
         null
-    }
-
-    private class FeedPage(val apps: List<AppRecord>, val limit: Int)
-
-    private val feedPage: Flow<FeedPage> = requestedPages.flatMapLatest { pages ->
-        val limit = pages * PAGE_SIZE
-        iolite.observeApps(AppFilter(limit = limit)).map { FeedPage(it, limit) }
     }
 
     /** The keys of every active catalog, in the user's order. */
@@ -223,18 +215,36 @@ class HomeViewModel(
                 }
             }
 
-    /** Comments, zaps, and changed stacks as one list, newest first. A stack takes a place in the page like any entry. */
-    private val activity: Flow<ActivityPage> = combine(comments, activityLimit, changedStacks) { page, limit, (stacks, apps) ->
-        val items = (page.state.items + stacks.map(StackRecord::activity)).sortedByDescending { it.createdAt }.take(limit)
+    /** The newest release of each app, as entries, newest first. Read locally. */
+    private val releases: Flow<List<ActivityItem>> = activityLimit.flatMapLatest { limit ->
+        iolite.observeApps(AppFilter(limit = limit)).map { apps -> apps.map(AppRecord::releaseActivity).sortedByDescending { it.createdAt } }
+    }
+
+    /**
+     * Releases, comments, zaps, and changed stacks as one list, newest first, narrowed by the filter. A stack
+     * takes a place in the page like any entry.
+     */
+    private val activity: Flow<ActivityPage> = combine(comments, activityLimit, changedStacks, releases, activityFilter) { page, limit, (stacks, apps), releases, filter ->
+        val social = page.state.items + stacks.map(StackRecord::activity)
+        val pool = when (filter) {
+            ActivityFilter.All -> social + releases
+            ActivityFilter.Releases -> releases
+            ActivityFilter.Social -> social
+        }.sortedByDescending { it.createdAt }
         ActivityPage(
-            QueryState(items, page.state.relays, page.state.settled),
-            canLoadMore = page.canLoadMore,
+            // Releases are local, so they never wait on the relays.
+            QueryState(pool.take(limit), page.state.relays, page.state.settled || filter == ActivityFilter.Releases),
+            canLoadMore = when (filter) {
+                ActivityFilter.Releases -> releases.size >= limit
+                ActivityFilter.Social -> page.canLoadMore
+                ActivityFilter.All -> page.canLoadMore || releases.size >= limit || pool.size > limit
+            },
             stackApps = apps,
         )
     }
 
     private val profiles: Flow<Map<String, ProfileRecord>> = combine(
-        combine(feedPage, search) { page, snapshot -> page.apps + snapshot.results.orEmpty() }.authorProfiles(iolite),
+        search.map { it.results.orEmpty() }.authorProfiles(iolite),
         matches.map { it.developers.toSet() }.distinctUntilChanged().flatMapLatest(iolite::observeProfiles),
         combine(stacks, activity) { stackState, activityState ->
             stackState.items.map { it.pubkey }.toSet() + activityState.state.items.map { it.pubkey }
@@ -243,11 +253,10 @@ class HomeViewModel(
 
     val uiState: StateFlow<HomeUiState> = combine(
         combine(combine(searchQuery, submittedQuery, search, ::Triple), matches, ::Pair),
-        feedPage,
         combine(stacks, stackApps, stackLimit, ::Triple),
         combine(profiles, activity, ::Pair),
-        requestedPages,
-    ) { (searched, found), page, (stackState, stackAppsOrNull, stackCap), (profiles, activity), pages ->
+        activityFilter,
+    ) { (searched, found), (stackState, stackAppsOrNull, stackCap), (profiles, activity), filter ->
         val (query, submitted, snapshot) = searched
         // Not yet joined: show every stack rather than wait, since both reads are local.
         // Joined: keep only stacks that list a catalog app, as always.
@@ -269,13 +278,7 @@ class HomeViewModel(
             activityStackApps = activity.stackApps,
             activityLoading = activity.state.items.isEmpty() && !activity.state.settled,
             activityCanLoadMore = activity.canLoadMore,
-            feed = AppListState(
-                apps = page.apps,
-                profiles = profiles,
-                loading = false,
-                loadingMore = page.limit < pages * PAGE_SIZE,
-                canLoadMore = page.apps.size >= page.limit,
-            ),
+            activityFilter = filter,
             profiles = profiles,
         )
     }.stateIn(
@@ -316,20 +319,20 @@ class HomeViewModel(
         if (uiState.value.stacksCanLoadMore) stackLimit.update { it + STACK_PAGE }
     }
 
-    fun loadMore() {
-        val current = uiState.value.feed
-        if (current.canLoadMore && !current.loadingMore) requestedPages.update { it + 1 }
+    fun setActivityFilter(filter: ActivityFilter) {
+        activityFilter.value = filter
+        activityLimit.value = ACTIVITY_PAGE
     }
 
     companion object {
         private const val SEARCH_QUERY_KEY = "searchQuery"
         private const val SUBMITTED_QUERY_KEY = "submittedQuery"
         private const val MIN_SEARCH_LENGTH = 2
-        private const val SEARCH_LIMIT = 12
+        /** The relay's cap on a NIP-50 request; the phone shows as many. */
+        private const val SEARCH_LIMIT = 20
         /** Stacks and developers listed under the apps of a search. */
         private const val STACK_MATCHES = 8
         private const val DEVELOPER_MATCHES = 8
-        private const val PAGE_SIZE = 20
         private const val STACK_PAGE = 20
         private const val ACTIVITY_PAGE = 20
         /** Latest releases whose zaps the activity feed asks for. */

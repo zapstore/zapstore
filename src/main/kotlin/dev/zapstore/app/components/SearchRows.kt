@@ -17,7 +17,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -32,19 +31,18 @@ import dev.zapstore.iolite.AppRecord
 import dev.zapstore.iolite.ProfileRecord
 import dev.zapstore.iolite.StackRecord
 
-/** A stack among search results: the same row as an app, with its tile, name, count and a Stack tag. */
+/** A stack among search results: the same row as an app, with its tile, name and a Stack tag. */
 @Composable
 fun StackResultRow(
     stack: StackRecord,
     apps: Map<String, AppRecord>,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    tileSize: Dp = 60.dp,
+    tileSize: Dp = 30.dp,
 ) {
-    val count = stack.catalogCount(apps)
     ResultRow(
         title = stack.name,
-        supporting = stack.description.ifBlank { pluralStringResource(R.plurals.curated_apps, count, count) },
+        supporting = null,
         tag = stringResource(R.string.search_tag_stack),
         onClick = onClick,
         modifier = modifier,

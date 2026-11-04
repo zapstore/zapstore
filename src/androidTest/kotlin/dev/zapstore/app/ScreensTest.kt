@@ -1,6 +1,8 @@
 package dev.zapstore.app
 
+import dev.zapstore.app.screens.ActivityFilter
 import dev.zapstore.app.screens.ProfileUiState
+import dev.zapstore.app.screens.releaseActivity
 import dev.zapstore.app.screens.ProfileScreen
 import androidx.compose.ui.test.assertTextContains
 import dev.zapstore.app.screens.UpdateGroup
@@ -92,6 +94,7 @@ import dev.zapstore.app.screens.SignerStepUi
 import dev.zapstore.app.screens.OnboardingUiState
 import dev.zapstore.app.screens.OnboardingScreen
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.test.swipeLeft
 import dev.zapstore.app.catalog.StoreApp
@@ -107,6 +110,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import dev.zapstore.app.components.AppRow
+import dev.zapstore.app.components.AppRowStyle
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.test.platform.app.InstrumentationRegistry
@@ -147,7 +151,6 @@ class ScreensTest {
                         searchFacts = listOf(SearchFact.SourceAvailable, SearchFact.WorksOffline),
                         stacks = listOf(stack),
                         stacksLoading = false,
-                        feed = AppListState(loading = false),
                     ),
                     onSearchQueryChanged = {},
                     onSearchSubmitted = {},
@@ -198,7 +201,6 @@ class ScreensTest {
                         searchStacks = listOf(stack),
                         searchStackApps = mapOf("dev.zap" to app),
                         searchDevelopers = listOf(AUTHOR),
-                        feed = AppListState(loading = false),
                     ),
                     onSearchQueryChanged = {},
                     onSearchSubmitted = {},
@@ -228,7 +230,6 @@ class ScreensTest {
                         submittedQuery = "tools",
                         searchResults = emptyList(),
                         searchDevelopers = listOf(AUTHOR),
-                        feed = AppListState(loading = false),
                     ),
                     onSearchQueryChanged = {},
                     onSearchSubmitted = {},
@@ -252,7 +253,6 @@ class ScreensTest {
                         searchQuery = "offline open source chat",
                         searchResults = emptyList(),
                         searchFacts = listOf(SearchFact.WorksOffline, SearchFact.SourceAvailable),
-                        feed = AppListState(loading = false),
                     ),
                     onSearchQueryChanged = {},
                     onSearchSubmitted = {},
@@ -314,7 +314,6 @@ class ScreensTest {
                         submittedQuery = "zap",
                         searchResults = listOf(zap),
                         stacksLoading = false,
-                        feed = AppListState(apps = listOf(app("dev.new", "Newest")), loading = false),
                         activity = listOf(
                             ActivityItem("c".repeat(64), AUTHOR, 1_750_000_000, zap, comment = "Works great"),
                             ActivityItem("d".repeat(64), AUTHOR, 1_749_000_000, zap, sats = 2100),
@@ -332,8 +331,6 @@ class ScreensTest {
             }
         }
         composeRule.onNodeWithTag("searchResult:dev.zap").assertIsDisplayed()
-        composeRule.onNodeWithTag("homeList").performScrollToNode(hasTestTag("app:dev.new"))
-        composeRule.onNodeWithTag("app:dev.new").assertIsDisplayed()
         assertTrue(composeRule.onAllNodesWithText("Search results", substring = true).fetchSemanticsNodes().isEmpty())
         composeRule.onNodeWithTag("homeList").performScrollToNode(hasTestTag("activity:${"d".repeat(64)}"))
         composeRule.onNodeWithText("Works great").assertIsDisplayed()
@@ -386,7 +383,6 @@ class ScreensTest {
                 ProfileScreen(
                     state = ProfileUiState(
                         pubkey = AUTHOR,
-                        profileLoading = false,
                         activity = listOf(ActivityItem("c".repeat(64), AUTHOR, 1_750_000_000, zap, comment = "Works great")),
                         activityLoading = false,
                     ),
@@ -515,7 +511,6 @@ class ScreensTest {
                 ProfileScreen(
                     state = ProfileUiState(
                         pubkey = AUTHOR,
-                        profileLoading = false,
                         apps = AppListState(apps = listOf(app("dev.zap", "Zap", proofPubkey = AUTHOR)), loading = false),
                     ),
                     onOpenUrl = {},
@@ -531,27 +526,47 @@ class ScreensTest {
     }
 
     @Test
-    fun homeFeedShowsItsLoadingFooter() {
+    fun homeActivityListsReleasesAndFiltersThem() {
+        var opened: String? = null
+        var filter by mutableStateOf(ActivityFilter.All)
+        val zap = app("dev.zap", "Zap", version = "1.2.3")
+        val indexed = app("dev.indexed", "Indexed", version = "2.0", catalogSigned = true)
         composeRule.setContent {
             ZapstoreTheme {
                 HomeScreen(
                     state = HomeUiState(
                         stacksLoading = false,
-                        feed = AppListState(apps = listOf(app("dev.zap", "Zap")), loading = false, loadingMore = true),
+                        activityLoading = false,
+                        activityFilter = filter,
+                        activity = listOf(zap.releaseActivity(), indexed.releaseActivity()),
                     ),
                     onSearchQueryChanged = {},
                     onSearchSubmitted = {},
                     onSearchCleared = {},
-                    onAppClick = {},
+                    onAppClick = { opened = it.appId },
                     onStackClick = {},
+                    onActivityFilter = { filter = it },
                 )
             }
         }
-
-        composeRule.onNodeWithTag("app:dev.zap").assertIsDisplayed()
-        composeRule.onNodeWithTag("appListLoading").assertIsDisplayed()
-        assertTrue(composeRule.onAllNodesWithText("Curated stacks").fetchSemanticsNodes().isEmpty())
-        assertTrue(composeRule.onAllNodesWithText("No stacks found.").fetchSemanticsNodes().isEmpty())
+        assertTrue(composeRule.onAllNodesWithText("Latest releases").fetchSemanticsNodes().isEmpty())
+        composeRule.onNodeWithTag("activityFilter").assertIsDisplayed()
+        composeRule.onNodeWithText("All").assertIsDisplayed()
+        composeRule.onNodeWithTag("activityFilter").performClick()
+        composeRule.onNodeWithTag("activityFilter:Social").performClick()
+        assertEquals(ActivityFilter.Social, filter)
+        composeRule.onNodeWithTag("activityFilter").performClick()
+        composeRule.onNodeWithTag("activityFilter:Releases").performClick()
+        assertEquals(ActivityFilter.Releases, filter)
+        composeRule.onNodeWithText("New release").assertDoesNotExist()
+        composeRule.onNodeWithText("released").assertIsDisplayed()
+        composeRule.onNodeWithText("Someone").assertIsDisplayed()
+        composeRule.onNodeWithText("1.2.3").assertIsDisplayed()
+        composeRule.onNodeWithText("Catalog").assertIsDisplayed()
+        composeRule.onNodeWithText("published").assertIsDisplayed()
+        composeRule.onNodeWithText("2.0").assertIsDisplayed()
+        composeRule.onNodeWithTag("activity:release:dev.zap:1.2.3").performClick()
+        assertEquals("dev.zap", opened)
     }
 
     @Test
@@ -564,11 +579,11 @@ class ScreensTest {
                         AppRow(
                             app = app("dev.long", "An application with a remarkably long display name", version = "12.0.0-beta.17+sha.9f3c2d1e", proofPubkey = AUTHOR),
                             onClick = {},
-                            supportingLines = 2,
+                            style = AppRowStyle.Manage,
                             author = ProfileRecord(AUTHOR, 0, "a".repeat(64), "alice", "Alexandria Montgomery-Featherstonehaugh", null, null, null, null, null),
                         )
-                        AppRow(app = app("dev.pair", "Pair", version = "2026.10.17-nightly+build.4520", proofPubkey = other), onClick = {})
-                        AppRow(app = app("dev.plain", "Plain"), onClick = {}, supporting = null)
+                        AppRow(app = app("dev.pair", "Pair", version = "2026.10.17-nightly+build.4520", proofPubkey = other), onClick = {}, style = AppRowStyle.Manage)
+                        AppRow(app = app("dev.plain", "Plain"), onClick = {}, style = AppRowStyle.Manage)
                     }
                 }
             }
@@ -581,32 +596,6 @@ class ScreensTest {
             val file = java.io.File(InstrumentationRegistry.getInstrumentation().targetContext.filesDir, "rows.png")
             file.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
         }
-    }
-
-    @Test
-    fun homeFeedRequestsMoreWhenScrolledNearEnd() {
-        var loadMoreCount = 0
-        val apps = (0 until 20).map { app("app.$it", "App $it") }
-        composeRule.setContent {
-            ZapstoreTheme {
-                HomeScreen(
-                    state = HomeUiState(
-                        stacksLoading = false,
-                        feed = AppListState(apps = apps, loading = false, canLoadMore = true),
-                    ),
-                    onSearchQueryChanged = {},
-                    onSearchSubmitted = {},
-                    onSearchCleared = {},
-                    onAppClick = {},
-                    onStackClick = {},
-                    onLoadMore = { loadMoreCount += 1 },
-                )
-            }
-        }
-
-        composeRule.onNodeWithTag("releaseShelf").performScrollToKey("app:app.19")
-        composeRule.waitUntil { loadMoreCount > 0 }
-        assertTrue(loadMoreCount > 0)
     }
 
     @Test
@@ -642,8 +631,9 @@ class ScreensTest {
         // Permissions are not on the page; the full report lists them.
         assertTrue(composeRule.onAllNodesWithText("Camera").fetchSemanticsNodes().isEmpty())
         composeRule.onNodeWithTag("seeFullReport").performClick()
-        composeRule.onNodeWithText("Camera").performScrollTo().assertIsDisplayed()
-        assertTrue(composeRule.onAllNodesWithText("CAMERA").fetchSemanticsNodes().isEmpty())
+        composeRule.onNodeWithText("Take photos and record video").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Take photos and record video").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("CAMERA").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("otherPermissions").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("ACCESS_NETWORK_STATE").assertIsDisplayed()
     }
@@ -892,10 +882,9 @@ class ScreensTest {
     }
 
     @Test
-    fun actionSheetSavesIgnoresAndShares() {
+    fun actionSheetSavesAndIgnores() {
         var saved by mutableStateOf(false)
         var ignored = false
-        var shared = false
         composeRule.setContent {
             ZapstoreTheme {
                 AppDetailScreen(
@@ -904,7 +893,6 @@ class ScreensTest {
                     saved = saved,
                     onSave = { saved = it },
                     onIgnore = { ignored = it },
-                    onShare = { shared = true },
                 )
             }
         }
@@ -912,10 +900,47 @@ class ScreensTest {
         composeRule.onNodeWithTag("actionSave").assertIsDisplayed().performClick()
         composeRule.onNodeWithText("Saved").assertIsDisplayed()
         composeRule.onNodeWithTag("actionIgnore").performClick()
-        composeRule.onNodeWithTag("actionShare").performClick()
         composeRule.waitForIdle()
-        assertTrue(saved && ignored && shared)
-        assertTrue(composeRule.onAllNodesWithTag("appActions").fetchSemanticsNodes().isEmpty())
+        assertTrue(saved && ignored)
+        assertTrue(composeRule.onAllNodesWithTag("actionShare").fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test
+    fun stackSharesAndCommentsOfferCopyAndShareOnLongPress() {
+        var shared = false
+        val stack = StackRecord(AUTHOR, "music", "e1", "Music", "", listOf(AppCoordinate(AUTHOR, "dev.zap")), 1)
+        val root = CommentRecord("c".repeat(64), AUTHOR, 1_750_000_000, "Nice stack", null, "30267:$AUTHOR:music", null)
+        composeRule.setContent {
+            ZapstoreTheme {
+                StackDetailScreen(
+                    state = StackDetailUiState(stack = stack, stackLoading = false, threads = threadComments(listOf(root)), commentsLoading = false),
+                    onAppClick = {},
+                    onShare = { shared = true },
+                )
+            }
+        }
+        composeRule.onNodeWithTag("share").assertIsDisplayed().performClick()
+        assertTrue(shared)
+        composeRule.onNodeWithTag("comment:${root.eventId}").performTouchInput { longClick() }
+        composeRule.onNodeWithTag("commentCopyText").assertIsDisplayed()
+        composeRule.onNodeWithTag("commentCopyLink").assertIsDisplayed()
+        composeRule.onNodeWithTag("commentShare").assertIsDisplayed()
+    }
+
+    @Test
+    fun appHeadSharesThePage() {
+        var shared = false
+        composeRule.setContent {
+            ZapstoreTheme {
+                AppDetailScreen(
+                    state = AppDetailUiState(app = app("dev.zap", "Zap"), loaded = true),
+                    onOpenUrl = {},
+                    onShare = { shared = true },
+                )
+            }
+        }
+        composeRule.onNodeWithTag("share").assertIsDisplayed().performClick()
+        assertTrue(shared)
     }
 
     @Test
@@ -1019,15 +1044,14 @@ class ScreensTest {
         composeRule.setContent {
             ZapstoreTheme {
                 InstallSheet(
-                    name = "Zap",
-                    version = "1.0",
-                    verified = false,
+                    app = app(
+                        "dev.zap", "Zap", catalogSigned = true,
+                        extra = { put("download_url", "https://github.com/zap/zap/releases/download/v1/zap.apk") },
+                    ),
+                    author = null,
                     plan = InstallPlan.FirstInstall,
                     onConfirm = { confirmed = true },
                     onDismiss = {},
-                    trustName = "Alice",
-                    catalogSigned = true,
-                    downloadUrl = "https://github.com/zap/zap/releases/download/v1/zap.apk",
                 )
             }
         }
@@ -1132,13 +1156,13 @@ class ScreensTest {
                     error = null,
                     onSignIn = { signIn = true },
                     onGetAmber = { amber = true },
-                    settings = { Text("Settings", Modifier.testTag("settingsSlot")) },
+                    onSettings = { },
                 )
             }
         }
         composeRule.onNodeWithTag("profileSignInRow").performClick()
-        composeRule.onNodeWithTag("settingsSlot").assertExists()
-        composeRule.onNodeWithTag("openSettings").assertDoesNotExist()
+        composeRule.onNodeWithTag("openSettings").assertExists()
+        composeRule.onNodeWithTag("settingsSlot").assertDoesNotExist()
         hasSigner = false
         composeRule.onNodeWithTag("getAmber").performClick()
         composeRule.runOnIdle {
@@ -1299,6 +1323,7 @@ class ScreensTest {
             }
         }
         assertTrue(composeRule.onAllNodesWithTag("backUpKey").fetchSemanticsNodes().isEmpty())
+        composeRule.onNodeWithTag("openKeys").performScrollTo().performClick()
         composeRule.onNodeWithTag("copyKey").performScrollTo().performClick()
         assertTrue(copied)
         composeRule.onNodeWithTag("pasteKey").performScrollTo().performClick()
@@ -1481,6 +1506,7 @@ class ScreensTest {
                 )
             }
         }
+        composeRule.onNodeWithTag("openCatalog").performScrollTo().performClick()
         composeRule.onNodeWithTag("lastSyncAgo").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Last sync 3 minutes ago").assertIsDisplayed()
         composeRule.onNodeWithTag("lastSyncSize").performScrollTo().assertIsDisplayed()
@@ -1508,6 +1534,7 @@ class ScreensTest {
                 )
             }
         }
+        composeRule.onNodeWithTag("openCatalog").performScrollTo().performClick()
         composeRule.onNodeWithTag("lastSyncAgo").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Last sync just now").assertIsDisplayed()
         composeRule.onNodeWithTag("lastSyncNotModified").performScrollTo().assertIsDisplayed()
@@ -1532,6 +1559,7 @@ class ScreensTest {
                 )
             }
         }
+        composeRule.onNodeWithTag("openCatalog").performScrollTo().performClick()
         composeRule.onNodeWithTag("catalog:1").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("catalog:2").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("catalogsEmpty").assertDoesNotExist()
@@ -1557,6 +1585,7 @@ class ScreensTest {
                 )
             }
         }
+        composeRule.onNodeWithTag("openCatalog").performScrollTo().performClick()
         composeRule.onNodeWithTag("catalogsEmpty").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("addCatalog").performScrollTo().performClick()
         assertTrue(opened)
@@ -1591,6 +1620,7 @@ class ScreensTest {
                 SettingsSection(modifier = Modifier.verticalScroll(rememberScrollState()), state = SettingsUiState(), onNetworkModeChange = {}, onSync = {}, onWipe = { wiped = true })
             }
         }
+        composeRule.onNodeWithTag("openCatalog").performScrollTo().performClick()
         composeRule.onNodeWithTag("clearLocalStorage").performScrollTo().performClick()
         assertTrue(wiped)
     }
@@ -1631,6 +1661,7 @@ private fun app(
     facts: String = "",
     security: String = "",
     description: String? = null,
+    catalogSigned: Boolean = false,
     extra: JSONObject.() -> Unit = {},
 ): AppRecord = AppRecord(
     id = appId.toByteArray(),
@@ -1640,7 +1671,7 @@ private fun app(
     createdAt = 1_750_000_000,
     proofPubkey = proofPubkey,
     eventPubkey = AUTHOR,
-    catalogManifestPubkey = null,
+    catalogManifestPubkey = if (catalogSigned) AUTHOR else null,
     name = name,
     summary = "$name summary",
     repository = repository,

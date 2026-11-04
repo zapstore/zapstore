@@ -88,6 +88,9 @@ data class Zapper(val pubkey: String, val sats: Long)
 const val TOP_ZAPPERS = 10
 private const val TRUST_FOLLOWERS = 5
 
+/** Vertex answers in a few seconds; a person waiting on a sheet should not wait for the library's 30. */
+private val TRUST_TIMEOUT = 15.seconds
+
 /** Comments and zaps as the page shows them: one feed, built from [threads] and [zaps] by [feedEntries]. */
 data class CommentsState(
     /** Comments on a coordinate of a known pubkey, threaded. */
@@ -240,13 +243,11 @@ class AppDetailViewModel(
     private var checkJob: Job? = null
 
     /**
-     * Only while the first-install sheet is open, and only for a publisher with a C1 identity: a
-     * listing the catalog signed has nobody to look up. The default is what the bundle carried.
+     * For a publisher with a C1 identity: a listing the catalog signed has nobody to look up. Read by
+     * the first-install sheet and the full report. The default is what the bundle carried.
      */
     private fun trustUi(): Flow<TrustUi> {
-        val publisher = combine(installDialog.map { it is InstallPlan.FirstInstall }, app) { open, app ->
-            app?.authorPubkey.takeIf { open && app?.isCatalogSigned == false }
-        }.distinctUntilChanged()
+        val publisher = app.map { it?.authorPubkey.takeIf { _ -> it?.isCatalogSigned == false } }.distinctUntilChanged()
         return publisher.flatMapLatest { author ->
             if (author == null) return@flatMapLatest flowOf(TrustUi())
             val inputs = combine(
@@ -297,8 +298,8 @@ class AppDetailViewModel(
         checkJob = viewModelScope.launch {
             try {
                 val (ranked, follows) = coroutineScope {
-                    val ranked = async { iolite.reputation(AppConfig.vertexRelays, signer.publicKey, author, signer, limit = TRUST_FOLLOWERS + 2) }
-                    val follows = async { runCatching { iolite.follows(signer.publicKey, AppConfig.indexerRelays) }.getOrDefault(emptySet()) }
+                    val ranked = async { iolite.reputation(AppConfig.vertexRelays, signer.publicKey, author, signer, limit = TRUST_FOLLOWERS + 2, timeout = TRUST_TIMEOUT) }
+                    val follows = async { runCatching { iolite.follows(signer.publicKey, AppConfig.indexerRelays, TRUST_TIMEOUT) }.getOrDefault(emptySet()) }
                     ranked.await() to follows.await()
                 }
                 personal.value = author to Personal(ranked.take(TRUST_FOLLOWERS), follows, signer.publicKey)

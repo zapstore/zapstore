@@ -26,7 +26,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -47,6 +49,7 @@ import dev.zapstore.app.components.LoadingIndicator
 import dev.zapstore.app.components.ProfileImage
 import dev.zapstore.app.components.shortDisplayName
 import dev.zapstore.app.components.StackTile
+import dev.zapstore.app.components.VersionPill
 import dev.zapstore.iolite.ActivityRecord
 import dev.zapstore.iolite.AppRecord
 import dev.zapstore.iolite.ProfileRecord
@@ -68,7 +71,16 @@ data class ActivityItem(
     val comment: String? = null,
     val sats: Long? = null,
     val stack: StackRecord? = null,
+    /** A new release of [app], dated by the release; [pubkey] is the app's author. */
+    val release: Boolean = false,
 )
+
+/** Which entries Home's Activity lists. */
+enum class ActivityFilter { All, Releases, Social }
+
+/** The app's latest release as an entry. */
+internal fun AppRecord.releaseActivity(): ActivityItem =
+    ActivityItem("release:$appId:$version", authorPubkey ?: eventPubkey, releasedAt, this, release = true)
 
 /** The app ids a record's comments and zaps name. */
 internal val ActivityRecord.appIds: Set<String>
@@ -105,9 +117,7 @@ internal fun LazyListScope.activityRows(
     modifier: Modifier = Modifier,
 ) {
     when {
-        items.isEmpty() && loading -> item(key = "activityLoading", contentType = "loading") {
-            LoadingIndicator(modifier.padding(vertical = ZapSpacing.space3))
-        }
+        items.isEmpty() && loading -> Unit
         items.isEmpty() -> item(key = "noActivity", contentType = "empty") {
             EmptyRow(emptyText, modifier)
         }
@@ -131,8 +141,9 @@ internal fun LazyListScope.activityRows(
 
 /**
  * One entry as the web page draws it: the person's picture, then one line that reads "<name> commented on
- * <app>", "<name> zapped ⚡ N sats to <app>" or "<name> updated the stack <stack>", with the time at the
- * right edge, and a comment or zap note under it. [showWho] is false on a person's own page, where the line
+ * <app>", "<name> zapped ⚡ N sats to <app>", "<name> released <app> <version>" or "<name> updated the stack
+ * <stack>", with the time at the right edge, and a comment or zap note under it. A catalog-signed release
+ * reads "Catalog published <app> <version>". A release puts one line of the about under that, cut with an ellipsis. [showWho] is false on a person's own page, where the line
  * starts at what they did and the note lines up under it. An entry with no app or stack is on the page of the
  * stack it belongs to, so its line ends after the verb.
  */
@@ -141,6 +152,7 @@ internal fun LazyListScope.activityRows(
 private fun ActivityRow(item: ActivityItem, profile: ProfileRecord?, stackApps: Map<String, AppRecord>, showWho: Boolean, onClick: () -> Unit) {
     val app = item.app
     val stack = item.stack
+    val catalogRelease = item.release && app?.isCatalogSigned == true
     fun lead(text: String) = if (showWho) text else text.replaceFirstChar { it.uppercase() }
     Row(
         horizontalArrangement = Arrangement.spacedBy(ACTIVITY_GAP),
@@ -169,8 +181,15 @@ private fun ActivityRow(item: ActivityItem, profile: ProfileRecord?, stackApps: 
                     itemVerticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.weight(1f),
                 ) {
-                    if (showWho) Strong(shortDisplayName(item.pubkey, profile))
+                    if (catalogRelease) Strong(stringResource(R.string.activity_catalog))
+                    else if (showWho) Strong(shortDisplayName(item.pubkey, profile))
                     when {
+                        item.release && app != null -> {
+                            Verb(if (catalogRelease) stringResource(R.string.activity_published) else lead(stringResource(R.string.activity_released)))
+                            ReleaseSubject(app.name, app.version) {
+                                AppIcon(title = app.name, iconUrl = app.iconUrl, iconFile = app.iconFile, size = ACTIVITY_ICON)
+                            }
+                        }
                         stack != null -> {
                             Verb(lead(stringResource(R.string.activity_updated_stack)))
                             Subject(name = stack.name) { StackTile(stack.appIds, stackApps, size = ACTIVITY_ICON) }
@@ -200,6 +219,18 @@ private fun ActivityRow(item: ActivityItem, profile: ProfileRecord?, stackApps: 
                     modifier = Modifier.padding(top = 1.dp),
                 )
             }
+            if (item.release) {
+                app?.aboutProse?.replace(Regex("\\s+"), " ")?.trim()?.takeIf { it.isNotEmpty() }?.let { about ->
+                    Text(
+                        about,
+                        color = ZapText2,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+                }
+            }
             item.comment?.takeIf { it.isNotBlank() }?.let {
                 Text(
                     it,
@@ -216,14 +247,42 @@ private fun ActivityRow(item: ActivityItem, profile: ProfileRecord?, stackApps: 
 
 /** A person's or app's name in the line: bold, one line, cut with an ellipsis when it is all there is room for. */
 @Composable
-private fun Strong(text: String) {
-    Text(text, color = ZapText, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold), maxLines = 1, overflow = TextOverflow.Ellipsis)
+private fun Strong(text: String, modifier: Modifier = Modifier) {
+    Text(text, color = ZapText, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = modifier)
 }
 
 /** What was done, in the quieter colour: "commented on", "zapped", "to", "updated the stack". */
 @Composable
 private fun Verb(text: String) {
     Text(text, color = ZapText2, style = MaterialTheme.typography.bodyMedium)
+}
+
+/** App icon, name and version pill as one piece, so a line break falls before the group, not inside it. */
+@Composable
+private fun ReleaseSubject(name: String, version: String, icon: @Composable () -> Unit) {
+    Layout(
+        content = {
+            icon()
+            Strong(name)
+            if (version.isNotBlank()) VersionPill(version, scale = 0.8f)
+        },
+    ) { measurables, constraints ->
+        val gap = 6.dp.roundToPx()
+        val loose = Constraints(maxWidth = Constraints.Infinity)
+        val iconPlaceable = measurables[0].measure(loose)
+        val pill = measurables.getOrNull(2)?.measure(loose)
+        val reserved = iconPlaceable.width + gap + (pill?.let { gap + it.width } ?: 0)
+        val namePlaceable = measurables[1].measure(Constraints(maxWidth = (constraints.maxWidth - reserved).coerceAtLeast(0)))
+        val width = (reserved + namePlaceable.width).coerceAtMost(constraints.maxWidth)
+        val height = maxOf(iconPlaceable.height, namePlaceable.height, pill?.height ?: 0)
+        layout(width, height) {
+            var x = 0
+            iconPlaceable.placeRelative(x, (height - iconPlaceable.height) / 2)
+            x += iconPlaceable.width + gap
+            namePlaceable.placeRelative(x, (height - namePlaceable.height) / 2)
+            if (pill != null) pill.placeRelative(x + namePlaceable.width + gap, (height - pill.height) / 2)
+        }
+    }
 }
 
 /** The app or stack an entry is about: its small picture, then its name in bold. */

@@ -1,5 +1,15 @@
 package dev.zapstore.app.screens
 
+import dev.zapstore.app.ZapSurface2
+import dev.zapstore.app.components.rememberSharer
+import dev.zapstore.app.components.rememberCopier
+import dev.zapstore.iolite.neventOf
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -162,6 +172,8 @@ internal fun CommentSheet(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
     preview: String? = null,
+    /** The release a new comment is tied to, shown beside the title; null when it is about the whole app. */
+    titleVersion: String? = null,
 ) {
     var text by rememberSaveable { mutableStateOf("") }
     val opened = remember { social.posted }
@@ -175,7 +187,14 @@ internal fun CommentSheet(
                 .testTag("commentSheet"),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2)) {
-                Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    titleVersion?.let { VersionPill(it, Modifier.testTag("commentSheetVersion")) }
+                }
                 ZapIconButton(
                     icon = R.drawable.ic_close,
                     contentDescription = stringResource(R.string.close),
@@ -246,6 +265,11 @@ internal fun CommentCard(
     val reply = depth > 0
     val thread = ThreadColors[(depth - 1).coerceAtLeast(0) % ThreadColors.size]
     val name = shortDisplayName(comment.pubkey, author)
+    var menu by remember { mutableStateOf(false) }
+    val copy = rememberCopier()
+    val share = rememberSharer()
+    val haptics = LocalHapticFeedback.current
+    val link = remember(comment.eventId, comment.pubkey) { neventOf(comment.eventId, comment.pubkey)?.let { "https://njump.me/$it" } }
     Box(modifier.fillMaxWidth().padding(start = 12.dp * depth).testTag("commentDepth:${comment.eventId}:$depth")) {
         Row(
             horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
@@ -254,6 +278,12 @@ internal fun CommentCard(
                 .clip(CardShape)
                 .background(if (reply) thread.copy(alpha = 0.08f) else ZapSurface1)
                 .then(if (reply) Modifier.drawBehind { drawRect(thread, size = Size(3.dp.toPx(), size.height)) } else Modifier.border(1.dp, ZapLine, CardShape))
+                .pointerInput(comment.eventId) {
+                    detectTapGestures(onLongPress = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        menu = true
+                    })
+                }
                 .padding(start = if (reply) ZapSpacing.space3 + 3.dp else ZapSpacing.space3, top = ZapSpacing.space3, end = ZapSpacing.space3, bottom = ZapSpacing.space3)
                 .testTag("comment:${comment.eventId}"),
         ) {
@@ -284,6 +314,35 @@ internal fun CommentCard(
                 MarkdownText(value = comment.content, color = ZapText2, style = MaterialTheme.typography.bodyMedium, onOpenUrl = onOpenUrl)
                 onReply?.let { ReplyLink(it, Modifier.testTag("reply:${comment.eventId}")) }
             }
+        }
+        // Long press: the text, a link to the comment, or the share sheet.
+        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = ZapSurface2) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.comment_copy_text)) },
+                onClick = {
+                    menu = false
+                    copy(name, comment.content)
+                },
+                modifier = Modifier.testTag("commentCopyText"),
+            )
+            link?.let {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.comment_copy_link)) },
+                    onClick = {
+                        menu = false
+                        copy(name, it)
+                    },
+                    modifier = Modifier.testTag("commentCopyLink"),
+                )
+            }
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.action_share)) },
+                onClick = {
+                    menu = false
+                    share(listOfNotNull(comment.content, link).joinToString("\n\n"), name)
+                },
+                modifier = Modifier.testTag("commentShare"),
+            )
         }
     }
 }

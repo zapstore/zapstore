@@ -4,6 +4,7 @@ import dev.zapstore.app.screens.rememberSavedApps
 import dev.zapstore.app.screens.SavedScreen
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flowOf
+import dev.zapstore.iolite.toNpub
 import dev.zapstore.iolite.Query
 import dev.zapstore.app.components.NavAvatar
 import dev.zapstore.app.components.ToastHost
@@ -33,8 +34,14 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Scaffold
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -264,7 +271,7 @@ class MainActivity : ComponentActivity() {
                     onSeeAllStacks = { navController.navigate(Routes.STACKS) },
                     onRemoveFilter = viewModel::removeFilter,
                     onToggleFilter = viewModel::toggleFilter,
-                    onLoadMore = viewModel::loadMore,
+                    onActivityFilter = viewModel::setActivityFilter,
                     onLoadMoreStacks = viewModel::loadMoreStacks,
                     onLoadMoreActivity = viewModel::loadMoreActivity,
                     reselected = reselected,
@@ -307,8 +314,7 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
-            composable(Routes.ME) {
-                val account by zapstore.account.account.collectAsStateWithLifecycle()
+            composable(Routes.SETTINGS) {
                 val settingsModel: SettingsViewModel =
                     viewModel(
                         factory = SettingsViewModel.factory(
@@ -325,44 +331,52 @@ class MainActivity : ComponentActivity() {
                         ),
                     )
                 val settingsState by settingsModel.uiState.collectAsStateWithLifecycle()
-                // The device's settings end the page, signed in or not: one place for them, under sign-in.
-                val settings: @Composable () -> Unit = {
-                    SettingsSection(
-                        state = settingsState,
-                        onNetworkModeChange = settingsModel::setNetworkMode,
-                        onSync = settingsModel::sync,
-                        onWipe = settingsModel::wipe,
-                        onSignOut = settingsModel::signOut,
-                        onUpdateIntervalChange = settingsModel::setUpdateInterval,
-                        onSyncIntervalChange = settingsModel::setSyncInterval,
-                        onAnyNetworkChange = settingsModel::setAnyNetwork,
-                        onOpenDiagnostics = { navController.navigate(Routes.DIAGNOSTICS) },
-                        onBugReportsChange = settingsModel::setBugReports,
-                        onBackUpKey = settingsModel::backUpKey,
-                        onRestoreFromSigner = settingsModel::restoreFromSigner,
-                        onCopyKey = {
-                            copySecret(getString(R.string.device_key), settingsModel.keyNsec())
-                            settingsModel.keyCopied()
-                        },
-                        onOpenPaste = settingsModel::openPaste,
-                        onClosePaste = settingsModel::closePaste,
-                        onSubmitPaste = settingsModel::submitPaste,
-                        onConfirmReplace = settingsModel::confirmReplace,
-                        onDismissReplace = settingsModel::dismissReplace,
-                        onOpenWallet = settingsModel::openWallet,
-                        onCloseWallet = settingsModel::closeWallet,
-                        onConnectWallet = settingsModel::connectWallet,
-                        onDisconnectWallet = { settingsModel.disconnectWallet() },
-                        onOpenAddCatalog = settingsModel::openAddCatalog,
-                        onCloseAddCatalog = settingsModel::closeAddCatalog,
-                        onAddCatalog = settingsModel::addCatalog,
-                        onMoveCatalog = settingsModel::moveCatalog,
-                        onAskRemoveCatalog = settingsModel::askRemoveCatalog,
-                        onCancelRemoveCatalog = settingsModel::cancelRemoveCatalog,
-                        onConfirmRemoveCatalog = settingsModel::confirmRemoveCatalog,
-                        onOpenUrl = ::openUrl,
-                    )
-                }
+                SettingsSection(
+                    state = settingsState,
+                    onNetworkModeChange = settingsModel::setNetworkMode,
+                    onSync = settingsModel::sync,
+                    onWipe = settingsModel::wipe,
+                    onSignOut = settingsModel::signOut,
+                    onUpdateIntervalChange = settingsModel::setUpdateInterval,
+                    onSyncIntervalChange = settingsModel::setSyncInterval,
+                    onAnyNetworkChange = settingsModel::setAnyNetwork,
+                    onOpenDiagnostics = { navController.navigate(Routes.DIAGNOSTICS) },
+                    onBugReportsChange = settingsModel::setBugReports,
+                    onBackUpKey = settingsModel::backUpKey,
+                    onRestoreFromSigner = settingsModel::restoreFromSigner,
+                    onCopyKey = {
+                        copySecret(getString(R.string.device_key), settingsModel.keyNsec())
+                        settingsModel.keyCopied()
+                    },
+                    onOpenPaste = settingsModel::openPaste,
+                    onClosePaste = settingsModel::closePaste,
+                    onSubmitPaste = settingsModel::submitPaste,
+                    onConfirmReplace = settingsModel::confirmReplace,
+                    onDismissReplace = settingsModel::dismissReplace,
+                    onOpenWallet = settingsModel::openWallet,
+                    onCloseWallet = settingsModel::closeWallet,
+                    onConnectWallet = settingsModel::connectWallet,
+                    onDisconnectWallet = { settingsModel.disconnectWallet() },
+                    onOpenAddCatalog = settingsModel::openAddCatalog,
+                    onCloseAddCatalog = settingsModel::closeAddCatalog,
+                    onAddCatalog = settingsModel::addCatalog,
+                    onMoveCatalog = settingsModel::moveCatalog,
+                    onAskRemoveCatalog = settingsModel::askRemoveCatalog,
+                    onCancelRemoveCatalog = settingsModel::cancelRemoveCatalog,
+                    onConfirmRemoveCatalog = settingsModel::confirmRemoveCatalog,
+                    onOpenUrl = ::openUrl,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(ZapCanvas)
+                        .windowInsetsPadding(WindowInsets.safeDrawing)
+                        .verticalScroll(rememberScrollState())
+                        .padding(top = ZapSpacing.space2, bottom = ZapSpacing.space8),
+                )
+            }
+
+            composable(Routes.ME) {
+                val account by zapstore.account.account.collectAsStateWithLifecycle()
+                val openSettings = { navController.navigate(Routes.SETTINGS) }
                 val saved by rememberSavedApps(iolite, zapstore.lists.saved)
                 val openSaved = { navController.navigate(Routes.SAVED) }
                 val pubkey = account?.pubkey
@@ -374,10 +388,11 @@ class MainActivity : ComponentActivity() {
                         onOpenUrl = ::openUrl,
                         onAppClick = openApp,
                         onStackClick = { navController.navigate(Routes.stack(it.pubkey, it.identifier)) },
-                        settings = settings,
+                        onSettings = openSettings,
                         saved = saved,
                         onSavedClick = openSaved,
                         onLoadMoreActivity = viewModel::loadMoreActivity,
+                        onShare = { shareProfile(pubkey) },
                     )
                 } else {
                     var resumed by remember { mutableIntStateOf(0) }
@@ -404,7 +419,7 @@ class MainActivity : ComponentActivity() {
                         onGetAmber = { navController.navigate(Routes.app(Nip55Bridge.AMBER)) },
                         saved = saved,
                         onSavedClick = openSaved,
-                        settings = settings,
+                        onSettings = openSettings,
                     )
                 }
             }
@@ -454,6 +469,9 @@ class MainActivity : ComponentActivity() {
                     onPostComment = viewModel::postComment,
                     onSignIn = viewModel::signIn,
                     onOpenUrl = ::openUrl,
+                    onShare = state.stack?.let { stack ->
+                        { shareText("${WEB_URL}stacks/${stack.pubkey.toNpub()}/${stack.identifier}", stack.name) }
+                    },
                 )
             }
 
@@ -483,7 +501,13 @@ class MainActivity : ComponentActivity() {
                             Toasts.show(getString(if (on) R.string.toast_ignored else R.string.toast_unignored))
                         }
                     },
-                    onShare = { state.app?.let { shareText("$APP_URL${it.appId}", it.name) } },
+                    onShare = {
+                        state.app?.let { app ->
+                            // The page, then the source when the listing names one.
+                            val source = app.repository?.takeIf { it.isNotBlank() }
+                            shareText(listOfNotNull("${app.name}\n${WEB_URL}apps/${app.appId}", source).joinToString("\n"), app.name)
+                        }
+                    },
                     onPostComment = viewModel::postComment,
                     onReport = viewModel::report,
                     onReportClosed = viewModel::clearReport,
@@ -491,6 +515,7 @@ class MainActivity : ComponentActivity() {
                     onZapClosed = viewModel::clearZap,
                     onSignIn = viewModel::signIn,
                     onConnectWallet = viewModel::connectWallet,
+                    onPayInvoice = ::payInvoice,
                     onToggleStack = viewModel::toggleInStack,
                     onCreateStack = viewModel::createStack,
                     onOpenUrl = ::openUrl,
@@ -524,6 +549,7 @@ class MainActivity : ComponentActivity() {
                     onAppClick = openApp,
                     onStackClick = { navController.navigate(Routes.stack(it.pubkey, it.identifier)) },
                     onLoadMoreActivity = viewModel::loadMoreActivity,
+                    onShare = { shareProfile(state.pubkey) },
                 )
             }
         }
@@ -547,6 +573,12 @@ class MainActivity : ComponentActivity() {
         runCatching { startActivity(Intent(Intent.ACTION_VIEW, value.toUri())) }
     }
 
+    /** Hands a Lightning invoice to whichever wallet app the person picks. */
+    private fun payInvoice(invoice: String) {
+        val view = Intent(Intent.ACTION_VIEW, "lightning:$invoice".toUri())
+        runCatching { startActivity(Intent.createChooser(view, getString(R.string.zap_pick_wallet))) }
+    }
+
     /** Copies a secret; Android 13+ hides it from the clipboard preview. */
     private fun copySecret(label: String, value: String) {
         if (value.isEmpty()) return
@@ -556,6 +588,9 @@ class MainActivity : ComponentActivity() {
         }
         getSystemService(ClipboardManager::class.java).setPrimaryClip(clip)
     }
+
+    private fun shareProfile(pubkey: String) =
+        shareText("${WEB_URL}profile/${pubkey.toNpub()}", getString(R.string.action_share))
 
     private fun shareText(text: String, title: String = getString(R.string.diagnostics)) {
         val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
@@ -573,6 +608,6 @@ class MainActivity : ComponentActivity() {
 
     private companion object {
         const val NAVIGATION_TRANSITION_DURATION = 150
-        const val APP_URL = "https://zapstore.dev/apps/"
+        const val WEB_URL = "https://zapstore.dev/"
     }
 }

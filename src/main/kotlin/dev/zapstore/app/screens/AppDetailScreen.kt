@@ -59,6 +59,7 @@ import dev.zapstore.app.ZapSurface3
 import dev.zapstore.app.ZapText2
 import dev.zapstore.app.cdnImageUrl
 import dev.zapstore.app.components.AppDetailHead
+import dev.zapstore.app.components.ShareButton
 import dev.zapstore.app.components.scrollParallax
 import dev.zapstore.app.components.windowParallax
 import dev.zapstore.app.components.AppIcon
@@ -104,6 +105,7 @@ fun AppDetailScreen(
     onZapClosed: () -> Unit = {},
     onSignIn: () -> Unit = {},
     onConnectWallet: (String) -> Boolean = { false },
+    onPayInvoice: (String) -> Unit = {},
     onToggleStack: (StackRecord) -> Unit = {},
     onCreateStack: (String) -> Unit = {},
     onStackClick: (StackRecord) -> Unit = {},
@@ -164,6 +166,7 @@ fun AppDetailScreen(
                     onAuthorClick = onProfileClick,
                     onVerifiedClick = { report = ReportFocus.Developer },
                     onMore = { actions = true },
+                    onShare = onShare,
                     modifier = Modifier.scrollParallax(listState),
                 )
             }
@@ -192,7 +195,7 @@ fun AppDetailScreen(
                                     .clickable { selectedScreenshot = app.screenshots.indexOf(url) },
                             ) {
                                 AsyncImage(
-                                    model = cdnImageUrl(url, CdnImageVariant.ThumbnailSmall),
+                                    model = rememberStripShot(url),
                                     contentDescription = stringResource(R.string.screenshot_description, app.name),
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier.fillMaxSize().windowParallax(shots, url),
@@ -203,7 +206,7 @@ fun AppDetailScreen(
                 }
             }
 
-            val generated = app.about.trim()
+            val generated = app.aboutProse.trim()
             val listing = app.listing.trim()
             val both = generated.isNotEmpty() && listing.isNotEmpty()
             val showingOriginal = both && showOriginal
@@ -320,6 +323,7 @@ fun AppDetailScreen(
                 app = app,
                 collapse = { headCollapse },
                 onMore = { actions = true },
+                onShare = onShare,
                 modifier = Modifier.align(Alignment.TopCenter),
             )
             InstallBar(
@@ -344,19 +348,16 @@ fun AppDetailScreen(
         }
         state.install.dialog?.let { plan ->
             InstallSheet(
-                name = app.name,
-                version = app.version,
-                verified = app.isVerified,
+                app = app,
+                author = state.author,
                 plan = plan,
                 onConfirm = onConfirmInstall,
                 onDismiss = onDismissInstall,
+                onOpenReport = { report = ReportFocus.Top },
                 otherStore = state.install.otherStore,
-                trustName = app.authorPubkey?.let { shortDisplayName(it, state.author) },
-                catalogSigned = app.isCatalogSigned,
-                downloadUrl = app.downloadUrl,
-                source = app.repository,
                 trust = state.install.trust,
                 onPersonalizeTrust = onPersonalizeTrust,
+                onOpenUrl = onOpenUrl,
             )
         }
         if (releasing) {
@@ -374,12 +375,15 @@ fun AppDetailScreen(
                     onProfileClick(pubkey)
                 },
                 onDismiss = { report = null },
+                trust = state.install.trust,
+                onPersonalizeTrust = onPersonalizeTrust,
             )
         }
         if (commenting) {
             val version = app.version.takeIf { it.isNotBlank() }
             CommentSheet(
-                title = stringResource(R.string.comment_on, version ?: app.name),
+                title = stringResource(R.string.comment_on, app.name),
+                titleVersion = version,
                 hint = stringResource(R.string.comment_hint_app, app.name, version.orEmpty()).trim(),
                 signInMessage = stringResource(R.string.comment_sign_in),
                 postLabel = stringResource(R.string.post_comment),
@@ -414,6 +418,7 @@ fun AppDetailScreen(
                 onSignIn = onSignIn,
                 onConnectWallet = onConnectWallet,
                 onRetry = onZapClosed,
+                onPayInvoice = onPayInvoice,
                 onDismiss = {
                     zapping = false
                     onZapClosed()
@@ -443,10 +448,6 @@ fun AppDetailScreen(
                 installed = state.install.installed,
                 onSave = { onSave(!saved) },
                 onIgnore = { onIgnore(!ignored) },
-                onShare = {
-                    actions = false
-                    onShare()
-                },
                 onReport = {
                     actions = false
                     reporting = true
@@ -513,6 +514,7 @@ private fun CompactAppHeader(
     app: AppRecord,
     collapse: () -> Float,
     onMore: () -> Unit,
+    onShare: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val animate = animationsEnabled()
@@ -555,13 +557,16 @@ private fun CompactAppHeader(
                     if (animate) translationX = (1f - reveal()) * 10.dp.toPx()
                 },
             )
-            ZapIconButton(
-                R.drawable.ic_more,
-                stringResource(R.string.more_actions),
-                onMore,
-                style = ZapButtonStyle.Ghost,
-                modifier = Modifier.testTag("compactMore"),
-            )
+            Row {
+                ShareButton(onShare, Modifier.testTag("compactShare"))
+                ZapIconButton(
+                    R.drawable.ic_more,
+                    stringResource(R.string.more_actions),
+                    onMore,
+                    style = ZapButtonStyle.Ghost,
+                    modifier = Modifier.testTag("compactMore"),
+                )
+            }
         }
         HorizontalDivider(color = ZapLine)
     }

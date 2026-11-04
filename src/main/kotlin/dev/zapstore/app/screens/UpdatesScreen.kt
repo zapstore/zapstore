@@ -81,6 +81,7 @@ import dev.zapstore.app.catalog.InstalledApp
 import dev.zapstore.app.catalog.ManualReason
 import dev.zapstore.app.components.AppIcon
 import dev.zapstore.app.components.AppRow
+import dev.zapstore.app.components.AppRowStyle
 import dev.zapstore.app.components.EmptyRow
 import dev.zapstore.app.components.GroupHeader
 import dev.zapstore.app.components.LoadingIndicator
@@ -190,10 +191,8 @@ fun UpdatesScreen(
             modifier = Modifier.weight(1f).testTag("myAppsList"),
             contentPadding = PaddingValues(start = ZapSpacing.space4, end = ZapSpacing.space4, bottom = ZapSpacing.space8),
         ) {
-            if (!state.loaded) {
-                item(contentType = "loading") { LoadingIndicator(Modifier.padding(vertical = ZapSpacing.space6)) }
-                return@LazyColumn
-            }
+            // Nothing until the local read lands; a spinner for a database read is only a flash.
+            if (!state.loaded) return@LazyColumn
             state.searchResults?.let { results ->
                 searchSection(state, results, onAppClick, onUninstallInstalled)
                 return@LazyColumn
@@ -368,8 +367,8 @@ private fun LazyListScope.searchSection(
         AppRow(
             app = app,
             onClick = { onAppClick(app) },
+            style = AppRowStyle.Manage,
             author = state.profiles.authorOf(app),
-            tileSize = 44.dp,
             modifier = Modifier.testTag("mine:${app.appId}"),
         )
     }
@@ -392,8 +391,8 @@ private fun LazyListScope.installedSection(
             AppRow(
                 app = app,
                 onClick = { onAppClick(app) },
+                style = AppRowStyle.Manage,
                 author = state.profiles.authorOf(app),
-                tileSize = 44.dp,
                 modifier = Modifier.testTag("installed:${app.appId}"),
             )
         }
@@ -416,9 +415,9 @@ private fun LazyListScope.otherStoresSection(
             AppRow(
                 app = entry.app,
                 onClick = { onAppClick(entry.app) },
+                style = AppRowStyle.Manage,
                 author = state.profiles.authorOf(entry.app),
-                supporting = if (entry.signedDifferently) stringResource(R.string.store_signed_differently, item.storeLabel) else item.storeLabel,
-                tileSize = 44.dp,
+                note = if (entry.signedDifferently) stringResource(R.string.store_signed_differently, item.storeLabel) else item.storeLabel,
                 modifier = Modifier.testTag("store:${entry.app.appId}"),
             )
         }
@@ -460,10 +459,10 @@ private fun LazyListScope.ignoredSection(
             AppRow(
                 app = ignored.app,
                 onClick = { onAppClick(ignored.app) },
+                style = AppRowStyle.Manage,
                 author = state.profiles.authorOf(ignored.app),
-                supporting = ignored.installer?.let { stringResource(R.string.installed_by, it) }
+                note = ignored.installer?.let { stringResource(R.string.installed_by, it) }
                     ?: stringResource(R.string.installed_by_unknown),
-                tileSize = 44.dp,
                 modifier = Modifier.testTag("ignored:$id"),
             )
         }
@@ -551,8 +550,8 @@ private fun UpdateRow(
         AppRow(
             app = update.app,
             onClick = { actions.onAppClick(update.app) },
+            style = AppRowStyle.Manage,
             installed = update.installedVersion,
-            tileSize = 44.dp,
             showAuthor = false,
             modifier = Modifier.testTag("update:$id"),
             trailing = {

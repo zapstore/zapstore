@@ -1,6 +1,10 @@
 package dev.zapstore.app.components
 
 import android.content.Context
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -8,6 +12,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import coil3.SingletonImageLoader
 import coil3.compose.AsyncImage
@@ -20,11 +27,13 @@ import dev.zapstore.app.CdnImageVariant
 import dev.zapstore.app.ZapstoreApplication
 import dev.zapstore.app.cdnImageUrl
 import dev.zapstore.app.isHttpUrl
+import dev.zapstore.app.ZapSurface3
 import dev.zapstore.app.profileCdnUrl
 
 /**
  * Avatar from the bundle, then the Zapstore CDN, then the profile's own picture URL.
  * A new [profileVersion] (kind 0 event ID) evicts the cached image so an updated avatar shows.
+ * A person with no picture, or one that will not load, gets a [KeyAvatar] drawn from their key.
  */
 @Composable
 fun ProfileImage(
@@ -44,6 +53,7 @@ fun ProfileImage(
     val fallbackUrl = pictureUrl?.takeIf(::isHttpUrl)
     val imageUrl = if (useFallback) fallbackUrl else cdnUrl
     var previousVersion by remember(pubkey) { mutableStateOf<String?>(null) }
+    var failed by remember(pubkey, pictureUrl) { mutableStateOf(false) }
 
     LaunchedEffect(profileVersion) {
         if (profileVersion != null && previousVersion != null && previousVersion != profileVersion) {
@@ -52,30 +62,54 @@ fun ProfileImage(
         if (profileVersion != null) previousVersion = profileVersion
     }
 
-    if (localAvatar != null) {
-        AsyncImage(
-            model = localAvatar,
-            contentDescription = contentDescription,
-            contentScale = ContentScale.Crop,
-            modifier = modifier,
-        )
-    } else if (remoteReady) imageUrl?.let { url ->
-        val request = remember(url) {
-            ImageRequest.Builder(context)
-                .data(url)
-                .memoryCacheKey(profileIconCacheKey(url))
-                .diskCacheKey(profileIconCacheKey(url))
-                .memoryCachePolicy(CachePolicy.ENABLED)
-                .diskCachePolicy(CachePolicy.ENABLED)
-                .build()
+    Box(modifier) {
+        if (localAvatar == null && (fallbackUrl == null || failed)) KeyAvatar(pubkey, Modifier.fillMaxSize())
+        if (localAvatar != null) {
+            AsyncImage(
+                model = localAvatar,
+                contentDescription = contentDescription,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else if (remoteReady) imageUrl?.let { url ->
+            val request = remember(url) {
+                ImageRequest.Builder(context)
+                    .data(url)
+                    .memoryCacheKey(profileIconCacheKey(url))
+                    .diskCacheKey(profileIconCacheKey(url))
+                    .memoryCachePolicy(CachePolicy.ENABLED)
+                    .diskCachePolicy(CachePolicy.ENABLED)
+                    .build()
+            }
+            AsyncImage(
+                model = request,
+                contentDescription = contentDescription,
+                contentScale = ContentScale.Crop,
+                onError = { if (!useFallback && fallbackUrl != null) useFallback = true else failed = true },
+                modifier = Modifier.fillMaxSize(),
+            )
         }
-        AsyncImage(
-            model = request,
-            contentDescription = contentDescription,
-            contentScale = ContentScale.Crop,
-            onError = { if (!useFallback && fallbackUrl != null) useFallback = true },
-            modifier = modifier,
-        )
+    }
+}
+
+/**
+ * The picture for a person with no profile picture: a mirrored 5 x 5 pattern and a hue, both drawn
+ * from the key, so the same person looks the same everywhere. No text, so no one is named by it.
+ */
+@Composable
+fun KeyAvatar(pubkey: String, modifier: Modifier = Modifier) {
+    val bytes = remember(pubkey) { pubkey.chunked(2).mapNotNull { it.toIntOrNull(16) } }
+    Canvas(modifier.background(ZapSurface3)) {
+        if (bytes.size < 8) return@Canvas
+        val hue = (bytes[0] * 256 + bytes[1]) % 360
+        val color = Color.hsv(hue.toFloat(), 0.42f, 0.78f)
+        val cell = Size(size.width / 5f, size.height / 5f)
+        for (row in 0 until 5) for (col in 0 until 3) {
+            if ((bytes[2 + row] shr col) and 1 == 0) continue
+            for (x in if (col == 2) listOf(2) else listOf(col, 4 - col)) {
+                drawRect(color, Offset(x * cell.width, row * cell.height), cell)
+            }
+        }
     }
 }
 

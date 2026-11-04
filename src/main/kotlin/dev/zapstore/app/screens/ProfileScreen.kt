@@ -44,9 +44,13 @@ import dev.zapstore.app.ZapSurface2
 import dev.zapstore.app.ZapSpacing
 import dev.zapstore.app.ZapText2
 import dev.zapstore.app.components.GroupHeader
+import dev.zapstore.app.components.ShareButton
+import dev.zapstore.app.components.ZapButtonStyle
+import dev.zapstore.app.components.ZapIconButton
+import dev.zapstore.app.ZapRadius
 import dev.zapstore.app.components.StackCard
+import dev.zapstore.app.components.StackShelfFraction
 import dev.zapstore.app.components.InfoRow
-import dev.zapstore.app.components.LoadingIndicator
 import dev.zapstore.app.components.ProfileImage
 import dev.zapstore.app.components.StatusText
 import dev.zapstore.app.components.appList
@@ -62,14 +66,15 @@ fun ProfileScreen(
     onAppClick: (AppRecord) -> Unit,
     modifier: Modifier = Modifier,
     onStackClick: (StackRecord) -> Unit = {},
-    /** Set on the Profile tab: the signed-in account's own page, ending in the device's settings. */
-    settings: (@Composable () -> Unit)? = null,
+    /** Set on the Profile tab: opens the device's settings. This page is then the same shape as anyone else's. */
+    onSettings: (() -> Unit)? = null,
     /** The device's saved apps, pinned first among the stacks on the Profile tab. */
     saved: SavedApps? = null,
     onSavedClick: () -> Unit = {},
     onLoadMoreActivity: () -> Unit = {},
+    onShare: (() -> Unit)? = null,
 ) {
-    val own = settings != null
+    val own = onSettings != null
     val noApps = stringResource(R.string.no_profile_apps)
     val yourApps = stringResource(R.string.your_apps)
     val clipboard = LocalClipboard.current
@@ -91,19 +96,19 @@ fun ProfileScreen(
             .fillMaxSize()
             .background(ZapCanvas)
             .navigationBarsPadding(),
-        contentPadding = PaddingValues(bottom = 36.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        contentPadding = PaddingValues(bottom = ZapSpacing.space8),
+        verticalArrangement = Arrangement.spacedBy(ZapSpacing.space4),
     ) {
         item {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
+                    .padding(ZapSpacing.space4),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(
                     modifier = Modifier
-                        .size(64.dp)
+                        .size(ZapSpacing.space16)
                         .clip(CircleShape)
                         .background(ZapSurface2),
                     contentAlignment = Alignment.Center,
@@ -118,7 +123,7 @@ fun ProfileScreen(
                             .clip(CircleShape),
                     )
                 }
-                Spacer(Modifier.width(16.dp))
+                Spacer(Modifier.width(ZapSpacing.space4))
                 Column(Modifier.weight(1f)) {
                     Text(
                         text = title,
@@ -126,7 +131,16 @@ fun ProfileScreen(
                         maxLines = 2,
                     )
                     profile?.name?.takeIf { it != profile.displayName }?.let { StatusText("@$it") }
-                    if (profile == null && state.profileLoading) LoadingIndicator(Modifier.padding(top = 8.dp))
+                }
+                onShare?.let { ShareButton(it) }
+                onSettings?.let {
+                    ZapIconButton(
+                        icon = R.drawable.ic_settings,
+                        contentDescription = stringResource(R.string.settings),
+                        onClick = it,
+                        style = ZapButtonStyle.Ghost,
+                        modifier = Modifier.testTag("openSettings"),
+                    )
                 }
             }
         }
@@ -139,7 +153,7 @@ fun ProfileScreen(
                     style = MaterialTheme.typography.bodyLarge,
                     onOpenUrl = onOpenUrl,
                     collapsible = true,
-                    modifier = Modifier.padding(horizontal = 16.dp),
+                    modifier = Modifier.padding(horizontal = ZapSpacing.space4),
                 )
             }
         }
@@ -148,30 +162,23 @@ fun ProfileScreen(
         if (state.stacks.isNotEmpty() || showSaved) {
             item(key = "stacks", contentType = "stacks") {
                 Column {
-                    GroupHeader(stringResource(R.string.stacks), Modifier.padding(horizontal = 16.dp))
+                    GroupHeader(stringResource(R.string.stacks), Modifier.padding(horizontal = ZapSpacing.space4))
                     LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3),
-                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+                        contentPadding = PaddingValues(horizontal = ZapSpacing.space4),
                     ) {
-                        if (showSaved) item(key = "saved") { SavedStackCard(saved, onSavedClick) }
+                        if (showSaved) item(key = "saved") {
+                            SavedStackCard(saved, onSavedClick, Modifier.fillParentMaxWidth(StackShelfFraction))
+                        }
                         items(state.stacks, key = { it.identifier }) { stack ->
                             StackCard(
                                 stack = stack,
                                 apps = state.stackApps,
                                 onClick = { onStackClick(stack) },
-                                modifier = Modifier.testTag("profileStack:${stack.identifier}"),
+                                modifier = Modifier.fillParentMaxWidth(StackShelfFraction).testTag("profileStack:${stack.identifier}"),
                             )
                         }
                     }
-                }
-            }
-        }
-
-        if (own && state.stacks.isEmpty() && !showSaved) {
-            item(key = "noStacks") {
-                Column(Modifier.padding(horizontal = 16.dp)) {
-                    GroupHeader(stringResource(R.string.stacks))
-                    StatusText(stringResource(R.string.own_stacks_empty), Modifier.testTag("ownStacksEmpty"))
                 }
             }
         }
@@ -181,18 +188,18 @@ fun ProfileScreen(
                 state = state.apps,
                 emptyMessage = noApps,
                 onAppClick = onAppClick,
-                modifier = Modifier.padding(horizontal = 16.dp),
+                modifier = Modifier.padding(horizontal = ZapSpacing.space4),
                 title = if (own) yourApps else null,
                 showAuthor = false,
             )
         }
-        state.error?.let { item { StatusText(it, Modifier.padding(horizontal = 16.dp)) } }
+        state.error?.let { item { StatusText(it, Modifier.padding(horizontal = ZapSpacing.space4)) } }
 
         // Every entry is this person's, so each row starts at the app and leaves their name out.
-        item(key = "activityHeader", contentType = "header") {
-            GroupHeader(stringResource(R.string.activity), Modifier.padding(horizontal = 16.dp).testTag("profileActivity"))
+        if (state.activity.isNotEmpty()) item(key = "activityHeader", contentType = "header") {
+            GroupHeader(stringResource(R.string.activity), Modifier.padding(horizontal = ZapSpacing.space4).testTag("profileActivity"))
         }
-        activityRows(
+        if (state.activity.isNotEmpty()) activityRows(
             items = state.activity,
             loading = state.activityLoading,
             canLoadMore = state.activityCanLoadMore,
@@ -201,18 +208,18 @@ fun ProfileScreen(
             emptyText = noActivity,
             onOpen = { item -> item.app?.let(onAppClick) },
             showWho = false,
-            modifier = Modifier.padding(horizontal = 16.dp),
+            modifier = Modifier.padding(horizontal = ZapSpacing.space4),
         )
 
         item {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .clip(RoundedCornerShape(20.dp))
+                    .padding(horizontal = ZapSpacing.space4)
+                    .clip(RoundedCornerShape(ZapRadius.lg))
                     .background(ZapSurface1)
-                    .border(1.dp, ZapLine, RoundedCornerShape(20.dp))
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                    .border(1.dp, ZapLine, RoundedCornerShape(ZapRadius.lg))
+                    .padding(horizontal = ZapSpacing.space4, vertical = ZapSpacing.space2),
             ) {
                 profile?.website?.let { InfoRow(stringResource(R.string.website), it, link = it, onOpenUrl = onOpenUrl) }
                 profile?.nip05?.let { InfoRow(stringResource(R.string.nip05), it) }
@@ -226,10 +233,5 @@ fun ProfileScreen(
             }
         }
 
-        settings?.let { content ->
-            item(key = "settings", contentType = "settings") {
-                Column(Modifier.padding(start = 16.dp, end = 16.dp, top = ZapSpacing.space4)) { content() }
-            }
-        }
     }
 }

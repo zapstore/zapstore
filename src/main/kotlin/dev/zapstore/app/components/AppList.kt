@@ -37,7 +37,7 @@ fun LazyListScope.appList(
 ) {
     title?.let { item(contentType = "header") { GroupHeader(it, modifier.padding(top = 8.dp)) } }
     when {
-        state.apps.isEmpty() && state.loading -> item { LoadingIndicator(modifier.padding(vertical = 12.dp)) }
+        state.apps.isEmpty() && state.loading -> Unit
         state.apps.isEmpty() -> item { StatusText(state.error ?: emptyMessage, modifier) }
         else -> {
             state.error?.let { item { StatusText(it, modifier) } }

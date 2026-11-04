@@ -329,18 +329,18 @@ fun ZapCountBadge(count: Int, modifier: Modifier = Modifier) {
 
 /** Every version number sits in this navy pill, alone or as `current → next`. */
 @Composable
-fun VersionPill(version: String, modifier: Modifier = Modifier, next: String? = null) {
+fun VersionPill(version: String, modifier: Modifier = Modifier, next: String? = null, scale: Float = 1f) {
     val spoken = if (next == null) version else "$version → $next"
-    val fontSize = 13.sp
+    val fontSize = 13.sp * scale
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp * scale),
         modifier = modifier
-            .height(24.dp)
+            .height(24.dp * scale)
             .clip(RoundedCornerShape(ZapRadius.full))
             .background(ZapBrand)
             .semantics(mergeDescendants = true) { contentDescription = spoken }
-            .padding(horizontal = 10.dp),
+            .padding(horizontal = 10.dp * scale),
     ) {
         val style = MaterialTheme.typography.labelMedium.copy(
             fontSize = fontSize,
@@ -350,7 +350,7 @@ fun VersionPill(version: String, modifier: Modifier = Modifier, next: String? = 
         )
         Text(version.pillText(), color = Color.White, style = style, maxLines = 1)
         if (next != null) {
-            VersionPillArrow()
+            VersionPillArrow(scale)
             Text(next.pillText(), color = Color.White, style = style, maxLines = 1)
         }
     }
@@ -358,8 +358,8 @@ fun VersionPill(version: String, modifier: Modifier = Modifier, next: String? = 
 
 /** The small filled triangle between a pair's two versions, matching the web pill's inline SVG. */
 @Composable
-private fun VersionPillArrow() {
-    Canvas(Modifier.size(6.dp, 7.dp)) {
+private fun VersionPillArrow(scale: Float) {
+    Canvas(Modifier.size(6.dp * scale, 7.dp * scale)) {
         val path = Path().apply {
             moveTo(size.width * 0.2f, 0f)
             lineTo(size.width, size.height / 2f)
@@ -404,12 +404,12 @@ fun EvidenceCard(
 
 /** A row in an evidence card: a green check when the claim holds, a plain dot when it is only a fact. */
 @Composable
-fun EvidenceLine(text: String, checked: Boolean, modifier: Modifier = Modifier, detail: String? = null) {
+fun EvidenceLine(text: String, checked: Boolean, modifier: Modifier = Modifier, detail: String? = null, warning: Boolean = false) {
     Row(horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2), modifier = modifier) {
         Icon(
-            painterResource(if (checked) R.drawable.ic_check else R.drawable.ic_info),
+            painterResource(if (checked) R.drawable.ic_check else if (warning) R.drawable.ic_unverified else R.drawable.ic_info),
             contentDescription = null,
-            tint = if (checked) ZapVerified else ZapText3,
+            tint = if (checked) ZapVerified else if (warning) ZapWarning else ZapText3,
             modifier = Modifier.size(18.dp).padding(top = 1.dp),
         )
         Column(Modifier.weight(1f)) {
@@ -466,6 +466,7 @@ fun GroupHeader(
     action: String? = null,
     onAction: () -> Unit = {},
     actionTag: String = "groupAction",
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -475,6 +476,7 @@ fun GroupHeader(
         SectionLabel(title)
         count?.let { GroupCount(it) }
         Spacer(Modifier.weight(1f))
+        trailing?.invoke()
         if (action != null) ZapTextLink(action, onAction, Modifier.testTag(actionTag))
     }
 }

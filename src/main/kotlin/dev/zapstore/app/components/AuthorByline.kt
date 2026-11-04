@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -68,7 +69,7 @@ fun AuthorByline(
         Text(
             text = name,
             color = ZapText2,
-            style = if (name.startsWith("npub1")) style.copy(fontWeight = FontWeight.Medium, fontFeatureSettings = "tnum") else style.copy(fontWeight = FontWeight.SemiBold),
+            style = style.copy(fontWeight = FontWeight.SemiBold),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f, fill = false),
@@ -78,17 +79,20 @@ fun AuthorByline(
 
 /** The warning beside a listing signer who has not proved the app is theirs. Tapping it opens that explanation. */
 @Composable
-fun UnverifiedMark(onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun UnverifiedMark(onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 16.dp) {
     val label = stringResource(R.string.unverified_author)
-    Text(
-        "⚠️",
-        style = MaterialTheme.typography.bodyLarge,
+    // The same 28 dp box as [VerifiedSeal], so either mark takes the same room on the author line.
+    Box(
+        contentAlignment = Alignment.Center,
         modifier = modifier
+            .size(size + 12.dp)
             .clip(CircleShape)
-            .clickable(onClick = onClick)
+            .clickable(role = Role.Button, onClick = onClick)
             .semantics { contentDescription = label }
             .testTag("unverifiedAuthor"),
-    )
+    ) {
+        Image(painterResource(R.drawable.ic_unverified), contentDescription = null, modifier = Modifier.size(size))
+    }
 }
 
 /** The web verified mark: a blue scalloped badge with a white tick. Tapping it opens how the proof was checked. */
@@ -114,8 +118,10 @@ fun VerifiedSeal(onClick: (() -> Unit)? = null, modifier: Modifier = Modifier, s
     }
 }
 
-/** Profile name, or an abbreviated npub when no kind 0 is known. */
-fun shortDisplayName(pubkey: String, profile: ProfileRecord?): String {
-    val name = profile?.displayNameOrNpub ?: pubkey.toNpub()
-    return if (name.startsWith("npub1") && name.length > 18) "${name.take(9)}…${name.takeLast(4)}" else name.trim()
-}
+/** Whom a person is called when no kind 0 names them. The npub is for a person's own page and evidence fields only. */
+const val UNKNOWN_PERSON = "Someone"
+
+/** The profile's name, or [UNKNOWN_PERSON]: a raw key in a row tells no one anything. */
+@Suppress("UNUSED_PARAMETER")
+fun shortDisplayName(pubkey: String, profile: ProfileRecord?): String =
+    (profile?.displayName ?: profile?.name)?.trim()?.takeIf { it.isNotEmpty() } ?: UNKNOWN_PERSON

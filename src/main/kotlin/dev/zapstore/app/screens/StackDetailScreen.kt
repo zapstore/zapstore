@@ -36,7 +36,7 @@ import androidx.compose.ui.unit.dp
 import dev.zapstore.app.R
 import dev.zapstore.app.ZapCanvas
 import dev.zapstore.app.components.LoadingIndicator
-import dev.zapstore.app.components.StackHead
+import dev.zapstore.app.components.StackCard
 import dev.zapstore.app.components.StatusText
 import dev.zapstore.app.components.appList
 import dev.zapstore.iolite.AppRecord
@@ -57,6 +57,7 @@ fun StackDetailScreen(
     onPostComment: (text: String, parent: CommentRecord?) -> Unit = { _, _ -> },
     onSignIn: () -> Unit = {},
     onOpenUrl: (String) -> Unit = {},
+    onShare: (() -> Unit)? = null,
 ) {
     val appsTitle = stringResource(R.string.apps)
     val noApps = stringResource(R.string.no_stack_apps)
@@ -84,18 +85,22 @@ fun StackDetailScreen(
     ) {
         val stack = state.stack
         if (stack == null) {
-            item {
-                if (state.stackLoading) {
-                    LoadingIndicator(Modifier.padding(vertical = 20.dp))
-                } else {
-                    Text(text = stringResource(R.string.stack_not_found), style = MaterialTheme.typography.headlineSmall)
-                }
+            if (!state.stackLoading) {
+                item { Text(text = stringResource(R.string.stack_not_found), style = MaterialTheme.typography.headlineSmall) }
             }
             state.error?.let { item { StatusText(it) } }
             return@LazyColumn
         }
 
-        item { StackHead(stack = stack, apps = state.appsById, modifier = Modifier.testTag("stack:${stack.identifier}")) }
+        item {
+            StackCard(
+                stack = stack,
+                apps = state.appsById,
+                head = true,
+                onShare = onShare,
+                modifier = Modifier.testTag("stack:${stack.identifier}"),
+            )
+        }
         if (state.own) {
             item(key = "rename") {
                 if (renaming) {

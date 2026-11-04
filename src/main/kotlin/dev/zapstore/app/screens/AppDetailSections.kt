@@ -71,7 +71,8 @@ import androidx.compose.foundation.layout.offset
 import java.util.Locale
 
 /** A requested permission: the Android id, its fact label when the table has one, and the fact's note. */
-internal data class PermissionLine(val id: String?, val label: String?, val note: String)
+/** [does] leads the row in plain words; [label] is the short name; [id] is the Android name, shown small. */
+internal data class PermissionLine(val id: String?, val label: String?, val note: String, val does: String? = null)
 
 private val leadingPermissionId = Regex("^[A-Z][A-Z0-9]*(_[A-Z0-9]+)+\\s+")
 
@@ -88,12 +89,12 @@ internal fun AppRecord.permissionLines(): List<PermissionLine> {
     val notes = securityNotes
     return permissionIds.map { id ->
         val known = FactCatalog.permissionForId(id)
-        PermissionLine(id, known?.label, known?.let { notes[it.fact] }.orEmpty().withoutLeadingId(id))
+        PermissionLine(id, known?.label, known?.let { notes[it.fact] }.orEmpty().withoutLeadingId(id), known?.does)
     }.ifEmpty {
         factRows.mapNotNull { fact ->
             if (!fact.yes) return@mapNotNull null
             val label = FactCatalog.permission(fact.key) ?: return@mapNotNull null
-            PermissionLine(null, label, fact.reason.withoutLeadingId(null))
+            PermissionLine(null, label, fact.reason.withoutLeadingId(null), FactCatalog.permissionDoes(fact.key))
         }
     }
 }
@@ -107,9 +108,9 @@ internal val AppRecord.spdxLicense: String?
 internal fun AppRecord.hasSecurityCard(): Boolean =
     isCatalogSigned || security.isNotBlank() || factRows.isNotEmpty() || permissionIds.isNotEmpty()
 
-private data class FactPill(val key: String, val label: String, val tone: FactCatalog.Tone)
+internal data class FactPill(val key: String, val label: String, val tone: FactCatalog.Tone)
 
-private fun AppRecord.factPills(): List<FactPill> = factRows.mapNotNull { fact ->
+internal fun AppRecord.factPills(): List<FactPill> = factRows.mapNotNull { fact ->
     val pill = FactCatalog.pill(fact.key) ?: return@mapNotNull null
     if (!pill.visible(fact.yes)) return@mapNotNull null
     val label = pill.label(fact.yes).let { base ->
@@ -148,7 +149,7 @@ internal fun SecurityReportCard(
 }
 
 /** Warning flags as label and note, in file order, for the ids the app knows. */
-private fun AppRecord.flagLabels(): List<Pair<String, String>> =
+internal fun AppRecord.flagLabels(): List<Pair<String, String>> =
     securityFlags.mapNotNull { flag -> FactCatalog.flag(flag.id)?.let { it to flag.note } }
 
 /** True when there is a verdict to show: a flag, a pill, or any written report. */
@@ -193,7 +194,7 @@ internal fun PermissionsList(app: AppRecord) {
 internal fun AppRecord.hasPermissions(): Boolean = permissionLines().isNotEmpty()
 
 @Composable
-private fun FactPills(pills: List<FactPill>) {
+internal fun FactPills(pills: List<FactPill>) {
     if (pills.isEmpty()) return
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
@@ -241,8 +242,10 @@ private fun SecurityProse(app: AppRecord, onOpenUrl: (String) -> Unit, brief: Bo
 @Composable
 private fun PermissionRow(line: PermissionLine) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(line.label ?: line.id.orEmpty(), color = ZapText, style = MaterialTheme.typography.bodyMedium)
+        Text(line.does ?: line.label ?: line.id.orEmpty(), color = ZapText, style = MaterialTheme.typography.bodyMedium)
         if (line.note.isNotBlank()) Text(line.note, color = ZapText2, style = MaterialTheme.typography.bodySmall)
+        // The Android name for anyone who wants to look it up; shown once, under what it does.
+        line.id?.let { Text(it, color = ZapText3, style = MaterialTheme.typography.labelMedium) }
     }
 }
 

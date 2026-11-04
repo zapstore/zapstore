@@ -1,5 +1,6 @@
 package dev.zapstore.app.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.res.pluralStringResource
@@ -18,6 +19,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.clickable
 import java.text.NumberFormat
@@ -29,12 +31,15 @@ import dev.zapstore.app.components.ZapMotion
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import dev.zapstore.app.ZapActionText
 import dev.zapstore.app.ZapLine
 import dev.zapstore.app.ZapText2
 import dev.zapstore.app.ZapTitle3Style
@@ -53,7 +58,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -81,8 +85,9 @@ import dev.zapstore.app.components.GroupHeader
 import dev.zapstore.app.components.LoadingIndicator
 import dev.zapstore.app.components.DeveloperResultRow
 import dev.zapstore.app.components.StackResultRow
-import dev.zapstore.app.components.StackShelfCard
-import dev.zapstore.app.components.AppShelfTile
+import dev.zapstore.app.components.StackCard
+import dev.zapstore.app.components.StackCardHeight
+import dev.zapstore.app.components.StackShelfFraction
 import dev.zapstore.app.components.AppIcon
 import dev.zapstore.app.components.shortDisplayName
 import dev.zapstore.app.components.StatusText
@@ -103,7 +108,7 @@ fun HomeScreen(
     onStackClick: (StackRecord) -> Unit,
     modifier: Modifier = Modifier,
     onDeveloperClick: (String) -> Unit = {},
-    onLoadMore: () -> Unit = {},
+    onActivityFilter: (ActivityFilter) -> Unit = {},
     onLoadMoreStacks: () -> Unit = {},
     onLoadMoreActivity: () -> Unit = {},
     onSeeAllStacks: () -> Unit = {},
@@ -117,14 +122,17 @@ fun HomeScreen(
         FilterSheet(active = state.searchFacts, onToggle = onToggleFilter, onDismiss = { filtersOpen = false })
     }
     val listState = rememberLazyListState()
-    val stackShelf = rememberLazyListState()
-    val releaseShelf = rememberLazyGridState()
+    val stackShelf = rememberLazyGridState()
     val searchFocusRequester = remember { FocusRequester() }
-    LoadMoreNearEnd({ stackShelf.layoutInfo.visibleItemsInfo.lastOrNull()?.index to stackShelf.layoutInfo.totalItemsCount }, state.stacksCanLoadMore, onLoadMoreStacks)
+    // The first Back empties the search; only the next one leaves the app.
+    BackHandler(enabled = state.searchQuery.isNotEmpty() || state.searchResults != null, onBack = onSearchCleared)
     LoadMoreNearEnd(
-        { releaseShelf.layoutInfo.visibleItemsInfo.lastOrNull()?.index to releaseShelf.layoutInfo.totalItemsCount },
-        state.feed.canLoadMore && !state.feed.loadingMore,
-        onLoadMore,
+        {
+            val info = stackShelf.layoutInfo
+            info.visibleItemsInfo.maxOfOrNull { it.index } to info.totalItemsCount
+        },
+        state.stacksCanLoadMore,
+        onLoadMoreStacks,
     )
     LoadMoreNearEnd(
         { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index to listState.layoutInfo.totalItemsCount },
@@ -184,7 +192,7 @@ fun HomeScreen(
         HorizontalDivider(color = ZapLine, modifier = Modifier.graphicsLayer { alpha = hairline })
 
         BoxWithConstraints(Modifier.weight(1f)) {
-            val shelfWidth = (maxWidth - ZapSpacing.space4 * 2) * SHELF_FRACTION
+            val shelfWidth = (maxWidth - ZapSpacing.space4 * 2) * StackShelfFraction
             LazyColumn(
                 modifier = Modifier.fillMaxSize().testTag("homeList"),
                 contentPadding = PaddingValues(start = ZapSpacing.space4, end = ZapSpacing.space4, bottom = ZapSpacing.space8),
@@ -202,54 +210,38 @@ fun HomeScreen(
                 }
                 item(key = "stacks", contentType = "stacks") {
                     when {
-                        state.stacks.isNotEmpty() -> LazyRow(
-                            state = stackShelf,
-                            horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space4),
-                            modifier = Modifier.testTag("stackShelf"),
-                        ) {
-                            items(state.stacks, key = { it.eventId }) { stack ->
-                                StackShelfCard(
-                                    stack = stack,
-                                    apps = state.stackApps,
-                                    onClick = { onStackClick(stack) },
-                                    modifier = Modifier.width(shelfWidth).testTag("stack:${stack.identifier}"),
-                                )
+                        state.stacks.isNotEmpty() -> {
+                            val rows = if (state.stacks.size < 2) 1 else 2
+                            LazyHorizontalGrid(
+                                rows = GridCells.Fixed(rows),
+                                state = stackShelf,
+                                horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+                                verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+                                modifier = Modifier
+                                    .height(StackCardHeight * rows + if (rows == 2) ZapSpacing.space2 else 0.dp)
+                                    .testTag("stackShelf"),
+                            ) {
+                                gridItems(state.stacks, key = { it.eventId }) { stack ->
+                                    StackCard(
+                                        stack = stack,
+                                        apps = state.stackApps,
+                                        onClick = { onStackClick(stack) },
+                                        modifier = Modifier.width(shelfWidth).testTag("stack:${stack.identifier}"),
+                                    )
+                                }
                             }
                         }
-                        state.stacksLoading -> LoadingIndicator(Modifier.padding(vertical = ZapSpacing.space3))
+                        state.stacksLoading -> Unit
                         else -> StatusText(state.stacksError ?: stringResource(R.string.no_stacks))
                     }
                 }
 
-                item(key = "latestHeader", contentType = "header") {
-                    GroupHeader(stringResource(R.string.latest_releases), Modifier.padding(top = ZapSpacing.space4))
-                }
-                val feed = state.feed
-                item(key = "latest", contentType = "shelf") {
-                    when {
-                        feed.apps.isEmpty() && feed.loading -> LoadingIndicator(Modifier.padding(vertical = ZapSpacing.space3))
-                        feed.apps.isEmpty() -> EmptyRow(feed.error ?: stringResource(R.string.no_releases))
-                        else -> LazyHorizontalGrid(
-                            rows = GridCells.Fixed(SHELF_ROWS),
-                            state = releaseShelf,
-                            horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space4),
-                            verticalArrangement = Arrangement.spacedBy(ZapSpacing.space1),
-                            modifier = Modifier.fillMaxWidth().height(SHELF_HEIGHT).testTag("releaseShelf"),
-                        ) {
-                            gridItems(feed.apps, key = { "app:${it.appId}" }) { app ->
-                                AppShelfTile(app, onClick = { onAppClick(app) }, modifier = Modifier.width(shelfWidth).testTag("app:${app.appId}"))
-                            }
-                            if (feed.loadingMore) {
-                                item(key = "app-list-loading") {
-                                    LoadingIndicator(Modifier.testTag("appListLoading").padding(ZapSpacing.space4))
-                                }
-                            }
-                        }
-                    }
-                }
-
                 item(key = "activityHeader", contentType = "header") {
-                    GroupHeader(stringResource(R.string.activity), Modifier.padding(top = ZapSpacing.space4))
+                    GroupHeader(
+                        stringResource(R.string.activity),
+                        Modifier.padding(top = ZapSpacing.space4),
+                        trailing = { ActivityFilterMenu(state.activityFilter, onActivityFilter) },
+                    )
                 }
                 activityRows(
                     items = state.activity,
@@ -356,9 +348,6 @@ private fun LazyListScope.searchResults(
     }
 }
 
-private const val SHELF_FRACTION = 0.88f
-private const val SHELF_ROWS = 4
-private val SHELF_HEIGHT = 64.dp * SHELF_ROWS + ZapSpacing.space1 * (SHELF_ROWS - 1)
 
 @Composable
 private fun FilterSheet(active: List<SearchFact>, onToggle: (SearchFact) -> Unit, onDismiss: () -> Unit) {
@@ -382,4 +371,47 @@ private fun FilterSheet(active: List<SearchFact>, onToggle: (SearchFact) -> Unit
             }
         }
     }
+}
+
+/** The current Activity filter, at the right of the label. The other two choices sit in the menu. */
+@Composable
+private fun ActivityFilterMenu(selected: ActivityFilter, onSelect: (ActivityFilter) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space1),
+            modifier = Modifier
+                .clip(RoundedCornerShape(ZapRadius.full))
+                .clickable { open = true }
+                .padding(horizontal = ZapSpacing.space2, vertical = ZapSpacing.space1)
+                .testTag("activityFilter"),
+        ) {
+            Text(stringResource(selected.label()), color = ZapText2, style = MaterialTheme.typography.labelLarge)
+            Icon(painterResource(R.drawable.ic_chevron_down), contentDescription = null, tint = ZapText3, modifier = Modifier.size(16.dp))
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            ActivityFilter.entries.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(stringResource(option.label())) },
+                    onClick = {
+                        open = false
+                        onSelect(option)
+                    },
+                    trailingIcon = if (option == selected) {
+                        { Icon(painterResource(R.drawable.ic_check), contentDescription = null, tint = ZapActionText) }
+                    } else {
+                        null
+                    },
+                    modifier = Modifier.testTag("activityFilter:${option.name}"),
+                )
+            }
+        }
+    }
+}
+
+private fun ActivityFilter.label(): Int = when (this) {
+    ActivityFilter.All -> R.string.activity_filter_all
+    ActivityFilter.Releases -> R.string.activity_filter_releases
+    ActivityFilter.Social -> R.string.activity_filter_social
 }

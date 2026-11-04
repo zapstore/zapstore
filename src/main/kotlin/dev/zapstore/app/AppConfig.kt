@@ -18,7 +18,7 @@ object AppConfig {
     val catalogRelay: RelayUrl = BuildConfig.CATALOG_RELAY.normalizeRelayUrl()
 
     private val generalRelays = setOf("wss://relay.primal.net", "wss://relay.damus.io", "wss://nos.lol").toRelayUrls()
-    private val profileRelays = setOf("wss://brelay.zapstore.dev", "wss://relay.vertexlab.io").toRelayUrls()
+    private val profileRelays = setOf("wss://brelay.zapstore.dev", "wss://relay.vertexlab.io", "wss://purplepag.es", "wss://relay.primal.net").toRelayUrls()
     private val commentRelays = generalRelays + setOf(
         "wss://brelay.zapstore.dev",
         "wss://nostr.wine",

@@ -1,5 +1,7 @@
 package dev.zapstore.app.screens
 
+import androidx.compose.foundation.layout.offset
+import dev.zapstore.app.components.ZapTextLink
 import dev.zapstore.app.components.shortDisplayName
 import dev.zapstore.app.components.EvidenceLine
 import androidx.compose.foundation.background
@@ -49,9 +51,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -101,13 +106,20 @@ import dev.zapstore.iolite.AppByline
 import dev.zapstore.iolite.ProfileRecord
 import dev.zapstore.app.ZapLine
 
-/** Surface-2 bottom sheet with a grabber and 28 dp top corners. */
+/** False while a [ZapSheet] is still sliding in. A field that opens the keyboard waits for true, so the two never animate at once. */
+internal val LocalSheetSettled = compositionLocalOf { true }
+
+/**
+ * Surface-2 bottom sheet with a grabber and 28 dp top corners. Its content rides above the keyboard:
+ * the sheet grows with the keyboard's own animation instead of jumping when the keyboard lands.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ZapSheet(onDismiss: () -> Unit, content: @Composable () -> Unit) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        sheetState = sheetState,
         containerColor = ZapSurface2,
         scrimColor = ZapScrim,
         shape = RoundedCornerShape(topStart = ZapRadius.xl, topEnd = ZapRadius.xl),
@@ -120,7 +132,9 @@ internal fun ZapSheet(onDismiss: () -> Unit, content: @Composable () -> Unit) {
             )
         },
     ) {
-        Box(Modifier.navigationBarsPadding()) { content() }
+        CompositionLocalProvider(LocalSheetSettled provides (sheetState.currentValue == SheetValue.Expanded)) {
+            Box(Modifier.navigationBarsPadding().imePadding()) { content() }
+        }
     }
 }
 
@@ -136,7 +150,6 @@ internal fun AppActionSheet(
     installed: Boolean,
     onSave: () -> Unit,
     onIgnore: () -> Unit,
-    onShare: () -> Unit,
     onDismiss: () -> Unit,
     onReport: () -> Unit = {},
     onUninstall: (() -> Unit)? = null,
@@ -167,7 +180,6 @@ internal fun AppActionSheet(
             val saveLabel = stringResource(if (saved) R.string.action_saved else R.string.action_save)
             val ignoreLabel = stringResource(if (ignored) R.string.action_resume_updates else R.string.action_ignore_updates)
             val stackLabel = stringResource(R.string.action_add_to_stack)
-            val shareLabel = stringResource(R.string.action_share)
             val websiteLabel = stringResource(R.string.action_website)
             val reportLabel = stringResource(R.string.action_report)
             val tiles = buildList<@Composable (Modifier) -> Unit> {
@@ -176,7 +188,6 @@ internal fun AppActionSheet(
                     add { ActionTile(R.drawable.ic_update, ignoreLabel, onIgnore, it.testTag("actionIgnore"), selected = ignored) }
                 }
                 add { ActionTile(R.drawable.ic_stack, stackLabel, onAddToStack, it.testTag("actionAddToStack")) }
-                add { ActionTile(R.drawable.ic_share, shareLabel, onShare, it.testTag("actionShare")) }
                 onWebsite?.let { open -> add { ActionTile(R.drawable.ic_external, websiteLabel, open, it.testTag("actionWebsite")) } }
                 add { ActionTile(R.drawable.ic_flag, reportLabel, onReport, it.testTag("actionReport"), danger = true) }
             }
@@ -405,25 +416,21 @@ internal fun ConfirmSheet(
 }
 
 /**
- * Trust and install: verdict, then the one primary action. A takeover or silent update says what Android will do.
- * [trustName] is the verified author, shown with follow signals on a first install.
- * A [catalogSigned] listing says the indexer tracks it and names the original [downloadUrl].
+ * Trust and install: what the person needs to decide, then the one primary action. A first install
+ * leads with the [AssuranceSummary]; a takeover or silent update says what Android will do instead.
  */
 @Composable
 internal fun InstallSheet(
-    name: String,
-    version: String,
-    verified: Boolean,
+    app: AppRecord,
+    author: ProfileRecord?,
     plan: InstallPlan,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
+    onOpenReport: () -> Unit = {},
     otherStore: String? = null,
-    trustName: String? = null,
-    catalogSigned: Boolean = false,
-    downloadUrl: String? = null,
-    source: String? = null,
     trust: TrustUi = TrustUi(),
     onPersonalizeTrust: () -> Unit = {},
+    onOpenUrl: (String) -> Unit = {},
 ) {
     val switching = plan is InstallPlan.Takeover && otherStore != null
     ZapSheet(onDismiss) {
@@ -434,14 +441,22 @@ internal fun InstallSheet(
                 .verticalScroll(rememberScrollState())
                 .padding(start = ZapSpacing.space5, end = ZapSpacing.space5, bottom = ZapSpacing.space5),
         ) {
-            Text(
-                stringResource(if (plan is InstallPlan.FirstInstall) R.string.install_title else R.string.update_title, name),
-                style = MaterialTheme.typography.titleLarge,
-            )
-            VersionPill(version)
-            if (verified) ZapBadge(stringResource(R.string.verified_author), BadgeTone.Verified)
-            if (catalogSigned) CatalogSignedNote(name, downloadUrl, Modifier.testTag("installCatalogSigned"), source = source)
-            if (plan !is InstallPlan.FirstInstall) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3)) {
+                Text(
+                    stringResource(if (plan is InstallPlan.FirstInstall) R.string.install_title else R.string.update_title, app.name),
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                VersionPill(app.version)
+            }
+            if (plan is InstallPlan.FirstInstall) {
+                AssuranceSummary(app, author, trust, onPersonalizeTrust, onOpenUrl, onOpenReport)
+            } else {
+                if (app.isVerified) ZapBadge(stringResource(R.string.verified_author), BadgeTone.Verified)
+                if (app.isCatalogSigned) CatalogSignedNote(app.name, app.downloadUrl, Modifier.testTag("installCatalogSigned"), source = app.repository)
                 Text(
                     if (switching) {
                         stringResource(R.string.install_takeover_store, otherStore.orEmpty())
@@ -452,65 +467,10 @@ internal fun InstallSheet(
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
-            if (plan is InstallPlan.FirstInstall && trustName != null && !catalogSigned) {
-                TrustSignals(trustName, trust, onPersonalizeTrust, Modifier.testTag("trustSignals"))
-            }
             ZapButton(
                 text = stringResource(if (switching) R.string.update_with_zapstore else R.string.install_confirm),
                 onClick = onConfirm,
                 modifier = Modifier.fillMaxWidth().heightIn(min = ZapSize.controlLarge).testTag("installConfirm"),
-            )
-        }
-    }
-}
-
-/**
- * Who follows the publisher: the catalog's list, or the user's own after they ask for it. It is
- * absent when there is nothing to say, fills in without holding back Download, and follows are not
- * endorsements.
- */
-@Composable
-private fun TrustSignals(name: String, trust: TrustUi, onPersonalize: () -> Unit, modifier: Modifier = Modifier) {
-    if (!trust.hasSignals && !trust.canPersonalize) return
-    fun label(person: TrustPerson): String {
-        val profile = trust.profiles[person.pubkey]
-        return if (profile == null && person.name.isNotBlank()) person.name else shortDisplayName(person.pubkey, profile)
-    }
-    val lines = buildList {
-        if (trust.youFollow) add(stringResource(R.string.trust_you_follow, name))
-        if (trust.followers.isNotEmpty()) {
-            add(
-                stringResource(
-                    if (trust.personal) R.string.trust_followed_by_yours else R.string.trust_followed_by,
-                    trust.followers.joinToString(", ", transform = ::label),
-                ),
-            )
-        }
-        if (trust.zappers.isNotEmpty()) add(stringResource(R.string.trust_zapped_by, trust.zappers.joinToString(", ", transform = ::label)))
-        if (trust.youZapped) add(stringResource(R.string.trust_you_zapped))
-    }
-    Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2), modifier = modifier) {
-        if (trust.leaked) {
-            EvidenceLine(
-                stringResource(R.string.trust_leaked),
-                checked = false,
-                detail = stringResource(R.string.trust_leaked_body, name),
-            )
-        }
-        lines.forEach { Text(it, color = ZapText, style = MaterialTheme.typography.bodyMedium) }
-        if (trust.hasSignals && !trust.leaked) {
-            Text(stringResource(R.string.trust_disclaimer), color = ZapText2, style = MaterialTheme.typography.bodySmall)
-        }
-        if (trust.canPersonalize && !trust.personal) {
-            if (trust.failed) {
-                Text(stringResource(R.string.trust_failed), color = ZapText2, style = MaterialTheme.typography.bodySmall)
-            }
-            ZapButton(
-                text = stringResource(if (trust.checking) R.string.trust_checking else R.string.trust_personalize),
-                onClick = onPersonalize,
-                style = ZapButtonStyle.Outline,
-                enabled = !trust.checking,
-                modifier = Modifier.fillMaxWidth().testTag("trustPersonalize"),
             )
         }
     }
@@ -576,6 +536,8 @@ internal fun SecurityReportSheet(
     onOpenUrl: (String) -> Unit,
     onProfileClick: (String) -> Unit,
     onDismiss: () -> Unit,
+    trust: TrustUi = TrustUi(),
+    onPersonalizeTrust: () -> Unit = {},
 ) {
     val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.8f).dp
     val developer = remember { BringIntoViewRequester() }
@@ -594,6 +556,11 @@ internal fun SecurityReportSheet(
             if (app.hasVerdict()) SecurityVerdict(app, onOpenUrl)
             ReportSection(stringResource(R.string.report_developer), Modifier.bringIntoViewRequester(developer).testTag("reportDeveloper")) {
                 DeveloperSection(app, author, proof, onProfileClick)
+            }
+            if (app.authorPubkey != null && !app.isCatalogSigned && (trust.hasSignals || trust.canPersonalize)) {
+                ReportSection(stringResource(R.string.report_vouch), Modifier.testTag("reportVouch")) {
+                    TrustSignals(app.bylinePubkey?.let { shortDisplayName(it, author) }.orEmpty(), trust, onPersonalizeTrust, onOpenUrl)
+                }
             }
             ReportSection(stringResource(R.string.report_package), Modifier.testTag("reportPackage")) {
                 EvidenceField(stringResource(R.string.app_id), app.appId)
@@ -641,7 +608,6 @@ private fun DeveloperSection(
         when (byline) {
             AppByline.Verified -> {
                 ZapBadge(stringResource(R.string.verified_author), BadgeTone.Verified, icon = R.drawable.ic_check)
-                Text(stringResource(R.string.verified_body, name, app.name), color = ZapText2, style = MaterialTheme.typography.bodyMedium)
             }
             AppByline.Unverified -> {
                 ZapBadge(stringResource(R.string.unverified_author), BadgeTone.Warning)
@@ -705,41 +671,6 @@ internal fun ReleaseSheet(app: AppRecord, onOpenUrl: (String) -> Unit, onDismiss
             } else {
                 Text(stringResource(R.string.no_release_notes), color = ZapText2, style = MaterialTheme.typography.bodyMedium)
             }
-        }
-    }
-}
-
-@Composable
-internal fun ScreenshotCarousel(screenshots: List<String>, initialPage: Int, appName: String, onDismiss: () -> Unit) {
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
-    ) {
-        val pagerState = rememberPagerState(
-            initialPage = initialPage.coerceIn(0, screenshots.lastIndex),
-            pageCount = { screenshots.size },
-        )
-        Box(Modifier.fillMaxSize().background(Color.Black)) {
-            HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-                AsyncImage(
-                    model = cdnImageUrl(screenshots[page], CdnImageVariant.ThumbnailLarge),
-                    contentDescription = stringResource(R.string.screenshot_description, appName),
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 48.dp),
-                )
-            }
-            IconButton(
-                onClick = onDismiss,
-                modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 12.dp, end = 8.dp),
-            ) {
-                Icon(painterResource(R.drawable.ic_close), contentDescription = stringResource(R.string.close), tint = Color.White)
-            }
-            Text(
-                "${pagerState.currentPage + 1}/${screenshots.size}",
-                color = ZapText3,
-                style = MaterialTheme.typography.labelMedium,
-                modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 18.dp),
-            )
         }
     }
 }

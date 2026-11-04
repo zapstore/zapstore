@@ -30,7 +30,6 @@ import kotlinx.coroutines.flow.stateIn
 data class ProfileUiState(
     val pubkey: String,
     val profile: ProfileRecord? = null,
-    val profileLoading: Boolean = true,
     val apps: AppListState = AppListState(),
     val stacks: List<StackRecord> = emptyList(),
     val stackApps: Map<String, AppRecord> = emptyMap(),
@@ -78,7 +77,6 @@ class ProfileViewModel(
         ProfileUiState(
             pubkey = pubkey,
             profile = profileState.items,
-            profileLoading = profileState.items == null && !profileState.settled,
             apps = AppListState(apps = apps, loading = false),
             stacks = stacks.filter { stack -> stack.appIds.any(stackApps::containsKey) },
             stackApps = stackApps,

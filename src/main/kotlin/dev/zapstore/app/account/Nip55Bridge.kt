@@ -14,10 +14,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
 import dev.zapstore.iolite.Hex
 import dev.zapstore.iolite.decodeNpub
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.time.Duration.Companion.minutes
 
 class Nip55Exception(message: String) : Exception(message)
 
@@ -122,7 +125,12 @@ class Nip55Bridge(context: Context) {
             }
         }
         try {
-            deferred.await()
+            // A signer that never shows its screen, or one the person leaves, must not hold the lock forever.
+            try {
+                withTimeout(SIGNER_TIMEOUT) { deferred.await() }
+            } catch (_: TimeoutCancellationException) {
+                throw Nip55Exception("The signer did not answer")
+            }
         } finally {
             waiting = null
         }
@@ -138,6 +146,7 @@ class Nip55Bridge(context: Context) {
 
     companion object {
         const val AMBER = "com.greenart7c3.nostrsigner"
+        private val SIGNER_TIMEOUT = 2.minutes
         private const val TYPE_PUBLIC_KEY = "get_public_key"
         private const val TYPE_SIGN_EVENT = "sign_event"
         private const val TYPE_ENCRYPT = "nip44_encrypt"
@@ -145,7 +154,7 @@ class Nip55Bridge(context: Context) {
 
         /** Asked once at sign-in so later requests can be answered with no screen. */
         private val PERMISSIONS: String = JSONArray().apply {
-            for (kind in listOf(1111, 9734, 1984, 30078)) {
+            for (kind in listOf(1111, 9734, 1984, 5312, 30078)) {
                 put(JSONObject().put("type", TYPE_SIGN_EVENT).put("kind", kind))
             }
             put(JSONObject().put("type", TYPE_ENCRYPT))

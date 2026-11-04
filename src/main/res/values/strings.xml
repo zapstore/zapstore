@@ -55,11 +55,15 @@
     <string name="signed_in_with">Signed in with %1$s</string>
     <string name="background_updates">Update in the background</string>
     <string name="background_updates_hint">Apps that update without a prompt install while Zapstore is closed.</string>
-    <string name="background_any_network">Use mobile data</string>
+    <string name="background_any_network">Update on metered networks</string>
     <string name="background_any_network_hint">Off: background updates wait for an unmetered network.</string>
     <string name="clear_local_storage">Clear local storage</string>
     <string name="catalog_epoch">Catalog epoch %1$d</string>
     <string name="catalog_apps">%1$d apps in catalog</string>
+    <string name="catalog_line">%1$s · %2$s apps · %3$s</string>
+    <string name="account_and_keys">Account and keys</string>
+    <string name="synced_just_now">synced just now</string>
+    <string name="not_synced_yet">not synced yet</string>
     <string name="catalog_default">Zapstore</string>
     <string name="catalog_none">No catalog</string>
     <string name="catalog_none_hint">There are no apps to show until you add a catalog.</string>
@@ -82,6 +86,14 @@
         <item quantity="one">Last sync 1 minute ago</item>
         <item quantity="other">Last sync %d minutes ago</item>
     </plurals>
+    <plurals name="synced_minutes_ago">
+        <item quantity="one">synced %d min ago</item>
+        <item quantity="other">synced %d min ago</item>
+    </plurals>
+    <plurals name="synced_hours_ago">
+        <item quantity="one">synced %d hour ago</item>
+        <item quantity="other">synced %d hours ago</item>
+    </plurals>
     <plurals name="last_sync_hours_ago">
         <item quantity="one">Last sync 1 hour ago</item>
         <item quantity="other">Last sync %d hours ago</item>
@@ -91,7 +103,6 @@
     <string name="last_sync_not_modified">Already current (HTTP 304)</string>
     <string name="update_version">%1$s → %2$s</string>
     <string name="verified_author">Verified author</string>
-    <string name="verified_body">%1$s proved control of the key that signs %2$s. The proof is a NIP-C1 event on Nostr, tied to the certificate below.</string>
     <string name="unverified_author">Unverified author</string>
     <string name="unverified_body">%1$s published %2$s with their own key. They have not proved the app is theirs.</string>
     <string name="indexed_by">indexed by </string>
@@ -100,7 +111,6 @@
     <string name="signing_certificate">Signing certificate</string>
     <string name="proof_published">Proof published</string>
     <string name="valid_until">Valid until</string>
-    <string name="latest_releases">Latest releases</string>
     <string name="stacks">Stacks</string>
     <string name="your_stacks">Your stacks</string>
     <string name="new_stack">New stack</string>
@@ -115,7 +125,13 @@
         <item quantity="other">%d apps</item>
     </plurals>
     <string name="activity">Activity</string>
-    <string name="no_activity">No recent comments or zaps.</string>
+    <string name="no_activity">No recent releases, comments or zaps.</string>
+    <string name="activity_released">released</string>
+    <string name="activity_published">published</string>
+    <string name="activity_catalog">Catalog</string>
+    <string name="activity_filter_all">All</string>
+    <string name="activity_filter_releases">Releases</string>
+    <string name="activity_filter_social">Social</string>
     <string name="stacked_by">Stacked by</string>
     <string name="activity_commented">commented</string>
     <string name="activity_updated_stack">updated the stack</string>
@@ -136,7 +152,6 @@
     <string name="no_search_results">Nothing matches. Try fewer words.</string>
     <string name="search_tag_stack">Stack</string>
     <string name="search_tag_developer">Developer</string>
-    <string name="no_releases">No releases found.</string>
     <string name="stack_not_found">Stack not found.</string>
     <string name="apps">Apps</string>
     <plurals name="curated_apps">
@@ -275,6 +290,8 @@
     <string name="action_ignore_updates">Ignore updates</string>
     <string name="action_resume_updates">Resume updates</string>
     <string name="action_share">Share</string>
+    <string name="comment_copy_text">Copy text</string>
+    <string name="comment_copy_link">Copy link</string>
     <string name="resume">Resume</string>
     <string name="ignore">Ignore</string>
     <string name="retry">Retry</string>
@@ -309,7 +326,6 @@
     </plurals>
     <string name="profile">Profile</string>
     <string name="your_apps">Your apps</string>
-    <string name="own_stacks_empty">No stacks yet. Open any app and choose Add to stack.</string>
     <string name="get_amber">Get Amber</string>
     <string name="get_amber_hint">Amber keeps your Nostr key on this phone and signs for Zapstore.</string>
     <string name="action_add_to_stack">Add to stack</string>
@@ -330,13 +346,18 @@
     <string name="save">Save</string>
     <string name="remove_from_stack">Remove from stack</string>
     <string name="toast_stack_created">Created %1$s</string>
-    <string name="trust_personalize">Check with people I follow</string>
+    <string name="trust_personalize">Refresh with my web of trust</string>
     <string name="trust_checking">Checking…</string>
-    <string name="trust_failed">Could not run your check. Try again.</string>
+    <string name="trust_failed">Could not run your check.</string>
     <string name="trust_you_follow">You follow %1$s.</string>
-    <string name="trust_followed_by">Followed by %1$s.</string>
-    <string name="trust_followed_by_yours">Followed by %1$s, ranked from your follows.</string>
-    <string name="trust_zapped_by">Zapped by people you follow: %1$s.</string>
+    <string name="trust_followed_by">Followed by</string>
+    <string name="trust_followed_by_yours">Followed by, closest to you:</string>
+    <string name="trust_zapped_by">Zapped by people you follow:</string>
+    <string name="assure_verified">%1$s proved they own this app</string>
+    <string name="assure_unverified">%1$s has not proved this app is theirs</string>
+    <string name="assure_permissions">Asks for %1$s</string>
+    <string name="assure_more">%1$s +%2$d</string>
+    <string name="report_vouch">Who vouches</string>
     <string name="trust_you_zapped">You zapped this app.</string>
     <string name="trust_leaked">The publisher\'s key has leaked</string>
     <string name="trust_leaked_body">Someone else may be able to sign as %1$s. Do not install unless you can confirm it another way.</string>
@@ -436,7 +457,9 @@
     <string name="zap_sign_in">Sign in</string>
     <string name="zap_open_wallet">Connect a wallet</string>
     <string name="zap_anonymous">Zapping anonymously. Sign in to zap with your identity.</string>
-    <string name="zap_invoice_ready">No wallet connected, so here\'s the invoice instead. Pay it with any Lightning wallet, or connect one for one-tap zaps next time.</string>
+    <string name="zap_invoice_ready">No wallet connected. Pick a wallet app to pay this invoice, or connect one for one-tap zaps next time.</string>
+    <string name="zap_pay_with_wallet">Pay with a wallet app</string>
+    <string name="zap_pick_wallet">Pay with</string>
     <string name="zap_copy_invoice">Copy invoice</string>
     <string name="zap_no_wallet">Connect a wallet first.</string>
     <string name="zap_no_address">The recipient has no Lightning address.</string>

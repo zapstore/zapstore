@@ -79,7 +79,9 @@ internal fun ZapTextArea(
 ) {
     val shape = RoundedCornerShape(ZapRadius.control)
     val focus = remember { FocusRequester() }
-    if (autofocus) LaunchedEffect(Unit) { focus.requestFocus() }
+    // Inside a sheet, wait for it to land: the keyboard and the slide-in would otherwise fight over the sheet's height.
+    val settled = LocalSheetSettled.current
+    if (autofocus) LaunchedEffect(settled) { if (settled) focus.requestFocus() }
     val style = MaterialTheme.typography.bodyMedium.copy(color = ZapText)
     BasicTextField(
         value = value,
@@ -201,6 +203,7 @@ internal fun ZapAppSheet(
     onConnectWallet: (String) -> Boolean,
     onRetry: () -> Unit,
     onDismiss: () -> Unit,
+    onPayInvoice: (String) -> Unit = {},
 ) {
     var sats by rememberSaveable(initialSats) { mutableLongStateOf(initialSats) }
     var note by rememberSaveable { mutableStateOf("") }
@@ -237,6 +240,8 @@ internal fun ZapAppSheet(
                     ZapButton(stringResource(R.string.close), onDismiss, Modifier.fillMaxWidth(), style = ZapButtonStyle.Tonal)
                 }
                 social.invoice != null -> {
+                    // No wallet is connected, so Android's own wallet chooser opens on the first tap.
+                    LaunchedEffect(social.invoice) { onPayInvoice(social.invoice) }
                     Text(stringResource(R.string.zap_invoice_ready), color = ZapText2, style = MaterialTheme.typography.bodyMedium)
                     Text(
                         social.invoice,
@@ -254,6 +259,7 @@ internal fun ZapAppSheet(
                     ZapButton(
                         text = stringResource(R.string.zap_copy_invoice),
                         onClick = { scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("invoice", invoice))) } },
+                        style = ZapButtonStyle.Tonal,
                         modifier = Modifier.fillMaxWidth().height(ZapSize.controlLarge).testTag("zapCopyInvoice"),
                     )
                     if (pastingWallet) {
@@ -275,6 +281,11 @@ internal fun ZapAppSheet(
                             modifier = Modifier.fillMaxWidth().testTag("walletPasteSubmit"),
                         )
                     }
+                    ZapButton(
+                        text = stringResource(R.string.zap_pay_with_wallet),
+                        onClick = { onPayInvoice(invoice) },
+                        modifier = Modifier.fillMaxWidth().height(ZapSize.controlLarge).testTag("zapPayInvoice"),
+                    )
                     Row(horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space4)) {
                         if (!pastingWallet) {
                             ZapTextLink(stringResource(R.string.zap_open_wallet), { pastingWallet = true }, Modifier.testTag("zapConnectWallet"))

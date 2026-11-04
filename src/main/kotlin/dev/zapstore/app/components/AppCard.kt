@@ -42,6 +42,7 @@ import dev.zapstore.app.ZapSpacing
 import dev.zapstore.app.ZapSurface3
 import dev.zapstore.app.ZapText
 import dev.zapstore.app.ZapText2
+import dev.zapstore.app.ZapText3
 import dev.zapstore.app.ZapTitle3Style
 import dev.zapstore.app.ZapVerified
 import dev.zapstore.app.cdnImageUrl
@@ -93,25 +94,34 @@ fun AppIcon(
 val LocalPendingUpdates = compositionLocalOf<Map<String, String>> { emptyMap() }
 
 /**
- * One catalog listing: tile, name, version pill and C1 author, description, optional trailing slot.
- * The pill reads `installed → listed` when this device has an update pending for the app.
- * The author shows only when a current NIP-C1 proof names one; [author] is that key's profile when stored.
+ * What a list of apps is for. [Discover]: "is this the app I want?" A 56 dp tile, the name, one line of
+ * description and, when a current NIP-C1 proof names one, the author. No version: a number does not help
+ * someone choose. [Manage]: "what is on my phone?" A 44 dp tile, the name, then the version pill and the
+ * verified author or a [note] such as the store that owns updates. No description.
+ */
+enum class AppRowStyle { Discover, Manage }
+
+/**
+ * One catalog listing in the [style] the list asks for. In [AppRowStyle.Manage] the pill reads
+ * `installed → listed` when this device has an update pending for the app. The author shows only when a
+ * current NIP-C1 proof names one; [author] is that key's profile when stored. An indexed or unverified
+ * listing shows no author in a list: the app page and the trust sheet explain that.
  */
 @Composable
 fun AppRow(
     app: AppRecord,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    supporting: String? = app.rowLine(),
-    tileSize: Dp = 60.dp,
-    version: String? = app.version,
-    supportingLines: Int = 1,
+    style: AppRowStyle = AppRowStyle.Discover,
     author: ProfileRecord? = null,
     installed: String? = LocalPendingUpdates.current[app.appId],
+    note: String? = null,
     showAuthor: Boolean = true,
     trailing: (@Composable () -> Unit)? = null,
 ) {
+    val manage = style == AppRowStyle.Manage
     val interaction = remember { MutableInteractionSource() }
+    val authorPubkey = app.authorPubkey?.takeIf { showAuthor }
     Row(
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3),
@@ -122,7 +132,7 @@ fun AppRow(
             .clickable(interactionSource = interaction, indication = LocalIndication.current, onClick = onClick)
             .padding(vertical = ZapSpacing.space3),
     ) {
-        AppIcon(title = app.name, iconUrl = app.iconUrl, iconFile = app.iconFile, size = tileSize)
+        AppIcon(title = app.name, iconUrl = app.iconUrl, iconFile = app.iconFile, size = if (manage) 44.dp else 56.dp)
         Column(Modifier.weight(1f)) {
             Text(
                 app.name,
@@ -131,64 +141,40 @@ fun AppRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            val description = supporting?.takeIf { it.isNotBlank() }?.let { remember(it) { ZapMarkdown.parse(it).text } }
-            if (description != null) {
-                Text(
-                    description,
-                    color = ZapText2,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = supportingLines,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
-            }
-            val pill = version?.takeIf { it.isNotBlank() }
-            val authorPubkey = app.authorPubkey?.takeIf { showAuthor }
-            if (pill != null || authorPubkey != null) {
-                FactsLine(Modifier.padding(top = if (description != null) ZapSpacing.space2 else 6.dp)) {
-                    pill?.let {
-                        if (installed != null && installed != it) {
-                            VersionPill(installed, next = it, modifier = Modifier.testTag("updatePill:${app.appId}"))
+            if (manage) {
+                val pill = app.version.takeIf { it.isNotBlank() }
+                if (pill != null || note != null || authorPubkey != null) {
+                    FactsLine(Modifier.padding(top = 6.dp)) {
+                        pill?.let {
+                            if (installed != null && installed != it) {
+                                VersionPill(installed, next = it, modifier = Modifier.testTag("updatePill:${app.appId}"))
+                            } else {
+                                VersionPill(it)
+                            }
+                        }
+                        if (note != null) {
+                            Text(note, color = ZapText3, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         } else {
-                            VersionPill(it)
+                            authorPubkey?.let { AuthorByline(pubkey = it, profile = author, showBy = false) }
                         }
                     }
-                    authorPubkey?.let { AuthorByline(pubkey = it, profile = author, showBy = false) }
                 }
+            } else {
+                val description = app.rowLine().takeIf { it.isNotBlank() }?.let { remember(it) { ZapMarkdown.parse(it).text } }
+                if (description != null) {
+                    Text(
+                        description,
+                        color = ZapText2,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
+                authorPubkey?.let { AuthorByline(pubkey = it, profile = author, showBy = false, modifier = Modifier.padding(top = ZapSpacing.space1)) }
             }
         }
         trailing?.let { Box(Modifier.align(Alignment.CenterVertically)) { it() } }
-    }
-}
-
-/** One listing in a horizontal shelf: tile, name and one line of description. */
-@Composable
-fun AppShelfTile(app: AppRecord, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val interaction = remember { MutableInteractionSource() }
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3),
-        modifier = modifier
-            .pressScale(interaction)
-            .clip(RoundedCornerShape(ZapRadius.md))
-            .clickable(interactionSource = interaction, indication = LocalIndication.current, onClick = onClick)
-            .padding(vertical = ZapSpacing.space1),
-    ) {
-        AppIcon(title = app.name, iconUrl = app.iconUrl, iconFile = app.iconFile, size = 56.dp)
-        Column(Modifier.weight(1f)) {
-            Text(app.name, color = ZapText, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            val description = app.rowLine().takeIf { it.isNotBlank() }?.let { remember(it) { ZapMarkdown.parse(it).text } }
-            if (description != null) {
-                Text(
-                    description,
-                    color = ZapText2,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
-            }
-        }
     }
 }
 
@@ -246,6 +232,7 @@ fun AppDetailHead(
     onAuthorClick: (String) -> Unit = {},
     onVerifiedClick: () -> Unit = {},
     onMore: (() -> Unit)? = null,
+    onShare: (() -> Unit)? = null,
 ) {
     Row(
         verticalAlignment = Alignment.Top,
@@ -272,14 +259,17 @@ fun AppDetailHead(
                 }
             }
         }
-        onMore?.let {
-            ZapIconButton(
-                R.drawable.ic_more,
-                stringResource(R.string.more_actions),
-                it,
-                style = ZapButtonStyle.Ghost,
-                modifier = Modifier.offset(x = ZapSpacing.space2).testTag("appMore"),
-            )
+        Row(Modifier.offset(x = ZapSpacing.space2)) {
+            onShare?.let { ShareButton(it) }
+            onMore?.let {
+                ZapIconButton(
+                    R.drawable.ic_more,
+                    stringResource(R.string.more_actions),
+                    it,
+                    style = ZapButtonStyle.Ghost,
+                    modifier = Modifier.testTag("appMore"),
+                )
+            }
         }
     }
 }

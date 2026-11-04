@@ -52,14 +52,18 @@ fun Modifier.pressScale(interaction: InteractionSource, pressed: Float = 0.98f):
     }
 }
 
-/** Rows fade in and glide to their new place when a list changes, as search results do while typing. */
+/**
+ * Rows fade in and glide to their new place when a list changes, as search results do while typing.
+ * They do not fade out: a row removed while the list jumps to the top (clearing a search) would keep
+ * drawing over the rows beneath it, so a removed row simply goes.
+ */
 @Composable
 fun LazyItemScope.listItemMotion(): Modifier =
     if (animationsEnabled()) {
         Modifier.animateItem(
             fadeInSpec = ZapMotion.base(),
             placementSpec = ZapMotion.base<IntOffset>(),
-            fadeOutSpec = ZapMotion.fast(),
+            fadeOutSpec = null,
         )
     } else {
         Modifier
