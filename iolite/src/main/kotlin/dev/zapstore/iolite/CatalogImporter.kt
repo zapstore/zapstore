@@ -319,29 +319,30 @@ class CatalogImporter(
                         .onFailure { skipped += "$where: ${it.message}" }
                     json.has("delete") -> {
                         val ids = json.optJSONArray("delete")
-                        if (ids == null || json.has("kind") || json.has("pubkey") || json.has("d") || json.has("app_id")) {
-                            skipped += "$where is an invalid delete"
-                            return@forEachLine
-                        }
-                        for (index in 0 until ids.length()) {
-                            val appId = ids.optString(index)
-                            if (appId.isBlank()) skipped += "$where has a blank app id" else onDelete(CatalogDelete.Listing(appId))
+                        val coordinate = json.optJSONObject("delete")
+                        when {
+                            ids != null -> for (index in 0 until ids.length()) {
+                                val appId = ids.optString(index)
+                                if (appId.isBlank()) skipped += "$where has a blank app id" else onDelete(CatalogDelete.Listing(appId))
+                            }
+                            coordinate != null -> {
+                                val kind = coordinate.optInt("kind", -1)
+                                val pubkey = coordinate.optString("pubkey")
+                                val d = coordinate.optString("d")
+                                val addressable = kind in 30_000..39_999
+                                if (kind < 0 || !Hex.isHex(pubkey, 64) || !coordinate.has("d") || (addressable && d.isBlank())) {
+                                    skipped += "$where is an invalid delete"
+                                } else {
+                                    onDelete(CatalogDelete.Coordinate(kind, pubkey, d))
+                                }
+                            }
+                            else -> skipped += "$where is an invalid delete"
                         }
                     }
                     json.optBoolean("banned") -> {
                         if (json.optString("app_id").isBlank()) skipped += "$where is an invalid ban"
                     }
-                    else -> {
-                        val kind = json.optInt("kind", -1)
-                        val pubkey = json.optString("pubkey")
-                        val d = json.optString("d")
-                        val addressable = kind in 30_000..39_999
-                        if (kind < 0 || !Hex.isHex(pubkey, 64) || !json.has("d") || (addressable && d.isBlank()) || json.has("app_id")) {
-                            skipped += "$where is an invalid delete"
-                        } else {
-                            onDelete(CatalogDelete.Coordinate(kind, pubkey, d))
-                        }
-                    }
+                    else -> skipped += "$where is not a known line"
                 }
             }
         }

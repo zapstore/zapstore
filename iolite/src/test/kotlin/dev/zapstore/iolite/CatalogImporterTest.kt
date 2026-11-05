@@ -501,8 +501,36 @@ class CatalogImporterTest {
             manifestPubkey = null,
             epoch = 1,
         )
-        assertEquals(onion.url, catalog.syncRelay(useOnion = true).url)
-        assertEquals(clearnet.url, catalog.syncRelay(useOnion = false).url)
+        assertEquals(listOf(onion.url, clearnet.url), catalog.syncRelays(useOnion = true).map { it.url })
+        assertEquals(listOf(clearnet.url), catalog.syncRelays(useOnion = false).map { it.url })
+    }
+
+    @Test
+    fun syncFallsBackToTheNextRelayThenTheEndpoint() = runBlocking {
+        val dir = File("build/tmp/iolite-failover-${System.nanoTime()}").apply { mkdirs() }
+        val scope = CoroutineScope(SupervisorJob())
+        val requested = mutableListOf<String>()
+        val http = HttpTransport { url, _ ->
+            requested += url
+            when (url) {
+                "http://127.0.0.1:3334/v1/bundle?from=1" -> throw java.io.IOException("connection refused")
+                "https://relay.example.com/v1/bundle?from=1" -> HttpResponse(304, emptyMap(), null)
+                else -> error("unexpected catalog URL $url")
+            }
+        }
+        val iolite = Iolite.createForTesting(
+            databasePath = File(dir, "iolite.db").absolutePath,
+            parentScope = scope,
+            http = http,
+            openConnection = ::JdbcSqliteConnection,
+        )
+        iolite.importCatalogUpdate(1, golden("bundle-0-1.tar.zst"), localRelay)
+        val result = iolite.syncCatalog(endpoint = "wss://relay.example.com".normalizeRelayUrl())
+        assertTrue(result.notModified)
+        assertEquals(listOf("http://127.0.0.1:3334/v1/bundle?from=1", "https://relay.example.com/v1/bundle?from=1"), requested)
+        assertEquals(listOf("ws://127.0.0.1:3334"), iolite.defaultCatalog().relays.map { it.url })
+        iolite.close()
+        scope.coroutineContext.job.cancel()
     }
 
     @Test
@@ -819,8 +847,8 @@ class CatalogImporterTest {
     fun diffAcceptsProfileDeletesWithEmptyDAndBanLines() {
         val pubkey = "ab".repeat(32)
         val diff = listOf(
-            """{"kind":0,"pubkey":"$pubkey","d":""}""",
-            """{"kind":30509,"pubkey":"$pubkey","d":"${"cd".repeat(32)}"}""",
+            """{"delete":{"kind":0,"pubkey":"$pubkey","d":""}}""",
+            """{"delete":{"kind":30509,"pubkey":"$pubkey","d":"${"cd".repeat(32)}"}}""",
             """{"delete":["com.example.spy"]}""",
             """{"banned":true,"app_id":"com.example.spy","reason":"Records the microphone."}""",
         ).joinToString("\n")
@@ -836,13 +864,17 @@ class CatalogImporterTest {
         )
         val skipped = ArrayList<String>()
         val mixed = listOf(
-            """{"kind":30267,"pubkey":"$pubkey","d":""}""",
+            """{"delete":{"kind":30267,"pubkey":"$pubkey","d":""}}""",
             "not json",
             """{"delete":["com.example.kept"]}""",
+            """{"kind":0,"pubkey":"$pubkey","d":""}""",
         ).joinToString("\n")
         val (_, kept) = parseDiff(mixed, skipped)
         assertEquals(listOf(CatalogDelete.Listing("com.example.kept")), kept)
-        assertEquals(listOf("diff line 1 is an invalid delete", "diff line 2 is not JSON"), skipped)
+        assertEquals(
+            listOf("diff line 1 is an invalid delete", "diff line 2 is not JSON", "diff line 4 is not a known line"),
+            skipped,
+        )
     }
 
     private fun parseDiff(diff: String, skipped: MutableList<String> = ArrayList()): Pair<List<Event>, List<CatalogDelete>> {

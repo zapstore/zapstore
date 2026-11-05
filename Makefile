@@ -20,7 +20,7 @@ PRODUCTION_CATALOG_PUBKEY := $(shell sed -n 's/^[[:space:]]*val productionCatalo
 CATALOG_PUBKEY ?= $(if $(filter wss://relay.zapstore.dev wss://relay.zapstore.dev/,$(CATALOG_RELAY)),$(PRODUCTION_CATALOG_PUBKEY),)
 GRADLE_RELAY := -PCATALOG_RELAY="$(CATALOG_RELAY)" -PCATALOG_PUBKEY="$(CATALOG_PUBKEY)"
 # IoliteConfig.maxCompressedBytes. Import treats a larger file as unreadable.
-CATALOG_BUNDLE_MAX_BYTES := 33554432
+CATALOG_BUNDLE_MAX_BYTES := 268435456
 APP_VERSION := $(shell sed -n 's/^[[:space:]]*versionName = "\([^"]*\)".*/\1/p' "$(GRADLE_FILE)" | head -n 1)
 
 # $(call bundle_signer_ok,<file>): exits 1 unless the bundle's manifest is signed by CATALOG_PUBKEY.
@@ -109,8 +109,11 @@ release:
 			echo "Found $$store; set KEYSTORE_PASSWORD and KEY_ALIAS to sign the release build."; \
 			exit 1; \
 		fi; \
+	elif [ "$(DEBUG_SIGNED)" != "1" ]; then \
+		echo "No $(KEYSTORE); set ZAPSTORE_KEY_PATH, or DEBUG_SIGNED=1 for a local build signed with the debug certificate." >&2; \
+		exit 1; \
 	else \
-		echo "No $(KEYSTORE); signing release with the Android debug certificate"; \
+		echo "No $(KEYSTORE); signing release with the Android debug certificate (local use only)"; \
 		store="$(DEBUG_KEYSTORE)"; \
 		if [ ! -f "$$store" ]; then \
 			mkdir -p "$$(dirname "$$store")"; \
@@ -137,6 +140,7 @@ reverse:
 		$(ADB) reverse tcp:$$port tcp:$$port >/dev/null || true; \
 	fi
 
+run-release: DEBUG_SIGNED ?= 1
 run-release: release reverse
 	$(ADB) install -r --no-incremental build/outputs/apk/release/zapstore-release.apk
 	$(ADB) shell am force-stop $(PACKAGE)

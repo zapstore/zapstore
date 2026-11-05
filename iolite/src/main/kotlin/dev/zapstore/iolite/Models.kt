@@ -34,11 +34,17 @@ data class CatalogRecord(
     /** Relays that may hold this catalog's kind 10067, asked when [relays] is empty. */
     val hints: List<RelayUrl> = emptyList(),
 ) {
-    /** Onion when Tor is in use and one is published; otherwise the first clearnet endpoint. */
-    fun syncRelay(useOnion: Boolean): RelayUrl {
-        val onion = relays.firstOrNull { it.isOnion }
-        if (useOnion && onion != null) return onion
-        return relays.firstOrNull { !it.isOnion } ?: relays.first()
+    /**
+     * Every endpoint, in the order a sync tries them: onions first when Tor is in use, then clearnet.
+     * Without Tor an onion cannot be reached, so it is tried only when nothing else is published.
+     */
+    fun syncRelays(useOnion: Boolean): List<RelayUrl> {
+        val (onions, clearnet) = relays.partition { it.isOnion }
+        return when {
+            useOnion -> onions + clearnet
+            clearnet.isNotEmpty() -> clearnet
+            else -> onions
+        }
     }
 }
 

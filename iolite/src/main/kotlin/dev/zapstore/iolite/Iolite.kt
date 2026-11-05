@@ -7,6 +7,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -283,7 +284,8 @@ class Iolite private constructor(
      * that body. Both bodies go through [importCatalogUpdate]. [CatalogSyncResult.imported] is null on
      * HTTP 304 when nothing was imported. A catalog-key kind 10067 in a bundle replaces the stored
      * relays. [endpoint] is stored only when that event is absent and the catalog has no relays.
-     * [useOnion] selects a stored Tor endpoint when one is present.
+     * Otherwise each stored relay is tried in turn, then [endpoint], so one dead or mistyped address in
+     * the catalog's kind 10067 cannot cut the phone off. [useOnion] tries stored Tor endpoints first.
      * [client] is the Zapstore version sent as the `v` query. Empty omits it.
      */
     fun syncCatalog(
@@ -302,13 +304,32 @@ class Iolite private constructor(
         } else {
             null
         }
+        seeded?.let { config.log.log("catalog $catalogId seeded from the bundled snapshot, epoch ${it.to}", null) }
         val catalog = store.catalog(catalogId)
         if (catalog == null || catalog.relays.isEmpty()) {
             val relay = endpoint ?: throw CatalogImportException("catalog relay is missing")
             return fetchCatalogUpdate(catalogId, httpClient, relay.bundleUrl(0, client), seeded = null, endpoint = relay)
         }
-        val relay = catalog.syncRelay(useOnion)
-        return fetchCatalogUpdate(catalogId, httpClient, relay.bundleUrl(catalog.epoch, client), seeded = seeded, endpoint = null)
+        val candidates = (catalog.syncRelays(useOnion) + listOfNotNull(endpoint)).distinct()
+        val failures = mutableListOf<Exception>()
+        for (relay in candidates) {
+            try {
+                val result = fetchCatalogUpdate(catalogId, httpClient, relay.bundleUrl(catalog.epoch, client), seeded = seeded, endpoint = null)
+                val epochs = result.imported?.takeIf { it !== seeded }?.let { "epoch ${it.from} to ${it.to}" }
+                    ?: "epoch ${catalog.epoch} unchanged"
+                config.log.log("catalog $catalogId $epochs from ${relay.url}${if (failures.isEmpty()) "" else " after ${failures.size} failed"}", null)
+                return result
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                failures += failure
+                config.log.log("catalog $catalogId relay ${relay.url} failed", failure)
+            }
+        }
+        failures.singleOrNull()?.let { throw it }
+        throw CatalogImportException(
+            candidates.zip(failures).joinToString("; ") { (relay, failure) -> "${relay.url}: ${failure.message ?: failure::class.simpleName}" },
+        )
     }
 
     /** GETs [url] into a file and imports a 200 from there, so the bundle never sits in memory. */
@@ -1083,7 +1104,7 @@ class Iolite private constructor(
                 val job = SupervisorJob(parentJob)
                 val scope = CoroutineScope(parentScope.coroutineContext + job + Dispatchers.IO)
                 val nowSeconds = { nowMillis() / 1_000 }
-                val store = IoliteStore(databasePath, openConnection = openConnection)
+                val store = IoliteStore(databasePath, openConnection = openConnection, log = config.log)
                 // Only this instance downloads here, so whatever is left came from a process that died mid-sync.
                 downloadsDir(databasePath).deleteRecursively()
                 val importer = CatalogImporter(store, File(File(databasePath).parentFile, "icons"), config, device, nowSeconds)

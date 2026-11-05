@@ -6,6 +6,11 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
+/** A diagnostic line. [error] is set for a failure. */
+fun interface IoliteLog {
+    fun log(message: String, error: Throwable?)
+}
+
 data class IoliteConfig(
     val databaseName: String = "iolite.db",
     val oneShotTimeout: Duration = 30.seconds,
@@ -35,14 +40,23 @@ data class IoliteConfig(
     val relayReportMaxAge: Duration = 12.hours,
     /** A NIP-47 wallet reply; paying can wait on a route. */
     val walletTimeout: Duration = 60.seconds,
-    val maxCompressedBytes: Long = 32L * 1024 * 1024,
-    /** Whole tar after zstd. Epoch 0 is every current listing; 20k apps is tens of MB. */
-    val maxUncompressedBytes: Long = 512L * 1024 * 1024,
-    /** Tar members in one bundle. A from-0 catalog is about three files per app, plus one avatar each. */
-    val maxMembers: Int = 100_000,
+    /**
+     * A downloaded bundle, streamed to disk. A full catalog was 21 MB at 4,900 apps. A phone that
+     * never updates keeps this cap, and its update arrives through a bundle, so it is far above that.
+     */
+    val maxCompressedBytes: Long = 256L * 1024 * 1024,
+    /** Whole tar after zstd. A full catalog was 57 MB at 4,900 apps. */
+    val maxUncompressedBytes: Long = 2L * 1024 * 1024 * 1024,
+    /**
+     * Tar members in one bundle. A full catalog was 20k members at 4,900 apps. The import holds each
+     * member's name and hash in memory, so this also bounds that map.
+     */
+    val maxMembers: Int = 300_000,
     /** One JSONL line (one event or delete). Matches the relay's 0.5 MiB event cap. */
     val maxJsonLineBytes: Long = 512L * 1024,
     val maxIconBytes: Long = 256L * 1024,
+    /** Where iolite reports what the app's diagnostic log should keep. Never given keys or event content. */
+    val log: IoliteLog = IoliteLog { _, _ -> },
 ) {
     internal fun validate() {
         require(databaseName.isNotBlank() && databaseName.none { it == '/' || it == '\\' || it == '\u0000' }) {
