@@ -57,6 +57,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import dev.zapstore.app.components.ZapIconButton
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -146,69 +149,60 @@ internal fun ZapSheet(onDismiss: () -> Unit, content: @Composable () -> Unit) {
 }
 
 /**
- * App actions: the subject row (28 dp tile, name, version), then square tiles. Share, then Save,
- * which adds the app to the device's Saved stack.
+ * The "..." button and its dropdown: Share, Save (which adds the app to the device's Saved stack and keeps
+ * the menu open), Add to stack, then Website and Repository when the listing has them, then Report.
+ * Each button keeps its own open state, so the head's and the compact bar's never show two menus.
  */
 @Composable
-internal fun AppActionSheet(
-    app: AppRecord,
+internal fun AppMoreMenu(
     saved: Boolean,
     onSave: () -> Unit,
-    onDismiss: () -> Unit,
-    onShare: () -> Unit = {},
-    onReport: () -> Unit = {},
-    onAddToStack: () -> Unit = {},
-    onWebsite: (() -> Unit)? = null,
+    onShare: () -> Unit,
+    onReport: () -> Unit,
+    onAddToStack: () -> Unit,
+    onWebsite: (() -> Unit)?,
+    onRepository: (() -> Unit)?,
+    buttonTag: String,
+    modifier: Modifier = Modifier,
 ) {
-    ZapSheet(onDismiss) {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(ZapSpacing.space4),
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(start = ZapSpacing.space5, end = ZapSpacing.space5, bottom = ZapSpacing.space5)
-                .testTag("appActions"),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3)) {
-                AppIcon(title = app.name, iconUrl = app.iconUrl, iconFile = app.iconFile, size = 28.dp)
-                Text(
-                    app.name,
-                    color = ZapText,
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                app.version.takeIf { it.isNotBlank() }?.let { VersionPill(it) }
+    var open by remember { mutableStateOf(false) }
+    Box(modifier) {
+        ZapIconButton(
+            R.drawable.ic_more,
+            stringResource(R.string.more_actions),
+            { open = true },
+            style = ZapButtonStyle.Ghost,
+            modifier = Modifier.testTag(buttonTag),
+        )
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = ZapSurface2) {
+            fun close(action: () -> Unit): () -> Unit = {
+                open = false
+                action()
             }
-            val shareLabel = stringResource(R.string.action_share)
-            val saveLabel = stringResource(if (saved) R.string.action_saved else R.string.action_save)
-            val stackLabel = stringResource(R.string.action_add_to_stack)
-            val websiteLabel = stringResource(R.string.action_website)
-            val reportLabel = stringResource(R.string.action_report)
-            val tiles = buildList<@Composable (Modifier) -> Unit> {
-                add { ActionTile(R.drawable.ic_share, shareLabel, onShare, it.testTag("actionShare")) }
-                add { ActionTile(R.drawable.ic_bookmark, saveLabel, onSave, it.testTag("actionSave"), selected = saved) }
-                add { ActionTile(R.drawable.ic_stack, stackLabel, onAddToStack, it.testTag("actionAddToStack")) }
-                onWebsite?.let { open -> add { ActionTile(R.drawable.ic_external, websiteLabel, open, it.testTag("actionWebsite")) } }
-                add { ActionTile(R.drawable.ic_flag, reportLabel, onReport, it.testTag("actionReport"), danger = true) }
-            }
-            // Up to four across; more wrap to rows of three so two-line labels keep their room.
-            val perRow = if (tiles.size > 4) 3 else tiles.size
-            Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2)) {
-                tiles.chunked(perRow).forEach { rowTiles ->
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
-                        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
-                    ) {
-                        val tile = Modifier.weight(1f).fillMaxHeight()
-                        rowTiles.forEach { it(tile) }
-                        repeat(perRow - rowTiles.size) { Box(tile) }
-                    }
-                }
-            }
+            MenuAction(R.drawable.ic_share, stringResource(R.string.action_share), close(onShare), "actionShare")
+            MenuAction(
+                R.drawable.ic_bookmark,
+                stringResource(if (saved) R.string.action_saved else R.string.action_save),
+                onSave,
+                "actionSave",
+                tint = if (saved) ZapActionText else ZapText,
+            )
+            MenuAction(R.drawable.ic_stack, stringResource(R.string.action_add_to_stack), close(onAddToStack), "actionAddToStack")
+            onWebsite?.let { MenuAction(R.drawable.ic_external, stringResource(R.string.action_website), close(it), "actionWebsite") }
+            onRepository?.let { MenuAction(R.drawable.ic_external, stringResource(R.string.repository), close(it), "actionRepository") }
+            MenuAction(R.drawable.ic_flag, stringResource(R.string.action_report), close(onReport), "actionReport", tint = ZapDanger)
         }
     }
+}
+
+@Composable
+private fun MenuAction(icon: Int, label: String, onClick: () -> Unit, tag: String, tint: Color = ZapText) {
+    DropdownMenuItem(
+        text = { Text(label, color = tint, style = MaterialTheme.typography.bodyLarge) },
+        leadingIcon = { Icon(painterResource(icon), contentDescription = null, tint = tint, modifier = Modifier.size(20.dp)) },
+        onClick = onClick,
+        modifier = Modifier.testTag(tag),
+    )
 }
 
 /**
@@ -334,45 +328,6 @@ private fun StackPickerRow(label: String, icon: Int?, busy: Boolean, onClick: ()
 }
 
 private const val MAX_STACK_NAME = 64
-
-/** 72 dp square: icon over a two-line label. Selected tiles take the action tint. */
-@Composable
-private fun ActionTile(
-    icon: Int,
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    selected: Boolean = false,
-    danger: Boolean = false,
-) {
-    val tint = when {
-        danger -> ZapDanger
-        selected -> ZapActionText
-        else -> ZapText
-    }
-    val interaction = remember { MutableInteractionSource() }
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically),
-        modifier = modifier
-            .heightIn(min = 72.dp)
-            .pressScale(interaction)
-            .clip(RoundedCornerShape(ZapRadius.md))
-            .background(if (selected) ZapActionTint else ZapSurface3)
-            .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
-            .padding(horizontal = ZapSpacing.space2, vertical = ZapSpacing.space3),
-    ) {
-        Icon(painterResource(icon), contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
-        Text(
-            label,
-            color = tint,
-            style = MaterialTheme.typography.labelMedium,
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
 
 /** A question with one primary answer: title, explanation, the action full width, then Cancel. */
 @Composable

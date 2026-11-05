@@ -95,7 +95,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
-import dev.zapstore.app.screens.AppActionSheet
 import dev.zapstore.app.screens.UserStacksUi
 import androidx.compose.ui.test.assertIsSelected
 import dev.zapstore.app.screens.SignerStepUi

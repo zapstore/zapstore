@@ -171,7 +171,7 @@ fun AppRow(
                     Text(
                         tagline,
                         color = ZapText2,
-                        style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp),
+                        style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 21.25.sp),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -195,7 +195,7 @@ private fun RowTitleLine(
     note: String?,
     updateAvailable: Boolean = false,
 ) {
-    val titleStyle = MaterialTheme.typography.titleSmall.copy(fontSize = 16.5.sp, lineHeight = 22.sp)
+    val titleStyle = MaterialTheme.typography.titleSmall.copy(fontSize = 17.5.sp, lineHeight = 23.25.sp)
     val asideStyle = MaterialTheme.typography.bodySmall
     val name = authorPubkey?.let { shortDisplayName(it, author) }
     val byWord = stringResource(R.string.row_by)
@@ -303,7 +303,8 @@ fun AppDetailHead(
     indexed: Boolean = false,
     onAuthorClick: (String) -> Unit = {},
     onMarkClick: () -> Unit = {},
-    onMore: (() -> Unit)? = null,
+    /** The "..." menu, drawn at the head's top right. */
+    more: (@Composable () -> Unit)? = null,
 ) {
     Row(
         verticalAlignment = Alignment.Top,
@@ -352,23 +353,16 @@ fun AppDetailHead(
                 )
             }
         }
-        onMore?.let {
-            ZapIconButton(
-                R.drawable.ic_more,
-                stringResource(R.string.more_actions),
-                it,
-                style = ZapButtonStyle.Ghost,
-                modifier = Modifier.offset(x = ZapSpacing.space2).testTag("appMore"),
-            )
-        }
+        // Nudged up and right so the dots sit level with the name and the icon's edge lines up with the page margin.
+        more?.let { Box(Modifier.offset(x = ZapSpacing.space2, y = -ZapSpacing.space2)) { it() } }
     }
 }
 
 /** Title line. titleSmall is 15/20; the row's title is 10% larger, so 16.5/22. */
-private val ROW_TITLE_LINE = 22.dp
+private val ROW_TITLE_LINE = 23.25.dp
 
 /** Tagline, or the version pill. The pill is slightly shorter and is centered in this line. */
-private val ROW_SECOND_LINE = 20.dp
+private val ROW_SECOND_LINE = 21.25.dp
 
 /** The app-row tile from the tokens (48). The two lines are 42, so the column leaves 6 dp between them and the text still meets the icon. */
 private val ROW_TILE = 48.dp

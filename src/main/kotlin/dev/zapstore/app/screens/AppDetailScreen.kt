@@ -50,6 +50,7 @@ import dev.zapstore.app.CdnImageVariant
 import dev.zapstore.app.MarkdownText
 import dev.zapstore.app.R
 import dev.zapstore.app.ZapActionText
+import dev.zapstore.app.isHttpUrl
 import dev.zapstore.app.ZapCanvas
 import dev.zapstore.app.ZapLine
 import dev.zapstore.app.ZapText3
@@ -66,8 +67,6 @@ import dev.zapstore.app.components.EmptyRow
 import dev.zapstore.app.components.GroupHeader
 import dev.zapstore.app.components.LoadingIndicator
 import dev.zapstore.app.components.StatusText
-import dev.zapstore.app.components.ZapButtonStyle
-import dev.zapstore.app.components.ZapIconButton
 import dev.zapstore.iolite.AppByline
 import dev.zapstore.iolite.AppRecord
 import dev.zapstore.iolite.CommentRecord
@@ -107,7 +106,6 @@ fun AppDetailScreen(
 ) {
     var selectedScreenshot by remember { mutableStateOf<Int?>(null) }
     var releasing by remember { mutableStateOf(false) }
-    var actions by remember { mutableStateOf(false) }
     var reporting by remember { mutableStateOf(false) }
     var stacking by remember { mutableStateOf(false) }
     var zapping by remember { mutableStateOf(false) }
@@ -132,6 +130,20 @@ fun AppDetailScreen(
     val feed = remember(comments.threads, comments.zaps) { feedBlocks(comments.threads, comments.zaps.filter { it.note.isNotBlank() }) }
     val other = remember(comments.other) { feedBlocks(comments.other, emptyList()) }
     val replyable = state.social.signedIn
+    val moreMenu: @Composable (String) -> Unit = { tag ->
+        if (app != null) {
+            AppMoreMenu(
+                saved = saved,
+                onSave = { onSave(!saved) },
+                onShare = onShare,
+                onReport = { reporting = true },
+                onAddToStack = { if (state.userStacks == null) onSettingsClick() else stacking = true },
+                onWebsite = app.website?.let { site -> { onOpenUrl(site) } },
+                onRepository = app.repository?.takeIf(::isHttpUrl)?.let { repository -> { onOpenUrl(repository) } },
+                buttonTag = tag,
+            )
+        }
+    }
 
     Box(modifier.fillMaxSize()) {
         LazyColumn(
@@ -162,7 +174,7 @@ fun AppDetailScreen(
                     indexed = app.byline == AppByline.Indexed,
                     onAuthorClick = onProfileClick,
                     onMarkClick = { authorSheet = true },
-                    onMore = { actions = true },
+                    more = { moreMenu("appMore") },
                     modifier = Modifier.scrollParallax(listState),
                 )
             }
@@ -313,7 +325,7 @@ fun AppDetailScreen(
             CompactAppHeader(
                 app = app,
                 collapse = { headCollapse },
-                onMore = { actions = true },
+                more = { moreMenu("compactMore") },
                 modifier = Modifier.align(Alignment.TopCenter),
             )
             InstallBar(
@@ -436,32 +448,6 @@ fun AppDetailScreen(
                 },
             )
         }
-        if (actions) {
-            AppActionSheet(
-                app = app,
-                saved = saved,
-                onSave = { onSave(!saved) },
-                onShare = {
-                    actions = false
-                    onShare()
-                },
-                onReport = {
-                    actions = false
-                    reporting = true
-                },
-                onDismiss = { actions = false },
-                onAddToStack = {
-                    actions = false
-                    if (state.userStacks == null) onSettingsClick() else stacking = true
-                },
-                onWebsite = app.website?.let { site ->
-                    {
-                        actions = false
-                        onOpenUrl(site)
-                    }
-                },
-            )
-        }
         val userStacks = state.userStacks
         if (stacking && userStacks != null) {
             AddToStackSheet(
@@ -484,7 +470,7 @@ private val InstallUi.hasBar: Boolean get() = offer || installed || phase != Ins
 private fun CompactAppHeader(
     app: AppRecord,
     collapse: () -> Float,
-    onMore: () -> Unit,
+    more: @Composable () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val animate = animationsEnabled()
@@ -527,13 +513,7 @@ private fun CompactAppHeader(
                     if (animate) translationX = (1f - reveal()) * 10.dp.toPx()
                 },
             )
-            ZapIconButton(
-                R.drawable.ic_more,
-                stringResource(R.string.more_actions),
-                onMore,
-                style = ZapButtonStyle.Ghost,
-                modifier = Modifier.testTag("compactMore"),
-            )
+            more()
         }
         HorizontalDivider(color = ZapLine)
     }
