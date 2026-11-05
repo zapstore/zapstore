@@ -12,17 +12,16 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import dev.zapstore.app.R
 import dev.zapstore.app.ZapSpacing
 import dev.zapstore.app.components.AppListState
+import dev.zapstore.app.components.AuthorByline
 import dev.zapstore.app.components.EmptyRow
 import dev.zapstore.app.components.LoadMoreWhenNearEnd
 import dev.zapstore.app.components.LoadingIndicator
 import dev.zapstore.app.components.StackCard
 import dev.zapstore.app.components.catalogCount
-import dev.zapstore.iolite.ProfileRecord
 import dev.zapstore.iolite.StackRecord
 
 /** Everyone's public stacks, newest first. Each row names its curator: these are social, unlike the catalog's. */
@@ -31,6 +30,7 @@ fun StacksScreen(
     state: StacksUiState,
     onStackClick: (StackRecord) -> Unit,
     modifier: Modifier = Modifier,
+    onProfileClick: (String) -> Unit = {},
     onLoadMore: () -> Unit = {},
 ) {
     val listState = rememberLazyListState()
@@ -57,14 +57,19 @@ fun StacksScreen(
                 EmptyRow(state.error ?: stringResource(R.string.no_stacks))
             }
             else -> items(state.stacks, key = { "${it.pubkey}:${it.identifier}" }, contentType = { "stack" }) { stack ->
-                val curator = state.profiles[stack.pubkey]?.let(ProfileRecord::displayNameOrNpub)
-                val resolved = stack.catalogCount(state.apps)
-                val count = pluralStringResource(R.plurals.curated_apps, resolved, resolved)
                 StackCard(
                     stack = stack,
                     apps = state.apps,
                     onClick = { onStackClick(stack) },
-                    byline = curator?.let { stringResource(R.string.stack_by, count, it) },
+                    count = stack.catalogCount(state.apps),
+                    underName = {
+                        AuthorByline(
+                            pubkey = stack.pubkey,
+                            profile = state.profiles[stack.pubkey],
+                            showBy = false,
+                            onClick = { onProfileClick(stack.pubkey) },
+                        )
+                    },
                     modifier = Modifier.fillMaxWidth().testTag("stack:${stack.identifier}"),
                 )
             }

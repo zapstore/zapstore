@@ -24,6 +24,9 @@ import dev.zapstore.iolite.repositoryQuery
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -56,17 +59,21 @@ data class HomeUiState(
     val searchDevelopers: List<String> = emptyList(),
     val stacks: List<StackRecord> = emptyList(),
     val stackApps: Map<String, AppRecord> = emptyMap(),
-    val stacksLoading: Boolean = true,
-    val stacksError: String? = null,
     val stacksCanLoadMore: Boolean = false,
     /** Newest comments and zaps on catalog apps, with the stacks their curators last changed. */
     val activity: List<ActivityItem> = emptyList(),
     /** The apps the tiles of the stacks in [activity] show. */
     val activityStackApps: Map<String, AppRecord> = emptyMap(),
-    val activityLoading: Boolean = true,
     val activityCanLoadMore: Boolean = false,
     val activityFilter: ActivityFilter = ActivityFilter.All,
     val profiles: Map<String, ProfileRecord> = emptyMap(),
+    /** Keys of the active catalogs, and the one they signed with before the rotation. */
+    val catalogKeys: Set<String> = emptySet(),
+    /**
+     * Every local read behind the first screen has landed: stacks and the apps their tiles show, the activity feed, and
+     * the profiles of the people in both. The launch splash stays up until this is true, so nothing fills in after it.
+     */
+    val ready: Boolean = false,
 )
 
 /**
@@ -84,6 +91,16 @@ class HomeViewModel(
     private val activityFilter = MutableStateFlow(ActivityFilter.All)
     private val stackLimit = MutableStateFlow(STACK_PAGE)
     private val activityLimit = MutableStateFlow(ACTIVITY_PAGE)
+
+    /** The hour the shelf is shuffled for. It ticks when the hour changes, so an open Home rotates with the web shelf. */
+    private val shelfHour: Flow<Int> = flow {
+        while (currentCoroutineContext().isActive) {
+            val now = System.currentTimeMillis()
+            emit((now / SHELF_ROTATE_MS).toInt())
+            val wait = SHELF_ROTATE_MS - now % SHELF_ROTATE_MS
+            delay(if (wait == 0L) SHELF_ROTATE_MS else wait)
+        }
+    }.distinctUntilChanged()
 
     /** Filters chosen in the sheet; they outlive a query. */
     private val chosenFilters = MutableStateFlow<Set<SearchFact>>(emptySet())
@@ -132,11 +149,14 @@ class HomeViewModel(
         .map { catalogs -> catalogs.mapNotNull { it.manifestPubkey } }
         .distinctUntilChanged()
 
-    /** The stacks of every active catalog, shipped in their bundles and read locally. The shelf keeps the ones that name a catalog app. */
+    /**
+     * The stacks of every active catalog, shipped in their bundles and read locally. The shelf keeps the ones
+     * that name a catalog app, then rotates that whole set; paging only reveals more of the same order.
+     */
     private val stacks: Flow<QueryState<List<StackRecord>>> = catalogKeys
         .flatMapLatest { keys ->
             if (keys.isEmpty()) flowOf(QueryState(emptyList<StackRecord>()))
-            else stackLimit.flatMapLatest { limit -> iolite.query(Query.catalogStacks(keys, limit)) }
+            else iolite.query(Query.catalogStacks(keys, SHELF_READ))
         }
 
     /** Null until the first local read of these stacks' apps lands; both are local, so that read is never "loading". */
@@ -200,6 +220,7 @@ class HomeViewModel(
                     )
                 }
             }
+            .onStart { emit(ActivityPage(QueryState(emptyList()), canLoadMore = false)) }
 
     /**
      * The stacks their curators published or changed last: public, one per curator, and naming at least one
@@ -214,6 +235,7 @@ class HomeViewModel(
                     stacks.filter { stack -> stack.appIds.any(apps::containsKey) }.distinctBy(StackRecord::pubkey).take(ACTIVITY_STACKS) to apps
                 }
             }
+            .onStart { emit(emptyList<StackRecord>() to emptyMap()) }
 
     /** The newest release of each app, as entries, newest first. Read locally. */
     private val releases: Flow<List<ActivityItem>> = activityLimit.flatMapLatest { limit ->
@@ -222,7 +244,7 @@ class HomeViewModel(
 
     /**
      * Releases, comments, zaps, and changed stacks as one list, newest first, narrowed by the filter. A stack
-     * takes a place in the page like any entry.
+     * takes a place in the page like any entry. Releases show at once; the social entries join as they land.
      */
     private val activity: Flow<ActivityPage> = combine(comments, activityLimit, changedStacks, releases, activityFilter) { page, limit, (stacks, apps), releases, filter ->
         val social = page.state.items + stacks.map(StackRecord::activity)
@@ -232,8 +254,7 @@ class HomeViewModel(
             ActivityFilter.Social -> social
         }.sortedByDescending { it.createdAt }
         ActivityPage(
-            // Releases are local, so they never wait on the relays.
-            QueryState(pool.take(limit), page.state.relays, page.state.settled || filter == ActivityFilter.Releases),
+            QueryState(pool.take(limit)),
             canLoadMore = when (filter) {
                 ActivityFilter.Releases -> releases.size >= limit
                 ActivityFilter.Social -> page.canLoadMore
@@ -253,14 +274,18 @@ class HomeViewModel(
 
     val uiState: StateFlow<HomeUiState> = combine(
         combine(combine(searchQuery, submittedQuery, search, ::Triple), matches, ::Pair),
-        combine(stacks, stackApps, stackLimit, ::Triple),
+        combine(stacks, stackApps, combine(stackLimit, shelfHour, ::Pair), ::Triple),
         combine(profiles, activity, ::Pair),
         activityFilter,
-    ) { (searched, found), (stackState, stackAppsOrNull, stackCap), (profiles, activity), filter ->
+        catalogKeys.map { it.toSet() + AppConfig.LEGACY_CATALOG_PUBKEY },
+    ) { (searched, found), (stackState, stackAppsOrNull, paging), (profiles, activity), filter, catalogs ->
         val (query, submitted, snapshot) = searched
+        val (stackCap, hour) = paging
         // Not yet joined: show every stack rather than wait, since both reads are local.
         // Joined: keep only stacks that list a catalog app, as always.
         val stackApps = stackAppsOrNull ?: emptyMap()
+        val eligible = if (stackAppsOrNull == null) stackState.items else stackState.items.filter { stack -> stack.appIds.any(stackApps::containsKey) }
+        val ordered = shelfOrder(eligible, hour, StackRecord::eventId)
         HomeUiState(
             searchQuery = query,
             submittedQuery = submitted,
@@ -269,17 +294,16 @@ class HomeViewModel(
             searchStacks = found.stacks,
             searchStackApps = found.stackApps,
             searchDevelopers = found.developers,
-            stacks = if (stackAppsOrNull == null) stackState.items else stackState.items.filter { stack -> stack.appIds.any(stackApps::containsKey) },
+            stacks = ordered.take(stackCap),
             stackApps = stackApps,
-            stacksLoading = stackState.items.isEmpty() && !stackState.settled,
-            stacksError = stackState.relayError(),
-            stacksCanLoadMore = stackState.items.size >= stackCap,
+            stacksCanLoadMore = ordered.size > stackCap,
             activity = activity.state.items,
             activityStackApps = activity.stackApps,
-            activityLoading = activity.state.items.isEmpty() && !activity.state.settled,
             activityCanLoadMore = activity.canLoadMore,
             activityFilter = filter,
             profiles = profiles,
+            catalogKeys = catalogs,
+            ready = stackAppsOrNull != null,
         )
     }.stateIn(
         viewModelScope,
@@ -291,10 +315,13 @@ class HomeViewModel(
         savedStateHandle[SEARCH_QUERY_KEY] = value
     }
 
-    fun submitSearch() {
-        val query = searchQuery.value.trim()
-        savedStateHandle[SEARCH_QUERY_KEY] = query
-        savedStateHandle[SUBMITTED_QUERY_KEY] = query
+    fun submitSearch() = openSearch(searchQuery.value)
+
+    /** Shows [query] in the search field and runs it. A link and the keyboard both land here. */
+    fun openSearch(query: String) {
+        val trimmed = query.trim()
+        savedStateHandle[SEARCH_QUERY_KEY] = trimmed
+        savedStateHandle[SUBMITTED_QUERY_KEY] = trimmed
     }
 
     fun clearSearch() {
@@ -334,7 +361,12 @@ class HomeViewModel(
         private const val STACK_MATCHES = 8
         private const val DEVELOPER_MATCHES = 8
         private const val STACK_PAGE = 20
-        private const val ACTIVITY_PAGE = 20
+        /** Catalog stacks read for the shelf before it rotates. The web shelf reads the same number. */
+        private const val SHELF_READ = 200
+        /** The shelf order changes once an hour, with the web shelf, and holds still in between. */
+        private const val SHELF_ROTATE_MS = 60L * 60L * 1000L
+        /** Activity entries per page; the next page waits for a tap on Load more. */
+        private const val ACTIVITY_PAGE = 50
         /** Latest releases whose zaps the activity feed asks for. */
         private const val ACTIVITY_APPS = 100
         /** Comments and zaps asked of each relay, at least; the web page asks 60. */
@@ -373,3 +405,27 @@ private data class SearchSnapshot(
     val results: List<AppRecord>? = null,
     val facts: List<SearchFact> = emptyList(),
 )
+
+/**
+ * The home shelf's order for one hour, the same rotation as the web shelf: event id order, then a seeded
+ * Fisher-Yates. The same hour and the same ids give the same order, so loading another page does not move
+ * the cards already on screen.
+ */
+internal fun <T> shelfOrder(items: List<T>, hour: Int, id: (T) -> String): List<T> {
+    var state = hour.toUInt()
+    fun next(): Double {
+        state += 0x6d2b79f5u
+        var t = state
+        t = (t xor (t shr 15)) * (t or 1u)
+        t = t xor (t + ((t xor (t shr 7)) * (t or 61u)))
+        return (t xor (t shr 14)).toDouble() / 4294967296.0
+    }
+    val out = items.sortedBy(id).toMutableList()
+    for (i in out.lastIndex downTo 1) {
+        val swap = out[i]
+        val j = (next() * (i + 1)).toInt()
+        out[i] = out[j]
+        out[j] = swap
+    }
+    return out
+}

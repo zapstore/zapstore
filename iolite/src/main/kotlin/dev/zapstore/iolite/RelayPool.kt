@@ -110,6 +110,8 @@ private class RelayConnection(
     private var reconnectJob: Job? = null
     private var authEventId: String? = null
     private var connected = false
+    /** Bumped on close so a socket we replaced cannot fail the connection that took its place. */
+    private var epoch = 0
 
     fun add(subscription: Subscription) {
         subscriptions[subscription.id] = subscription
@@ -153,6 +155,7 @@ private class RelayConnection(
 
     fun close(reason: String) {
         synchronized(lock) {
+            epoch++
             reconnectJob?.cancel()
             reconnectJob = null
             val closing = session
@@ -164,9 +167,11 @@ private class RelayConnection(
     }
 
     private fun openLocked() {
+        val openedAt = epoch
         val listener = object : WebSocketListener {
             override fun onOpen() {
                 synchronized(lock) {
+                    if (openedAt != epoch) return
                     connected = true
                     subscriptions.values.forEach(::sendReq)
                     pendingEvents.values.forEach(::sendEvent)
@@ -174,26 +179,31 @@ private class RelayConnection(
                 liveness.recordSuccess(url)
             }
 
-            override fun onMessage(text: String) = handle(text)
+            override fun onMessage(text: String) {
+                if (synchronized(lock) { openedAt != epoch }) return
+                handle(text)
+            }
 
             override fun onClosing(code: Int, reason: String) {
-                val wasOpen = synchronized(lock) {
-                    val open = session != null
+                val current = synchronized(lock) {
+                    if (openedAt != epoch) return
                     connected = false
                     session = null
-                    open
+                    true
                 }
-                // Our own close clears the session first; a close we did not ask for is the relay's.
-                if (!wasOpen) return
+                if (!current) return
                 if (code != NORMAL_CLOSURE && code != GOING_AWAY) liveness.recordFailure(url)
                 lost(reason.ifBlank { "closed ($code)" })
             }
 
             override fun onFailure(error: Throwable) {
-                synchronized(lock) {
+                val current = synchronized(lock) {
+                    if (openedAt != epoch) return
                     connected = false
                     session = null
+                    true
                 }
+                if (!current) return
                 liveness.recordFailure(url)
                 lost(error.message ?: "connection failed")
             }

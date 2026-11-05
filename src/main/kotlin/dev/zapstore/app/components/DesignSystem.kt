@@ -41,10 +41,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -327,31 +330,96 @@ fun ZapCountBadge(count: Int, modifier: Modifier = Modifier) {
     }
 }
 
-/** Every version number sits in this navy pill, alone or as `current → next`. */
+/**
+ * What a version pill says about the app on this phone, as a tiny icon inside the pill. The same three
+ * states, and the same glyphs, as the Flutter app: can install, can update, already up to date.
+ */
+enum class VersionStatus(val icon: Int, val label: Int) {
+    Install(R.drawable.ic_pill_install, R.string.version_status_install),
+    Update(R.drawable.ic_update, R.string.version_status_update),
+    Current(R.drawable.ic_pill_current, R.string.version_status_current),
+}
+
+/** "Already installed" in a list row: the version pill's own tick, alone in a mini pill of the same navy. */
 @Composable
-fun VersionPill(version: String, modifier: Modifier = Modifier, next: String? = null, scale: Float = 1f) {
-    val spoken = if (next == null) version else "$version → $next"
-    val fontSize = 13.sp * scale
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp * scale),
+fun InstalledPill(modifier: Modifier = Modifier) {
+    val label = stringResource(R.string.installed_mark)
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .size(width = 22.dp, height = 15.dp)
+            .clip(RoundedCornerShape(ZapRadius.full))
+            .background(ZapBrand)
+            .semantics { contentDescription = label },
+    ) {
+        Icon(painterResource(VersionStatus.Current.icon), contentDescription = null, tint = Color.White, modifier = Modifier.size(10.dp))
+    }
+}
+
+/**
+ * Every version number sits in this navy pill, alone or as `current → next`. A [status] adds its icon
+ * after the version, in white, and its words to what a screen reader hears.
+ */
+@Composable
+fun VersionPill(
+    version: String,
+    modifier: Modifier = Modifier,
+    next: String? = null,
+    scale: Float = 1f,
+    status: VersionStatus? = null,
+    textScale: Float = scale,
+) {
+    val versions = if (next == null) version else "$version → $next"
+    val spoken = if (status == null) versions else "$versions, ${stringResource(status.label)}"
+    val fontSize = 13.sp * textScale
+    val style = MaterialTheme.typography.labelMedium.copy(
+        fontSize = fontSize,
+        lineHeight = fontSize,
+        fontWeight = FontWeight(680),
+        fontFeatureSettings = "tnum",
+    )
+    val spacing = 4.dp * scale
+    Layout(
+        content = {
+            Text(version.pillText(), color = Color.White, style = style, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (next != null) {
+                VersionPillArrow(scale)
+                Text(next.pillText(), color = Color.White, style = style, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (status != null) {
+                Icon(painterResource(status.icon), contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp * scale))
+            }
+        },
         modifier = modifier
             .height(24.dp * scale)
             .clip(RoundedCornerShape(ZapRadius.full))
             .background(ZapBrand)
             .semantics(mergeDescendants = true) { contentDescription = spoken }
             .padding(horizontal = 10.dp * scale),
-    ) {
-        val style = MaterialTheme.typography.labelMedium.copy(
-            fontSize = fontSize,
-            lineHeight = fontSize,
-            fontWeight = FontWeight(680),
-            fontFeatureSettings = "tnum",
-        )
-        Text(version.pillText(), color = Color.White, style = style, maxLines = 1)
-        if (next != null) {
-            VersionPillArrow(scale)
-            Text(next.pillText(), color = Color.White, style = style, maxLines = 1)
+    ) { measurables, constraints ->
+        val gap = spacing.roundToPx()
+        val loose = constraints.copy(minWidth = 0, minHeight = 0, maxWidth = Constraints.Infinity)
+        // A measurable is measured once, so the fit is worked out from intrinsic widths first.
+        val natural = measurables.map { it.maxIntrinsicWidth(constraints.maxHeight) }
+        val gaps = gap * (natural.size - 1).coerceAtLeast(0)
+        val max = constraints.maxWidth
+        val textSlots = if (next != null) setOf(0, 2) else setOf(0)
+        val fits = max == Constraints.Infinity || natural.sum() + gaps <= max
+        val fixed = natural.filterIndexed { index, _ -> index !in textSlots }.sum()
+        val budget = (max - fixed - gaps).coerceAtLeast(0)
+        val textWidth = textSlots.sumOf { natural[it] }.coerceAtLeast(1)
+        val placeables = measurables.mapIndexed { index, measurable ->
+            val shrink = !fits && index in textSlots
+            measurable.measure(if (shrink) loose.copy(maxWidth = budget * natural[index] / textWidth) else loose)
+        }
+        val width = placeables.sumOf { it.width } + gaps
+        val height = if (constraints.maxHeight == Constraints.Infinity) placeables.maxOf { it.height } else constraints.maxHeight
+        layout(width, height) {
+            var x = 0
+            placeables.forEach { item ->
+                item.placeRelative(x, (height - item.height) / 2)
+                x += item.width + gap
+            }
         }
     }
 }
@@ -390,11 +458,12 @@ fun EvidenceCard(
             .border(1.dp, ZapLine, RoundedCornerShape(ZapRadius.lg))
             .padding(contentPadding),
     ) {
+        val titleStyle = MaterialTheme.typography.titleSmall.copy(fontSize = 17.sp, lineHeight = 22.sp)
         if (headerAction == null) {
-            Text(title, style = MaterialTheme.typography.titleSmall)
+            Text(title, style = titleStyle)
         } else {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                Text(title, style = titleStyle, modifier = Modifier.weight(1f))
                 headerAction()
             }
         }
@@ -481,12 +550,12 @@ fun GroupHeader(
     }
 }
 
-/** Neutral 16 dp count beside a group title; quieter than [ZapCountBadge], which marks updates. */
+/** Neutral 16 dp count beside a title; quieter than [ZapCountBadge], which marks updates. */
 @Composable
-private fun GroupCount(count: Int) {
+internal fun GroupCount(count: Int, modifier: Modifier = Modifier) {
     Box(
         contentAlignment = Alignment.Center,
-        modifier = Modifier
+        modifier = modifier
             .defaultMinSize(minWidth = 16.dp)
             .height(16.dp)
             .clip(RoundedCornerShape(ZapRadius.full))

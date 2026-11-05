@@ -31,10 +31,11 @@ import dev.zapstore.app.catalog.installedApps
 import dev.zapstore.app.search.QueryEncoder
 import dev.zapstore.app.transport.NetworkMode
 import dev.zapstore.app.transport.NetworkRuntime
+import dev.zapstore.iolite.AppFilter
+import dev.zapstore.iolite.CatalogBundle
 import dev.zapstore.iolite.DeviceProfile
 import dev.zapstore.iolite.Iolite
 import dev.zapstore.iolite.IoliteConfig
-import dev.zapstore.iolite.Kinds
 import dev.zapstore.iolite.LocalSigner
 import dev.zapstore.iolite.Query
 import dev.zapstore.iolite.QueryOptions
@@ -42,11 +43,13 @@ import dev.zapstore.iolite.RemoteMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
@@ -89,7 +92,7 @@ class ZapstoreApplication : Application() {
     var migratedFromFlutter = false
         private set
 
-    @OptIn(FlowPreview::class)
+    @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
     override fun onCreate() {
         super.onCreate()
         AppLog.init(this)
@@ -115,7 +118,6 @@ class ZapstoreApplication : Application() {
             parentScope = scope,
             config = IoliteConfig(
                 databaseName = "zapstore.db",
-                pruneRules = mapOf(Kinds.Zap to AppConfig.zapRetention),
                 indexerRelays = AppConfig.indexerRelays,
                 relayMonitors = AppConfig.relayMonitors,
                 monitorRelays = AppConfig.monitorRelays,
@@ -141,15 +143,19 @@ class ZapstoreApplication : Application() {
             scope,
             ignored = lists.ignoredLoaded,
             readInstalledApps = ::installedApps,
-            readBundledSnapshot = {
-                runCatching { assets.open(BUNDLED_CATALOG_DELTA).use { it.readBytes() } }.getOrDefault(ByteArray(0))
-            },
+            bundledSnapshot = CatalogBundle { assets.open(BUNDLED_CATALOG_DELTA) }
+                .takeIf { runCatching { assets.open(BUNDLED_CATALOG_DELTA).close() }.isSuccess },
             useOnion = { network.mode.value.usesTor },
             ourPackage = packageName,
+            pinnedKey = AppConfig.catalogPubkey,
         )
+        catalogSync.request()
         installer = Installer(this, scope, { network.transport.callFactory }, iolite::proof)
         scope.launch {
-            combine(iolite.observeApps(), catalogSync.installedApps, ::Pair)
+            // Prune reads only the listings of apps with a task; the whole catalog is tens of MB.
+            val taskListings = installer.tasks.map { it.keys }.distinctUntilChanged()
+                .flatMapLatest { ids -> iolite.observeApps(AppFilter(appIds = ids)) }
+            combine(taskListings, catalogSync.installedApps, ::Pair)
                 .debounce(1_000)
                 .collect { (apps, installed) -> installer.prune(apps, installed) }
         }
@@ -207,7 +213,7 @@ class ZapstoreApplication : Application() {
                 }
                 .collect { BackgroundUpdateWorker.apply(this@ZapstoreApplication, it) }
         }
-        if (DeviceKeys.takeRestorePending(this) || carriedFlutterKey) restoreDevicePrivate()
+        if (DeviceKeys.takeRestorePending(this) || FlutterMigration.takeFetchPending(this)) restoreDevicePrivate()
     }
 
     /** Installs, updates and removals from any source reach My apps and the app page without polling. */
@@ -237,15 +243,15 @@ class ZapstoreApplication : Application() {
     }
 
     /**
-     * Fetches the carried key's device state and lists once, per `iolite/SPEC.md#device-private-events`.
-     * Collected only for the one-shot window; the rows land in SQLite and the settings flows react.
+     * Fetches a restored key's device state and lists once, per `iolite/SPEC.md#device-private-events`.
+     * Only the catalog relay: a one-shot ends after the first EOSE, and the write relays do not store these events.
      */
     private fun restoreDevicePrivate() {
         scope.launch {
             runCatching {
                 iolite.query(
                     Query.devicePrivate(deviceSigner.publicKey),
-                    QueryOptions.remote(relays = AppConfig.writeRelays + AppConfig.catalogRelay, remoteMode = RemoteMode.OneShot()),
+                    QueryOptions.remote(relays = setOf(AppConfig.catalogRelay), remoteMode = RemoteMode.OneShot()),
                 ).first { it.settled }
             }
         }

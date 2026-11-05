@@ -12,6 +12,7 @@ import dev.zapstore.iolite.ProfileRecord
 import dev.zapstore.iolite.Query
 import dev.zapstore.iolite.StackRecord
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -39,6 +40,7 @@ data class StacksUiState(
 /**
  * Everyone's public stacks that name at least one catalog app: the first page streams from the stack relays while the page is open;
  * each older page is a one-shot fetch that lands in SQLite, and the list re-reads with a larger limit.
+ * The catalog's own stacks come after everyone else's, so they sit at the bottom of the first load.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class StacksViewModel(private val iolite: Iolite) : ViewModel() {
@@ -60,9 +62,18 @@ class StacksViewModel(private val iolite: Iolite) : ViewModel() {
         .distinctUntilChanged()
         .flatMapLatest(iolite::observeProfiles)
 
-    val uiState: StateFlow<StacksUiState> = combine(stacks, apps, profiles, loadingMore) { (state, limit), apps, profiles, more ->
+    /** The keys that sign the active catalogs' own stacks, and the key those stacks were signed with before the rotation. */
+    private val catalogKeys: Flow<Set<String>> = iolite.observeCatalogs()
+        .map { catalogs -> catalogs.mapNotNull { it.manifestPubkey }.toSet() + AppConfig.LEGACY_CATALOG_PUBKEY }
+        .distinctUntilChanged()
+
+    val uiState: StateFlow<StacksUiState> = combine(stacks, apps, profiles, loadingMore, catalogKeys) { (state, limit), apps, profiles, more, catalogKeys ->
         StacksUiState(
-            stacks = state.items.filter { stack -> stack.appIds.any(apps::containsKey) },
+            // People's stacks first. The catalog's own are the same on every device, so they go last. Each group keeps its order.
+            stacks = state.items
+                .filter { stack -> stack.appIds.any(apps::containsKey) }
+                .partition { stack -> stack.pubkey !in catalogKeys }
+                .let { (people, catalog) -> people + catalog },
             apps = apps,
             profiles = profiles,
             loading = state.items.isEmpty() && !state.settled,

@@ -110,8 +110,9 @@ sealed interface MdBlock {
 
 /**
  * GitHub-flavored Markdown: CommonMark plus tables, strikethrough, task lists and bare-URL
- * autolinks, with `:shortcode:` emoji. Links open only for http and https. Raw HTML is reduced
- * to its text, `<br>` and `<img>`.
+ * autolinks, with `:shortcode:` emoji. Http and https links open. A `npub`, `nprofile`, `naddr`,
+ * `nevent`, `note` (with an optional `nostr:` prefix), or a hashtag becomes a link too. Raw HTML
+ * is reduced to its text, `<br>` and `<img>`.
  */
 object ZapMarkdown {
     private val parser: Parser = Parser.builder()
@@ -132,6 +133,15 @@ object ZapMarkdown {
     private val htmlBreak = Regex("<br\\s*/?>", RegexOption.IGNORE_CASE)
     private val htmlImage = Regex("<img\\b[^>]*\\bsrc\\s*=\\s*[\"']([^\"']+)[\"'][^>]*>", RegexOption.IGNORE_CASE)
     private val htmlAlt = Regex("\\balt\\s*=\\s*[\"']([^\"']*)[\"']", RegexOption.IGNORE_CASE)
+
+    /**
+     * A NIP-19 token, optionally prefixed with `nostr:`, or a hashtag. The token is group 1 and the
+     * hashtag text, without `#`, is group 2. Neither matches inside a word or a code span.
+     */
+    private val inlineEntity = Regex(
+        """(?<![A-Za-z0-9])(?:nostr:)?((?:npub|nprofile|naddr|nevent|note)1[02-9ac-hj-np-z]+)|(?<![A-Za-z0-9_])#([A-Za-z0-9_]+)""",
+        RegexOption.IGNORE_CASE,
+    )
 
     /** Blocks for [value]. Link taps go to [onOpenUrl]; results without a callback are cached. */
     fun blocks(value: String, onOpenUrl: ((String) -> Unit)? = null): List<MdBlock> {
@@ -295,31 +305,50 @@ object ZapMarkdown {
             if (text.isNotEmpty()) out += MdBlock.Prose(AnnotatedString(Emoji.replace(text)), indent = indent, quote = quote)
         }
 
-        fun inline(parent: Node): AnnotatedString = buildAnnotatedString { appendChildren(parent) }
+        fun inline(parent: Node): AnnotatedString = buildAnnotatedString { appendChildren(parent, linkify = true) }
 
-        fun AnnotatedString.Builder.appendChildren(parent: Node) {
+        fun AnnotatedString.Builder.appendChildren(parent: Node, linkify: Boolean) {
             var node = parent.firstChild
             while (node != null) {
-                appendInline(node)
+                appendInline(node, linkify)
                 node = node.next
             }
         }
 
-        fun AnnotatedString.Builder.appendInline(node: Node) {
+        fun AnnotatedString.Builder.appendInline(node: Node, linkify: Boolean) {
             when (node) {
-                is TextNode -> append(Emoji.replace(node.literal))
+                is TextNode -> appendPlain(node.literal, linkify)
                 is TaskListItemMarker -> Unit
                 is SoftLineBreak -> append(' ')
                 is HardLineBreak -> append('\n')
                 is Code -> withStyle(SpanStyle(background = ZapSurface2, fontFeatureSettings = "tnum")) { append(node.literal) }
-                is Emphasis -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { appendChildren(node) }
-                is StrongEmphasis -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { appendChildren(node) }
-                is Strikethrough -> withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough)) { appendChildren(node) }
-                is Link -> link(node.destination) { appendChildren(node) }
+                is Emphasis -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { appendChildren(node, linkify) }
+                is StrongEmphasis -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { appendChildren(node, linkify) }
+                is Strikethrough -> withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough)) { appendChildren(node, linkify) }
+                is Link -> link(node.destination) { appendChildren(node, linkify = false) }
                 is Image -> link(node.destination) { append(plainText(node).ifBlank { node.destination }) }
                 is HtmlInline -> if (htmlBreak.matches(node.literal)) append('\n')
-                else -> appendChildren(node)
+                else -> appendChildren(node, linkify)
             }
+        }
+
+        /** Text, with NIP-19 tokens and hashtags turned into links when [linkify] is set. */
+        fun AnnotatedString.Builder.appendPlain(literal: String, linkify: Boolean) {
+            if (!linkify) {
+                append(Emoji.replace(literal))
+                return
+            }
+            var cursor = 0
+            inlineEntity.findAll(literal).forEach { match ->
+                val token = match.groups[1]?.value
+                val tag = match.groups[2]?.value
+                val href = token?.let(DeepLink::nip19Href) ?: tag?.let(DeepLink::hashtagHref)
+                if (href == null) return@forEach
+                append(Emoji.replace(literal.substring(cursor, match.range.first)))
+                link(href) { append(match.value) }
+                cursor = match.range.last + 1
+            }
+            if (cursor < literal.length) append(Emoji.replace(literal.substring(cursor)))
         }
 
         fun AnnotatedString.Builder.link(url: String, content: AnnotatedString.Builder.() -> Unit) {

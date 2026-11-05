@@ -15,8 +15,7 @@ android {
     compileSdk = providers.gradleProperty("iolite.compileSdk").orElse("37").get().toInt()
 
     defaultConfig {
-        // Beta id so it installs beside production Zapstore. Revert at launch (product/issues/launch-checklist.md).
-        applicationId = "dev.zapstore.beta"
+        applicationId = "dev.zapstore.app"
         minSdk = 29
         targetSdk = 37
         // Above every Flutter 1.1.3 split (armeabi-v7a 2010, arm64-v8a 3010, x86_64 5010).
@@ -57,6 +56,22 @@ android {
         .ifEmpty { "wss://relay.zapstore.dev" }
     val catalogRelayField = "\"" + catalogRelay.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
+    // The default catalog must be signed by this key. A local relay signs with its own: pass
+    // -PCATALOG_PUBKEY=<hex>, or an empty value in a debug build to trust the first bundle's signer.
+    val productionCatalogRelay = "wss://relay.zapstore.dev"
+    val productionCatalogPubkey = "44dc0ab0606436c14454d7ecf3581b7b4f1b48857fd9851896a07dcf2b72b2bb"
+    val catalogPubkey = providers.gradleProperty("CATALOG_PUBKEY")
+        .orElse(if (catalogRelay.trimEnd('/') == productionCatalogRelay) productionCatalogPubkey else "")
+        .get().trim().lowercase()
+    check(catalogPubkey.isEmpty() || Regex("[0-9a-f]{64}").matches(catalogPubkey)) {
+        "CATALOG_PUBKEY must be 64 hex characters"
+    }
+    val buildsRelease = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
+    check(!buildsRelease || catalogPubkey.isNotEmpty()) {
+        "a release build needs CATALOG_PUBKEY for $catalogRelay"
+    }
+    val catalogPubkeyField = "\"$catalogPubkey\""
+
     // ~/.android is not readable in this environment. AGP only stats that
     // directory when the debug config still uses alias AndroidDebugKey.
     signingConfigs {
@@ -72,6 +87,7 @@ android {
         // Catalog sync uses CATALOG_RELAY.
         debug {
             buildConfigField("String", "CATALOG_RELAY", catalogRelayField)
+            buildConfigField("String", "CATALOG_PUBKEY", catalogPubkeyField)
         }
         release {
             isMinifyEnabled = true
@@ -81,6 +97,7 @@ android {
                 "proguard-rules.pro",
             )
             buildConfigField("String", "CATALOG_RELAY", catalogRelayField)
+            buildConfigField("String", "CATALOG_PUBKEY", catalogPubkeyField)
         }
     }
 

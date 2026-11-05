@@ -132,7 +132,7 @@ class CatalogListTest {
     }
 
     @Test
-    fun theFirstCatalogSuppliesAnAppAndOrderCanChange() = runBlocking {
+    fun theFirstAddedCatalogSuppliesAnApp() = runBlocking {
         withIolite(FakeRelays()) { iolite ->
             val first = iolite.store.addCatalog(PUB_A, listOf("wss://a.example".normalizeRelayUrl()))
             val second = iolite.store.addCatalog(PUB_B, listOf("wss://b.example".normalizeRelayUrl()))
@@ -143,11 +143,6 @@ class CatalogListTest {
             assertEquals(listOf(PUB_A, PUB_B), iolite.catalogs().map { it.manifestPubkey })
             assertEquals("From A", iolite.app("shared")!!.name)
             assertEquals(setOf("shared", "only.b"), iolite.apps().map { it.appId }.toSet())
-
-            assertTrue(iolite.moveCatalog(second.id, -1))
-            assertEquals(listOf(PUB_B, PUB_A), iolite.catalogs().map { it.manifestPubkey })
-            assertEquals("From B", iolite.app("shared")!!.name)
-            assertFalse(iolite.moveCatalog(second.id, -1))
 
             assertTrue(iolite.removeCatalog(second.id))
             assertEquals("From A", iolite.app("shared")!!.name)
@@ -188,10 +183,9 @@ class CatalogListTest {
         val relays = FakeRelays()
         relays.put(hint, addresses(SECRET_A, "wss://one.example"), addresses(SECRET_B, "wss://two.example"))
         val published = withIolite(relays) { iolite ->
-            iolite.store.addCatalog(PUB_B, listOf("wss://two.example".normalizeRelayUrl()), listOf(hint))
             iolite.store.addCatalog(PUB_A, listOf("wss://one.example".normalizeRelayUrl()), listOf(hint))
-            iolite.moveCatalog(iolite.catalogs().last().id, -1)
-            iolite.pendingPublishes().filter { it.kind == Kinds.CatalogRelayList }.maxByOrNull { it.createdAt }!!
+            iolite.store.addCatalog(PUB_B, listOf("wss://two.example".normalizeRelayUrl()), listOf(hint))
+            iolite.publishCatalogList()!!
         }
         assertEquals(listOf(PUB_A, PUB_B), published.tagValues("p"))
 

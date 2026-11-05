@@ -1,6 +1,7 @@
 package dev.zapstore.app.screens
 
 import dev.zapstore.app.Toasts
+import dev.zapstore.app.components.VersionStatus
 import dev.zapstore.iolite.Social
 import dev.zapstore.iolite.Kinds
 import dev.zapstore.iolite.Bolt11
@@ -62,6 +63,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -124,13 +126,16 @@ data class TrustUi(
     val zappers: List<TrustPerson> = emptyList(),
     val youFollow: Boolean = false,
     val youZapped: Boolean = false,
-    /** The publisher has a C1 identity and the user is signed in, so their own check can be asked for. */
+    /** The publisher has a C1 identity, so the user's own check can be asked for. Signed out, asking opens sign-in first. */
     val canPersonalize: Boolean = false,
     val checking: Boolean = false,
     val failed: Boolean = false,
     val profiles: Map<String, ProfileRecord> = emptyMap(),
 ) {
     val hasSignals: Boolean get() = leaked || followers.isNotEmpty() || zappers.isNotEmpty() || youFollow || youZapped
+
+    /** Something to show: signals, a check to offer, or a finished check that found nobody. */
+    val hasContent: Boolean get() = hasSignals || canPersonalize || personal
 }
 
 data class InstallUi(
@@ -152,6 +157,19 @@ data class InstallUi(
     val signedDifferently: Boolean = false,
 ) {
     val busy: Boolean get() = phase in BUSY_PHASES
+
+    /**
+     * What the version pill marks: an update to install, the app up to date, or the app not yet installed.
+     * Null while the device state is unknown, and when the installed copy is signed differently, since
+     * neither "up to date" nor an update is true of it.
+     */
+    val versionStatus: VersionStatus?
+        get() = when {
+            updating -> VersionStatus.Update
+            installed && !signedDifferently -> VersionStatus.Current
+            offer -> VersionStatus.Install
+            else -> null
+        }
 }
 
 private val BUSY_PHASES = setOf(InstallPhase.Queued, InstallPhase.Downloading, InstallPhase.Verifying, InstallPhase.Installing, InstallPhase.Confirm)
@@ -258,20 +276,24 @@ class AppDetailViewModel(
             ) { catalog, account, personal, check ->
                 TrustInputs(catalog, account?.pubkey, personal?.takeIf { it.first == author }?.second, check)
             }
-            val listed = inputs.map { it.personal?.ranked.orEmpty().toSet() }
+            // Kind 0 for whoever is listed, the catalog's followers or the user's own: the same query
+            // the activity feed uses, so a name and avatar arrive for them like for any other profile.
+            val listed = inputs.map { input ->
+                val people = input.personal?.ranked ?: input.catalog?.followers.orEmpty().map { it.pubkey }
+                people.toSet()
+            }
                 .distinctUntilChanged()
-                .flatMapLatest { keys ->
-                    if (keys.isEmpty()) flowOf(emptyMap()) else iolite.query(Query.profiles(keys), AppConfig.commentProfileQuery).map { it.items }
-                }
+                .flatMapLatest(iolite::observeProfiles)
             combine(inputs, listed, zaps, commentProfiles) { input, listed, zaps, zapProfiles ->
                 val mine = input.personal
                 if (mine == null) {
                     TrustUi(
                         followers = input.catalog?.followers.orEmpty().map { TrustPerson(it.pubkey, it.name) },
                         leaked = input.catalog?.leaked == true,
-                        canPersonalize = input.me != null,
+                        canPersonalize = true,
                         checking = input.check == Check.Running,
                         failed = input.check == Check.Failed,
+                        profiles = listed,
                     )
                 } else {
                     val senders = zaps?.items.orEmpty().map(ZapRecord::pubkey).distinct()
@@ -298,7 +320,7 @@ class AppDetailViewModel(
         checkJob = viewModelScope.launch {
             try {
                 val (ranked, follows) = coroutineScope {
-                    val ranked = async { iolite.reputation(AppConfig.vertexRelays, signer.publicKey, author, signer, limit = TRUST_FOLLOWERS + 2, timeout = TRUST_TIMEOUT) }
+                    val ranked = async { iolite.reputation(AppConfig.vertexRelays, signer.publicKey, author, signer, limit = TRUST_FOLLOWERS + 2, timeout = TRUST_TIMEOUT, responder = AppConfig.VERTEX_PUBKEY) }
                     val follows = async { runCatching { iolite.follows(signer.publicKey, AppConfig.indexerRelays, TRUST_TIMEOUT) }.getOrDefault(emptySet()) }
                     ranked.await() to follows.await()
                 }
@@ -326,18 +348,19 @@ class AppDetailViewModel(
         .flatMapLatest { pubkey ->
             if (pubkey == null) flowOf(null) else iolite.query(Query.profile(pubkey), AppConfig.profileQuery).map { it.items }
         }
+        .onStart { emit(null) }
 
     private val reach: Flow<SocialReach?> = app.map { it?.let(SocialReach::of) }.distinctUntilChanged()
 
     private val zaps: Flow<QueryState<List<ZapRecord>>?> = reach.flatMapLatest { reach ->
         if (reach == null) flowOf(null)
         else iolite.query(Query.zaps(reach.anchors, reach.recipients, reach.lists, limit = ZAP_LIMIT), AppConfig.zapQuery)
-    }
+    }.onStart { emit(null) }
 
     private val comments: Flow<QueryState<List<CommentRecord>>?> = reach.flatMapLatest { reach ->
         if (reach == null) flowOf(null)
         else iolite.query(Query.comments(reach.anchors, reach.lists, limit = COMMENT_LIMIT), AppConfig.commentQuery)
-    }
+    }.onStart { emit(null) }
 
     /** Names and pictures for everyone in the feed: comment authors and zap senders. */
     private val commentProfiles: Flow<Map<String, ProfileRecord>> = combine(comments, zaps) { comments, zaps ->
@@ -351,6 +374,7 @@ class AppDetailViewModel(
                 iolite.query(Query.profiles(pubkeys), AppConfig.commentProfileQuery).map { it.items }
             }
         }
+        .onStart { emit(emptyMap()) }
 
     private val installUi: Flow<InstallUi> = combine(
         installer.tasks.map { it[appId] }.distinctUntilChanged(),
@@ -369,6 +393,7 @@ class AppDetailViewModel(
         .flatMapLatest { pubkeys ->
             if (pubkeys.isEmpty()) flowOf(emptyMap()) else iolite.query(Query.profiles(pubkeys), AppConfig.commentProfileQuery).map { it.items }
         }
+        .onStart { emit(emptyMap()) }
 
     private val catalog = combine(app, author, combine(zaps, zapProfiles, ::Pair), comments, commentProfiles) { app, author, (zaps, zapProfiles), comments, commentProfiles ->
         val split = splitComments(comments?.items.orEmpty(), app?.let { SocialReach.of(it).anchors }.orEmpty())
@@ -379,7 +404,7 @@ class AppDetailViewModel(
             zaps = ZapSummary(
                 count = zaps?.items?.size ?: 0,
                 totalSats = zaps?.items?.sumOf(ZapRecord::amountSats) ?: 0,
-                loading = zaps?.let { !it.settled } ?: false,
+                loading = zaps?.settled != true,
                 error = zaps?.relayError(),
                 zappers = topZappers(zaps?.items.orEmpty()),
                 recipient = app?.zapRecipient?.let { ZapRecipient(it, catalog = app.proofPubkey == null) },
@@ -391,7 +416,7 @@ class AppDetailViewModel(
                 zaps = zaps?.items.orEmpty(),
                 profiles = commentProfiles,
                 // The feed is settled once both of its reads are, as on the web page.
-                loading = comments?.let { !it.settled } == true || zaps?.let { !it.settled } == true,
+                loading = comments?.settled != true || zaps?.settled != true,
                 error = comments.toCommentsError(),
             ),
         )
@@ -409,6 +434,7 @@ class AppDetailViewModel(
             if (curators.isEmpty()) flowOf(StackedByUi())
             else iolite.query(Query.profiles(curators), AppConfig.commentProfileQuery).map { StackedByUi(stacks, it.items) }
         }
+        .onStart { emit(StackedByUi()) }
 
     private val lnurl = Lnurl(calls)
     private val social = MutableStateFlow(SocialUi())
@@ -593,7 +619,7 @@ class AppDetailViewModel(
                     note.trim(),
                 )
                 val invoice = lnurl.invoice(pay, msat, request)
-                if (Bolt11.amountSats(invoice) != sats) throw ZapException(ZapFailure.Invoice)
+                if (Bolt11.amountMsat(invoice) != msat) throw ZapException(ZapFailure.Invoice)
                 val connection = appContext.wallet.connection.value
                 if (connection != null) iolite.walletRequest(connection, "pay_invoice", JSONObject().put("invoice", invoice))
                 (connection != null) to invoice

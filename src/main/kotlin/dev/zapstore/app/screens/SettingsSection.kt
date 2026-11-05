@@ -3,6 +3,7 @@ package dev.zapstore.app.screens
 import dev.zapstore.app.SyncInterval
 import android.text.format.Formatter
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -24,8 +25,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import dev.zapstore.app.R
 import dev.zapstore.app.UpdateInterval
+import dev.zapstore.app.ZapDanger
 import dev.zapstore.app.ZapLine
 import dev.zapstore.app.ZapSpacing
 import dev.zapstore.app.ZapText2
@@ -44,16 +47,13 @@ import dev.zapstore.app.transport.NetworkMode
 import dev.zapstore.app.transport.TorRuntimeState
 import dev.zapstore.iolite.toNpub
 import java.text.DateFormat
-import java.text.NumberFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.delay
 
-private enum class SettingsPage { Main, Keys, Catalog }
-
 /**
- * The device's settings, on their own screen. One row per subject. Account and keys, and the catalog, each
- * open the rest of their rows. The caller scrolls.
+ * The device's settings, on their own screen. Account and keys open their own rows. The catalog's list,
+ * sync and storage sit here, in the order catalogs were added. The caller scrolls.
  */
 @Composable
 fun SettingsSection(
@@ -84,14 +84,12 @@ fun SettingsSection(
     onOpenAddCatalog: () -> Unit = {},
     onCloseAddCatalog: () -> Unit = {},
     onAddCatalog: (String) -> Unit = {},
-    onMoveCatalog: (Long, Int) -> Unit = { _, _ -> },
     onAskRemoveCatalog: (CatalogUi) -> Unit = {},
     onCancelRemoveCatalog: () -> Unit = {},
     onConfirmRemoveCatalog: () -> Unit = {},
 ) {
-    val context = LocalContext.current
-    var page by rememberSaveable { mutableStateOf(SettingsPage.Main) }
-    BackHandler(enabled = page != SettingsPage.Main) { page = SettingsPage.Main }
+    var keys by rememberSaveable { mutableStateOf(false) }
+    BackHandler(enabled = keys) { keys = false }
     val canRemove = state.catalogs.size > 1
     Column(
         modifier = modifier
@@ -100,8 +98,7 @@ fun SettingsSection(
             .testTag("settings"),
         verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
     ) {
-        when (page) {
-            SettingsPage.Main -> {
+        if (!keys) {
                 Text(text = stringResource(R.string.settings), style = MaterialTheme.typography.headlineSmall)
                 GroupHeader(stringResource(R.string.updates), Modifier.padding(top = ZapSpacing.space4))
                 ZapSegmented(
@@ -161,16 +158,12 @@ fun SettingsSection(
                 SettingsGroup(Modifier.padding(top = ZapSpacing.space4)) {
                     SettingsRow(
                         title = stringResource(R.string.account_and_keys),
-                        onClick = { page = SettingsPage.Keys },
+                        onClick = { keys = true },
                         modifier = Modifier.testTag("openKeys"),
                     )
-                    HorizontalDivider(color = ZapLine)
-                    SettingsRow(
-                        title = catalogSubtitle(state),
-                        onClick = { page = SettingsPage.Catalog },
-                        modifier = Modifier.testTag("openCatalog"),
-                    )
                 }
+
+                CatalogSettings(state, canRemove, onSyncIntervalChange, onOpenAddCatalog, onAskRemoveCatalog, onSync, onWipe)
 
                 GroupHeader(stringResource(R.string.about), Modifier.padding(top = ZapSpacing.space6))
                 SettingsGroup(Modifier.testTag("about")) {
@@ -203,8 +196,7 @@ fun SettingsSection(
                         modifier = Modifier.testTag("bugReports"),
                     )
                 }
-            }
-            SettingsPage.Keys -> {
+        } else {
                 Text(text = stringResource(R.string.account_and_keys), style = MaterialTheme.typography.headlineSmall)
                 state.account?.let { account ->
                     GroupHeader(stringResource(R.string.account), Modifier.padding(top = ZapSpacing.space4))
@@ -267,83 +259,6 @@ fun SettingsSection(
                     state.key.message != null -> StatusText(state.key.message, Modifier.testTag("keyStatus"))
                     state.account == null -> StatusText(stringResource(R.string.key_sign_in_to_back_up))
                 }
-            }
-            SettingsPage.Catalog -> {
-                Text(text = stringResource(R.string.catalog), style = MaterialTheme.typography.headlineSmall)
-                StatusText(catalogSubtitle(state), Modifier.testTag("catalogSummary"))
-                Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space1), modifier = Modifier.padding(top = ZapSpacing.space2)) {
-                    state.status.lastSyncedAtMillis?.let { syncedAt ->
-                        StatusText(lastSyncRelativeText(syncedAt), Modifier.testTag("lastSyncAgo"))
-                    }
-                    if (state.status.lastSyncNotModified) {
-                        StatusText(stringResource(R.string.last_sync_not_modified), Modifier.testTag("lastSyncNotModified"))
-                    } else {
-                        state.status.lastSyncBytes?.let { bytes ->
-                            StatusText(
-                                stringResource(R.string.last_sync_size, Formatter.formatFileSize(context, bytes)),
-                                Modifier.testTag("lastSyncSize"),
-                            )
-                        }
-                    }
-                    state.status.lastSyncDurationMillis?.let { durationMs ->
-                        StatusText(
-                            stringResource(R.string.last_sync_duration, String.format(Locale.getDefault(), "%.2f", durationMs / 1000.0)),
-                            Modifier.testTag("lastSyncDuration"),
-                        )
-                    }
-                    EvidenceText(
-                        stringResource(R.string.local_storage, Formatter.formatFileSize(context, state.localStorageBytes)),
-                        color = ZapText2,
-                        modifier = Modifier.testTag("localStorage"),
-                    )
-                    state.status.error?.let { StatusText(it, Modifier.testTag("catalogError")) }
-                }
-                Text(stringResource(R.string.auto_sync), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = ZapSpacing.space2))
-                ZapSegmented(
-                    options = SyncInterval.entries,
-                    selected = state.deviceState.syncInterval,
-                    onSelect = onSyncIntervalChange,
-                    label = { stringResource(it.labelRes()) },
-                    tag = { "syncInterval:${it.name}" },
-                )
-                StatusText(stringResource(R.string.auto_sync_hint))
-                SettingsGroup(Modifier.testTag("catalogs").padding(top = ZapSpacing.space2)) {
-                    if (state.catalogs.isEmpty()) {
-                        SettingsRow(
-                            title = stringResource(R.string.catalog_none),
-                            subtitle = stringResource(R.string.catalog_none_hint),
-                            trailing = null,
-                            modifier = Modifier.testTag("catalogsEmpty"),
-                        )
-                        HorizontalDivider(color = ZapLine)
-                    }
-                    state.catalogs.forEach { catalog ->
-                        CatalogRow(catalog, onMoveCatalog, onAskRemoveCatalog, canRemove)
-                        HorizontalDivider(color = ZapLine)
-                    }
-                    SettingsRow(
-                        title = stringResource(R.string.catalog_add),
-                        onClick = onOpenAddCatalog,
-                        modifier = Modifier.testTag("addCatalog"),
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2), modifier = Modifier.padding(top = ZapSpacing.space2)) {
-                    ZapButton(
-                        text = stringResource(R.string.sync_now),
-                        onClick = onSync,
-                        style = ZapButtonStyle.Tonal,
-                        loading = state.status.syncing,
-                        modifier = Modifier.testTag("syncCatalog"),
-                    )
-                    ZapButton(
-                        text = stringResource(R.string.clear_local_storage),
-                        onClick = onWipe,
-                        style = ZapButtonStyle.Danger,
-                        enabled = !state.status.syncing,
-                        modifier = Modifier.testTag("clearLocalStorage"),
-                    )
-                }
-            }
         }
     }
     if (state.key.pasting) PasteKeySheet(state.key.pasteError, onSubmitPaste, onClosePaste)
@@ -385,77 +300,127 @@ fun SettingsSection(
     }
 }
 
+/** Sync, the catalogs in the order they were added, and local storage. */
 @Composable
-private fun catalogTitle(state: SettingsUiState): String {
-    val named = state.catalogs.firstOrNull { it.isDefault } ?: state.catalogs.firstOrNull()
-    return when {
-        named == null -> stringResource(R.string.catalog)
-        named.isDefault -> stringResource(R.string.catalog_default)
-        else -> named.npub.let { if (it.length > 18) "${it.take(12)}…${it.takeLast(4)}" else it }
-    }
-}
-
-@Composable
-private fun catalogSubtitle(state: SettingsUiState): String {
-    val whenSynced = state.status.lastSyncedAtMillis?.let { syncedAgo(it) } ?: stringResource(R.string.not_synced_yet)
-    val count = NumberFormat.getIntegerInstance().format(state.appCount)
-    return stringResource(R.string.catalog_line, catalogTitle(state), count, whenSynced)
-}
-
-/** One catalog on the list: who it is, where it lives, how far it has synced, and what can be done with it. */
-@Composable
-private fun CatalogRow(catalog: CatalogUi, onMove: (Long, Int) -> Unit, onRemove: (CatalogUi) -> Unit, canRemove: Boolean) {
-    Column(Modifier.testTag("catalog:${catalog.id}")) {
-        SettingsRow(
-            title = if (catalog.isDefault) stringResource(R.string.catalog_default) else catalog.npub.let { "${it.take(12)}…${it.takeLast(6)}" },
-            subtitle = buildString {
-                append(catalog.relays.joinToString("\n").ifEmpty { stringResource(R.string.catalog_finding) })
-                append("\n")
-                append(stringResource(R.string.catalog_epoch, catalog.epoch))
-            },
-            trailing = null,
-        )
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
-            modifier = Modifier.padding(start = ZapSpacing.space4, end = ZapSpacing.space4, bottom = ZapSpacing.space3),
-        ) {
-            ZapButton(
-                text = stringResource(R.string.catalog_move_up),
-                onClick = { onMove(catalog.id, -1) },
-                style = ZapButtonStyle.Tonal,
-                enabled = catalog.canMoveUp,
-                modifier = Modifier.testTag("catalogUp:${catalog.id}"),
-            )
-            ZapButton(
-                text = stringResource(R.string.catalog_move_down),
-                onClick = { onMove(catalog.id, 1) },
-                style = ZapButtonStyle.Tonal,
-                enabled = catalog.canMoveDown,
-                modifier = Modifier.testTag("catalogDown:${catalog.id}"),
-            )
-            if (canRemove) {
-                ZapButton(
-                    text = stringResource(R.string.catalog_remove),
-                    onClick = { onRemove(catalog) },
-                    style = ZapButtonStyle.Danger,
-                    modifier = Modifier.testTag("catalogRemove:${catalog.id}"),
+private fun CatalogSettings(
+    state: SettingsUiState,
+    canRemove: Boolean,
+    onSyncIntervalChange: (SyncInterval) -> Unit,
+    onOpenAddCatalog: () -> Unit,
+    onAskRemoveCatalog: (CatalogUi) -> Unit,
+    onSync: () -> Unit,
+    onWipe: () -> Unit,
+) {
+    val context = LocalContext.current
+    Column(
+        verticalArrangement = Arrangement.spacedBy(ZapSpacing.space4),
+        modifier = Modifier.padding(top = ZapSpacing.space3),
+    ) {
+    GroupHeader(stringResource(R.string.catalog))
+    Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2)) {
+        state.status.lastSyncedAtMillis?.let { syncedAt ->
+            StatusText(lastSyncRelativeText(syncedAt), Modifier.testTag("lastSyncAgo"))
+        }
+        if (state.status.lastSyncNotModified) {
+            StatusText(stringResource(R.string.last_sync_not_modified), Modifier.testTag("lastSyncNotModified"))
+        } else {
+            state.status.lastSyncBytes?.let { bytes ->
+                StatusText(
+                    stringResource(R.string.last_sync_size, Formatter.formatFileSize(context, bytes)),
+                    Modifier.testTag("lastSyncSize"),
                 )
             }
         }
+        state.status.lastSyncDurationMillis?.let { durationMs ->
+            StatusText(
+                stringResource(R.string.last_sync_duration, String.format(Locale.getDefault(), "%.2f", durationMs / 1000.0)),
+                Modifier.testTag("lastSyncDuration"),
+            )
+        }
+        EvidenceText(
+            stringResource(R.string.local_storage, Formatter.formatFileSize(context, state.localStorageBytes)),
+            color = ZapText2,
+            modifier = Modifier.testTag("localStorage"),
+        )
+        state.status.error?.let { StatusText(it, Modifier.testTag("catalogError")) }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2)) {
+        Text(stringResource(R.string.auto_sync), style = MaterialTheme.typography.titleSmall)
+        ZapSegmented(
+            options = SyncInterval.entries,
+            selected = state.deviceState.syncInterval,
+            onSelect = onSyncIntervalChange,
+            label = { stringResource(it.labelRes()) },
+            tag = { "syncInterval:${it.name}" },
+        )
+        StatusText(stringResource(R.string.auto_sync_hint))
+    }
+    SettingsGroup(Modifier.testTag("catalogs")) {
+        if (state.catalogs.isEmpty()) {
+            SettingsRow(
+                title = stringResource(R.string.catalog_none),
+                subtitle = stringResource(R.string.catalog_none_hint),
+                trailing = null,
+                modifier = Modifier.testTag("catalogsEmpty"),
+            )
+            HorizontalDivider(color = ZapLine)
+        }
+        state.catalogs.forEach { catalog ->
+            CatalogRow(catalog, onAskRemoveCatalog, canRemove)
+            HorizontalDivider(color = ZapLine)
+        }
+        SettingsRow(
+            title = stringResource(R.string.catalog_add),
+            onClick = onOpenAddCatalog,
+            modifier = Modifier.testTag("addCatalog"),
+        )
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2)) {
+        ZapButton(
+            text = stringResource(R.string.sync_now),
+            onClick = onSync,
+            style = ZapButtonStyle.Tonal,
+            loading = state.status.syncing,
+            modifier = Modifier.testTag("syncCatalog"),
+        )
+        ZapButton(
+            text = stringResource(R.string.clear_local_storage),
+            onClick = onWipe,
+            style = ZapButtonStyle.Danger,
+            enabled = !state.status.syncing,
+            modifier = Modifier.testTag("clearLocalStorage"),
+        )
+    }
     }
 }
 
+/** One catalog: the kind 0 name, then the key that signed its kind 10067, then that list's relays. */
 @Composable
-private fun syncedAgo(syncedAtMillis: Long): String {
-    val elapsed = (System.currentTimeMillis() - syncedAtMillis).coerceAtLeast(0)
-    val minutes = (elapsed / 60_000L).toInt()
-    val hours = (elapsed / 3_600_000L).toInt()
-    return when {
-        minutes < 1 -> stringResource(R.string.synced_just_now)
-        minutes < 60 -> pluralStringResource(R.plurals.synced_minutes_ago, minutes, minutes)
-        hours < 48 -> pluralStringResource(R.plurals.synced_hours_ago, hours, hours)
-        else -> stringResource(R.string.not_synced_yet)
-    }
+private fun CatalogRow(catalog: CatalogUi, onRemove: (CatalogUi) -> Unit, canRemove: Boolean) {
+    val relays = catalog.relays.joinToString().ifEmpty { stringResource(R.string.catalog_finding) }
+    val named = catalog.name
+    SettingsRow(
+        title = named ?: catalog.npub.ifBlank { relays },
+        subtitle = when {
+            named != null -> listOf(catalog.npub, relays).filter { it.isNotBlank() }.joinToString("\n")
+            catalog.npub.isNotBlank() -> relays
+            else -> null
+        },
+        trailing = if (!canRemove) null else {
+            {
+                Text(
+                    stringResource(R.string.catalog_remove),
+                    color = ZapDanger,
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier
+                        .clickable(role = Role.Button) { onRemove(catalog) }
+                        .padding(vertical = ZapSpacing.space2)
+                        .testTag("catalogRemove:${catalog.id}"),
+                )
+            }
+        },
+        modifier = Modifier.testTag("catalog:${catalog.id}"),
+    )
 }
 
 @Composable
@@ -504,6 +469,7 @@ private fun SyncInterval.labelRes(): Int = when (this) {
 
 private fun UpdateInterval.labelRes(): Int = when (this) {
     UpdateInterval.Never -> R.string.interval_never
+    UpdateInterval.Hourly -> R.string.interval_1h
     UpdateInterval.Every6Hours -> R.string.interval_6h
     UpdateInterval.Every12Hours -> R.string.interval_12h
     UpdateInterval.Daily -> R.string.interval_daily

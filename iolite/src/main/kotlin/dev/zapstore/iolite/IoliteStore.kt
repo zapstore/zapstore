@@ -58,7 +58,8 @@ class Tx internal constructor(val db: SQLiteConnection) {
 
 /**
  * The SQLite file. Every write is one transaction; every commit notifies listeners of the touched tables.
- * Reads return typed records. No event JSON is rehydrated for reads.
+ * Reads return typed records. No event JSON is rehydrated for reads. Reads use their own WAL connection,
+ * so a long catalog import never holds up a screen.
  */
 class IoliteStore internal constructor(
     path: String,
@@ -70,6 +71,8 @@ class IoliteStore internal constructor(
 
     private val lock = ReentrantLock()
     private val connection: SQLiteConnection = open(path, openConnection)
+    private val readLock = ReentrantLock()
+    private val reader: SQLiteConnection = openReader(path, openConnection)
     private val listeners = CopyOnWriteArrayList<Listener>()
 
     // --- change notification -----------------------------------------------------------------------
@@ -82,7 +85,16 @@ class IoliteStore internal constructor(
         awaitClose { listeners -= listener }
     }.buffer(Channel.CONFLATED)
 
-    fun <T> read(block: (SQLiteConnection) -> T): T = lock.withLock { block(connection) }
+    /** One snapshot: a block sees the last commit before it began, whatever is written meanwhile. */
+    fun <T> read(block: (SQLiteConnection) -> T): T = readLock.withLock {
+        if (readLock.holdCount > 1) return@withLock block(reader)
+        reader.execSQL("BEGIN")
+        try {
+            block(reader)
+        } finally {
+            runCatching { reader.execSQL("COMMIT") }
+        }
+    }
 
     fun write(block: (Tx) -> Unit) {
         val touched = lock.withLock {
@@ -104,6 +116,7 @@ class IoliteStore internal constructor(
     }
 
     override fun close() {
+        readLock.withLock { reader.close() }
         lock.withLock {
             checkpointWalLocked()
             connection.close()
@@ -149,42 +162,124 @@ class IoliteStore internal constructor(
         skipped: MutableList<String> = ArrayList(),
     ): Set<String> {
         val stackPubkey = catalog.manifestPubkey ?: throw CatalogImportException("catalog manifest pubkey is missing")
-        val removed = LinkedHashSet<String>()
-        write { tx ->
-            /** One bad item is rolled back to its savepoint and skipped; the items around it stay. */
-            fun guard(what: String, block: () -> Unit): Boolean {
-                tx.db.execSQL("SAVEPOINT catalog_item")
-                return try {
-                    block()
-                    tx.db.execSQL("RELEASE catalog_item")
-                    true
-                } catch (failure: Exception) {
-                    tx.db.execSQL("ROLLBACK TO catalog_item")
-                    tx.db.execSQL("RELEASE catalog_item")
-                    skipped += "$what: ${failure.message ?: failure.javaClass.simpleName}"
-                    false
-                }
-            }
+        return importCatalog(catalog.id, stackPubkey, toEpoch, device, now, skipped) { writer ->
             for (event in events) {
                 if (event.kind != Kinds.AppStack) continue
                 if (event.pubkey != stackPubkey || event.dTag().isNullOrBlank()) {
                     skipped += "stack ${event.id} is not a catalog stack"
                 }
             }
-            for (delete in deletes) {
-                if (delete is CatalogDelete.Coordinate && delete.kind == Kinds.AppStack && delete.pubkey != stackPubkey) {
-                    skipped += "stack delete is not for the catalog key"
-                    continue
-                }
-                if (guard("delete $delete") { ListingRows.delete(tx, catalog, delete) } && delete is CatalogDelete.Listing) {
-                    removed += delete.appId
-                }
-            }
+            deletes.forEach(writer::delete)
             val listings = events.filter { ListingRows.isListingKind(it.kind) }.groupBy(ListingRows::listingAppId)
             for ((appId, listing) in listings) {
-                if (appId == null) continue
-                guard("listing $appId") { ListingRows.persistListing(tx, catalog, appId, listing, device, now) }
+                if (appId != null) writer.listing(appId, listing)
             }
+            writer.events(events.filter { !ListingRows.isListingKind(it.kind) }, replaceAll)
+            writer.artifacts(artifacts)
+        }
+    }
+
+    /**
+     * Catalog path: one epoch in one transaction. [block] hands the bundle's parts to the [CatalogWriter]
+     * as they stream out, so the import never holds the whole catalog. The catalog row is created when
+     * missing and its manifest key pinned; the epoch moves to [toEpoch] at the end. Returns the app IDs
+     * whose listings were deleted.
+     */
+    internal fun importCatalog(
+        catalogId: Long,
+        manifestPubkey: String,
+        toEpoch: Long,
+        device: DeviceProfile,
+        now: Long,
+        skipped: MutableList<String>,
+        block: (CatalogWriter) -> Unit,
+    ): Set<String> {
+        val removed = LinkedHashSet<String>()
+        write { tx ->
+            tx.db.prepare(
+                """
+                INSERT INTO catalogs (id, position, is_private, epoch)
+                VALUES (?, (SELECT COALESCE(MAX(position), -1) + 1 FROM catalogs), 0, 0)
+                ON CONFLICT(id) DO NOTHING
+                """.trimIndent(),
+            ).use { statement ->
+                statement.bindLong(1, catalogId)
+                statement.step()
+            }
+            tx.db.prepare("UPDATE catalogs SET manifest_pubkey = ? WHERE id = ? AND manifest_pubkey IS NULL").use { statement ->
+                statement.bindBlob(1, Hex.decode(manifestPubkey))
+                statement.bindLong(2, catalogId)
+                statement.step()
+            }
+            val catalog = tx.db.prepare("$SELECT_CATALOG WHERE id = ?").use { statement ->
+                statement.bindLong(1, catalogId)
+                statement.rowOrNull { it.toCatalog() }
+            } ?: throw CatalogImportException("unknown catalog $catalogId")
+            val writer = CatalogWriter(tx, catalog, device, now, skipped)
+            block(writer)
+            removed += writer.removed
+            ListingRows.recomputeAppPubkeys(tx, catalog.id, now)
+            writer.storeTrust()
+            tx.db.prepare("UPDATE catalogs SET epoch = ? WHERE id = ?").use { statement ->
+                statement.bindLong(1, toEpoch)
+                statement.bindLong(2, catalog.id)
+                statement.step()
+            }
+            tx.touch(Table.Catalogs)
+        }
+        checkpointWal()
+        return removed
+    }
+
+    /**
+     * Writes one catalog import inside its transaction. One bad item is rolled back to its savepoint and
+     * skipped; the items around it stay. [events] runs once, after every [listing].
+     */
+    internal inner class CatalogWriter(
+        private val tx: Tx,
+        val catalog: CatalogRecord,
+        private val device: DeviceProfile,
+        private val now: Long,
+        private val skipped: MutableList<String>,
+    ) {
+        private val stackPubkey = checkNotNull(catalog.manifestPubkey)
+        private val listed = HashSet<String>()
+        /** Each app's `trust` line, held until [storeTrust]: the publisher is only known once the proofs are applied. */
+        private val trust = LinkedHashMap<String, String>()
+        val removed = LinkedHashSet<String>()
+
+        fun guard(what: String, block: () -> Unit): Boolean {
+            tx.db.execSQL("SAVEPOINT catalog_item")
+            return try {
+                block()
+                tx.db.execSQL("RELEASE catalog_item")
+                true
+            } catch (failure: Exception) {
+                tx.db.execSQL("ROLLBACK TO catalog_item")
+                tx.db.execSQL("RELEASE catalog_item")
+                skipped += "$what: ${failure.message ?: failure.javaClass.simpleName}"
+                false
+            }
+        }
+
+        /** Every listing event that arrived for [appId]. */
+        fun listing(appId: String, events: List<Event>) {
+            listed += appId
+            guard("listing $appId") { ListingRows.persistListing(tx, catalog, appId, events, device, now) }
+        }
+
+        fun delete(delete: CatalogDelete) {
+            if (delete is CatalogDelete.Coordinate && delete.kind == Kinds.AppStack && delete.pubkey != stackPubkey) {
+                skipped += "stack delete is not for the catalog key"
+                return
+            }
+            if (guard("delete $delete") { ListingRows.delete(tx, catalog, delete) } && delete is CatalogDelete.Listing) {
+                removed += delete.appId
+            }
+        }
+
+        /** Proofs, profiles, and stacks. With [replaceAll], stacks and listings this import did not carry are removed. */
+        fun events(events: List<Event>, replaceAll: Boolean) {
             events.filter { it.kind == Kinds.IdentityProof }.forEach { proof ->
                 guard("proof ${proof.id}") { ListingRows.persistProof(tx, catalog, proof) }
             }
@@ -199,24 +294,35 @@ class IoliteStore internal constructor(
                 val identifier = event.dTag()?.takeIf { it.isNotBlank() } ?: continue
                 if (guard("stack $identifier") { EventRows.persist(tx, event, context) }) keptStacks += identifier
             }
-            if (replaceAll) EventRows.retainCatalogStacks(tx, stackPubkey, keptStacks)
-            if (replaceAll) {
-                for (appId in ListingRows.staleAppIds(tx.db, catalog, listings.keys.filterNotNull().toSet())) {
-                    ListingRows.delete(tx, catalog, CatalogDelete.Listing(appId))
-                    removed += appId
-                }
+            if (!replaceAll) return
+            EventRows.retainCatalogStacks(tx, stackPubkey, keptStacks)
+            for (appId in ListingRows.staleAppIds(tx.db, catalog, listed)) {
+                ListingRows.delete(tx, catalog, CatalogDelete.Listing(appId))
+                removed += appId
             }
-            applyArtifacts(tx, catalog, artifacts, ::guard)
-            ListingRows.recomputeAppPubkeys(tx, catalog.id, now)
-            tx.db.prepare("UPDATE catalogs SET epoch = ? WHERE id = ?").use { statement ->
-                statement.bindLong(1, toEpoch)
-                statement.bindLong(2, catalog.id)
-                statement.step()
-            }
-            tx.touch(Table.Catalogs)
         }
-        checkpointWal()
-        return removed
+
+        fun artifacts(artifacts: CatalogArtifact) = applyArtifacts(tx, catalog, artifacts, trust, ::guard)
+
+        /**
+         * Followers belong to the C1 publisher, which `apps.pubkey` names only after [ListingRows.recomputeAppPubkeys].
+         * An app with no proof, or one the catalog key signed, has no publisher, so nothing is kept for it.
+         */
+        fun storeTrust() {
+            for ((appId, line) in trust) {
+                val publisher = tx.db.prepare("SELECT pubkey FROM apps WHERE catalog_id = ? AND app_id = ?").use { statement ->
+                    statement.bindLong(1, catalog.id)
+                    statement.bindText(2, appId)
+                    if (statement.step()) statement.blobHexOrNull(0) else null
+                } ?: continue
+                if (publisher == stackPubkey) continue
+                guard("trust for $appId") { EventRows.putTrust(tx.db, publisher, line) }
+                tx.touch(Table.Profiles)
+            }
+            trust.clear()
+        }
+
+        fun relays(relays: List<RelayUrl>) = writeCatalogRelays(tx, catalog.id, relays, replaceIdentity = true)
     }
 
     /** Local avatar WebP for [pubkey], whether or not the file has been written yet. */
@@ -234,22 +340,19 @@ class IoliteStore internal constructor(
         tx: Tx,
         catalog: CatalogRecord,
         artifacts: CatalogArtifact,
+        trust: MutableMap<String, String>,
         guard: (String, () -> Unit) -> Boolean,
     ) {
         if (artifacts.apps.isEmpty() && artifacts.avatars.isEmpty()) return
         val db = tx.db
         for (artifact in artifacts.apps) guard("files for ${artifact.appId}") appFiles@{
-            val (appRow, publisher) = db.prepare("SELECT id, pubkey FROM apps WHERE catalog_id = ? AND app_id = ?").use { statement ->
+            val appRow = db.prepare("SELECT id FROM apps WHERE catalog_id = ? AND app_id = ?").use { statement ->
                 statement.bindLong(1, catalog.id)
                 statement.bindText(2, artifact.appId)
-                if (statement.step()) statement.getBlob(0) to statement.blobHexOrNull(1) else null
+                if (statement.step()) statement.getBlob(0) else null
             } ?: return@appFiles
-            // Followers belong to the C1 publisher. Without a proof there is no publisher, so nothing is kept.
-            val trust = artifact.trust
-            if (trust != null && publisher != null && publisher != catalog.manifestPubkey) {
-                EventRows.putTrust(db, publisher, trust)
-                tx.touch(Table.Profiles)
-            }
+            // The publisher is not known yet on a full import: apps.pubkey is derived after the proofs land.
+            artifact.trust?.let { trust[artifact.appId] = it }
             artifact.about?.let { about ->
                 db.prepare("UPDATE apps SET about = ? WHERE catalog_id = ? AND app_id = ?").use { statement ->
                     statement.bindText(1, about)
@@ -312,8 +415,9 @@ class IoliteStore internal constructor(
 
     /** Re-derives `apps.pubkey` for every catalog; run at open and at each proof expiry. */
     fun recomputeProofs(now: Long) {
+        val catalogs = allCatalogs()
         write { tx ->
-            allCatalogs().forEach { ListingRows.recomputeAppPubkeys(tx, it.id, now) }
+            catalogs.forEach { ListingRows.recomputeAppPubkeys(tx, it.id, now) }
         }
     }
 
@@ -427,41 +531,43 @@ class IoliteStore internal constructor(
 
     /** Writes the catalog endpoint. [replaceIdentity] replaces the canonical relay URL. */
     fun upsertCatalogRelays(catalogId: Long, relays: List<RelayUrl>, replaceIdentity: Boolean) {
+        write { tx -> writeCatalogRelays(tx, catalogId, relays, replaceIdentity) }
+    }
+
+    private fun writeCatalogRelays(tx: Tx, catalogId: Long, relays: List<RelayUrl>, replaceIdentity: Boolean) {
         val canonical = relays.firstOrNull { !it.isOnion } ?: relays.first()
         val encoded = JSONArray().apply { relays.forEach { put(it.url) } }.toString()
-        write { tx ->
-            val exists = tx.db.prepare("SELECT 1 FROM catalogs WHERE id = ?").use { statement ->
+        val exists = tx.db.prepare("SELECT 1 FROM catalogs WHERE id = ?").use { statement ->
+            statement.bindLong(1, catalogId)
+            statement.step()
+        }
+        if (!exists) {
+            tx.db.prepare(
+                """
+                INSERT INTO catalogs (id, relay_url, position, is_private, epoch, endpoints)
+                VALUES (?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM catalogs), 0, 0, ?)
+                """.trimIndent(),
+            ).use { statement ->
                 statement.bindLong(1, catalogId)
+                statement.bindText(2, canonical.url)
+                statement.bindText(3, encoded)
                 statement.step()
             }
-            if (!exists) {
-                tx.db.prepare(
-                    """
-                    INSERT INTO catalogs (id, relay_url, position, is_private, epoch, endpoints)
-                    VALUES (?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM catalogs), 0, 0, ?)
-                    """.trimIndent(),
-                ).use { statement ->
-                    statement.bindLong(1, catalogId)
-                    statement.bindText(2, canonical.url)
-                    statement.bindText(3, encoded)
-                    statement.step()
-                }
-            } else if (replaceIdentity) {
-                tx.db.prepare("UPDATE catalogs SET relay_url = ?, endpoints = ? WHERE id = ?").use { statement ->
-                    statement.bindText(1, canonical.url)
-                    statement.bindText(2, encoded)
-                    statement.bindLong(3, catalogId)
-                    statement.step()
-                }
-            } else {
-                tx.db.prepare("UPDATE catalogs SET endpoints = ? WHERE id = ?").use { statement ->
-                    statement.bindText(1, encoded)
-                    statement.bindLong(2, catalogId)
-                    statement.step()
-                }
+        } else if (replaceIdentity) {
+            tx.db.prepare("UPDATE catalogs SET relay_url = ?, endpoints = ? WHERE id = ?").use { statement ->
+                statement.bindText(1, canonical.url)
+                statement.bindText(2, encoded)
+                statement.bindLong(3, catalogId)
+                statement.step()
             }
-            tx.touch(Table.Catalogs)
+        } else {
+            tx.db.prepare("UPDATE catalogs SET endpoints = ? WHERE id = ?").use { statement ->
+                statement.bindText(1, encoded)
+                statement.bindLong(2, catalogId)
+                statement.step()
+            }
         }
+        tx.touch(Table.Catalogs)
     }
 
     fun pinManifestPubkeyIfAbsent(catalogId: Long, pubkey: String) {
@@ -534,22 +640,6 @@ class IoliteStore internal constructor(
         return removed
     }
 
-    /** Moves a selected catalog [delta] places along the list; the first catalog wins a clash on one app. */
-    fun moveCatalog(id: Long, delta: Int): Boolean {
-        var moved = false
-        write { tx ->
-            val ids = CatalogRows.all(tx.db).filter { it.position != null }.map { it.id }.toMutableList()
-            val from = ids.indexOf(id)
-            if (from < 0) return@write
-            val to = (from + delta).coerceIn(0, ids.lastIndex)
-            if (to == from) return@write
-            ids.add(to, ids.removeAt(from))
-            CatalogRows.setOrder(tx, ids)
-            moved = true
-        }
-        return moved
-    }
-
     /** Writes the addresses read from the catalog's kind 10067. */
     fun setCatalogRelays(id: Long, relays: List<RelayUrl>) {
         require(relays.isNotEmpty()) { "a catalog needs an address" }
@@ -565,6 +655,14 @@ class IoliteStore internal constructor(
     // --- apps --------------------------------------------------------------------------------------
 
     /** Visible listings: for each app ID, the row from the first selected catalog. */
+    /** How many listings [apps] returns with no filter, without loading them. */
+    fun appCount(): Int = read { db ->
+        db.prepare("SELECT COUNT(*) FROM ($SELECT_VISIBLE_APP)").use { statement ->
+            statement.step()
+            statement.getLong(0).toInt()
+        }
+    }
+
     fun apps(filter: AppFilter = AppFilter()): List<AppRecord> = read { db ->
         val where = StringBuilder()
         val binds = mutableListOf<(SQLiteStatement, Int) -> Unit>()
@@ -1026,9 +1124,9 @@ class IoliteStore internal constructor(
 
     fun recordRefresh(fingerprint: String, epochMillis: Long) {
         if (epochMillis <= 0) return
-        // No listener cares about this table, so no notification is needed.
-        read { db ->
-            db.prepare("INSERT OR REPLACE INTO query_refresh (fingerprint, refreshed_at) VALUES (?, ?)").use { statement ->
+        // No listener cares about this table, so `touch` is not called and nobody is notified.
+        write { tx ->
+            tx.db.prepare("INSERT OR REPLACE INTO query_refresh (fingerprint, refreshed_at) VALUES (?, ?)").use { statement ->
                 statement.bindText(1, fingerprint)
                 statement.bindLong(2, epochMillis)
                 statement.step()
@@ -1160,6 +1258,7 @@ class IoliteStore internal constructor(
             val connection = openConnection(path)
             connection.execSQL("PRAGMA foreign_keys = ON")
             connection.execSQL("PRAGMA journal_mode = WAL")
+            connection.execSQL("PRAGMA busy_timeout = $BUSY_TIMEOUT_MS")
             val version = connection.prepare("PRAGMA user_version").use { statement ->
                 statement.step()
                 statement.getLong(0).toInt()
@@ -1174,6 +1273,15 @@ class IoliteStore internal constructor(
             }
             return connection
         }
+
+        /** Opened after [open], so the schema is there. Query-only: a write through it fails. */
+        private fun openReader(path: String, openConnection: (String) -> SQLiteConnection): SQLiteConnection =
+            openConnection(path).apply {
+                execSQL("PRAGMA busy_timeout = $BUSY_TIMEOUT_MS")
+                execSQL("PRAGMA query_only = ON")
+            }
+
+        private const val BUSY_TIMEOUT_MS = 5_000
 
         private fun applySchema(connection: SQLiteConnection, create: () -> Unit) {
             connection.execSQL("BEGIN IMMEDIATE")

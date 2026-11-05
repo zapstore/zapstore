@@ -1,9 +1,7 @@
 package dev.zapstore.app.screens
 
 import dev.zapstore.app.components.shortDisplayName
-import android.content.ClipData
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,25 +19,19 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.ClipEntry
-import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import dev.zapstore.app.MarkdownText
 import dev.zapstore.app.R
 import dev.zapstore.app.ZapCanvas
-import dev.zapstore.app.ZapLine
-import dev.zapstore.app.ZapSurface1
 import dev.zapstore.app.ZapSurface2
 import dev.zapstore.app.ZapSpacing
 import dev.zapstore.app.ZapText2
@@ -47,17 +39,14 @@ import dev.zapstore.app.components.GroupHeader
 import dev.zapstore.app.components.ShareButton
 import dev.zapstore.app.components.ZapButtonStyle
 import dev.zapstore.app.components.ZapIconButton
-import dev.zapstore.app.ZapRadius
 import dev.zapstore.app.components.StackCard
-import dev.zapstore.app.components.StackShelfFraction
-import dev.zapstore.app.components.InfoRow
+import dev.zapstore.app.components.stackShelfFraction
 import dev.zapstore.app.components.ProfileImage
+import dev.zapstore.app.components.FitTitle
 import dev.zapstore.app.components.StatusText
 import dev.zapstore.app.components.appList
 import dev.zapstore.iolite.AppRecord
 import dev.zapstore.iolite.StackRecord
-import dev.zapstore.iolite.toNpub
-import kotlinx.coroutines.launch
 
 @Composable
 fun ProfileScreen(
@@ -77,9 +66,6 @@ fun ProfileScreen(
     val own = onSettings != null
     val noApps = stringResource(R.string.no_profile_apps)
     val yourApps = stringResource(R.string.your_apps)
-    val clipboard = LocalClipboard.current
-    val coroutineScope = rememberCoroutineScope()
-    val npub = remember(state.pubkey) { state.pubkey.toNpub() }
     val profile = state.profile
     val title = shortDisplayName(state.pubkey, profile)
 
@@ -125,11 +111,7 @@ fun ProfileScreen(
                 }
                 Spacer(Modifier.width(ZapSpacing.space4))
                 Column(Modifier.weight(1f)) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.headlineSmall,
-                        maxLines = 2,
-                    )
+                    FitTitle(title, MaterialTheme.typography.headlineSmall)
                     profile?.name?.takeIf { it != profile.displayName }?.let { StatusText("@$it") }
                 }
                 onShare?.let { ShareButton(it) }
@@ -162,20 +144,21 @@ fun ProfileScreen(
         if (state.stacks.isNotEmpty() || showSaved) {
             item(key = "stacks", contentType = "stacks") {
                 Column {
+                    val shelfFraction = stackShelfFraction(LocalConfiguration.current.screenWidthDp.dp - ZapSpacing.space4 * 2)
                     GroupHeader(stringResource(R.string.stacks), Modifier.padding(horizontal = ZapSpacing.space4))
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
                         contentPadding = PaddingValues(horizontal = ZapSpacing.space4),
                     ) {
                         if (showSaved) item(key = "saved") {
-                            SavedStackCard(saved, onSavedClick, Modifier.fillParentMaxWidth(StackShelfFraction))
+                            SavedStackCard(saved, onSavedClick, Modifier.fillParentMaxWidth(shelfFraction))
                         }
                         items(state.stacks, key = { it.identifier }) { stack ->
                             StackCard(
                                 stack = stack,
                                 apps = state.stackApps,
                                 onClick = { onStackClick(stack) },
-                                modifier = Modifier.fillParentMaxWidth(StackShelfFraction).testTag("profileStack:${stack.identifier}"),
+                                modifier = Modifier.fillParentMaxWidth(shelfFraction).testTag("profileStack:${stack.identifier}"),
                             )
                         }
                     }
@@ -210,28 +193,5 @@ fun ProfileScreen(
             showWho = false,
             modifier = Modifier.padding(horizontal = ZapSpacing.space4),
         )
-
-        item {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = ZapSpacing.space4)
-                    .clip(RoundedCornerShape(ZapRadius.lg))
-                    .background(ZapSurface1)
-                    .border(1.dp, ZapLine, RoundedCornerShape(ZapRadius.lg))
-                    .padding(horizontal = ZapSpacing.space4, vertical = ZapSpacing.space2),
-            ) {
-                profile?.website?.let { InfoRow(stringResource(R.string.website), it, link = it, onOpenUrl = onOpenUrl) }
-                profile?.nip05?.let { InfoRow(stringResource(R.string.nip05), it) }
-                InfoRow(
-                    label = stringResource(R.string.npub),
-                    value = npub,
-                    onCopy = {
-                        coroutineScope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("npub", npub))) }
-                    },
-                )
-            }
-        }
-
     }
 }

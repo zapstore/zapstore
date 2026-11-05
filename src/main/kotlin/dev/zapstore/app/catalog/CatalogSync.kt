@@ -4,6 +4,8 @@ import dev.zapstore.app.AppLog
 import android.os.SystemClock
 import dev.zapstore.app.AppConfig
 import dev.zapstore.app.BuildConfig
+import dev.zapstore.iolite.AppFilter
+import dev.zapstore.iolite.CatalogBundle
 import dev.zapstore.iolite.CatalogRecord
 import dev.zapstore.iolite.CatalogReference
 import dev.zapstore.iolite.CatalogSyncResult
@@ -11,17 +13,20 @@ import dev.zapstore.iolite.Iolite
 import dev.zapstore.iolite.toNpub
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.shareIn
@@ -50,15 +55,18 @@ class CatalogSync(
     /** App ids whose updates the user ignores; they stay installed but never count as updates. */
     private val ignored: Flow<List<String>> = flowOf(emptyList()),
     private val readInstalledApps: () -> List<InstalledApp>,
-    private val readBundledSnapshot: () -> ByteArray,
+    /** The snapshot shipped in the APK, opened again for each read so it is never held in memory. Null when the build has none. */
+    private val bundledSnapshot: CatalogBundle?,
     private val useOnion: () -> Boolean = { false },
     /** Apps another store installed are never updated from here, by hand or in the background. */
     private val ourPackage: String = "",
+    /** The key the default catalog must be signed by; null trusts the first signer seen. */
+    private val pinnedKey: String? = null,
     private val now: () -> Long = System::currentTimeMillis,
 ) {
-    private val bundledSnapshot: ByteArray by lazy(readBundledSnapshot)
     private val mutex = Mutex()
     private val _status = MutableStateFlow(SyncStatus())
+    private var requested: Job? = null
     val status: StateFlow<SyncStatus> = _status.asStateFlow()
 
     private val installed = MutableStateFlow<List<InstalledApp>>(emptyList())
@@ -66,11 +74,17 @@ class CatalogSync(
     /** User-installed packages. System packages are left out, matching the Flutter list. */
     val installedApps: StateFlow<List<InstalledApp>> = installed.asStateFlow()
 
-    /** Newer catalog listings Zapstore may install: not ignored, and not kept current by another store. */
+    /**
+     * Newer catalog listings Zapstore may install: not ignored, and not kept current by another store.
+     * Only the installed packages' listings are read; the whole catalog would be tens of MB per emission.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
     val updates: Flow<List<AvailableUpdate>> =
-        combine(iolite.observeApps(), installed, ignored) { apps, packages, skip ->
-            val ignoredIds = skip.toSet()
-            availableUpdates(packages, apps).filter { it.app.appId !in ignoredIds && it.otherStore(ourPackage) == null }
+        installed.flatMapLatest { packages ->
+            combine(iolite.observeApps(AppFilter(appIds = packages.map(InstalledApp::packageId))), ignored) { apps, skip ->
+                val ignoredIds = skip.toSet()
+                availableUpdates(packages, apps).filter { it.app.appId !in ignoredIds && it.otherStore(ourPackage) == null }
+            }
         }
             .shareIn(scope, SharingStarted.WhileSubscribed(5_000), replay = 1)
 
@@ -90,24 +104,36 @@ class CatalogSync(
 
     /**
      * Starts a sync on the process scope, so leaving a screen never cancels it. Without [force], a sync
-     * that succeeded within [AUTO_SYNC_COOLDOWN_MS] is enough.
+     * that succeeded within [AUTO_SYNC_COOLDOWN_MS] is enough. A request while one is running joins it.
      */
+    @Synchronized
     fun request(force: Boolean = false) {
+        if (requested?.isActive == true) return
         val last = _status.value.lastSyncedAtMillis
         if (!force && last != null && now() - last < AUTO_SYNC_COOLDOWN_MS) return
-        scope.launch { sync() }
+        requested = scope.launch { sync() }
     }
 
-    /** The key that signed the bundled snapshot. A catalog with this key is the only one the snapshot is imported into. */
-    private val snapshotKey: String? by lazy { iolite.bundleSigner(bundledSnapshot) }
+    /**
+     * The key that signed the bundled snapshot. A catalog with this key is the only one the snapshot is
+     * imported into. A snapshot signed by anything but [pinnedKey] is not used.
+     */
+    private val snapshotKey: String? by lazy {
+        val signer = bundledSnapshot?.let(iolite::bundleSigner) ?: return@lazy null
+        if (pinnedKey != null && signer != pinnedKey) {
+            AppLog.e(TAG, "bundled catalog is signed by $signer, not $pinnedKey; ignoring it")
+            return@lazy null
+        }
+        signer
+    }
 
     /**
-     * The Zapstore catalog's key: the bundled snapshot's signer, or, in a build without a snapshot, the key
-     * of the catalog fetched from the build-time relay. Null while neither is known. It does not change
-     * with the user's list, so it names Zapstore even after the user removes it.
+     * The Zapstore catalog's key: the pinned key, else the bundled snapshot's signer, or, in a build
+     * without either, the key of the catalog fetched from the build-time relay. Null while none is
+     * known. It does not change with the user's list, so it names Zapstore even after the user removes it.
      */
     fun defaultCatalogKey(): String? =
-        snapshotKey ?: iolite.allCatalogs().firstOrNull { AppConfig.catalogRelay in it.relays }?.manifestPubkey
+        pinnedKey ?: snapshotKey ?: iolite.allCatalogs().firstOrNull { AppConfig.catalogRelay in it.relays }?.manifestPubkey
 
     /** What one pass over the user's catalogs pulled. */
     private class Pass(var bytes: Long = 0, var changed: Boolean = false, val errors: MutableList<String> = mutableListOf())
@@ -128,7 +154,7 @@ class CatalogSync(
                     elapsedMs = SystemClock.elapsedRealtime() - started
                     AppLog.i(
                         TAG,
-                        "catalog sync ${elapsedMs}ms changed=${pass.changed} bytes=${pass.bytes} catalogs=${iolite.catalogs().size} apps=${iolite.apps().size}",
+                        "catalog sync ${elapsedMs}ms changed=${pass.changed} bytes=${pass.bytes} catalogs=${iolite.catalogs().size} apps=${iolite.appCount()}",
                     )
                 }
             }.exceptionOrNull()
@@ -165,11 +191,16 @@ class CatalogSync(
     }
 
     /**
-     * First run: the bundled catalog becomes the list. A build without the snapshot asks the build-time
-     * relay for the whole catalog instead, and the first bundle names its key.
+     * First run: the bundled catalog becomes the list. Without a usable snapshot, a pinned key is listed
+     * and synced from the build-time relay like any catalog. With neither, the build-time relay's first
+     * bundle names the key.
      */
     private fun seedDefault(pass: Pass) {
-        if (iolite.seedDefaultCatalog(bundledSnapshot, AppConfig.catalogRelay) != null) return
+        snapshotKey?.let { key -> if (iolite.seedDefaultCatalog(key, AppConfig.catalogRelay) != null) return }
+        pinnedKey?.let { key ->
+            iolite.seedDefaultCatalog(key, AppConfig.catalogRelay)
+            return
+        }
         try {
             record(pass, iolite.syncCatalog(catalogId = 1L, useOnion = useOnion(), endpoint = AppConfig.catalogRelay, client = BuildConfig.VERSION_NAME))
         } catch (failure: Exception) {
@@ -180,11 +211,12 @@ class CatalogSync(
 
     private suspend fun syncOne(listed: CatalogRecord): CatalogSyncResult {
         val catalog = iolite.ensureCatalogRelays(listed)
-        val isDefault = catalog.manifestPubkey != null && catalog.manifestPubkey == snapshotKey
+        val key = catalog.manifestPubkey
+        val isDefault = key != null && key == (pinnedKey ?: snapshotKey)
         return iolite.syncCatalog(
             catalogId = catalog.id,
             useOnion = useOnion(),
-            bundled = if (isDefault) bundledSnapshot else ByteArray(0),
+            bundled = if (key != null && key == snapshotKey) bundledSnapshot else null,
             endpoint = if (isDefault) AppConfig.catalogRelay else null,
             client = BuildConfig.VERSION_NAME,
         )
@@ -216,11 +248,6 @@ class CatalogSync(
     suspend fun removeCatalog(id: Long) {
         mutex.withLock { withContext(Dispatchers.IO) { iolite.removeCatalog(id) } }
         refreshInstalledApps()
-    }
-
-    /** Moves the catalog [delta] places along the list; where two list one app, the earlier one supplies it. */
-    suspend fun moveCatalog(id: Long, delta: Int) {
-        mutex.withLock { withContext(Dispatchers.IO) { iolite.moveCatalog(id, delta) } }
     }
 
     suspend fun wipe() {

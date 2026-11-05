@@ -8,6 +8,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -43,6 +44,7 @@ import dev.zapstore.app.OnboardingStep
 import dev.zapstore.app.R
 import dev.zapstore.app.ZapAction
 import dev.zapstore.app.ZapActionTint
+import dev.zapstore.app.ZapBrand
 import dev.zapstore.app.ZapCanvas
 import dev.zapstore.app.ZapLine
 import dev.zapstore.app.ZapRadius
@@ -112,7 +114,7 @@ fun OnboardingScreen(
                     .testTag("onboarding:${shown.name}"),
             ) {
                 val noSigner = shown == OnboardingStep.Signer && !state.hasSigner
-                StepIcon(shown.icon())
+                StepIcon(shown.icon(), logo = shown == OnboardingStep.Privacy)
                 Text(
                     stringResource(if (noSigner) R.string.onboarding_get_signer_title else shown.title()),
                     style = MaterialTheme.typography.headlineSmall,
@@ -183,15 +185,23 @@ private fun StepIndicator(index: Int, count: Int, modifier: Modifier = Modifier)
 }
 
 @Composable
-private fun StepIcon(icon: Int) {
+private fun StepIcon(icon: Int, logo: Boolean = false) {
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
             .size(56.dp)
             .clip(RoundedCornerShape(ZapRadius.md))
-            .background(ZapActionTint),
+            .background(if (logo) ZapBrand else ZapActionTint),
     ) {
-        Icon(painterResource(icon), contentDescription = null, tint = ZapAction, modifier = Modifier.size(28.dp))
+        if (logo) {
+            Image(
+                painterResource(icon),
+                contentDescription = null,
+                modifier = Modifier.size(width = 20.dp, height = 34.dp),
+            )
+        } else {
+            Icon(painterResource(icon), contentDescription = null, tint = ZapAction, modifier = Modifier.size(28.dp))
+        }
     }
 }
 
@@ -249,7 +259,7 @@ private fun NetworkOption(title: String, body: String, selected: Boolean, onClic
 }
 
 private fun OnboardingStep.icon(): Int = when (this) {
-    OnboardingStep.Privacy -> R.drawable.ic_bolt
+    OnboardingStep.Privacy -> R.drawable.ic_mark
     OnboardingStep.Network -> R.drawable.ic_shield
     OnboardingStep.Signer -> R.drawable.ic_key
     OnboardingStep.InstallPermission -> R.drawable.ic_download

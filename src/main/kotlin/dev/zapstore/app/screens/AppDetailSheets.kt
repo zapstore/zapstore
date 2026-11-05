@@ -7,7 +7,13 @@ import dev.zapstore.app.components.EvidenceLine
 import androidx.compose.foundation.background
 import dev.zapstore.iolite.AppRecord
 import dev.zapstore.iolite.CertificateProof
-import dev.zapstore.iolite.toNpub
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.appendInlineContent
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
+import androidx.compose.ui.unit.em
+import dev.zapstore.app.components.INDEXED_GLYPH
+import dev.zapstore.app.components.grayscale
 import dev.zapstore.app.components.pressScale
 import dev.zapstore.app.components.AppIcon
 import dev.zapstore.app.ZapText
@@ -15,7 +21,10 @@ import dev.zapstore.app.ZapSurface3
 import dev.zapstore.app.ZapActionTint
 import dev.zapstore.app.ZapActionText
 import dev.zapstore.app.ZapDanger
+import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -98,8 +107,6 @@ import dev.zapstore.app.components.ZapButtonStyle
 import dev.zapstore.app.install.InstallPlan
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.foundation.relocation.BringIntoViewRequester
-import androidx.compose.foundation.relocation.bringIntoViewRequester
 import dev.zapstore.app.components.SectionLabel
 import dev.zapstore.app.components.EvidenceField
 import dev.zapstore.iolite.AppByline
@@ -139,20 +146,17 @@ internal fun ZapSheet(onDismiss: () -> Unit, content: @Composable () -> Unit) {
 }
 
 /**
- * App actions: the subject row (28 dp tile, name, version), then square tiles. Save adds the app
- * to the device's Saved stack; Ignore updates appears only while the app is installed.
+ * App actions: the subject row (28 dp tile, name, version), then square tiles. Share, then Save,
+ * which adds the app to the device's Saved stack.
  */
 @Composable
 internal fun AppActionSheet(
     app: AppRecord,
     saved: Boolean,
-    ignored: Boolean,
-    installed: Boolean,
     onSave: () -> Unit,
-    onIgnore: () -> Unit,
     onDismiss: () -> Unit,
+    onShare: () -> Unit = {},
     onReport: () -> Unit = {},
-    onUninstall: (() -> Unit)? = null,
     onAddToStack: () -> Unit = {},
     onWebsite: (() -> Unit)? = null,
 ) {
@@ -177,16 +181,14 @@ internal fun AppActionSheet(
                 )
                 app.version.takeIf { it.isNotBlank() }?.let { VersionPill(it) }
             }
+            val shareLabel = stringResource(R.string.action_share)
             val saveLabel = stringResource(if (saved) R.string.action_saved else R.string.action_save)
-            val ignoreLabel = stringResource(if (ignored) R.string.action_resume_updates else R.string.action_ignore_updates)
             val stackLabel = stringResource(R.string.action_add_to_stack)
             val websiteLabel = stringResource(R.string.action_website)
             val reportLabel = stringResource(R.string.action_report)
             val tiles = buildList<@Composable (Modifier) -> Unit> {
+                add { ActionTile(R.drawable.ic_share, shareLabel, onShare, it.testTag("actionShare")) }
                 add { ActionTile(R.drawable.ic_bookmark, saveLabel, onSave, it.testTag("actionSave"), selected = saved) }
-                if (installed || ignored) {
-                    add { ActionTile(R.drawable.ic_update, ignoreLabel, onIgnore, it.testTag("actionIgnore"), selected = ignored) }
-                }
                 add { ActionTile(R.drawable.ic_stack, stackLabel, onAddToStack, it.testTag("actionAddToStack")) }
                 onWebsite?.let { open -> add { ActionTile(R.drawable.ic_external, websiteLabel, open, it.testTag("actionWebsite")) } }
                 add { ActionTile(R.drawable.ic_flag, reportLabel, onReport, it.testTag("actionReport"), danger = true) }
@@ -204,15 +206,6 @@ internal fun AppActionSheet(
                         repeat(perRow - rowTiles.size) { Box(tile) }
                     }
                 }
-            }
-            onUninstall?.let {
-                ZapButton(
-                    text = stringResource(R.string.uninstall),
-                    onClick = it,
-                    style = ZapButtonStyle.Danger,
-                    icon = R.drawable.ic_trash,
-                    modifier = Modifier.fillMaxWidth().testTag("uninstallApp"),
-                )
             }
         }
     }
@@ -455,7 +448,9 @@ internal fun InstallSheet(
             if (plan is InstallPlan.FirstInstall) {
                 AssuranceSummary(app, author, trust, onPersonalizeTrust, onOpenUrl, onOpenReport)
             } else {
-                if (app.isVerified) ZapBadge(stringResource(R.string.verified_author), BadgeTone.Verified)
+                if (app.byline == AppByline.Verified) {
+                    VerifiedStandingLine(app.bylinePubkey?.let { shortDisplayName(it, author) }.orEmpty(), app.bylinePubkey, null)
+                }
                 if (app.isCatalogSigned) CatalogSignedNote(app.name, app.downloadUrl, Modifier.testTag("installCatalogSigned"), source = app.repository)
                 Text(
                     if (switching) {
@@ -485,19 +480,33 @@ internal fun CatalogSignedNote(
     source: String? = null,
 ) {
     val from = source?.trim().orEmpty()
+    val glyph = mapOf(
+        "indexed" to InlineTextContent(
+            Placeholder(1.3.em, 1.em, PlaceholderVerticalAlign.TextCenter),
+        ) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(INDEXED_GLYPH, modifier = Modifier.grayscale(), style = MaterialTheme.typography.bodyMedium)
+            }
+        },
+    )
     Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space1), modifier = modifier) {
         Text(
             buildAnnotatedString {
-                append("📇 ")
+                appendInlineContent("indexed", INDEXED_GLYPH)
+                append(" ")
                 withStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = ZapText)) {
                     append(stringResource(R.string.catalog_indexed))
                     append(" ")
                 }
-                append(
-                    if (from.isEmpty()) stringResource(R.string.catalog_indexed_body, name)
-                    else stringResource(R.string.catalog_indexed_from, name, from),
-                )
+                if (from.isEmpty()) {
+                    append(stringResource(R.string.catalog_indexed_body, name))
+                } else {
+                    append(stringResource(R.string.catalog_indexed_from_lead, name))
+                    withStyle(SpanStyle(color = Color.White, background = Color.Black)) { append(from) }
+                    append(stringResource(R.string.catalog_indexed_from_tail))
+                }
             },
+            inlineContent = glyph,
             color = ZapText2,
             style = MaterialTheme.typography.bodyMedium,
         )
@@ -520,28 +529,18 @@ internal fun CatalogSignedNote(
 /** The URL without its scheme, so the host leads. */
 internal fun downloadLabel(url: String): String = url.trim().substringAfter("://")
 
-/** Where the full report opens: at the top, or at the developer section when the verified seal was tapped. */
-internal enum class ReportFocus { Top, Developer }
-
 /**
- * The full report. The verdict first (flags, pills, prose), then who stands behind the app, the exact
- * package and file, where the source is, and every permission. Each identifier has a copy icon.
+ * The full report. The verdict first (flags, pills, prose) and the permissions, then the exact package
+ * and file, and where the source is. Each identifier has a copy icon. Who published the app is the
+ * author sheet, opened from the mark beside the name.
  */
 @Composable
 internal fun SecurityReportSheet(
     app: AppRecord,
-    author: ProfileRecord?,
-    proof: CertificateProof?,
-    focus: ReportFocus,
     onOpenUrl: (String) -> Unit,
-    onProfileClick: (String) -> Unit,
     onDismiss: () -> Unit,
-    trust: TrustUi = TrustUi(),
-    onPersonalizeTrust: () -> Unit = {},
 ) {
     val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.8f).dp
-    val developer = remember { BringIntoViewRequester() }
-    LaunchedEffect(focus) { if (focus == ReportFocus.Developer) developer.bringIntoView() }
     ZapSheet(onDismiss) {
         Column(
             verticalArrangement = Arrangement.spacedBy(ZapSpacing.space5),
@@ -554,17 +553,14 @@ internal fun SecurityReportSheet(
         ) {
             Text(stringResource(R.string.privacy_and_security), color = Color.White, style = MaterialTheme.typography.titleLarge)
             if (app.hasVerdict()) SecurityVerdict(app, onOpenUrl)
-            ReportSection(stringResource(R.string.report_developer), Modifier.bringIntoViewRequester(developer).testTag("reportDeveloper")) {
-                DeveloperSection(app, author, proof, onProfileClick)
-            }
-            if (app.authorPubkey != null && !app.isCatalogSigned && (trust.hasSignals || trust.canPersonalize)) {
-                ReportSection(stringResource(R.string.report_vouch), Modifier.testTag("reportVouch")) {
-                    TrustSignals(app.bylinePubkey?.let { shortDisplayName(it, author) }.orEmpty(), trust, onPersonalizeTrust, onOpenUrl)
-                }
+            if (app.hasPermissions()) {
+                ReportSection(stringResource(R.string.report_permissions)) { PermissionsList(app) }
             }
             ReportSection(stringResource(R.string.report_package), Modifier.testTag("reportPackage")) {
                 EvidenceField(stringResource(R.string.app_id), app.appId)
                 app.apkHash?.let { EvidenceField(stringResource(R.string.apk_sha256), it) }
+                app.certificateHash?.let { EvidenceField(stringResource(R.string.signing_certificate), it) }
+                app.certificateChain().drop(1).forEach { EvidenceField(stringResource(R.string.previous_certificates), it) }
                 app.downloadUrl?.let { EvidenceField(stringResource(R.string.download_url), it) }
             }
             if (app.repository != null || app.license != null) {
@@ -573,9 +569,49 @@ internal fun SecurityReportSheet(
                     app.license?.let { EvidenceField(stringResource(R.string.license), it, copyable = false) }
                 }
             }
-            if (app.hasPermissions()) {
-                ReportSection(stringResource(R.string.report_permissions)) { PermissionsList(app) }
-            }
+        }
+    }
+}
+
+/**
+ * What the mark beside the app's name opens (the blue seal, the unverified mark or the indexed mark):
+ * who published the app and whether they proved it is theirs, with their standing among people when they
+ * did, or an invitation to claim the app when nobody has. Nothing about the app's privacy or security;
+ * that is the report's job. The install sheet shows the same content from [PublisherStanding].
+ */
+@Composable
+internal fun PublisherSheet(
+    app: AppRecord,
+    author: ProfileRecord?,
+    proof: CertificateProof?,
+    onOpenUrl: (String) -> Unit,
+    onProfileClick: (String) -> Unit,
+    onDismiss: () -> Unit,
+    trust: TrustUi = TrustUi(),
+    onPersonalizeTrust: () -> Unit = {},
+) {
+    val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.8f).dp
+    ZapSheet(onDismiss) {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(ZapSpacing.space4),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = maxHeight)
+                .verticalScroll(rememberScrollState())
+                .padding(start = ZapSpacing.space5, end = ZapSpacing.space5, bottom = ZapSpacing.space5)
+                .testTag("authorSheet"),
+        ) {
+            Text(stringResource(R.string.publisher_title), color = Color.White, style = MaterialTheme.typography.titleLarge)
+            PublisherStanding(
+                app = app,
+                author = author,
+                trust = trust,
+                onPersonalizeTrust = onPersonalizeTrust,
+                onOpenUrl = onOpenUrl,
+                full = true,
+                proof = proof,
+                onProfileClick = onProfileClick,
+            )
         }
     }
 }
@@ -587,51 +623,6 @@ private fun ReportSection(title: String, modifier: Modifier = Modifier, content:
         HorizontalDivider(color = ZapLine)
         SectionLabel(title, Modifier.padding(top = ZapSpacing.space1))
         content()
-    }
-}
-
-/**
- * Who the header named. A C1 proof owner is verified; otherwise the listing signer has not proved the
- * app is theirs, and proof dates are left out. An indexed listing names the catalog key instead.
- */
-@Composable
-private fun DeveloperSection(
-    app: AppRecord,
-    author: ProfileRecord?,
-    proof: CertificateProof?,
-    onProfileClick: (String) -> Unit,
-) {
-    val byline = app.byline
-    val pubkey = app.bylinePubkey
-    val name = pubkey?.let { shortDisplayName(it, author) }.orEmpty()
-    Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space3)) {
-        when (byline) {
-            AppByline.Verified -> {
-                ZapBadge(stringResource(R.string.verified_author), BadgeTone.Verified, icon = R.drawable.ic_check)
-            }
-            AppByline.Unverified -> {
-                ZapBadge(stringResource(R.string.unverified_author), BadgeTone.Warning)
-                Text(stringResource(R.string.unverified_body, name, app.name), color = ZapText2, style = MaterialTheme.typography.bodyMedium)
-            }
-            AppByline.Indexed -> Unit
-        }
-        if (app.isCatalogSigned) {
-            CatalogSignedNote(name = app.name, downloadUrl = null, source = app.repository, modifier = Modifier.testTag("catalogSigned"))
-        }
-        if (pubkey != null) {
-            if (byline != AppByline.Indexed) {
-                EvidenceField(stringResource(R.string.developer), name, copyable = false, onClick = { onProfileClick(pubkey) })
-            }
-            EvidenceField(stringResource(if (byline == AppByline.Indexed) R.string.catalog_key else R.string.developer_key), pubkey.toNpub())
-        }
-        app.certificateHash?.let { EvidenceField(stringResource(R.string.signing_certificate), it) }
-        app.certificateChain().drop(1).forEach { EvidenceField(stringResource(R.string.previous_certificates), it) }
-        if (byline == AppByline.Verified) {
-            proof?.let {
-                InfoRow(stringResource(R.string.proof_published), formatDate(it.createdAt), verticalPadding = ZapSpacing.space1)
-                if (it.expiry > 0) InfoRow(stringResource(R.string.valid_until), formatDate(it.expiry), verticalPadding = ZapSpacing.space1)
-            }
-        }
     }
 }
 

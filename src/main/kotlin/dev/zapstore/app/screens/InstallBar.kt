@@ -83,7 +83,7 @@ fun InstallBar(app: AppRecord, install: InstallUi, actions: InstallActions, modi
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
-        modifier = modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 6.dp).testTag("installBar"),
+        modifier = modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp).testTag("installBar"),
     ) {
         Box(Modifier.weight(1f).height(BUTTON_HEIGHT)) {
             when (button) {

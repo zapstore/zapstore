@@ -53,6 +53,7 @@ import dev.zapstore.iolite.SearchFact
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -66,6 +67,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.key
+import androidx.compose.foundation.background
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -80,17 +83,21 @@ import dev.zapstore.app.ZapSize
 import dev.zapstore.app.ZapSpacing
 import dev.zapstore.app.ZapText3
 import dev.zapstore.app.components.AppRow
+import dev.zapstore.app.components.LocalInstalledVersions
 import dev.zapstore.app.components.EmptyRow
 import dev.zapstore.app.components.GroupHeader
 import dev.zapstore.app.components.LoadingIndicator
 import dev.zapstore.app.components.DeveloperResultRow
 import dev.zapstore.app.components.StackResultRow
+import dev.zapstore.app.components.SeeAllStackCard
 import dev.zapstore.app.components.StackCard
 import dev.zapstore.app.components.StackCardHeight
-import dev.zapstore.app.components.StackShelfFraction
+import dev.zapstore.app.components.StackShelfGap
+import dev.zapstore.app.components.StackShelfPadding
+import dev.zapstore.app.ZapSurface1
+import dev.zapstore.app.components.stackShelfFraction
 import dev.zapstore.app.components.AppIcon
 import dev.zapstore.app.components.shortDisplayName
-import dev.zapstore.app.components.StatusText
 import dev.zapstore.app.components.ZapSearchField
 import dev.zapstore.app.facts.label
 import dev.zapstore.iolite.AppRecord
@@ -116,10 +123,16 @@ fun HomeScreen(
     onToggleFilter: (SearchFact) -> Unit = {},
     reselected: Flow<String> = emptyFlow(),
 ) {
-    val noActivity = stringResource(R.string.no_activity)
     var filtersOpen by rememberSaveable { mutableStateOf(false) }
+    var hideInstalled by rememberSaveable { mutableStateOf(false) }
     if (filtersOpen) {
-        FilterSheet(active = state.searchFacts, onToggle = onToggleFilter, onDismiss = { filtersOpen = false })
+        FilterSheet(
+            active = state.searchFacts,
+            hideInstalled = hideInstalled,
+            onToggle = onToggleFilter,
+            onToggleHideInstalled = { hideInstalled = !hideInstalled },
+            onDismiss = { filtersOpen = false },
+        )
     }
     val listState = rememberLazyListState()
     val stackShelf = rememberLazyGridState()
@@ -133,11 +146,6 @@ fun HomeScreen(
         },
         state.stacksCanLoadMore,
         onLoadMoreStacks,
-    )
-    LoadMoreNearEnd(
-        { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index to listState.layoutInfo.totalItemsCount },
-        state.activityCanLoadMore,
-        onLoadMoreActivity,
     )
     // Results are inserted above the stacks, which the list would otherwise stay anchored to.
     LaunchedEffect(state.submittedQuery, state.searchResults == null) { listState.scrollToItem(0) }
@@ -192,65 +200,73 @@ fun HomeScreen(
         HorizontalDivider(color = ZapLine, modifier = Modifier.graphicsLayer { alpha = hairline })
 
         BoxWithConstraints(Modifier.weight(1f)) {
-            val shelfWidth = (maxWidth - ZapSpacing.space4 * 2) * StackShelfFraction
+            val contentWidth = maxWidth - ZapSpacing.space4 * 2
+            val shelfWidth = contentWidth * stackShelfFraction(contentWidth)
+            val activityEmptyText = stringResource(R.string.activity_empty)
             LazyColumn(
                 modifier = Modifier.fillMaxSize().testTag("homeList"),
                 contentPadding = PaddingValues(start = ZapSpacing.space4, end = ZapSpacing.space4, bottom = ZapSpacing.space8),
                 state = listState,
             ) {
-                state.searchResults?.let { results -> searchResults(state, results, onAppClick, onStackClick, onDeveloperClick, onRemoveFilter) { filtersOpen = true } }
-
-                item(key = "stacksHeader", contentType = "header") {
-                    GroupHeader(
-                        stringResource(R.string.stacks),
-                        action = stringResource(R.string.see_all),
-                        onAction = onSeeAllStacks,
-                        actionTag = "seeAllStacks",
-                    )
+                state.searchResults?.let { results ->
+                    searchResults(state, results, onAppClick, onStackClick, onDeveloperClick, onRemoveFilter, hideInstalled, { hideInstalled = false }) { filtersOpen = true }
                 }
+
                 item(key = "stacks", contentType = "stacks") {
-                    when {
-                        state.stacks.isNotEmpty() -> {
-                            val rows = if (state.stacks.size < 2) 1 else 2
-                            LazyHorizontalGrid(
-                                rows = GridCells.Fixed(rows),
-                                state = stackShelf,
-                                horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
-                                verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
-                                modifier = Modifier
-                                    .height(StackCardHeight * rows + if (rows == 2) ZapSpacing.space2 else 0.dp)
-                                    .testTag("stackShelf"),
-                            ) {
-                                gridItems(state.stacks, key = { it.eventId }) { stack ->
-                                    StackCard(
-                                        stack = stack,
-                                        apps = state.stackApps,
-                                        onClick = { onStackClick(stack) },
-                                        modifier = Modifier.width(shelfWidth).testTag("stack:${stack.identifier}"),
-                                    )
-                                }
+                    if (state.stacks.isEmpty()) {
+                        EmptyRow(
+                            stringResource(R.string.stacks_empty),
+                            modifier = Modifier.padding(top = ZapSpacing.space2).testTag("stacksEmpty"),
+                        )
+                    } else {
+                        val shelf = Modifier
+                            .padding(top = ZapSpacing.space2)
+                            .height(StackCardHeight * StackShelfRows + StackShelfGap * (StackShelfRows - 1))
+                        LazyHorizontalGrid(
+                            rows = GridCells.Fixed(StackShelfRows),
+                            state = stackShelf,
+                            horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+                            verticalArrangement = Arrangement.spacedBy(StackShelfGap),
+                            modifier = shelf.testTag("stackShelf"),
+                        ) {
+                            gridItems(state.stacks, key = { it.eventId }) { stack ->
+                                StackCard(
+                                    stack = stack,
+                                    apps = state.stackApps,
+                                    onClick = { onStackClick(stack) },
+                                    verticalPadding = StackShelfPadding,
+                                    modifier = Modifier.width(shelfWidth).testTag("stack:${stack.identifier}"),
+                                )
+                            }
+                            // The last slot, in place of one more stack. The web shelf does the same.
+                            item(key = "see-all") {
+                                SeeAllStackCard(
+                                    onClick = onSeeAllStacks,
+                                    verticalPadding = StackShelfPadding,
+                                    modifier = Modifier.width(shelfWidth).testTag("seeAllStacks"),
+                                )
                             }
                         }
-                        state.stacksLoading -> Unit
-                        else -> StatusText(state.stacksError ?: stringResource(R.string.no_stacks))
                     }
                 }
 
                 item(key = "activityHeader", contentType = "header") {
                     GroupHeader(
-                        stringResource(R.string.activity),
+                        stringResource(R.string.recent_activity),
                         Modifier.padding(top = ZapSpacing.space4),
                         trailing = { ActivityFilterMenu(state.activityFilter, onActivityFilter) },
                     )
                 }
                 activityRows(
                     items = state.activity,
-                    loading = state.activityLoading,
+                    loading = false,
                     canLoadMore = state.activityCanLoadMore,
                     profiles = state.profiles,
                     stackApps = state.activityStackApps,
-                    emptyText = noActivity,
+                    emptyText = activityEmptyText,
                     onOpen = { item -> item.stack?.let(onStackClick) ?: item.app?.let(onAppClick) },
+                    catalogKeys = state.catalogKeys,
+                    onLoadMore = onLoadMoreActivity,
                 )
             }
         }
@@ -268,89 +284,135 @@ private fun LazyListScope.searchResults(
     onStackClick: (StackRecord) -> Unit,
     onDeveloperClick: (String) -> Unit,
     onRemoveFilter: (SearchFact) -> Unit,
+    hideInstalled: Boolean,
+    onShowInstalled: () -> Unit,
     onOpenFilters: () -> Unit,
 ) {
-    item(key = "searchFacts", contentType = "status") {
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
-            verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
-            modifier = Modifier.padding(bottom = ZapSpacing.space2).testTag("searchFacts"),
+    // One gray panel, as on the web: filters, then the rows. Clearing is the field's X, so the panel has no link for it.
+    item(key = "searchPanel", contentType = "searchPanel") {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = ZapSpacing.space4)
+                .clip(RoundedCornerShape(ZapRadius.lg))
+                .background(ZapSurface1)
+                .padding(horizontal = ZapSpacing.space4, vertical = ZapSpacing.space3)
+                .testTag("searchPanel"),
         ) {
-            state.searchFacts.forEach { fact ->
-                val label = fact.label()
-                val remove = stringResource(R.string.remove_filter, label)
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+                verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+                modifier = Modifier.padding(bottom = ZapSpacing.space1).testTag("searchFacts"),
+            ) {
+                state.searchFacts.forEach { fact ->
+                    val label = fact.label()
+                    val remove = stringResource(R.string.remove_filter, label)
+                    ZapChip(
+                        text = label,
+                        onClick = { onRemoveFilter(fact) },
+                        selected = true,
+                        trailingIcon = R.drawable.ic_close,
+                        modifier = Modifier
+                            .semantics { contentDescription = remove }
+                            .testTag("filter:${fact.name}"),
+                    )
+                }
+                if (hideInstalled) {
+                    val label = stringResource(R.string.hide_installed)
+                    val removeInstalled = stringResource(R.string.remove_filter, label)
+                    ZapChip(
+                        text = label,
+                        onClick = onShowInstalled,
+                        selected = true,
+                        trailingIcon = R.drawable.ic_close,
+                        modifier = Modifier
+                            .semantics { contentDescription = removeInstalled }
+                            .testTag("filter:installed"),
+                    )
+                }
                 ZapChip(
-                    text = label,
-                    onClick = { onRemoveFilter(fact) },
-                    selected = true,
-                    trailingIcon = R.drawable.ic_close,
-                    modifier = Modifier
-                        .semantics { contentDescription = remove }
-                        .testTag("filter:${fact.name}"),
+                    text = stringResource(R.string.filters),
+                    onClick = onOpenFilters,
+                    trailingIcon = R.drawable.ic_chevron_down,
+                    modifier = Modifier.testTag("openFilters"),
                 )
             }
-            ZapChip(
-                text = stringResource(R.string.filters),
-                onClick = onOpenFilters,
-                trailingIcon = R.drawable.ic_chevron_down,
-                modifier = Modifier.testTag("openFilters"),
-            )
-        }
-    }
-    val others = state.searchStacks.isNotEmpty() || state.searchDevelopers.isNotEmpty()
-    if (results.isEmpty() && (state.searchFacts.isNotEmpty() || !others)) {
-        item(key = "noResults", contentType = "empty") {
-            val message = if (state.searchFacts.isEmpty()) R.string.no_search_results else R.string.no_filtered_results
-            Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space3)) {
-                EmptyRow(stringResource(message), icon = R.drawable.ic_search)
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
-                    verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+            val installedIds = LocalInstalledVersions.current.keys
+            val shown = if (hideInstalled) results.filter { it.appId !in installedIds } else results
+            val others = state.searchStacks.isNotEmpty() || state.searchDevelopers.isNotEmpty()
+            val narrowed = state.searchFacts.isNotEmpty() || hideInstalled
+            if (shown.isEmpty() && (narrowed || !others)) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(ZapSpacing.space3),
+                    modifier = Modifier.padding(top = ZapSpacing.space2).testTag("noResults"),
                 ) {
-                    state.searchFacts.forEach { fact ->
-                        ZapButton(
-                            text = stringResource(R.string.remove_filter, fact.label()),
-                            onClick = { onRemoveFilter(fact) },
-                            style = ZapButtonStyle.Tonal,
-                            modifier = Modifier.testTag("relax:${fact.name}"),
-                        )
+                    val message = if (narrowed) R.string.no_filtered_results else R.string.no_search_results
+                    EmptyRow(stringResource(message), icon = R.drawable.ic_search)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+                        verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+                    ) {
+                        state.searchFacts.forEach { fact ->
+                            ZapButton(
+                                text = stringResource(R.string.remove_filter, fact.label()),
+                                onClick = { onRemoveFilter(fact) },
+                                style = ZapButtonStyle.Tonal,
+                                modifier = Modifier.testTag("relax:${fact.name}"),
+                            )
+                        }
+                        if (hideInstalled) {
+                            ZapButton(
+                                text = stringResource(R.string.remove_filter, stringResource(R.string.hide_installed)),
+                                onClick = onShowInstalled,
+                                style = ZapButtonStyle.Tonal,
+                                modifier = Modifier.testTag("relax:installed"),
+                            )
+                        }
                     }
+                }
+            }
+            shown.forEach { app ->
+                key("search:${app.appId}") {
+                    AppRow(
+                        app = app,
+                        onClick = { onAppClick(app) },
+                        author = app.authorPubkey?.let(state.profiles::get),
+                        modifier = Modifier.testTag("searchResult:${app.appId}"),
+                    )
+                }
+            }
+            state.searchStacks.forEach { stack ->
+                key("searchStack:${stack.eventId}") {
+                    StackResultRow(
+                        stack = stack,
+                        apps = state.searchStackApps,
+                        onClick = { onStackClick(stack) },
+                        modifier = Modifier.testTag("searchStack:${stack.identifier}"),
+                    )
+                }
+            }
+            state.searchDevelopers.forEach { pubkey ->
+                key("searchDeveloper:$pubkey") {
+                    DeveloperResultRow(
+                        pubkey = pubkey,
+                        profile = state.profiles[pubkey],
+                        onClick = { onDeveloperClick(pubkey) },
+                        modifier = Modifier.testTag("searchDeveloper:$pubkey"),
+                    )
                 }
             }
         }
     }
-    items(results, key = { "search:${it.appId}" }, contentType = { "app" }) { app ->
-        AppRow(
-            app = app,
-            onClick = { onAppClick(app) },
-            author = app.authorPubkey?.let(state.profiles::get),
-            modifier = listItemMotion().testTag("searchResult:${app.appId}"),
-        )
-    }
-    items(state.searchStacks, key = { "searchStack:${it.eventId}" }, contentType = { "stack" }) { stack ->
-        StackResultRow(
-            stack = stack,
-            apps = state.searchStackApps,
-            onClick = { onStackClick(stack) },
-            modifier = listItemMotion().testTag("searchStack:${stack.identifier}"),
-        )
-    }
-    items(state.searchDevelopers, key = { "searchDeveloper:$it" }, contentType = { "developer" }) { pubkey ->
-        DeveloperResultRow(
-            pubkey = pubkey,
-            profile = state.profiles[pubkey],
-            onClick = { onDeveloperClick(pubkey) },
-            modifier = listItemMotion().testTag("searchDeveloper:$pubkey"),
-        )
-    }
-    item(key = "searchEnd", contentType = "gap") {
-        HorizontalDivider(color = ZapLine, modifier = Modifier.padding(top = ZapSpacing.space2, bottom = ZapSpacing.space2))
-    }
 }
 
-
 @Composable
-private fun FilterSheet(active: List<SearchFact>, onToggle: (SearchFact) -> Unit, onDismiss: () -> Unit) {
+private fun FilterSheet(
+    active: List<SearchFact>,
+    hideInstalled: Boolean,
+    onToggle: (SearchFact) -> Unit,
+    onToggleHideInstalled: () -> Unit,
+    onDismiss: () -> Unit,
+) {
     ZapSheet(onDismiss = onDismiss) {
         Column(
             verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
@@ -368,6 +430,13 @@ private fun FilterSheet(active: List<SearchFact>, onToggle: (SearchFact) -> Unit
                         modifier = Modifier.testTag("sheetFilter:${fact.name}"),
                     )
                 }
+                HorizontalDivider(color = ZapLine)
+                SwitchRow(
+                    title = stringResource(R.string.hide_installed),
+                    checked = hideInstalled,
+                    onCheckedChange = { onToggleHideInstalled() },
+                    modifier = Modifier.testTag("sheetFilter:installed"),
+                )
             }
         }
     }
@@ -409,6 +478,8 @@ private fun ActivityFilterMenu(selected: ActivityFilter, onSelect: (ActivityFilt
         }
     }
 }
+
+private const val StackShelfRows = 3
 
 private fun ActivityFilter.label(): Int = when (this) {
     ActivityFilter.All -> R.string.activity_filter_all

@@ -3,6 +3,11 @@ package dev.zapstore.app.screens
 import dev.zapstore.app.ZapWarning
 import androidx.compose.ui.semantics.Role
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import dev.zapstore.app.components.ZapTextLink
 import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.Icon
 import dev.zapstore.iolite.StackRecord
@@ -30,6 +35,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import dev.zapstore.app.ZapActionText
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -53,7 +61,6 @@ import dev.zapstore.app.components.VersionPill
 import dev.zapstore.app.components.ZapBadge
 import dev.zapstore.app.components.ZapButton
 import dev.zapstore.app.components.ZapButtonStyle
-import dev.zapstore.app.components.ZapTextLink
 import dev.zapstore.app.components.shortDisplayName
 import dev.zapstore.app.facts.FactCatalog
 import dev.zapstore.iolite.AppRecord
@@ -128,7 +135,11 @@ internal fun SecurityReportCard(
     modifier: Modifier = Modifier,
 ) {
     val flags = app.flagLabels()
-    EvidenceCard(stringResource(R.string.privacy_and_security), modifier.fillMaxWidth().testTag("securityCard")) {
+    EvidenceCard(
+        stringResource(R.string.privacy_and_security),
+        modifier.fillMaxWidth().testTag("securityCard"),
+        headerAction = { CardSheetButton(stringResource(R.string.see_full_report), onSeeFull, "seeFullReport") },
+    ) {
         Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space3), modifier = Modifier.fillMaxWidth()) {
             if (flags.isNotEmpty()) {
                 FlowRow(
@@ -140,11 +151,26 @@ internal fun SecurityReportCard(
             FactPills(app.factPills())
             SecurityProse(app, onOpenUrl, brief = true)
         }
-        ZapTextLink(
-            stringResource(R.string.see_full_report),
-            onSeeFull,
-            Modifier.offset(x = -ZapSpacing.space2).testTag("seeFullReport"),
-        )
+    }
+}
+
+/**
+ * The icon in a card's title row that opens the card's sheet. It is 32 dp, not Material's 48 dp minimum,
+ * which would stretch the title row. The offset lines the glyph up with the card's right padding.
+ */
+@Composable
+private fun CardSheetButton(contentDescription: String, onClick: () -> Unit, tag: String) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .offset(x = ZapSpacing.space2)
+            .size(32.dp)
+            .clip(CircleShape)
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics { this.contentDescription = contentDescription }
+            .testTag(tag),
+    ) {
+        Icon(painterResource(R.drawable.ic_open_sheet), contentDescription = null, tint = ZapActionText, modifier = Modifier.size(20.dp))
     }
 }
 
@@ -174,20 +200,38 @@ internal fun SecurityVerdict(app: AppRecord, onOpenUrl: (String) -> Unit) {
     }
 }
 
-/** Every permission the app asks for, by label with its note; raw ids with no label follow in one line. */
+/**
+ * The permissions with a human name, as pills. Expanded, every permission the app asks for, by label with
+ * its note; raw ids with no label follow in one line.
+ */
 @Composable
 internal fun PermissionsList(app: AppRecord) {
-    val (named, other) = app.permissionLines().partition { it.label != null }
+    val lines = app.permissionLines()
+    val (named, other) = lines.partition { it.label != null }
+    var expanded by rememberSaveable { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space3), modifier = Modifier.fillMaxWidth().testTag("permissions")) {
-        named.forEach { PermissionRow(it) }
-        if (other.isNotEmpty()) {
-            Text(
-                other.joinToString(" · ") { it.id.orEmpty() },
-                color = ZapText3,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.testTag("otherPermissions"),
-            )
+        if (expanded) {
+            named.forEach { PermissionRow(it) }
+            if (other.isNotEmpty()) {
+                Text(
+                    other.joinToString(" · ") { it.id.orEmpty() },
+                    color = ZapText3,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.testTag("otherPermissions"),
+                )
+            }
+        } else if (named.isNotEmpty()) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+                verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+                modifier = Modifier.testTag("permissionPills"),
+            ) { named.mapNotNull { it.label }.distinct().forEach { ZapBadge(it, BadgeTone.Neutral) } }
         }
+        ZapTextLink(
+            if (expanded) stringResource(R.string.permissions_show_less) else stringResource(R.string.permissions_show_all, lines.size),
+            { expanded = !expanded },
+            Modifier.offset(x = -ZapSpacing.space2).testTag("permissionsExpand"),
+        )
     }
 }
 
@@ -249,10 +293,14 @@ private fun PermissionRow(line: PermissionLine) {
     }
 }
 
-/** Latest release: the version pill and the date, with the notes one link away. Size stays in the sheet. */
+/** Latest release: the version pill and the date, with the notes behind the title-row icon. Size stays in the sheet. */
 @Composable
 internal fun ReleaseCard(app: AppRecord, onOpen: () -> Unit, modifier: Modifier = Modifier) {
-    EvidenceCard(stringResource(R.string.release_title), modifier.fillMaxWidth().testTag("releaseCard")) {
+    EvidenceCard(
+        stringResource(R.string.release_title),
+        modifier.fillMaxWidth().testTag("releaseCard"),
+        headerAction = { CardSheetButton(stringResource(R.string.release_notes), onOpen, "releaseLink") },
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3)) {
             if (app.version.isNotBlank()) VersionPill(app.version)
             Text(
@@ -263,11 +311,6 @@ internal fun ReleaseCard(app: AppRecord, onOpen: () -> Unit, modifier: Modifier 
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            ZapTextLink(
-                stringResource(R.string.release_details_link),
-                onOpen,
-                Modifier.offset(x = ZapSpacing.space2).testTag("releaseLink"),
-            )
         }
     }
 }
@@ -275,13 +318,12 @@ internal fun ReleaseCard(app: AppRecord, onOpen: () -> Unit, modifier: Modifier 
 /** For an app with no security data: who published it, the package and the source still open from here. */
 @Composable
 internal fun PackageCard(onOpen: () -> Unit, modifier: Modifier = Modifier) {
-    EvidenceCard(stringResource(R.string.privacy_and_security), modifier.fillMaxWidth().testTag("packageCard")) {
+    EvidenceCard(
+        stringResource(R.string.privacy_and_security),
+        modifier.fillMaxWidth().testTag("packageCard"),
+        headerAction = { CardSheetButton(stringResource(R.string.see_full_report), onOpen, "seeFullReport") },
+    ) {
         Text(stringResource(R.string.no_security_report), color = ZapText2, style = MaterialTheme.typography.bodyMedium)
-        ZapTextLink(
-            stringResource(R.string.see_full_report),
-            onOpen,
-            Modifier.offset(x = -ZapSpacing.space2).testTag("seeFullReport"),
-        )
     }
 }
 

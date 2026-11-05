@@ -30,6 +30,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,7 +41,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 @Composable
 fun SectionTitle(
@@ -143,7 +149,7 @@ fun ZapSearchField(
                 leadingIcon()
                 Box(modifier = Modifier.weight(1f)) {
                     if (value.isEmpty()) {
-                        Text(text = placeholder, style = textStyle, color = ZapText3)
+                        Text(text = placeholder, style = textStyle, color = ZapText3, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     innerTextField()
                 }
@@ -167,4 +173,27 @@ fun LoadingIndicator(
             strokeWidth = 2.dp,
         )
     }
+}
+
+/**
+ * A heading that shrinks, down to 70% of [style], until no word is split across lines, so a long name is never
+ * cut in the middle of a word. At most [maxLines]; past that it ends with an ellipsis.
+ */
+@Composable
+fun FitTitle(text: String, style: TextStyle, modifier: Modifier = Modifier, maxLines: Int = 2) {
+    var scale by remember(text, style) { mutableFloatStateOf(1f) }
+    Text(
+        text = text,
+        style = style.copy(fontSize = (style.fontSize.value * scale).sp),
+        maxLines = maxLines,
+        overflow = TextOverflow.Ellipsis,
+        onTextLayout = { layout ->
+            val split = (0 until layout.lineCount - 1).any { line ->
+                val end = layout.getLineEnd(line)
+                end in 1 until text.length && text[end - 1].isLetterOrDigit() && text[end].isLetterOrDigit()
+            }
+            if (split && scale > 0.7f) scale = (scale - 0.05f).coerceAtLeast(0.7f)
+        },
+        modifier = modifier,
+    )
 }

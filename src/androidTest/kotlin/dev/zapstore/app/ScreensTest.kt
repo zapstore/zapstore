@@ -30,6 +30,8 @@ import dev.zapstore.app.screens.WalletUi
 import dev.zapstore.app.screens.ZapSummary
 import dev.zapstore.app.screens.ZapRecipient
 import dev.zapstore.app.screens.InstallUi
+import dev.zapstore.app.screens.TrustPerson
+import dev.zapstore.app.screens.TrustUi
 import dev.zapstore.app.ZapDanger
 import dev.zapstore.app.ZapVerified
 import androidx.compose.ui.test.performScrollTo
@@ -46,6 +48,12 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.assertContentDescriptionContains
+import androidx.compose.ui.test.assertContentDescriptionEquals
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.assertContentDescriptionContains
+import androidx.compose.ui.test.assertContentDescriptionEquals
+import androidx.compose.ui.test.hasContentDescription
 import dev.zapstore.app.screens.Zapper
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.semantics.SemanticsActions
@@ -94,6 +102,8 @@ import dev.zapstore.app.screens.SignerStepUi
 import dev.zapstore.app.screens.OnboardingUiState
 import dev.zapstore.app.screens.OnboardingScreen
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.click
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.test.swipeLeft
@@ -110,12 +120,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import dev.zapstore.app.components.AppRow
-import dev.zapstore.app.components.AppRowStyle
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.onRoot
+import dev.zapstore.app.components.LocalInstalledVersions
 import dev.zapstore.app.components.LocalPendingUpdates
 import androidx.compose.runtime.CompositionLocalProvider
 
@@ -128,6 +138,7 @@ class ScreensTest {
         var cleared = false
         var openedStack: String? = null
         var openedApp: String? = null
+        var openedStacks = false
         var removedFilter: SearchFact? = null
         val stack = StackRecord(
             pubkey = AUTHOR,
@@ -149,14 +160,18 @@ class ScreensTest {
                         submittedQuery = "zap",
                         searchResults = results,
                         searchFacts = listOf(SearchFact.SourceAvailable, SearchFact.WorksOffline),
-                        stacks = listOf(stack),
-                        stacksLoading = false,
+                        stacks = listOf(
+                            stack,
+                            stack.copy(identifier = "foss", eventId = "f".repeat(64), name = "FOSS"),
+                            stack.copy(identifier = "social", eventId = "a".repeat(64), name = "Social"),
+                        ),
                     ),
                     onSearchQueryChanged = {},
                     onSearchSubmitted = {},
                     onSearchCleared = { cleared = true },
                     onAppClick = { openedApp = it.appId },
                     onStackClick = { openedStack = it.identifier },
+                    onSeeAllStacks = { openedStacks = true },
                     onRemoveFilter = { removedFilter = it },
                 )
             }
@@ -170,10 +185,34 @@ class ScreensTest {
         composeRule.onNodeWithTag("searchResult:dev.zap").performClick()
         results = null
         composeRule.onNodeWithTag("stack:privacy").performClick()
+        composeRule.onNodeWithTag("stackShelf").performScrollToNode(hasTestTag("seeAllStacks"))
+        composeRule.onNodeWithTag("seeAllStacks").performClick()
+        composeRule.onNodeWithText("Stacks").assertDoesNotExist()
 
         assertTrue(cleared)
+        assertTrue(openedStacks)
         assertEquals("privacy", openedStack)
         assertEquals("dev.zap", openedApp)
+    }
+
+    @Test
+    fun homeShowsEmptyStatesWhenNoCatalogData() {
+        composeRule.setContent {
+            ZapstoreTheme {
+                HomeScreen(
+                    state = HomeUiState(stacks = emptyList(), activity = emptyList()),
+                    onSearchQueryChanged = {},
+                    onSearchSubmitted = {},
+                    onSearchCleared = {},
+                    onAppClick = {},
+                    onStackClick = {},
+                )
+            }
+        }
+        composeRule.onNodeWithTag("stacksEmpty").assertIsDisplayed()
+        composeRule.onNodeWithTag("noActivity").assertIsDisplayed()
+        composeRule.onNodeWithText("No stacks to show.").assertIsDisplayed()
+        composeRule.onNodeWithText("No recent activity.").assertIsDisplayed()
     }
 
     @Test
@@ -272,6 +311,7 @@ class ScreensTest {
     @Test
     fun stacksPageNamesCuratorsAndCountsCatalogApps() {
         var opened: String? = null
+        var openedProfile: String? = null
         val stack = StackRecord(
             pubkey = AUTHOR,
             identifier = "games",
@@ -291,11 +331,16 @@ class ScreensTest {
                         loading = false,
                     ),
                     onStackClick = { opened = it.identifier },
+                    onProfileClick = { openedProfile = it },
                 )
             }
         }
 
-        composeRule.onNodeWithText("1 curated app · by Alice").assertIsDisplayed()
+        composeRule.onNodeWithText("1 curated app · by Alice").assertDoesNotExist()
+        composeRule.onNodeWithText("1").assertIsDisplayed()
+        composeRule.onNodeWithText("Alice").assertIsDisplayed()
+        composeRule.onNode(hasTestTag("profile:$AUTHOR") and hasAnyAncestor(hasTestTag("stack:games"))).performClick()
+        assertEquals(AUTHOR, openedProfile)
         composeRule.onNodeWithTag("stack:games").performClick()
         assertEquals("games", opened)
     }
@@ -313,12 +358,10 @@ class ScreensTest {
                         searchQuery = "zap",
                         submittedQuery = "zap",
                         searchResults = listOf(zap),
-                        stacksLoading = false,
                         activity = listOf(
                             ActivityItem("c".repeat(64), AUTHOR, 1_750_000_000, zap, comment = "Works great"),
                             ActivityItem("d".repeat(64), AUTHOR, 1_749_000_000, zap, sats = 2100),
                         ),
-                        activityLoading = false,
                         activityCanLoadMore = true,
                     ),
                     onSearchQueryChanged = {},
@@ -334,11 +377,15 @@ class ScreensTest {
         assertTrue(composeRule.onAllNodesWithText("Search results", substring = true).fetchSemanticsNodes().isEmpty())
         composeRule.onNodeWithTag("homeList").performScrollToNode(hasTestTag("activity:${"d".repeat(64)}"))
         composeRule.onNodeWithText("Works great").assertIsDisplayed()
-        composeRule.onNodeWithText("commented on").assertIsDisplayed()
+        composeRule.onNodeWithText("new comment").assertIsDisplayed()
+        composeRule.onNodeWithText("received").assertIsDisplayed()
         composeRule.onNodeWithText("2,100 sats").assertIsDisplayed()
+        // Nobody names the author, so the line skips "by" rather than say "Someone".
+        composeRule.onNodeWithText("Someone").assertDoesNotExist()
         composeRule.onNodeWithTag("activity:${"d".repeat(64)}").performClick()
         assertEquals("dev.zap", opened)
-        composeRule.onNodeWithTag("homeList").performScrollToNode(hasTestTag("activityLoadingMore"))
+        composeRule.onNodeWithTag("homeList").performScrollToNode(hasTestTag("activityLoadMore"))
+        composeRule.onNodeWithText("Load more").performClick()
         composeRule.waitUntil { moreActivity > 0 }
         composeRule.onNodeWithTag("searchField").performImeAction()
         assertTrue(submitted)
@@ -535,8 +582,6 @@ class ScreensTest {
             ZapstoreTheme {
                 HomeScreen(
                     state = HomeUiState(
-                        stacksLoading = false,
-                        activityLoading = false,
                         activityFilter = filter,
                         activity = listOf(zap.releaseActivity(), indexed.releaseActivity()),
                     ),
@@ -559,11 +604,11 @@ class ScreensTest {
         composeRule.onNodeWithTag("activityFilter:Releases").performClick()
         assertEquals(ActivityFilter.Releases, filter)
         composeRule.onNodeWithText("New release").assertDoesNotExist()
-        composeRule.onNodeWithText("released").assertIsDisplayed()
-        composeRule.onNodeWithText("Someone").assertIsDisplayed()
+        // A catalog-signed release says just "released", like any other; nobody is named without a profile.
+        assertEquals(2, composeRule.onAllNodesWithText("released").fetchSemanticsNodes().size)
+        composeRule.onNodeWithText("Someone").assertDoesNotExist()
+        composeRule.onNodeWithText("by").assertDoesNotExist()
         composeRule.onNodeWithText("1.2.3").assertIsDisplayed()
-        composeRule.onNodeWithText("Catalog").assertIsDisplayed()
-        composeRule.onNodeWithText("published").assertIsDisplayed()
         composeRule.onNodeWithText("2.0").assertIsDisplayed()
         composeRule.onNodeWithTag("activity:release:dev.zap:1.2.3").performClick()
         assertEquals("dev.zap", opened)
@@ -571,27 +616,28 @@ class ScreensTest {
 
     @Test
     fun appRowsKeepLongVersionsAndNamesInsideTheRow() {
-        val other = "b".repeat(64)
         composeRule.setContent {
             ZapstoreTheme {
-                CompositionLocalProvider(LocalPendingUpdates provides mapOf("dev.pair" to "2026.10.01-nightly+build.4411")) {
+                CompositionLocalProvider(
+                    LocalInstalledVersions provides mapOf("dev.long" to "12.0.0-beta.17", "dev.pair" to "2026.10.01-nightly+build.4411"),
+                    LocalPendingUpdates provides mapOf("dev.pair" to "2026.10.01-nightly+build.4411"),
+                ) {
                     Column(Modifier.background(ZapCanvas).padding(horizontal = 16.dp)) {
-                        AppRow(
-                            app = app("dev.long", "An application with a remarkably long display name", version = "12.0.0-beta.17+sha.9f3c2d1e", proofPubkey = AUTHOR),
-                            onClick = {},
-                            style = AppRowStyle.Manage,
-                            author = ProfileRecord(AUTHOR, 0, "a".repeat(64), "alice", "Alexandria Montgomery-Featherstonehaugh", null, null, null, null, null),
-                        )
-                        AppRow(app = app("dev.pair", "Pair", version = "2026.10.17-nightly+build.4520", proofPubkey = other), onClick = {}, style = AppRowStyle.Manage)
-                        AppRow(app = app("dev.plain", "Plain"), onClick = {}, style = AppRowStyle.Manage)
+                        AppRow(app = app("dev.long", "An application with a remarkably long display name", version = "12.0.0-beta.17+sha.9f3c2d1e"), onClick = {})
+                        AppRow(app = app("dev.pair", "Pair", version = "2026.10.17-nightly+build.4520"), onClick = {}, onDevice = true)
+                        AppRow(app = app("dev.plain", "Plain"), onClick = {})
+                        AppRow(app = app("dev.mine", "Installed here", version = "1.0"), onClick = {}, onDevice = true, note = "Updated by F-Droid")
                     }
                 }
             }
         }
         composeRule.onNodeWithTag("updatePill:dev.pair", useUnmergedTree = true).assertIsDisplayed()
-        val root = composeRule.onRoot().getBoundsInRoot()
-        composeRule.onAllNodesWithTag("profile:$other", useUnmergedTree = true).onFirst().assertIsDisplayed()
-            .getBoundsInRoot().let { assertTrue(it.right <= root.right) }
+            .assertContentDescriptionContains("Update available", substring = true)
+        composeRule.onNode(hasContentDescription("1.0, Up to date"), useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithText("Plain", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithText("Updated by F-Droid", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithText("12.0.0-beta.17", useUnmergedTree = true).assertDoesNotExist()
+        composeRule.onNodeWithTag("installedMark", useUnmergedTree = true).assertIsDisplayed()
         composeRule.onRoot().captureToImage().asAndroidBitmap().let { bitmap ->
             val file = java.io.File(InstrumentationRegistry.getInstrumentation().targetContext.filesDir, "rows.png")
             file.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
@@ -631,7 +677,9 @@ class ScreensTest {
         // Permissions are not on the page; the full report lists them.
         assertTrue(composeRule.onAllNodesWithText("Camera").fetchSemanticsNodes().isEmpty())
         composeRule.onNodeWithTag("seeFullReport").performClick()
-        composeRule.onNodeWithText("Take photos and record video").performScrollTo().assertIsDisplayed()
+        // Collapsed, the report names the known permissions as pills; expanding lists them all.
+        composeRule.onNodeWithTag("permissionPills").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("permissionsExpand").performScrollTo().performClick()
         composeRule.onNodeWithText("Take photos and record video").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("CAMERA").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("otherPermissions").performScrollTo().assertIsDisplayed()
@@ -688,6 +736,39 @@ class ScreensTest {
         composeRule.onNodeWithTag("releaseSheet").assertIsDisplayed()
         composeRule.onNodeWithText("Fixes the crash.").assertIsDisplayed()
         composeRule.onNodeWithText("Version code").assertIsDisplayed()
+    }
+
+    @Test
+    fun unverifiedMarkOpensOnlyTheAuthorVerification() {
+        openAuthorSheet(app("dev.zap", "Zap", security = AUTHOR_SHEET_SECURITY), "unverifiedAuthor")
+        composeRule.onNode(hasTestTag("authorStatement") and hasText("have not proved", substring = true)).assertIsDisplayed()
+        assertAuthorSheetHoldsNoSecurity()
+    }
+
+    @Test
+    fun verifiedSealOpensOnlyTheAuthorVerification() {
+        openAuthorSheet(app("dev.zap", "Zap", proofPubkey = AUTHOR, security = AUTHOR_SHEET_SECURITY), "verifiedSeal")
+        composeRule.onNode(hasTestTag("authorStatement") and hasText("proved they own this app", substring = true)).assertIsDisplayed()
+        assertAuthorSheetHoldsNoSecurity()
+    }
+
+    private fun openAuthorSheet(app: AppRecord, markTag: String) {
+        composeRule.setContent {
+            ZapstoreTheme { AppDetailScreen(state = AppDetailUiState(app = app, loaded = true), onOpenUrl = {}) }
+        }
+        composeRule.onNodeWithTag(markTag).performClick()
+        composeRule.onNodeWithTag("authorSheet").assertIsDisplayed()
+    }
+
+    /** The page behind the sheet still shows its security card, so only the sheet's own nodes count. */
+    private fun assertAuthorSheetHoldsNoSecurity() {
+        val inSheet = hasAnyAncestor(hasTestTag("authorSheet"))
+        listOf("facts", "reportPackage", "permissions").forEach {
+            assertTrue(composeRule.onAllNodes(hasTestTag(it) and inSheet).fetchSemanticsNodes().isEmpty())
+        }
+        listOf("Privacy and security report", "Permissions", "Package", "Signing certificate", "The prose.").forEach {
+            assertTrue(composeRule.onAllNodes(hasText(it) and inSheet).fetchSemanticsNodes().isEmpty())
+        }
     }
 
     @Test
@@ -882,9 +963,8 @@ class ScreensTest {
     }
 
     @Test
-    fun actionSheetSavesAndIgnores() {
+    fun actionSheetSaves() {
         var saved by mutableStateOf(false)
-        var ignored = false
         composeRule.setContent {
             ZapstoreTheme {
                 AppDetailScreen(
@@ -892,17 +972,17 @@ class ScreensTest {
                     onOpenUrl = {},
                     saved = saved,
                     onSave = { saved = it },
-                    onIgnore = { ignored = it },
                 )
             }
         }
         composeRule.onNodeWithTag("appMore").performClick()
         composeRule.onNodeWithTag("actionSave").assertIsDisplayed().performClick()
         composeRule.onNodeWithText("Saved").assertIsDisplayed()
-        composeRule.onNodeWithTag("actionIgnore").performClick()
         composeRule.waitForIdle()
-        assertTrue(saved && ignored)
-        assertTrue(composeRule.onAllNodesWithTag("actionShare").fetchSemanticsNodes().isEmpty())
+        assertTrue(saved)
+        assertTrue(composeRule.onAllNodesWithTag("actionIgnore").fetchSemanticsNodes().isEmpty())
+        assertTrue(composeRule.onAllNodesWithTag("uninstallApp").fetchSemanticsNodes().isEmpty())
+        composeRule.onNodeWithTag("actionShare").assertIsDisplayed()
     }
 
     @Test
@@ -939,8 +1019,137 @@ class ScreensTest {
                 )
             }
         }
-        composeRule.onNodeWithTag("share").assertIsDisplayed().performClick()
+        assertTrue(composeRule.onAllNodesWithTag("share").fetchSemanticsNodes().isEmpty())
+        composeRule.onNodeWithTag("appMore").performClick()
+        composeRule.onNodeWithTag("actionShare").assertIsDisplayed().performClick()
         assertTrue(shared)
+    }
+
+    @Test
+    fun indexedMarkExplainsTheCatalogAndSkipsReputation() {
+        composeRule.setContent {
+            ZapstoreTheme {
+                AppDetailScreen(
+                    state = AppDetailUiState(
+                        app = app(
+                            "dev.indexed", "Indexed", version = "2.0", catalogSigned = true,
+                            repository = "https://github.com/zap/indexed",
+                        ),
+                        loaded = true,
+                        install = InstallUi(
+                            trust = TrustUi(followers = listOf(TrustPerson(AUTHOR, "Ada")), canPersonalize = true),
+                        ),
+                    ),
+                    onOpenUrl = {},
+                )
+            }
+        }
+        assertTrue(composeRule.onAllNodesWithText("Indexed by catalog").fetchSemanticsNodes().isEmpty())
+        // The head names nobody: no "by" and no catalog avatar, only the mark.
+        assertTrue(composeRule.onAllNodesWithTag("profile:$AUTHOR").fetchSemanticsNodes().isEmpty())
+        composeRule.onNodeWithTag("headVersion").assertIsDisplayed()
+        composeRule.onNodeWithTag("indexedAuthor").performClick()
+        composeRule.onNodeWithTag("authorSheet").assertIsDisplayed()
+        composeRule.onNodeWithText("Developer information").assertIsDisplayed()
+        composeRule.onNodeWithTag("catalogSigned").assertIsDisplayed()
+        composeRule.onNodeWithText("tracked by the Zapstore indexer", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("github.com/zap/indexed", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("claimInvite").assertIsDisplayed()
+        assertTrue(composeRule.onAllNodesWithTag("trustSignals").fetchSemanticsNodes().isEmpty())
+        assertTrue(composeRule.onAllNodesWithText("Refresh with your web of trust").fetchSemanticsNodes().isEmpty())
+        assertTrue(composeRule.onAllNodesWithText("Check reputation in your network").fetchSemanticsNodes().isEmpty())
+        pressBack()
+        composeRule.onNodeWithTag("appDetail").performScrollToKey("security")
+        composeRule.onNodeWithTag("seeFullReport").performClick()
+        assertTrue(composeRule.onAllNodesWithTag("reportDeveloper").fetchSemanticsNodes().isEmpty())
+        assertTrue(composeRule.onAllNodesWithText("Developer").fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test
+    fun headVersionPillMarksInstallUpdateAndUpToDate() {
+        var install by mutableStateOf(InstallUi(offer = true))
+        composeRule.setContent {
+            ZapstoreTheme {
+                AppDetailScreen(
+                    state = AppDetailUiState(app = app("dev.zap", "Zap", version = "2.0"), loaded = true, install = install),
+                    onOpenUrl = {},
+                )
+            }
+        }
+        composeRule.onNodeWithTag("headVersion").assertContentDescriptionEquals("2.0, Not installed")
+        install = InstallUi(offer = true, updating = true)
+        composeRule.onNodeWithTag("headVersion").assertContentDescriptionEquals("2.0, Update available")
+        install = InstallUi(installed = true)
+        composeRule.onNodeWithTag("headVersion").assertContentDescriptionEquals("2.0, Up to date")
+        // Nothing is claimed while the phone's state is unknown, or for a copy signed by someone else.
+        install = InstallUi()
+        composeRule.onNodeWithTag("headVersion").assertContentDescriptionEquals("2.0")
+        install = InstallUi(installed = true, signedDifferently = true)
+        composeRule.onNodeWithTag("headVersion").assertContentDescriptionEquals("2.0")
+    }
+
+    @Test
+    fun publisherSheetShowsWebOfTrustOnlyForAVerifiedDeveloper() {
+        val trust = TrustUi(followers = listOf(TrustPerson("2".repeat(64), "Ada")), canPersonalize = true)
+        composeRule.setContent {
+            ZapstoreTheme {
+                AppDetailScreen(
+                    state = AppDetailUiState(
+                        app = app("dev.zap", "Zap", proofPubkey = AUTHOR),
+                        loaded = true,
+                        install = InstallUi(trust = trust),
+                    ),
+                    onOpenUrl = {},
+                )
+            }
+        }
+        composeRule.onNodeWithTag("verifiedSeal").performClick()
+        composeRule.onNodeWithTag("authorSheet").assertIsDisplayed()
+        composeRule.onNodeWithTag("trustSignals").assertIsDisplayed()
+        composeRule.onNodeWithText("Refresh with your web of trust", substring = true).assertIsDisplayed()
+        // A reputation line is not a vouch, and a claimed app has nothing to claim.
+        assertTrue(composeRule.onAllNodesWithText("Who vouches").fetchSemanticsNodes().isEmpty())
+        assertTrue(composeRule.onAllNodesWithTag("claimInvite").fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test
+    fun unverifiedPublisherSheetOffersToClaimTheApp() {
+        var opened: String? = null
+        composeRule.setContent {
+            ZapstoreTheme {
+                AppDetailScreen(
+                    state = AppDetailUiState(app = app("dev.zap", "Zap"), loaded = true),
+                    onOpenUrl = { opened = it },
+                )
+            }
+        }
+        composeRule.onNodeWithTag("unverifiedAuthor").performClick()
+        // The link is the end of the sentence, so tap just inside the right edge.
+        composeRule.onNodeWithTag("claimInvite").performTouchInput { click(Offset(width - 12f, centerY)) }
+        assertEquals("https://zapstore.dev/docs/publish", opened)
+    }
+
+    @Test
+    fun installSheetUsesTheSealAndSaysInstall() {
+        composeRule.setContent {
+            ZapstoreTheme {
+                InstallSheet(
+                    app = app("dev.zap", "Zap", proofPubkey = AUTHOR),
+                    author = null,
+                    plan = InstallPlan.FirstInstall,
+                    onConfirm = {},
+                    onDismiss = {},
+                    trust = TrustUi(followers = listOf(TrustPerson("2".repeat(64), "Ada")), canPersonalize = true),
+                )
+            }
+        }
+        composeRule.onNode(hasTestTag("authorStatement") and hasText("proved they own this app", substring = true)).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Verified author").assertIsDisplayed()
+        composeRule.onNodeWithTag("trustSignals").assertIsDisplayed()
+        composeRule.onNodeWithText("Refresh with your web of trust", substring = true).assertIsDisplayed()
+        assertTrue(composeRule.onAllNodesWithTag("claimInvite").fetchSemanticsNodes().isEmpty())
+        composeRule.onNodeWithTag("installConfirm").performScrollTo().assertTextContains("Install")
+        assertTrue(composeRule.onAllNodesWithText("Download").fetchSemanticsNodes().isEmpty())
     }
 
     @Test
@@ -951,6 +1160,8 @@ class ScreensTest {
         val updatedOne = mutableListOf<String>()
         val play = app("dev.play", "Played")
         val fdroid = app("dev.fdroid", "Droided")
+        val kept = app("dev.kept", "Kept")
+        val odd = app("dev.odd", "Odd Sign")
         composeRule.setContent {
             ZapstoreTheme {
                 UpdatesScreen(
@@ -968,6 +1179,8 @@ class ScreensTest {
                                 storeLabel = "Google Play",
                             ),
                             OtherStoreApp(StoreApp(fdroid, "org.fdroid.fdroid", "1.0", null, signedDifferently = false), storeLabel = "F-Droid"),
+                            OtherStoreApp(StoreApp(kept, "com.android.vending", "1.0", null, signedDifferently = false), storeLabel = "Google Play"),
+                            OtherStoreApp(StoreApp(odd, "com.android.vending", "1.0", null, signedDifferently = true), storeLabel = "Google Play"),
                         ),
                         ignored = listOf(IgnoredApp(app("dev.quiet", "Quiet"), installer = "F-Droid")),
                         otherInstalled = listOf(InstalledApp("dev.side", 1, "1.0", emptySet(), label = "Sideloaded")),
@@ -1004,7 +1217,18 @@ class ScreensTest {
 
         composeRule.onNodeWithTag("myAppsList").performScrollToNode(hasTestTag("installed:dev.current"))
         composeRule.onNodeWithTag("installed:dev.current").assertIsDisplayed()
+        composeRule.onNodeWithTag("myAppsList").performScrollToNode(hasTestTag("storeGroup:org.fdroid.fdroid"))
+        composeRule.onNodeWithTag("storeGroup:org.fdroid.fdroid").assertIsDisplayed()
+        composeRule.onNodeWithTag("storeGroup:org.fdroid.fdroid").assertTextContains("F-Droid")
+        composeRule.onNodeWithTag("storeGroup:org.fdroid.fdroid").assertTextContains("org.fdroid.fdroid")
         composeRule.onNodeWithTag("store:dev.fdroid").assertIsDisplayed()
+        composeRule.onNode(hasTestTag("store:dev.fdroid").and(hasText("F-Droid"))).assertDoesNotExist()
+        composeRule.onNodeWithTag("myAppsList").performScrollToNode(hasTestTag("storeGroup:com.android.vending"))
+        composeRule.onNodeWithTag("storeGroup:com.android.vending").assertTextContains("com.android.vending")
+        composeRule.onNodeWithTag("store:dev.kept").assertIsDisplayed()
+        composeRule.onNode(hasTestTag("store:dev.kept").and(hasText("Google Play"))).assertDoesNotExist()
+        composeRule.onNodeWithTag("myAppsList").performScrollToNode(hasTestTag("store:dev.odd"))
+        composeRule.onNodeWithTag("store:dev.odd").assertTextContains("Signed differently from the catalog")
         composeRule.onNodeWithTag("store:dev.play").assertDoesNotExist()
         composeRule.onNodeWithTag("myAppsList").performScrollToNode(hasText("Sideloaded"))
         composeRule.onNodeWithText("Sideloaded").assertIsDisplayed()
@@ -1128,17 +1352,29 @@ class ScreensTest {
 
     @Test
     fun someoneElsesStackHasNoEditControls() {
+        var opened: String? = null
         val stack = StackRecord(AUTHOR, "music", "e1", "Music", "", listOf(AppCoordinate(AUTHOR, "dev.zap")), 1)
         val zap = app("dev.zap", "Zap")
         composeRule.setContent {
             ZapstoreTheme {
                 StackDetailScreen(
-                    state = StackDetailUiState(stack = stack, stackLoading = false, apps = AppListState(apps = listOf(zap), loading = false)),
+                    state = StackDetailUiState(
+                        stack = stack,
+                        stackLoading = false,
+                        apps = AppListState(apps = listOf(zap), loading = false),
+                        curator = ProfileRecord(AUTHOR, 0, "a".repeat(64), "alice", "Alice", null, null, null, null, null),
+                    ),
                     onAppClick = {},
+                    onProfileClick = { opened = it },
                 )
             }
         }
         composeRule.onNodeWithTag("app:dev.zap").assertExists()
+        composeRule.onNodeWithText("APPS").assertDoesNotExist()
+        composeRule.onNodeWithText("Curated by").assertIsDisplayed()
+        composeRule.onNodeWithText("Alice").assertIsDisplayed()
+        composeRule.onNode(hasTestTag("profile:$AUTHOR") and hasAnyAncestor(hasTestTag("stack:music"))).performClick()
+        assertEquals(AUTHOR, opened)
         composeRule.onNodeWithTag("removeFromStack:dev.zap").assertDoesNotExist()
         composeRule.onNodeWithTag("renameStack").assertDoesNotExist()
     }
@@ -1506,7 +1742,6 @@ class ScreensTest {
                 )
             }
         }
-        composeRule.onNodeWithTag("openCatalog").performScrollTo().performClick()
         composeRule.onNodeWithTag("lastSyncAgo").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Last sync 3 minutes ago").assertIsDisplayed()
         composeRule.onNodeWithTag("lastSyncSize").performScrollTo().assertIsDisplayed()
@@ -1534,7 +1769,6 @@ class ScreensTest {
                 )
             }
         }
-        composeRule.onNodeWithTag("openCatalog").performScrollTo().performClick()
         composeRule.onNodeWithTag("lastSyncAgo").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Last sync just now").assertIsDisplayed()
         composeRule.onNodeWithTag("lastSyncNotModified").performScrollTo().assertIsDisplayed()
@@ -1543,10 +1777,9 @@ class ScreensTest {
 
     @Test
     fun settingsListsCatalogsInOrderAndWiresTheirActions() {
-        var moved: Pair<Long, Int>? = null
         var asked: CatalogUi? = null
-        val first = CatalogUi(1, "npub1first0000000000000000000000000000000000000000000000000", listOf("wss://relay.zapstore.dev"), 7, isDefault = true, canMoveUp = false, canMoveDown = true)
-        val second = CatalogUi(2, "npub1second000000000000000000000000000000000000000000000000", emptyList(), 0, isDefault = false, canMoveUp = true, canMoveDown = false)
+        val first = CatalogUi(1, "npub1first0000000000000000000000000000000000000000000000000", "Zapstore Catalog", listOf("wss://relay.zapstore.dev"), 7)
+        val second = CatalogUi(2, "npub1second000000000000000000000000000000000000000000000000", null, emptyList(), 0)
         composeRule.setContent {
             ZapstoreTheme {
                 SettingsSection(modifier = Modifier.verticalScroll(rememberScrollState()), 
@@ -1554,19 +1787,17 @@ class ScreensTest {
                     onNetworkModeChange = {},
                     onSync = {},
                     onWipe = {},
-                    onMoveCatalog = { id, delta -> moved = id to delta },
                     onAskRemoveCatalog = { asked = it },
                 )
             }
         }
-        composeRule.onNodeWithTag("openCatalog").performScrollTo().performClick()
         composeRule.onNodeWithTag("catalog:1").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Zapstore Catalog").assertIsDisplayed()
+        composeRule.onNodeWithText("npub1first", substring = true).assertIsDisplayed()
         composeRule.onNodeWithTag("catalog:2").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("catalogsEmpty").assertDoesNotExist()
-        composeRule.onNodeWithTag("catalogUp:1").assertIsNotEnabled()
-        composeRule.onNodeWithTag("catalogDown:2").assertIsNotEnabled()
-        composeRule.onNodeWithTag("catalogDown:1").performScrollTo().performClick()
-        assertEquals(1L to 1, moved)
+        assertTrue(composeRule.onAllNodesWithText("Up").fetchSemanticsNodes().isEmpty())
+        assertTrue(composeRule.onAllNodesWithText("Down").fetchSemanticsNodes().isEmpty())
         composeRule.onNodeWithTag("catalogRemove:2").performScrollTo().performClick()
         assertEquals(second, asked)
     }
@@ -1585,7 +1816,6 @@ class ScreensTest {
                 )
             }
         }
-        composeRule.onNodeWithTag("openCatalog").performScrollTo().performClick()
         composeRule.onNodeWithTag("catalogsEmpty").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("addCatalog").performScrollTo().performClick()
         assertTrue(opened)
@@ -1620,7 +1850,6 @@ class ScreensTest {
                 SettingsSection(modifier = Modifier.verticalScroll(rememberScrollState()), state = SettingsUiState(), onNetworkModeChange = {}, onSync = {}, onWipe = { wiped = true })
             }
         }
-        composeRule.onNodeWithTag("openCatalog").performScrollTo().performClick()
         composeRule.onNodeWithTag("clearLocalStorage").performScrollTo().performClick()
         assertTrue(wiped)
     }
@@ -1641,6 +1870,9 @@ class ScreensTest {
 }
 
 private val AUTHOR = "1".repeat(64)
+
+/** Facts, a permission and prose: everything the author sheet must leave to the full report. */
+private const val AUTHOR_SHEET_SECURITY = "\"offline_capable\",\"yes\",\"\"\n---\nCAMERA\n---\nThe prose."
 
 private fun pressBack() {
     androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()

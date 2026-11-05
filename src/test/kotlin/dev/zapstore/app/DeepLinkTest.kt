@@ -1,5 +1,6 @@
 package dev.zapstore.app
 
+import dev.zapstore.iolite.toNote
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -38,10 +39,43 @@ class DeepLinkTest {
     fun ignoresOtherLinks() {
         assertNull(DeepLink.parse("https://evil.dev/apps/dev.zapstore.app"))
         assertNull(DeepLink.parse("http://zapstore.dev/apps/dev.zapstore.app"))
-        assertNull(DeepLink.parse("https://zapstore.dev/apps/"))
+        assertEquals(DeepLink.Search(""), DeepLink.parse("https://zapstore.dev/apps/"))
         assertNull(DeepLink.parse("https://zapstore.dev/stacks/naddr1qqgxgetk9eaxzurnw3hhyefwv9c8qq3qd5zt8mckujm2gdt5x08xf6favcngc83ujk3y8ak7gsjp9yu255msxpqqqplqkkcgk2x"))
         assertNull(DeepLink.parse("https://zapstore.dev/profile/npub1bad"))
         assertNull(DeepLink.parse("market://details"))
         assertNull(DeepLink.parse("not a link"))
+    }
+
+    @Test
+    fun searchAndStacksIndex() {
+        assertEquals(DeepLink.Search(""), DeepLink.parse("https://zapstore.dev/apps"))
+        assertEquals(DeepLink.Search(""), DeepLink.parse("https://www.zapstore.dev/apps?q="))
+        assertEquals(DeepLink.Search("nostr clients"), DeepLink.parse("https://zapstore.dev/apps?q=nostr+clients"))
+        assertEquals(DeepLink.App("dev.zapstore.app"), DeepLink.parse("https://zapstore.dev/apps/dev.zapstore.app?q=nostr"))
+        assertEquals(DeepLink.Stacks, DeepLink.parse("https://zapstore.dev/stacks"))
+        assertEquals(DeepLink.Stacks, DeepLink.parse("https://zapstore.dev/stacks/"))
+        assertEquals(DeepLink.Search("amber"), DeepLink.parse("market://search?q=amber"))
+        assertEquals(DeepLink.Search(""), DeepLink.parse("market://search"))
+        assertEquals(DeepLink.Search("nostr"), DeepLink.parse(DeepLink.hashtagHref("nostr")))
+    }
+
+    @Test
+    fun nostrUris() {
+        assertEquals(DeepLink.Profile(pubkey), DeepLink.parse("nostr:$npub"))
+        assertEquals(
+            DeepLink.Profile(pubkey),
+            DeepLink.parse("nostr:nprofile1qqsx6p9nautwfd4yx46r8nnyay7kvf5vrc7ftgjr7m0ygfqjjw922dcpzpmhxue69uhhyetvv9ujuar9wd6q24xlq8"),
+        )
+        assertEquals(
+            DeepLink.App("dev.zapstore.app"),
+            DeepLink.parse("nostr:naddr1qqgxgetk9eaxzurnw3hhyefwv9c8qq3qd5zt8mckujm2gdt5x08xf6favcngc83ujk3y8ak7gsjp9yu255msxpqqqplqkkcgk2x"),
+        )
+        assertEquals(
+            DeepLink.Stack(pubkey, "nostr-clients"),
+            DeepLink.parse("nostr:naddr1qqxkummnw3ez6cmvd9jkuarnqgsx6p9nautwfd4yx46r8nnyay7kvf5vrc7ftgjr7m0ygfqjjw922dcrqsqqqa3mrfzd9k"),
+        )
+        val note = "ab".repeat(32).toNote()
+        assertEquals(DeepLink.External("https://njump.me/$note"), DeepLink.parse("nostr:$note"))
+        assertNull(DeepLink.parse("nostr:npub1bad"))
     }
 }

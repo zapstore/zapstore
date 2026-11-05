@@ -547,6 +547,20 @@ data class HttpResponse(
 
 fun interface HttpTransport {
     fun get(url: String, headers: Map<String, String>): HttpResponse
+
+    /**
+     * [get], with a 200 body written to [destination] instead of returned, and refused past [maxBytes].
+     * A catalog bundle is tens of MB, so it goes to disk rather than the heap. Other statuses keep their
+     * body. The default goes through [get]; a transport that can stream overrides it.
+     */
+    fun download(url: String, headers: Map<String, String>, destination: File, maxBytes: Long): HttpResponse {
+        val response = get(url, headers)
+        if (response.status != 200) return response
+        val body = response.body ?: ByteArray(0)
+        if (body.size > maxBytes) throw java.io.IOException("response body exceeds $maxBytes bytes")
+        destination.writeBytes(body)
+        return response.copy(body = null)
+    }
 }
 
 interface WebSocketSession {

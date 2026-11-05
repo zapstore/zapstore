@@ -35,6 +35,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.zapstore.app.R
 import dev.zapstore.app.ZapCanvas
+import dev.zapstore.app.components.AuthorByline
 import dev.zapstore.app.components.LoadingIndicator
 import dev.zapstore.app.components.StackCard
 import dev.zapstore.app.components.StatusText
@@ -59,8 +60,8 @@ fun StackDetailScreen(
     onOpenUrl: (String) -> Unit = {},
     onShare: (() -> Unit)? = null,
 ) {
-    val appsTitle = stringResource(R.string.apps)
     val noApps = stringResource(R.string.no_stack_apps)
+    val curatedBy = stringResource(R.string.curated_by)
     val removeLabel = stringResource(R.string.remove_from_stack)
     var renaming by rememberSaveable { mutableStateOf(false) }
     var name by rememberSaveable { mutableStateOf("") }
@@ -98,6 +99,14 @@ fun StackDetailScreen(
                 apps = state.appsById,
                 head = true,
                 onShare = onShare,
+                underName = {
+                    AuthorByline(
+                        pubkey = stack.pubkey,
+                        profile = state.curator,
+                        lead = curatedBy,
+                        onClick = { onProfileClick(stack.pubkey) },
+                    )
+                },
                 modifier = Modifier.testTag("stack:${stack.identifier}"),
             )
         }
@@ -135,7 +144,6 @@ fun StackDetailScreen(
         state.edit.error?.let { item { StatusText(it, Modifier.testTag("stackEditError")) } }
         appList(
             state = state.apps,
-            title = appsTitle,
             emptyMessage = noApps,
             onAppClick = onAppClick,
             trailing = if (state.own) {

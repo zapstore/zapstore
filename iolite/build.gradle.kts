@@ -53,4 +53,6 @@ configurations.configureEach {
 
 tasks.withType<Test>().configureEach {
     dependsOn(rootProject.tasks.named("downloadLeafModel"))
+    providers.gradleProperty("iolite.testMaxHeap").orNull?.let { maxHeapSize = it }
+    testLogging.showStandardStreams = providers.gradleProperty("iolite.testStdout").isPresent
 }

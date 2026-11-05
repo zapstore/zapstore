@@ -17,6 +17,7 @@ import dev.zapstore.app.install.UpdateNotifier
 import android.content.ClipData
 import dev.zapstore.app.screens.OnboardingViewModel
 import dev.zapstore.app.screens.OnboardingScreen
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import android.os.Build
 import android.Manifest
@@ -28,6 +29,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.SideEffect
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -45,6 +47,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Scaffold
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import dev.zapstore.app.components.LocalInstalledVersions
 import dev.zapstore.app.components.LocalPendingUpdates
 import dev.zapstore.app.components.ZapNavigationBar
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -102,6 +105,9 @@ class MainActivity : ComponentActivity() {
     /** A link the app was opened with, until the nav host has shown it. */
     private val pendingLink = MutableStateFlow<DeepLink?>(null)
 
+    /** Home has been composed with all of its local data. Read by [LaunchHold]. */
+    private var homeShown = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -122,11 +128,20 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        holdForFirstScreen()
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         intent.deepLink()?.let { pendingLink.value = it }
+    }
+
+    /**
+     * Home's stacks, apps and activity come from SQLite a moment after launch, so its first frame is empty. Hold
+     * the first frame, and with it the system splash, until Home has them. Onboarding has nothing to wait for.
+     */
+    private fun holdForFirstScreen() {
+        if (zapstore.onboarding.done) LaunchHold(findViewById(android.R.id.content), LAUNCH_HOLD_MILLIS) { homeShown }.attach()
     }
 
     private fun Intent.deepLink(): DeepLink? =
@@ -208,11 +223,16 @@ class MainActivity : ComponentActivity() {
                 is DeepLink.App -> navController.navigate(Routes.app(target.appId))
                 is DeepLink.Stack -> navController.navigate(Routes.stack(target.pubkey, target.identifier))
                 is DeepLink.Profile -> navController.navigate(Routes.profile(target.pubkey))
-                DeepLink.MyApps -> navController.navigate(Routes.UPDATES) {
-                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                    launchSingleTop = true
-                    restoreState = true
+                is DeepLink.Search -> {
+                    showTab(navController, Routes.HOME)
+                    if (target.query.isNotEmpty()) openHomeSearch(navController, target.query)
                 }
+                DeepLink.Stacks -> {
+                    showTab(navController, Routes.HOME)
+                    navController.navigate(Routes.STACKS) { launchSingleTop = true }
+                }
+                DeepLink.MyApps -> showTab(navController, Routes.UPDATES)
+                is DeepLink.External -> openExternal(target.url)
             }
         }
         val backStack by navController.currentBackStack.collectAsStateWithLifecycle()
@@ -220,6 +240,8 @@ class MainActivity : ComponentActivity() {
         val updates by zapstore.catalogSync.updates.collectAsStateWithLifecycle(emptyList())
         val updateCount = updates.size
         val pendingUpdates = remember(updates) { updates.associate { it.app.appId to it.installedVersion } }
+        val installedApps by zapstore.catalogSync.installedApps.collectAsStateWithLifecycle()
+        val installedVersions = remember(installedApps) { installedApps.associate { it.packageId to it.versionName } }
         val selectTab: (String) -> Unit = { route ->
             if (route == currentTab && backStack.lastOrNull()?.destination?.route == route) {
                 reselected.tryEmit(route)
@@ -234,6 +256,10 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        // Loaded from launch, so My apps opens on finished content.
+        val updatesModel: UpdatesViewModel = viewModel(factory = UpdatesViewModel.factory(zapstore))
+        val updatesState = updatesModel.uiState.collectAsStateWithLifecycle()
+
         val signedIn by zapstore.account.account.collectAsStateWithLifecycle()
         val navAvatar by remember(signedIn?.pubkey) {
             val pubkey = signedIn?.pubkey
@@ -243,7 +269,7 @@ class MainActivity : ComponentActivity() {
         }.collectAsStateWithLifecycle(null)
 
         ToastHost()
-        CompositionLocalProvider(LocalPendingUpdates provides pendingUpdates) {
+        CompositionLocalProvider(LocalPendingUpdates provides pendingUpdates, LocalInstalledVersions provides installedVersions) {
         Scaffold(
             containerColor = ZapCanvas,
             bottomBar = { ZapNavigationBar(currentTab, updateCount, selectTab, avatar = navAvatar) },
@@ -260,6 +286,7 @@ class MainActivity : ComponentActivity() {
             composable(Routes.HOME) {
                 val viewModel: HomeViewModel = viewModel(factory = HomeViewModel.factory(iolite, zapstore.queryEncoder::encode))
                 val state by viewModel.uiState.collectAsStateWithLifecycle()
+                SideEffect { homeShown = state.ready }
                 HomeScreen(
                     state = state,
                     onSearchQueryChanged = viewModel::onSearchQueryChanged,
@@ -284,15 +311,15 @@ class MainActivity : ComponentActivity() {
                 StacksScreen(
                     state = state,
                     onStackClick = { navController.navigate(Routes.stack(it.pubkey, it.identifier)) },
+                    onProfileClick = openProfile,
                     onLoadMore = viewModel::loadMore,
                 )
             }
 
             composable(Routes.UPDATES) {
-                val viewModel: UpdatesViewModel = viewModel(factory = UpdatesViewModel.factory(zapstore))
-                val state by viewModel.uiState.collectAsStateWithLifecycle()
+                val viewModel = updatesModel
                 UpdatesScreen(
-                    state = state,
+                    state = updatesState.value,
                     onSync = viewModel::sync,
                     onAppClick = openApp,
                     onUninstall = { requestUninstall(it.appId, it.name) },
@@ -360,7 +387,6 @@ class MainActivity : ComponentActivity() {
                     onOpenAddCatalog = settingsModel::openAddCatalog,
                     onCloseAddCatalog = settingsModel::closeAddCatalog,
                     onAddCatalog = settingsModel::addCatalog,
-                    onMoveCatalog = settingsModel::moveCatalog,
                     onAskRemoveCatalog = settingsModel::askRemoveCatalog,
                     onCancelRemoveCatalog = settingsModel::cancelRemoveCatalog,
                     onConfirmRemoveCatalog = settingsModel::confirmRemoveCatalog,
@@ -482,23 +508,15 @@ class MainActivity : ComponentActivity() {
                 val viewModel: AppDetailViewModel = viewModel(factory = AppDetailViewModel.factory(zapstore))
                 val state by viewModel.uiState.collectAsStateWithLifecycle()
                 val saved by zapstore.lists.saved.collectAsStateWithLifecycle()
-                val ignored by zapstore.lists.ignored.collectAsStateWithLifecycle()
                 val appId = state.app?.appId
                 AppDetailScreen(
                     state = state,
                     onStackClick = { navController.navigate(Routes.stack(it.pubkey, it.identifier)) },
                     saved = appId != null && appId in saved,
-                    ignored = appId != null && appId in ignored,
                     onSave = { on ->
                         appId?.let {
                             zapstore.lists.setSaved(it, on)
                             Toasts.show(getString(if (on) R.string.toast_saved else R.string.toast_unsaved))
-                        }
-                    },
-                    onIgnore = { on ->
-                        appId?.let {
-                            zapstore.lists.setIgnored(it, on)
-                            Toasts.show(getString(if (on) R.string.toast_ignored else R.string.toast_unignored))
                         }
                     },
                     onShare = {
@@ -569,8 +587,32 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openUrl(value: String) {
-        if (!isHttpUrl(value)) return
-        runCatching { startActivity(Intent(Intent.ACTION_VIEW, value.toUri())) }
+        when (val target = DeepLink.parse(value)) {
+            null -> if (isHttpUrl(value)) openExternal(value)
+            is DeepLink.External -> openExternal(target.url)
+            else -> pendingLink.value = target
+        }
+    }
+
+    private fun openExternal(url: String) {
+        runCatching { startActivity(Intent(Intent.ACTION_VIEW, url.toUri())) }
+    }
+
+    /** Selects a bottom-bar destination, keeping the other tabs' back stacks. */
+    private fun showTab(navController: NavHostController, route: String) {
+        navController.navigate(route) {
+            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+
+    /** Puts [query] into the home search after [showTab] has the home entry on the stack. */
+    private fun openHomeSearch(navController: NavHostController, query: String) {
+        val owner = navController.getBackStackEntry(Routes.HOME)
+        ViewModelProvider(owner, HomeViewModel.factory(zapstore.iolite, zapstore.queryEncoder::encode))
+            .get(HomeViewModel::class.java)
+            .openSearch(query)
     }
 
     /** Hands a Lightning invoice to whichever wallet app the person picks. */
@@ -608,6 +650,9 @@ class MainActivity : ComponentActivity() {
 
     private companion object {
         const val NAVIGATION_TRANSITION_DURATION = 150
+
+        /** The longest the splash waits for the first screen; a stalled read must not trap the user behind it. */
+        const val LAUNCH_HOLD_MILLIS = 2_000L
         const val WEB_URL = "https://zapstore.dev/"
     }
 }

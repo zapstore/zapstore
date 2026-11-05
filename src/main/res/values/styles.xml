@@ -8,5 +8,8 @@
         <item name="android:navigationBarColor">#100F0D</item>
         <item name="android:colorAccent">#3065A6</item>
         <item name="android:windowBackground">#100F0D</item>
+        <!-- The ray on the app's background gray. The splash holds until Home is complete. Ignored before Android 12. -->
+        <item name="android:windowSplashScreenBackground">#100F0D</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_ray</item>
     </style>
 </resources>

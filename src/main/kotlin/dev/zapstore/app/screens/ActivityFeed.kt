@@ -11,10 +11,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -36,7 +36,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.zapstore.app.R
-import dev.zapstore.app.ZapLine
 import dev.zapstore.app.ZapSpacing
 import dev.zapstore.app.ZapText
 import dev.zapstore.app.ZapSurface3
@@ -49,6 +48,9 @@ import dev.zapstore.app.components.LoadingIndicator
 import dev.zapstore.app.components.ProfileImage
 import dev.zapstore.app.components.shortDisplayName
 import dev.zapstore.app.components.StackTile
+import dev.zapstore.app.components.ZapButton
+import dev.zapstore.app.components.ZapButtonStyle
+import dev.zapstore.app.components.resolvedName
 import dev.zapstore.app.components.VersionPill
 import dev.zapstore.iolite.ActivityRecord
 import dev.zapstore.iolite.AppRecord
@@ -101,8 +103,9 @@ internal fun ActivityRecord.items(apps: Map<String, AppRecord>): List<ActivityIt
 internal fun StackRecord.activity(): ActivityItem = ActivityItem(eventId, pubkey, updatedAt, stack = this)
 
 /**
- * The entries of an activity section, under a header the caller draws: loading, empty, or the rows with a
- * spinner while older ones are asked for. A row opens through [onOpen].
+ * The entries of an activity section, under a header the caller draws: loading, empty, or the rows. A row
+ * opens through [onOpen]. When older entries exist, [onLoadMore] makes a left-aligned "Load more" button
+ * that asks for the next page; without it the caller scrolls them in and a spinner stands in for them.
  */
 internal fun LazyListScope.activityRows(
     items: List<ActivityItem>,
@@ -110,29 +113,39 @@ internal fun LazyListScope.activityRows(
     canLoadMore: Boolean,
     profiles: Map<String, ProfileRecord>,
     stackApps: Map<String, AppRecord>,
-    emptyText: String,
+    /** Null leaves an empty section blank. */
+    emptyText: String?,
     onOpen: (ActivityItem) -> Unit,
+    /** Keys of the active catalogs: what they do reads "the catalog", never a profile name. */
+    catalogKeys: Set<String> = emptySet(),
     /** False on a person's own page, where every entry is theirs and their name would only repeat. */
     showWho: Boolean = true,
     modifier: Modifier = Modifier,
+    onLoadMore: (() -> Unit)? = null,
 ) {
     when {
-        items.isEmpty() && loading -> Unit
-        items.isEmpty() -> item(key = "noActivity", contentType = "empty") {
-            EmptyRow(emptyText, modifier)
+        items.isEmpty() -> if (!loading && emptyText != null) {
+            item(key = "noActivity", contentType = "empty") { EmptyRow(emptyText, modifier) }
         }
         else -> {
-            itemsIndexed(items, key = { _, item -> "activity:${item.eventId}" }, contentType = { _, _ -> "activity" }) { index, item ->
-                // The web list is ruled above its first entry and below every one.
-                Column(modifier) {
-                    if (index == 0) HorizontalDivider(color = ZapLine)
-                    ActivityRow(item, profiles[item.pubkey], stackApps, showWho, onClick = { onOpen(item) })
-                    HorizontalDivider(color = ZapLine)
-                }
+            // No rules between entries: the padding of each row is the only gap.
+            itemsIndexed(items, key = { _, item -> "activity:${item.eventId}" }, contentType = { _, _ -> "activity" }) { _, item ->
+                ActivityRow(item, profiles[item.pubkey], stackApps, catalogKeys, showWho, onClick = { onOpen(item) }, modifier = modifier)
             }
             if (canLoadMore) {
-                item(key = "activityMore", contentType = "loading") {
-                    LoadingIndicator(modifier.padding(vertical = ZapSpacing.space4).testTag("activityLoadingMore"))
+                if (onLoadMore != null) {
+                    item(key = "activityMore", contentType = "more") {
+                        ZapButton(
+                            text = stringResource(R.string.load_more),
+                            onClick = onLoadMore,
+                            style = ZapButtonStyle.Tonal,
+                            modifier = modifier.padding(top = ZapSpacing.space2).testTag("activityLoadMore"),
+                        )
+                    }
+                } else {
+                    item(key = "activityMore", contentType = "loading") {
+                        LoadingIndicator(modifier.padding(vertical = ZapSpacing.space4).testTag("activityLoadingMore"))
+                    }
                 }
             }
         }
@@ -140,39 +153,58 @@ internal fun LazyListScope.activityRows(
 }
 
 /**
- * One entry as the web page draws it: the person's picture, then one line that reads "<name> commented on
- * <app>", "<name> zapped ⚡ N sats to <app>", "<name> released <app> <version>" or "<name> updated the stack
- * <stack>", with the time at the right edge, and a comment or zap note under it. A catalog-signed release
- * reads "Catalog published <app> <version>". A release puts one line of the about under that, cut with an ellipsis. [showWho] is false on a person's own page, where the line
- * starts at what they did and the note lines up under it. An entry with no app or stack is on the page of the
- * stack it belongs to, so its line ends after the verb.
+ * One entry, led by what it is about, since apps and stacks come first here: the app's icon or the stack's
+ * tile, then one line that reads "<app> [version] released by [avatar] <name>", "<app> received ⚡ N sats from
+ * <name>", "<app> new comment from <name>" or "<stack> updated by <name>", with the time at the right edge.
+ * A comment's text and a release's one-line about sit under the line, and a line that wraps, start where the
+ * name starts, so everything lines up right of the icon. The "by <name>" part is left out when no profile
+ * names the person, and on a person's own page ([showWho] false), where every entry is theirs. An entry made
+ * by a catalog key says "by the catalog" in plain text, and a release by one says just "released".
+ * An entry with no app or stack is on the page of the stack it belongs to.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ActivityRow(item: ActivityItem, profile: ProfileRecord?, stackApps: Map<String, AppRecord>, showWho: Boolean, onClick: () -> Unit) {
+private fun ActivityRow(
+    item: ActivityItem,
+    profile: ProfileRecord?,
+    stackApps: Map<String, AppRecord>,
+    catalogKeys: Set<String>,
+    showWho: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val app = item.app
     val stack = item.stack
-    val catalogRelease = item.release && app?.isCatalogSigned == true
-    fun lead(text: String) = if (showWho) text else text.replaceFirstChar { it.uppercase() }
+    val byCatalog = item.pubkey in catalogKeys || (item.release && app?.isCatalogSigned == true)
+    val named = showWho && !byCatalog && resolvedName(profile) != null
+    /** "by <person>" or "from <person>"; "by the catalog" for a catalog key; nothing when no one can be named. */
+    @Composable
+    fun Who(word: Int, catalogWord: Int) {
+        if (showWho && item.pubkey in catalogKeys) {
+            Verb(stringResource(catalogWord))
+        } else if (named) {
+            Attribution(word) { Person(item.pubkey, profile) }
+        }
+    }
+    val leading: (@Composable () -> Unit)? = when {
+        stack != null && !item.release -> {
+            { StackTile(stack.appIds, stackApps, size = ACTIVITY_ICON, modifier = Modifier.wrapContentSize(Alignment.Center, unbounded = true)) }
+        }
+        app != null -> {
+            { AppIcon(title = app.name, iconUrl = app.iconUrl, iconFile = app.iconFile, size = ACTIVITY_ICON) }
+        }
+        else -> null
+    }
     Row(
         horizontalArrangement = Arrangement.spacedBy(ACTIVITY_GAP),
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .padding(vertical = 14.dp)
             .testTag("activity:${item.eventId}"),
     ) {
-        if (showWho) {
-            Box(Modifier.padding(top = 1.dp).size(ACTIVITY_ICON).clip(CircleShape).background(ZapSurface3)) {
-                ProfileImage(
-                    pubkey = item.pubkey,
-                    pictureUrl = profile?.picture,
-                    profileVersion = profile?.eventId,
-                    contentDescription = null,
-                    modifier = Modifier.matchParentSize().testTag("profile:${item.pubkey}"),
-                )
-            }
-        }
+        // A box of the icon's width, so the lines below can start where the name does.
+        if (leading != null) Box(Modifier.size(ACTIVITY_ICON), contentAlignment = Alignment.Center) { leading() }
         Column(Modifier.weight(1f)) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 FlowRow(
@@ -181,34 +213,37 @@ private fun ActivityRow(item: ActivityItem, profile: ProfileRecord?, stackApps: 
                     itemVerticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.weight(1f),
                 ) {
-                    if (catalogRelease) Strong(stringResource(R.string.activity_catalog))
-                    else if (showWho) Strong(shortDisplayName(item.pubkey, profile))
                     when {
                         item.release && app != null -> {
-                            Verb(if (catalogRelease) stringResource(R.string.activity_published) else lead(stringResource(R.string.activity_released)))
-                            ReleaseSubject(app.name, app.version) {
-                                AppIcon(title = app.name, iconUrl = app.iconUrl, iconFile = app.iconFile, size = ACTIVITY_ICON)
-                            }
+                            NameWithVersion(app.name, app.version)
+                            Verb(stringResource(R.string.activity_released))
+                            if (!byCatalog) Who(R.string.activity_by, R.string.activity_by_catalog)
                         }
                         stack != null -> {
-                            Verb(lead(stringResource(R.string.activity_updated_stack)))
-                            Subject(name = stack.name) { StackTile(stack.appIds, stackApps, size = ACTIVITY_ICON) }
+                            Strong(stack.name)
+                            Verb(stringResource(R.string.activity_updated))
+                            Who(R.string.activity_by, R.string.activity_by_catalog)
                         }
                         app != null -> {
+                            Strong(app.name)
                             if (item.sats != null) {
-                                Verb(lead(stringResource(R.string.activity_zapped)))
+                                Verb(stringResource(R.string.activity_received))
                                 Sats(item.sats)
-                                Verb(stringResource(R.string.activity_to))
+                                Who(R.string.activity_from, R.string.activity_from_catalog)
                             } else {
-                                Verb(lead(stringResource(R.string.activity_commented_on)))
+                                Verb(stringResource(R.string.activity_new_comment))
+                                Who(R.string.activity_from, R.string.activity_from_catalog)
                             }
-                            Subject(name = app.name) { AppIcon(title = app.name, iconUrl = app.iconUrl, iconFile = app.iconFile, size = ACTIVITY_ICON) }
                         }
                         item.sats != null -> {
-                            Verb(lead(stringResource(R.string.activity_zapped)))
+                            Verb(stringResource(R.string.activity_zap))
                             Sats(item.sats)
+                            Who(R.string.activity_from, R.string.activity_from_catalog)
                         }
-                        else -> Verb(lead(stringResource(R.string.activity_commented)))
+                        else -> {
+                            Verb(stringResource(R.string.activity_stack_comment))
+                            Who(R.string.activity_from, R.string.activity_from_catalog)
+                        }
                     }
                 }
                 Text(
@@ -238,10 +273,36 @@ private fun ActivityRow(item: ActivityItem, profile: ProfileRecord?, stackApps: 
                     style = MaterialTheme.typography.bodyLarge,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 6.dp, start = if (showWho) 0.dp else ACTIVITY_ICON + ACTIVITY_GAP),
+                    modifier = Modifier.padding(top = 6.dp),
                 )
             }
         }
+    }
+}
+
+/** "by" or "from" and the one who did it, kept together so a line break never falls between them. */
+@Composable
+private fun Attribution(word: Int, who: @Composable () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Verb(stringResource(word))
+        who()
+    }
+}
+
+/** A person as a small avatar and their name in bold. */
+@Composable
+private fun Person(pubkey: String, profile: ProfileRecord?) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Box(Modifier.size(ACTIVITY_ICON).clip(CircleShape).background(ZapSurface3)) {
+            ProfileImage(
+                pubkey = pubkey,
+                pictureUrl = profile?.picture,
+                profileVersion = profile?.eventId,
+                contentDescription = null,
+                modifier = Modifier.matchParentSize().testTag("profile:$pubkey"),
+            )
+        }
+        Strong(shortDisplayName(pubkey, profile))
     }
 }
 
@@ -251,46 +312,18 @@ private fun Strong(text: String, modifier: Modifier = Modifier) {
     Text(text, color = ZapText, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = modifier)
 }
 
-/** What was done, in the quieter colour: "commented on", "zapped", "to", "updated the stack". */
+/** What was done, in the quieter colour: "released", "received", "by", "from". */
 @Composable
 private fun Verb(text: String) {
     Text(text, color = ZapText2, style = MaterialTheme.typography.bodyMedium)
 }
 
-/** App icon, name and version pill as one piece, so a line break falls before the group, not inside it. */
+/** App name and version pill as one piece, so a line break falls before the pair, not inside it. */
 @Composable
-private fun ReleaseSubject(name: String, version: String, icon: @Composable () -> Unit) {
-    Layout(
-        content = {
-            icon()
-            Strong(name)
-            if (version.isNotBlank()) VersionPill(version, scale = 0.8f)
-        },
-    ) { measurables, constraints ->
-        val gap = 6.dp.roundToPx()
-        val loose = Constraints(maxWidth = Constraints.Infinity)
-        val iconPlaceable = measurables[0].measure(loose)
-        val pill = measurables.getOrNull(2)?.measure(loose)
-        val reserved = iconPlaceable.width + gap + (pill?.let { gap + it.width } ?: 0)
-        val namePlaceable = measurables[1].measure(Constraints(maxWidth = (constraints.maxWidth - reserved).coerceAtLeast(0)))
-        val width = (reserved + namePlaceable.width).coerceAtMost(constraints.maxWidth)
-        val height = maxOf(iconPlaceable.height, namePlaceable.height, pill?.height ?: 0)
-        layout(width, height) {
-            var x = 0
-            iconPlaceable.placeRelative(x, (height - iconPlaceable.height) / 2)
-            x += iconPlaceable.width + gap
-            namePlaceable.placeRelative(x, (height - namePlaceable.height) / 2)
-            if (pill != null) pill.placeRelative(x + namePlaceable.width + gap, (height - pill.height) / 2)
-        }
-    }
-}
-
-/** The app or stack an entry is about: its small picture, then its name in bold. */
-@Composable
-private fun Subject(name: String, picture: @Composable () -> Unit) {
+private fun NameWithVersion(name: String, version: String) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        picture()
-        Strong(name)
+        Strong(name, Modifier.weight(1f, fill = false))
+        if (version.isNotBlank()) VersionPill(version, scale = 0.8f)
     }
 }
 
@@ -325,14 +358,14 @@ internal fun satsAmount(sats: Long): String {
     return digits + "KMB"[unit - 1]
 }
 
-/** "just now", "5m ago", "13h ago", "3d ago", and the UTC date from 60 days on: the web page's `ago`. */
+/** "just now", "5m ago", "13h ago", "1d ago", and the UTC date from 60 days on: the web page's `ago`. */
 @Composable
-private fun agoLabel(createdAt: Long): String {
+internal fun agoLabel(createdAt: Long): String {
     val seconds = System.currentTimeMillis() / 1000 - createdAt
     return when {
         seconds < 60 -> stringResource(R.string.activity_just_now)
         seconds < 3_600 -> stringResource(R.string.activity_ago_minutes, seconds / 60)
-        seconds < 48 * 3_600 -> stringResource(R.string.activity_ago_hours, seconds / 3_600)
+        seconds < 24 * 3_600 -> stringResource(R.string.activity_ago_hours, seconds / 3_600)
         seconds < 60 * 86_400 -> stringResource(R.string.activity_ago_days, seconds / 86_400)
         else -> Instant.ofEpochSecond(createdAt).atZone(ZoneOffset.UTC).toLocalDate().toString()
     }
@@ -352,6 +385,7 @@ internal fun LoadMoreNearEnd(position: () -> Pair<Int?, Int>, canLoadMore: Boole
 }
 
 private const val PREFETCH = 6
-/** The person's picture and the app or stack picture in a line share one size, and the gap after the person's. */
+/** The person's picture and the app or stack picture in a line share one size. */
 private val ACTIVITY_ICON = 20.dp
-private val ACTIVITY_GAP = 10.dp
+/** The gap between that picture and the name beside it. */
+private val ACTIVITY_GAP = 6.dp

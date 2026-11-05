@@ -33,7 +33,9 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" />
                 <data android:host="zapstore.dev" />
+                <data android:path="/apps" />
                 <data android:pathPrefix="/apps/" />
+                <data android:path="/stacks" />
                 <data android:pathPrefix="/stacks/" />
                 <data android:pathPrefix="/profile/" />
             </intent-filter>
@@ -42,6 +44,13 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="market" android:host="details" />
+                <data android:scheme="market" android:host="search" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="nostr" />
             </intent-filter>
         </activity>
         <receiver

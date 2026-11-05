@@ -13,15 +13,23 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import dev.zapstore.app.R
 import dev.zapstore.app.ZapCanvas
 import dev.zapstore.app.ZapRadius
 import dev.zapstore.app.ZapSpacing
@@ -84,8 +92,13 @@ private fun stackSlot(index: Int, count: Int): StackSlot = when {
     else -> StackSlot(index - 2, 0)
 }
 
-/** Home sizes each card to this fraction of the content width, so the next column peeks. */
-const val StackShelfFraction = 0.45f
+/**
+ * Home sizes each card to this fraction of the content width, so the next column peeks. A narrow phone gets
+ * wider cards: at 45% a word like "Passwords" no longer fits beside the icon and breaks mid-word.
+ */
+fun stackShelfFraction(contentWidth: Dp): Float = if (contentWidth < NARROW_SHELF_WIDTH) 0.56f else 0.45f
+
+private val NARROW_SHELF_WIDTH = 320.dp
 
 /** Half the previous 80 dp tile, so the icons are half as big. */
 private val StackCardTile = 40.dp
@@ -96,8 +109,14 @@ private const val STACK_OVERLAP = 0.5f
 private const val STACK_LEFT_DROP = 0.25f
 private const val STACK_TOP_SHIFT = 0.25f
 
-/** Two lines of the row title (15 sp, line height 20). The shelf is at least this tall. */
+/** Two lines of the row title (15 sp, line height 20). */
 private val StackNameHeight = 40.dp
+
+/** "See all", the gap, and two lines of about (14 sp, line height 20). */
+private val SeeAllTextHeight = 20.dp + ZapSpacing.space1 + 40.dp
+
+/** The width of a four-icon tile, the widest there is. */
+private val StackTileSlotWidth = StackCardTile * STACK_ICON_FRACTION * (1 + STACK_OVERLAP + STACK_TOP_SHIFT)
 
 private fun stackPileHeight(size: Dp, count: Int): Dp {
     val icon = size * if (count <= 1) STACK_LONE_FRACTION else STACK_ICON_FRACTION
@@ -106,8 +125,14 @@ private fun stackPileHeight(size: Dp, count: Int): Dp {
     return icon + icon * STACK_OVERLAP * (rows - 1) + leftDrop
 }
 
-/** One shelf row: the icon pile or a two-line name, plus the card's vertical padding. Two of these, and one [ZapSpacing.space3], are the Home shelf. */
-val StackCardHeight = maxOf(stackPileHeight(StackCardTile, 4), StackNameHeight) + ZapSpacing.space2 * 2
+/** The vertical padding of a card on Home's shelf, tighter than the default so the shelf stands about 15% shorter. */
+val StackShelfPadding = ZapSpacing.space1
+
+/** The gap between the rows of Home's shelf. */
+val StackShelfGap = ZapSpacing.space1
+
+/** One shelf row: the icon pile, a two-line name, or the See all slot, plus the card's vertical padding. */
+val StackCardHeight = maxOf(stackPileHeight(StackCardTile, 4), StackNameHeight, SeeAllTextHeight) + StackShelfPadding * 2
 
 /**
  * The one stack card: Home's shelf, Profile's shelf, the Stacks list and a stack page's head.
@@ -125,6 +150,9 @@ fun StackCard(
     byline: String? = null,
     head: Boolean = false,
     onShare: (() -> Unit)? = null,
+    underName: (@Composable () -> Unit)? = null,
+    count: Int? = null,
+    verticalPadding: Dp = ZapSpacing.space2,
 ) {
     StackFace(
         name = stack.name.ifBlank { stack.identifier },
@@ -135,6 +163,9 @@ fun StackCard(
         onClick = onClick,
         onShare = onShare,
         head = head,
+        underName = underName,
+        count = count,
+        verticalPadding = verticalPadding,
         modifier = modifier,
     )
 }
@@ -150,28 +181,53 @@ internal fun StackFace(
     onClick: (() -> Unit)? = null,
     onShare: (() -> Unit)? = null,
     head: Boolean = false,
+    mark: (@Composable () -> Unit)? = null,
+    underName: (@Composable () -> Unit)? = null,
+    count: Int? = null,
+    verticalPadding: Dp = ZapSpacing.space2,
 ) {
     Row(
-        verticalAlignment = Alignment.CenterVertically,
+        verticalAlignment = if (head) Alignment.Top else Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3),
         modifier = modifier
             .fillMaxWidth()
             .fillMaxHeight()
             .clip(RoundedCornerShape(ZapRadius.md))
             .then(onClick?.let { Modifier.clickable(onClick = it) } ?: Modifier)
-            .padding(vertical = ZapSpacing.space2),
+            .padding(vertical = verticalPadding),
     ) {
-        StackTile(appIds, apps, size = StackCardTile)
+        if (mark != null) {
+            mark()
+        } else {
+            // Every tile gets the width of the fullest one, so titles start at the same x whatever the app count.
+            Box(Modifier.width(StackTileSlotWidth), contentAlignment = if (head) Alignment.TopCenter else Alignment.Center) {
+                StackTile(appIds, apps, size = StackCardTile)
+            }
+        }
         Column(
-            Modifier.weight(1f).fillMaxHeight(),
-            verticalArrangement = Arrangement.spacedBy(ZapSpacing.space1, Alignment.CenterVertically),
+            Modifier.weight(1f).then(if (head) Modifier else Modifier.fillMaxHeight()),
+            verticalArrangement = Arrangement.spacedBy(ZapSpacing.space1, if (head) Alignment.Top else Alignment.CenterVertically),
         ) {
-            Text(
-                name,
-                style = if (head) ZapTitle3Style else MaterialTheme.typography.titleSmall,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            if (count != null) {
+                val appsLabel = pluralStringResource(R.plurals.curated_apps, count, count)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        name,
+                        modifier = Modifier.weight(1f, fill = false),
+                        style = if (head) ZapTitle3Style else MaterialTheme.typography.titleSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    GroupCount(count, Modifier.clearAndSetSemantics { contentDescription = appsLabel })
+                }
+            } else {
+                FitTitle(name, if (head) ZapTitle3Style else MaterialTheme.typography.titleSmall)
+            }
+            if (underName != null) underName()
             if (!supporting.isNullOrBlank()) {
                 Text(
                     supporting,
@@ -186,6 +242,41 @@ internal fun StackFace(
             }
         }
         onShare?.let { ShareButton(it) }
+    }
+}
+
+/** The shelf's last slot: an arrow where the icons would be, and it opens every stack. */
+@Composable
+fun SeeAllStackCard(onClick: () -> Unit, modifier: Modifier = Modifier, verticalPadding: Dp = ZapSpacing.space2) {
+    StackFace(
+        name = stringResource(R.string.see_all),
+        appIds = emptyList(),
+        apps = emptyMap(),
+        supporting = stringResource(R.string.every_stack),
+        onClick = onClick,
+        mark = { SeeAllMark() },
+        verticalPadding = verticalPadding,
+        modifier = modifier,
+    )
+}
+
+/** The same outer size as a four-icon pile, so this slot lines up with the cards beside it. */
+@Composable
+private fun SeeAllMark() {
+    val size = stackPileHeight(StackCardTile, 4)
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .size(size)
+            .clip(RoundedCornerShape(size * ZapRadius.appTileFraction))
+            .background(ZapSurface2),
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_arrow_right),
+            contentDescription = null,
+            tint = ZapText2,
+            modifier = Modifier.size(20.dp),
+        )
     }
 }
 

@@ -53,6 +53,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.zapstore.app.BuildConfig
@@ -81,8 +82,8 @@ import dev.zapstore.app.catalog.InstalledApp
 import dev.zapstore.app.catalog.ManualReason
 import dev.zapstore.app.components.AppIcon
 import dev.zapstore.app.components.AppRow
-import dev.zapstore.app.components.AppRowStyle
 import dev.zapstore.app.components.EmptyRow
+import dev.zapstore.app.components.GroupCount
 import dev.zapstore.app.components.GroupHeader
 import dev.zapstore.app.components.LoadingIndicator
 import dev.zapstore.app.components.StatusText
@@ -367,7 +368,7 @@ private fun LazyListScope.searchSection(
         AppRow(
             app = app,
             onClick = { onAppClick(app) },
-            style = AppRowStyle.Manage,
+            onDevice = true,
             author = state.profiles.authorOf(app),
             modifier = Modifier.testTag("mine:${app.appId}"),
         )
@@ -391,7 +392,7 @@ private fun LazyListScope.installedSection(
             AppRow(
                 app = app,
                 onClick = { onAppClick(app) },
-                style = AppRowStyle.Manage,
+                onDevice = true,
                 author = state.profiles.authorOf(app),
                 modifier = Modifier.testTag("installed:${app.appId}"),
             )
@@ -399,6 +400,7 @@ private fun LazyListScope.installedSection(
     }
 }
 
+/** Apps another store keeps current, one sublist per store. */
 private fun LazyListScope.otherStoresSection(
     state: UpdatesUiState,
     onAppClick: (AppRecord) -> Unit,
@@ -409,18 +411,70 @@ private fun LazyListScope.otherStoresSection(
     item(key = "sectionStores", contentType = "header") {
         GroupHeader(stringResource(R.string.updates_section_stores), Modifier.testTag("sectionStores"), count = current.size)
     }
-    items(current, key = { "store:${it.entry.app.appId}" }, contentType = { "store" }) { item ->
-        val entry = item.entry
-        IgnoreSwipe(entry.app.appId, onIgnore) {
-            AppRow(
-                app = entry.app,
-                onClick = { onAppClick(entry.app) },
-                style = AppRowStyle.Manage,
-                author = state.profiles.authorOf(entry.app),
-                note = if (entry.signedDifferently) stringResource(R.string.store_signed_differently, item.storeLabel) else item.storeLabel,
-                modifier = Modifier.testTag("store:${entry.app.appId}"),
-            )
+    current.groupBy { it.entry.store }
+        .entries
+        .sortedWith(compareBy({ it.value.first().storeLabel.lowercase() }, { it.key.lowercase() }))
+        .forEachIndexed { index, (id, apps) ->
+            item(key = "storeGroup:$id", contentType = "storeHeader") {
+                StoreGroupHeader(
+                    name = apps.first().storeLabel,
+                    appId = id,
+                    count = apps.size,
+                    modifier = Modifier
+                        .padding(top = if (index == 0) 0.dp else ZapSpacing.space3)
+                        .testTag("storeGroup:$id"),
+                )
+            }
+            items(apps, key = { "store:${it.entry.app.appId}" }, contentType = { "store" }) { item ->
+                val entry = item.entry
+                IgnoreSwipe(entry.app.appId, onIgnore) {
+                    AppRow(
+                        app = entry.app,
+                        onClick = { onAppClick(entry.app) },
+                        onDevice = true,
+                        author = state.profiles.authorOf(entry.app),
+                        note = if (entry.signedDifferently) stringResource(R.string.store_signed_differently) else null,
+                        modifier = Modifier.testTag("store:${entry.app.appId}"),
+                    )
+                }
+            }
         }
+}
+
+/**
+ * Store name under Updated by other stores. The package id sits under the name when Android
+ * gave the store a name of its own; otherwise the name already is that id.
+ */
+@Composable
+private fun StoreGroupHeader(name: String, appId: String, count: Int, modifier: Modifier = Modifier) {
+    val id = appId.takeUnless { it.equals(name, ignoreCase = true) }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .defaultMinSize(minHeight = 32.dp)
+            .semantics(mergeDescendants = true) {},
+    ) {
+        Column(Modifier.weight(1f, fill = false)) {
+            Text(
+                name,
+                color = ZapText2,
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (id != null) {
+                Text(
+                    id,
+                    color = ZapText3,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        GroupCount(count)
     }
 }
 
@@ -459,7 +513,7 @@ private fun LazyListScope.ignoredSection(
             AppRow(
                 app = ignored.app,
                 onClick = { onAppClick(ignored.app) },
-                style = AppRowStyle.Manage,
+                onDevice = true,
                 author = state.profiles.authorOf(ignored.app),
                 note = ignored.installer?.let { stringResource(R.string.installed_by, it) }
                     ?: stringResource(R.string.installed_by_unknown),
@@ -550,8 +604,8 @@ private fun UpdateRow(
         AppRow(
             app = update.app,
             onClick = { actions.onAppClick(update.app) },
-            style = AppRowStyle.Manage,
-            installed = update.installedVersion,
+            onDevice = true,
+            pendingFrom = update.installedVersion,
             showAuthor = false,
             modifier = Modifier.testTag("update:$id"),
             trailing = {

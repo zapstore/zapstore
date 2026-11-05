@@ -1,10 +1,14 @@
 package dev.zapstore.app
 
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
+import dev.zapstore.iolite.neventOf
+import dev.zapstore.iolite.toNote
+import dev.zapstore.iolite.toNpub
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -134,4 +138,45 @@ class MarkdownTest {
         assertEquals("one\ntwo", ZapMarkdown.parse("one<br>two").text)
         assertEquals("Tom & Jerry", ZapMarkdown.parse("<div>Tom &amp; Jerry</div>").text)
     }
+
+    @Test
+    fun `nostr entities and hashtags become links`() {
+        val pubkey = "6d04b3ef16e4b6a4357433ce64e93d66268c1e3c95a243f6de442412938aa537"
+        val npub = pubkey.toNpub()
+        val note = "ab".repeat(32).toNote()
+        val nevent = neventOf("cd".repeat(32), pubkey)!!
+        val nprofile = "nprofile1qqsx6p9nautwfd4yx46r8nnyay7kvf5vrc7ftgjr7m0ygfqjjw922dcpzpmhxue69uhhyetvv9ujuar9wd6q24xlq8"
+        val app = "naddr1qqgxgetk9eaxzurnw3hhyefwv9c8qq3qd5zt8mckujm2gdt5x08xf6favcngc83ujk3y8ak7gsjp9yu255msxpqqqplqkkcgk2x"
+        val stack = "naddr1qqxkummnw3ez6cmvd9jkuarnqgsx6p9nautwfd4yx46r8nnyay7kvf5vrc7ftgjr7m0ygfqjjw922dcrqsqqqa3mrfzd9k"
+        val nsec = "nsec1jax67srg8a5j4rej3spldsduryn6pdhtfcegcztuhdexyx2v42aq0t4sv6"
+        val result = ZapMarkdown.parse(
+            "see nostr:$npub $nprofile $app $stack $note $nevent #Nostr and `$npub` but not $nsec",
+        )
+
+        assertEquals(
+            listOf(
+                "https://zapstore.dev/profile/$npub",
+                "https://zapstore.dev/profile/$nprofile",
+                "https://zapstore.dev/apps/$app",
+                "https://zapstore.dev/stacks/$stack",
+                "https://njump.me/$note",
+                "https://njump.me/$nevent",
+                "https://zapstore.dev/apps?q=Nostr",
+            ),
+            result.urls(),
+        )
+        assertTrue(result.text.contains("nostr:$npub"))
+        assertTrue(result.text.contains("#Nostr"))
+        assertTrue(result.text.contains(nsec))
+    }
+
+    @Test
+    fun `a markdown link does not link the nostr token inside it`() {
+        val npub = "6d04b3ef16e4b6a4357433ce64e93d66268c1e3c95a243f6de442412938aa537".toNpub()
+        val result = ZapMarkdown.parse("[$npub](https://example.com)")
+        assertEquals(listOf("https://example.com"), result.urls())
+    }
+
+    private fun AnnotatedString.urls(): List<String> =
+        getLinkAnnotations(0, length).mapNotNull { (it.item as? LinkAnnotation.Url)?.url }
 }

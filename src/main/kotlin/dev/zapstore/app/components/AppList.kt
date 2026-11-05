@@ -41,7 +41,8 @@ fun LazyListScope.appList(
         state.apps.isEmpty() -> item { StatusText(state.error ?: emptyMessage, modifier) }
         else -> {
             state.error?.let { item { StatusText(it, modifier) } }
-            items(state.apps, key = { "app:${it.appId}" }, contentType = { "app" }) { app ->
+            // A stack can name one app twice, by two coordinates; a lazy key may appear once.
+            items(state.apps.distinctBy(AppRecord::appId), key = { "app:${it.appId}" }, contentType = { "app" }) { app ->
                 AppRow(
                     app = app,
                     onClick = { onAppClick(app) },

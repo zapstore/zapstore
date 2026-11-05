@@ -1,5 +1,7 @@
 package dev.zapstore.iolite
 
+import java.io.InputStream
+
 /**
  * Artifact members of a catalog bundle. App files are `<app-id>/about`, `security`, `trust`,
  * `vector`, and `icon.webp`. Avatars are `<64 hex characters>.webp`.
@@ -39,51 +41,80 @@ internal object CatalogArtifacts {
         maxIconBytes: Long,
         skipped: MutableList<String> = ArrayList(),
     ): CatalogArtifact {
-        val apps = LinkedHashMap<String, Partial>()
+        val apps = ArrayList<AppArtifact>()
         val avatars = ArrayList<AvatarArtifact>()
-        for ((name, member) in members) {
-            if (name == "manifest.json" || name == "diff.jsonl" || name == "index") continue
+        val reader = Reader(maxIconBytes, skipped) { artifact -> apps += artifact.apps; avatars += artifact.avatars }
+        for ((name, member) in members) reader.add(name, member.data.size.toLong(), member.data.inputStream())
+        reader.finish()
+        return CatalogArtifact(apps = apps, avatars = avatars)
+    }
+
+    /**
+     * Turns artifact members into artifacts as the tar streams past. An app's files are adjacent in tar
+     * order, so only the current app is held; it goes to [emit] when the next app starts. A member is
+     * checked for size before it is read, so a bad one never reaches memory.
+     */
+    class Reader(
+        private val maxIconBytes: Long,
+        private val skipped: MutableList<String>,
+        private val emit: (CatalogArtifact) -> Unit,
+    ) {
+        private var current: Partial? = null
+
+        fun add(name: String, size: Long, data: InputStream) {
+            if (name == "manifest.json" || name == "diff.jsonl" || name == "index") return
             val pubkey = avatarPubkey(name)
             if (pubkey != null) {
-                if (member.data.isEmpty() || member.data.size.toLong() > maxIconBytes) {
+                if (size == 0L || size > maxIconBytes) {
                     skipped += "bad avatar $name"
                 } else {
-                    avatars += AvatarArtifact(pubkey, member.data)
+                    emit(CatalogArtifact(avatars = listOf(AvatarArtifact(pubkey, data.readExactly(size.toInt())))))
                 }
-                continue
+                return
             }
             val slash = name.indexOf('/')
             val appId = if (slash > 0 && slash == name.lastIndexOf('/')) name.substring(0, slash) else null
             val file = name.substring(slash + 1)
             if (appId == null || !validAppId(appId) || file !in APP_FILES) {
                 skipped += "unexpected catalog member $name"
-                continue
+                return
             }
+            val tooLarge = when (file) {
+                "trust" -> "trust $appId is not a trust line".takeIf { size > MAX_TRUST_BYTES }
+                "about", "security" -> "$file $appId is too large".takeIf { size > MAX_TEXT_BYTES }
+                "vector" -> "vector $appId has the wrong size".takeIf { size != VECTOR_DIMS.toLong() }
+                else -> "icon $appId is empty or too large".takeIf { size == 0L || size > maxIconBytes }
+            }
+            if (tooLarge != null) {
+                skipped += tooLarge
+                return
+            }
+            val bytes = data.readExactly(size.toInt())
             val problem = when (file) {
-                "trust" -> "trust $appId is not a trust line".takeIf {
-                    member.data.size > MAX_TRUST_BYTES || Trust.parse(member.data.toString(Charsets.UTF_8)) == null
-                }
-                "about", "security" -> "$file $appId contains NUL".takeIf { member.data.any { it == 0.toByte() } }
-                "vector" -> "vector $appId has the wrong size".takeIf { member.data.size != VECTOR_DIMS }
-                else -> "icon $appId is empty or too large".takeIf { member.data.isEmpty() || member.data.size.toLong() > maxIconBytes }
+                "trust" -> "trust $appId is not a trust line".takeIf { Trust.parse(bytes.toString(Charsets.UTF_8)) == null }
+                "about", "security" -> "$file $appId contains NUL".takeIf { bytes.any { it == 0.toByte() } }
+                else -> null
             }
             if (problem != null) {
                 skipped += problem
-                continue
+                return
             }
-            val app = apps.getOrPut(appId) { Partial(appId) }
+            val app = current?.takeIf { it.appId == appId } ?: Partial(appId).also { finish(); current = it }
             when (file) {
-                "about" -> app.about = member.data.toString(Charsets.UTF_8)
-                "security" -> app.security = member.data.toString(Charsets.UTF_8)
-                "trust" -> app.trust = member.data.toString(Charsets.UTF_8).trim()
-                "vector" -> app.vector = member.data
-                "icon.webp" -> app.webp = member.data
+                "about" -> app.about = bytes.toString(Charsets.UTF_8)
+                "security" -> app.security = bytes.toString(Charsets.UTF_8)
+                "trust" -> app.trust = bytes.toString(Charsets.UTF_8).trim()
+                "vector" -> app.vector = bytes
+                "icon.webp" -> app.webp = bytes
             }
         }
-        return CatalogArtifact(
-            apps = apps.values.map { it.toArtifact() },
-            avatars = avatars,
-        )
+
+        /** Hands over the app still being read. */
+        fun finish() {
+            val app = current ?: return
+            current = null
+            emit(CatalogArtifact(apps = listOf(app.toArtifact())))
+        }
     }
 
     fun allowedMember(name: String): Boolean {
@@ -118,5 +149,7 @@ internal object CatalogArtifacts {
     }
 
     private const val MAX_TRUST_BYTES = 4_096
+    /** `about` and `security`. The largest in production is under 5 KB. */
+    private const val MAX_TEXT_BYTES = 64 * 1024
     private val APP_FILES = setOf("about", "security", "trust", "vector", "icon.webp")
 }

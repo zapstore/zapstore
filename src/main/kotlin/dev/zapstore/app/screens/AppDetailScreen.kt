@@ -59,15 +59,12 @@ import dev.zapstore.app.ZapSurface3
 import dev.zapstore.app.ZapText2
 import dev.zapstore.app.cdnImageUrl
 import dev.zapstore.app.components.AppDetailHead
-import dev.zapstore.app.components.ShareButton
 import dev.zapstore.app.components.scrollParallax
 import dev.zapstore.app.components.windowParallax
 import dev.zapstore.app.components.AppIcon
 import dev.zapstore.app.components.EmptyRow
 import dev.zapstore.app.components.GroupHeader
 import dev.zapstore.app.components.LoadingIndicator
-import dev.zapstore.app.components.ParagraphSkeleton
-import dev.zapstore.app.components.SkeletonBlock
 import dev.zapstore.app.components.StatusText
 import dev.zapstore.app.components.ZapButtonStyle
 import dev.zapstore.app.components.ZapIconButton
@@ -94,9 +91,7 @@ fun AppDetailScreen(
     onStartInstall: () -> Unit = {},
     onDismissInstallError: () -> Unit = {},
     saved: Boolean = false,
-    ignored: Boolean = false,
     onSave: (Boolean) -> Unit = {},
-    onIgnore: (Boolean) -> Unit = {},
     onShare: () -> Unit = {},
     onPostComment: (text: String, parent: CommentRecord?) -> Unit = { _, _ -> },
     onReport: (type: String, note: String) -> Unit = { _, _ -> },
@@ -118,7 +113,8 @@ fun AppDetailScreen(
     var zapping by remember { mutableStateOf(false) }
     var commenting by rememberSaveable { mutableStateOf(false) }
     var replyingTo by remember { mutableStateOf<CommentRecord?>(null) }
-    var report by remember { mutableStateOf<ReportFocus?>(null) }
+    var report by remember { mutableStateOf(false) }
+    var authorSheet by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val headCollapse by remember {
         derivedStateOf {
@@ -150,7 +146,7 @@ fun AppDetailScreen(
             verticalArrangement = Arrangement.spacedBy(ZapSpacing.space4),
         ) {
             if (app == null) {
-                item { if (state.loaded) EmptyRow(stringResource(R.string.app_not_found)) else AppDetailSkeleton() }
+                if (state.loaded) item { EmptyRow(stringResource(R.string.app_not_found)) }
                 return@LazyColumn
             }
 
@@ -159,14 +155,16 @@ fun AppDetailScreen(
                     name = app.name,
                     iconUrl = app.iconUrl,
                     iconFile = app.iconFile,
-                    authorPubkey = app.bylinePubkey,
+                    version = app.version,
+                    versionStatus = state.install.versionStatus,
+                    // An indexed listing names nobody: the mark alone says the catalog published it.
+                    authorPubkey = app.bylinePubkey.takeIf { app.byline != AppByline.Indexed },
                     author = state.author,
                     verified = app.byline == AppByline.Verified,
                     indexed = app.byline == AppByline.Indexed,
                     onAuthorClick = onProfileClick,
-                    onVerifiedClick = { report = ReportFocus.Developer },
+                    onMarkClick = { authorSheet = true },
                     onMore = { actions = true },
-                    onShare = onShare,
                     modifier = Modifier.scrollParallax(listState),
                 )
             }
@@ -216,7 +214,7 @@ fun AppDetailScreen(
                 else -> listing.ifBlank { app.summary.trim() }
             }
             item(key = "about", contentType = "text") {
-                Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space1)) {
+                Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space3)) {
                     if (about.isNotBlank()) {
                         MarkdownText(
                             value = about,
@@ -263,12 +261,12 @@ fun AppDetailScreen(
                     SecurityReportCard(
                         app = app,
                         onOpenUrl = onOpenUrl,
-                        onSeeFull = { report = ReportFocus.Top },
+                        onSeeFull = { report = true },
                     )
                 }
             } else {
                 item(key = "security", contentType = "card") {
-                    PackageCard(onOpen = { report = ReportFocus.Top })
+                    PackageCard(onOpen = { report = true })
                 }
             }
 
@@ -323,7 +321,6 @@ fun AppDetailScreen(
                 app = app,
                 collapse = { headCollapse },
                 onMore = { actions = true },
-                onShare = onShare,
                 modifier = Modifier.align(Alignment.TopCenter),
             )
             InstallBar(
@@ -353,30 +350,36 @@ fun AppDetailScreen(
                 plan = plan,
                 onConfirm = onConfirmInstall,
                 onDismiss = onDismissInstall,
-                onOpenReport = { report = ReportFocus.Top },
+                onOpenReport = { report = true },
                 otherStore = state.install.otherStore,
                 trust = state.install.trust,
-                onPersonalizeTrust = onPersonalizeTrust,
+                onPersonalizeTrust = { if (state.social.signedIn) onPersonalizeTrust() else onSignIn() },
                 onOpenUrl = onOpenUrl,
             )
         }
         if (releasing) {
             ReleaseSheet(app, onOpenUrl) { releasing = false }
         }
-        report?.let { focus ->
+        if (report) {
             SecurityReportSheet(
+                app = app,
+                onOpenUrl = onOpenUrl,
+                onDismiss = { report = false },
+            )
+        }
+        if (authorSheet) {
+            PublisherSheet(
                 app = app,
                 author = state.author,
                 proof = state.proof,
-                focus = focus,
                 onOpenUrl = onOpenUrl,
                 onProfileClick = { pubkey ->
-                    report = null
+                    authorSheet = false
                     onProfileClick(pubkey)
                 },
-                onDismiss = { report = null },
+                onDismiss = { authorSheet = false },
                 trust = state.install.trust,
-                onPersonalizeTrust = onPersonalizeTrust,
+                onPersonalizeTrust = { if (state.social.signedIn) onPersonalizeTrust() else onSignIn() },
             )
         }
         if (commenting) {
@@ -444,21 +447,14 @@ fun AppDetailScreen(
             AppActionSheet(
                 app = app,
                 saved = saved,
-                ignored = ignored,
-                installed = state.install.installed,
                 onSave = { onSave(!saved) },
-                onIgnore = { onIgnore(!ignored) },
+                onShare = {
+                    actions = false
+                    onShare()
+                },
                 onReport = {
                     actions = false
                     reporting = true
-                },
-                onUninstall = if (state.install.installed || state.install.updating) {
-                    {
-                        actions = false
-                        onUninstall()
-                    }
-                } else {
-                    null
                 },
                 onDismiss = { actions = false },
                 onAddToStack = {
@@ -488,24 +484,6 @@ fun AppDetailScreen(
 
 private val InstallUi.hasBar: Boolean get() = offer || installed || phase != InstallPhase.Idle
 
-@Composable
-private fun AppDetailSkeleton() {
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ZapSpacing.space4)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space4)) {
-            SkeletonBlock(64.dp, 64.dp, 14.dp)
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2)) {
-                SkeletonBlock(width = 180.dp, height = 22.dp, cornerRadius = 6.dp)
-                SkeletonBlock(width = 96.dp, height = 20.dp, cornerRadius = 10.dp)
-            }
-        }
-        SkeletonBlock(width = 400.dp, height = 40.dp, cornerRadius = 12.dp)
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2)) {
-            items(4) { SkeletonBlock(width = 120.dp, height = 208.dp, cornerRadius = 14.dp) }
-        }
-        ParagraphSkeleton()
-    }
-}
-
 /**
  * Fades in as the head scrolls away; the icon settles from the head's size into the bar.
  */
@@ -514,7 +492,6 @@ private fun CompactAppHeader(
     app: AppRecord,
     collapse: () -> Float,
     onMore: () -> Unit,
-    onShare: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val animate = animationsEnabled()
@@ -557,16 +534,13 @@ private fun CompactAppHeader(
                     if (animate) translationX = (1f - reveal()) * 10.dp.toPx()
                 },
             )
-            Row {
-                ShareButton(onShare, Modifier.testTag("compactShare"))
-                ZapIconButton(
-                    R.drawable.ic_more,
-                    stringResource(R.string.more_actions),
-                    onMore,
-                    style = ZapButtonStyle.Ghost,
-                    modifier = Modifier.testTag("compactMore"),
-                )
-            }
+            ZapIconButton(
+                R.drawable.ic_more,
+                stringResource(R.string.more_actions),
+                onMore,
+                style = ZapButtonStyle.Ghost,
+                modifier = Modifier.testTag("compactMore"),
+            )
         }
         HorizontalDivider(color = ZapLine)
     }
@@ -601,5 +575,5 @@ private const val COMPACT_START = 0.45f
 
 private val COMPACT_BAR_HEIGHT = 52.dp
 
-/** Head icon (64 dp) over bar icon (28 dp): where the morph starts. */
-private const val HEAD_ICON_RATIO = 64f / 28f
+/** Head icon (56 dp) over bar icon (28 dp): where the morph starts. */
+private const val HEAD_ICON_RATIO = 56f / 28f

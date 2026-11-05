@@ -88,6 +88,14 @@ class Iolite private constructor(
 
     fun apps(filter: AppFilter = AppFilter()): List<AppRecord> = store.apps(filter)
 
+    /**
+     * How many listings the catalogs show. An unfiltered [apps] list is tens of MB for a full catalog,
+     * so read this when only the size matters.
+     */
+    fun appCount(): Int = store.appCount()
+
+    fun observeAppCount(): Flow<Int> = observe(APP_TABLES) { it.appCount() }
+
     fun app(appId: String): AppRecord? = store.app(appId)
 
     /** The proof behind [AppRecord.proofPubkey], for the NIP-C1 check against the downloaded APK. */
@@ -111,16 +119,26 @@ class Iolite private constructor(
     // A catalog is its key. The selected ones are an ordered list: where two list the same app, the
     // first supplies it. The list is the device's kind 10067, so a restored key brings it back.
 
-    /** The key that signed [bundle]'s manifest, or null when it is not a valid bundle. */
+    /** The key that signed [bundle]'s manifest, or null when it is not a valid bundle. Reads only the manifest. */
+    fun bundleSigner(bundle: CatalogBundle): String? = importer.manifestSigner(bundle)
+
     fun bundleSigner(bundle: ByteArray): String? = importer.manifestSigner(bundle)
 
     /**
      * Makes the bundled catalog the only one on the list, once. Does nothing when the list was ever
      * decided, even to leave it empty, or when a catalog is stored. Returns the catalog it added.
      */
-    fun seedDefaultCatalog(bundled: ByteArray, endpoint: RelayUrl): CatalogRecord? {
+    fun seedDefaultCatalog(bundled: CatalogBundle, endpoint: RelayUrl): CatalogRecord? {
         checkOpen()
         val key = bundleSigner(bundled) ?: return null
+        return store.seedCatalog(key, endpoint)
+    }
+
+    /** [seedDefaultCatalog] for a catalog known only by its key: every bundle imported into it must be signed by [pubkey]. */
+    fun seedDefaultCatalog(pubkey: String, endpoint: RelayUrl): CatalogRecord? {
+        checkOpen()
+        val key = pubkey.lowercase()
+        require(Hex.isHex(key, 64)) { "catalog key must be 32-byte hex" }
         return store.seedCatalog(key, endpoint)
     }
 
@@ -196,34 +214,35 @@ class Iolite private constructor(
         useOnion: Boolean,
     ): CatalogRecord {
         val catalog = withContext(Dispatchers.IO) {
-            val bundle = pullFirstBundle(key, relays, client, useOnion)
-            val stored = store.addCatalog(key, relays, hints.toList())
-            try {
-                importCatalogUpdate(stored.id, bundle)
-            } catch (failure: Exception) {
-                store.removeCatalog(stored.id)
-                throw if (failure is CatalogImportException) failure else CatalogImportException(failure.message ?: "bundle was not accepted")
+            withDownload { file ->
+                pullFirstBundle(key, relays, client, useOnion, file)
+                val stored = store.addCatalog(key, relays, hints.toList())
+                try {
+                    importCatalogUpdate(stored.id, CatalogBundle.of(file))
+                } catch (failure: Exception) {
+                    store.removeCatalog(stored.id)
+                    throw if (failure is CatalogImportException) failure else CatalogImportException(failure.message ?: "bundle was not accepted")
+                }
+                stored
             }
-            stored
         }
         publishCatalogList()
         return store.catalog(catalog.id) ?: catalog
     }
 
-    /** The first full bundle any of [relays] serves that [key] signed. Throws [CatalogImportException] when none does. */
-    private fun pullFirstBundle(key: String, relays: List<RelayUrl>, client: String, useOnion: Boolean): ByteArray {
+    /** Downloads into [into] the first full bundle any of [relays] serves that [key] signed. Throws [CatalogImportException] when none does. */
+    private fun pullFirstBundle(key: String, relays: List<RelayUrl>, client: String, useOnion: Boolean, into: File) {
         val httpClient = http ?: throw CatalogImportException("HTTP transport is required to check a catalog")
         val ordered = relays.sortedBy { relay -> if (relay.isOnion == useOnion) 0 else 1 }
         val failures = mutableListOf<String>()
         for (relay in ordered) {
             try {
-                val response = httpClient.get(relay.bundleUrl(0, client), emptyMap())
-                val body = response.body
+                val response = httpClient.download(relay.bundleUrl(0, client), emptyMap(), into, config.maxCompressedBytes)
                 when {
                     response.status != 200 -> failures += "${relay.url}: HTTP ${response.status}"
-                    body == null || body.isEmpty() -> failures += "${relay.url}: empty bundle"
-                    importer.manifestSigner(body) != key -> failures += "${relay.url}: bundle is not signed by ${key.toNpub()}"
-                    else -> return body
+                    into.length() == 0L -> failures += "${relay.url}: empty bundle"
+                    importer.manifestSigner(CatalogBundle.of(into)) != key -> failures += "${relay.url}: bundle is not signed by ${key.toNpub()}"
+                    else -> return
                 }
             } catch (failure: Exception) {
                 failures += "${relay.url}: ${failure.message ?: failure::class.simpleName}"
@@ -240,14 +259,6 @@ class Iolite private constructor(
         return true
     }
 
-    /** Moves a catalog [delta] places along the list (negative is earlier) and publishes the list. */
-    suspend fun moveCatalog(id: Long, delta: Int): Boolean {
-        checkOpen()
-        if (!store.moveCatalog(id, delta)) return false
-        publishCatalogList()
-        return true
-    }
-
     /**
      * Publishes the selected catalogs as the device's kind 10067. Without a device key the list lives
      * on this phone only.
@@ -258,7 +269,10 @@ class Iolite private constructor(
         return publish(Kinds.CatalogRelayList, tags, content, signer)
     }
 
-    fun importCatalogUpdate(catalogId: Long, bundle: ByteArray, endpoint: RelayUrl? = null): CatalogImportResult {
+    fun importCatalogUpdate(catalogId: Long, bundle: ByteArray, endpoint: RelayUrl? = null): CatalogImportResult =
+        importCatalogUpdate(catalogId, CatalogBundle.of(bundle), endpoint)
+
+    fun importCatalogUpdate(catalogId: Long, bundle: CatalogBundle, endpoint: RelayUrl? = null): CatalogImportResult {
         checkOpen()
         return importer.importBundle(catalogId, bundle, endpoint)
     }
@@ -276,14 +290,14 @@ class Iolite private constructor(
         catalogId: Long = defaultCatalog().id,
         transport: HttpTransport? = http,
         useOnion: Boolean = false,
-        bundled: ByteArray = ByteArray(0),
+        bundled: CatalogBundle? = null,
         endpoint: RelayUrl? = null,
         client: String = "",
     ): CatalogSyncResult {
         checkOpen()
         val httpClient = transport ?: throw IllegalStateException("HTTP transport is required for catalog sync")
         val existing = store.catalog(catalogId)
-        val seeded = if (bundled.isNotEmpty() && (existing == null || existing.epoch == 0L)) {
+        val seeded = if (bundled != null && (existing == null || existing.epoch == 0L)) {
             importCatalogUpdate(catalogId, bundled, endpoint)
         } else {
             null
@@ -291,36 +305,31 @@ class Iolite private constructor(
         val catalog = store.catalog(catalogId)
         if (catalog == null || catalog.relays.isEmpty()) {
             val relay = endpoint ?: throw CatalogImportException("catalog relay is missing")
-            return applyCatalogResponse(
-                catalogId,
-                httpClient.get(relay.bundleUrl(0, client), emptyMap()),
-                seeded = null,
-                seededBytes = 0,
-                endpoint = relay,
-            )
+            return fetchCatalogUpdate(catalogId, httpClient, relay.bundleUrl(0, client), seeded = null, endpoint = relay)
         }
         val relay = catalog.syncRelay(useOnion)
-        val response = httpClient.get(relay.bundleUrl(catalog.epoch, client), emptyMap())
-        return applyCatalogResponse(catalogId, response, seeded = seeded, seededBytes = bundled.size.toLong(), endpoint = null)
+        return fetchCatalogUpdate(catalogId, httpClient, relay.bundleUrl(catalog.epoch, client), seeded = seeded, endpoint = null)
     }
 
-    private fun applyCatalogResponse(
+    /** GETs [url] into a file and imports a 200 from there, so the bundle never sits in memory. */
+    private fun fetchCatalogUpdate(
         catalogId: Long,
-        response: HttpResponse,
+        transport: HttpTransport,
+        url: String,
         seeded: CatalogImportResult?,
-        seededBytes: Long,
         endpoint: RelayUrl?,
-    ): CatalogSyncResult {
+    ): CatalogSyncResult = withDownload { file ->
+        val response = transport.download(url, emptyMap(), file, config.maxCompressedBytes)
         val body = response.body
-        val bytes = (body?.size ?: 0).toLong()
-        return when (response.status) {
-            304 -> CatalogSyncResult(imported = seeded, bytes = if (seeded != null) seededBytes else bytes)
+        val bytes = if (response.status == 200) file.length() else (body?.size ?: 0).toLong()
+        when (response.status) {
+            304 -> CatalogSyncResult(imported = seeded, bytes = seeded?.bytes ?: bytes)
             200 -> CatalogSyncResult(
-                imported = importCatalogUpdate(
-                    catalogId,
-                    body ?: throw CatalogImportException("empty catalog update"),
-                    endpoint,
-                ),
+                imported = if (bytes == 0L) {
+                    throw CatalogImportException("empty catalog update")
+                } else {
+                    importCatalogUpdate(catalogId, CatalogBundle.of(file), endpoint)
+                },
                 bytes = bytes,
             )
             400 -> throw CatalogImportException(
@@ -329,6 +338,17 @@ class Iolite private constructor(
                     ?: "catalog protocol error",
             )
             else -> throw CatalogImportException("catalog update failed with HTTP ${response.status}")
+        }
+    }
+
+    /** Runs [block] with a fresh file for a downloaded bundle and deletes it afterwards. */
+    private fun <T> withDownload(block: (File) -> T): T {
+        val dir = downloadsDir(databasePath).apply { mkdirs() }
+        val file = File.createTempFile("bundle-", ".tar.zst", dir)
+        try {
+            return block(file)
+        } finally {
+            file.delete()
         }
     }
 
@@ -452,7 +472,7 @@ class Iolite private constructor(
             relays = relays,
             listener = object : SubscriptionListener {
                 override fun onEvent(relay: RelayUrl, event: Event) {
-                    if (event.verify()) events[event.id] = event
+                    if (filters.any { it.matches(event) } && event.verify()) events[event.id] = event
                 }
 
                 override fun onEose(relay: RelayUrl) = finish(relay)
@@ -502,15 +522,14 @@ class Iolite private constructor(
         val request = Event.sign(secret, System.currentTimeMillis() / 1_000, Kinds.WalletRequest, tags, content)
         val reply = CompletableDeferred<Event>()
         val sent = AtomicBoolean(false)
+        val answer = Filter(authors = listOf(connection.walletPubkey), kinds = listOf(Kinds.WalletResponse), tags = mapOf("e" to listOf(request.id)))
         val unsubscribe = relayPool.subscribe(
             id = "w" + Hex.encode(Crypto.randomBytes(4)),
-            filters = listOf(
-                Filter(authors = listOf(connection.walletPubkey), kinds = listOf(Kinds.WalletResponse), tags = mapOf("e" to listOf(request.id))),
-            ),
+            filters = listOf(answer),
             relays = connection.relays,
             listener = object : SubscriptionListener {
                 override fun onEvent(relay: RelayUrl, event: Event) {
-                    if (event.verify()) reply.complete(event)
+                    if (answer.matches(event) && event.verify()) reply.complete(event)
                 }
 
                 override fun onEose(relay: RelayUrl) {
@@ -536,7 +555,8 @@ class Iolite private constructor(
     /**
      * Who ranks highest among the people [target] is followed by, as [source] sees the graph: one
      * Vertex DVM request (kind 5312) signed by [signer]. Returns up to [limit] pubkeys without [target].
-     * Throws when Vertex answers with an error or does not answer within [timeout]. Nothing is stored.
+     * Only an answer signed by [responder] counts, when it is set. Throws when Vertex answers with an
+     * error or does not answer within [timeout]. Nothing is stored.
      */
     suspend fun reputation(
         relays: Set<RelayUrl>,
@@ -545,6 +565,7 @@ class Iolite private constructor(
         signer: Signer,
         limit: Int = 7,
         timeout: Duration = config.oneShotTimeout,
+        responder: String? = null,
     ): List<String> {
         checkOpen()
         val relayPool = pool ?: throw IllegalStateException("relays are off")
@@ -557,13 +578,18 @@ class Iolite private constructor(
         val request = signer.sign(nowMillis() / 1_000, Kinds.VerifyReputation, tags, "")
         val reply = CompletableDeferred<Event>()
         val sent = AtomicBoolean(false)
+        val answer = Filter(
+            authors = responder?.let(::listOf),
+            kinds = listOf(Kinds.ReputationResponse, Kinds.DvmError),
+            tags = mapOf("e" to listOf(request.id)),
+        )
         val unsubscribe = relayPool.subscribe(
             id = "v" + Hex.encode(Crypto.randomBytes(4)),
-            filters = listOf(Filter(kinds = listOf(Kinds.ReputationResponse, Kinds.DvmError), tags = mapOf("e" to listOf(request.id)))),
+            filters = listOf(answer),
             relays = relays,
             listener = object : SubscriptionListener {
                 override fun onEvent(relay: RelayUrl, event: Event) {
-                    if (event.verify()) reply.complete(event)
+                    if (answer.matches(event) && event.verify()) reply.complete(event)
                 }
 
                 override fun onEose(relay: RelayUrl) {
@@ -974,6 +1000,8 @@ class Iolite private constructor(
         private fun relayListKey(pubkey: String) = "nip65:$pubkey"
         private val openDatabases = mutableSetOf<String>()
 
+        private fun downloadsDir(databasePath: String) = File(File(databasePath).parentFile, "downloads")
+
         fun create(
             context: Context,
             parentScope: CoroutineScope,
@@ -1056,6 +1084,8 @@ class Iolite private constructor(
                 val scope = CoroutineScope(parentScope.coroutineContext + job + Dispatchers.IO)
                 val nowSeconds = { nowMillis() / 1_000 }
                 val store = IoliteStore(databasePath, openConnection = openConnection)
+                // Only this instance downloads here, so whatever is left came from a process that died mid-sync.
+                downloadsDir(databasePath).deleteRecursively()
                 val importer = CatalogImporter(store, File(File(databasePath).parentFile, "icons"), config, device, nowSeconds)
                 return Iolite(
                     store = store,

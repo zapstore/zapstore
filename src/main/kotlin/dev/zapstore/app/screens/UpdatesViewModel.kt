@@ -34,6 +34,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
@@ -90,7 +91,6 @@ class UpdatesViewModel(
     private val searchQuery = MutableStateFlow("")
     private val installerLabels = HashMap<String, String?>()
     private val ignoredIds = zapstore.lists.ignored
-    private val profiles = zapstore.iolite.observeApps().authorProfiles(zapstore.iolite)
 
     private val myAppIds: Flow<Set<String>> =
         combine(catalogSync.installedApps, ignoredIds) { installed, ignored ->
@@ -99,6 +99,13 @@ class UpdatesViewModel(
                 addAll(ignored)
             }
         }.distinctUntilChanged()
+
+    /** Listings of installed and ignored apps: everything this screen shows. The whole catalog is tens of MB. */
+    private val myApps: Flow<List<AppRecord>> =
+        myAppIds.flatMapLatest { ids -> zapstore.iolite.observeApps(AppFilter(appIds = ids)) }
+            .shareIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), replay = 1)
+
+    private val profiles = myApps.authorProfiles(zapstore.iolite)
 
     /** Same ranking and vectors as Home search, over the user's apps only. */
     private val search: Flow<List<AppRecord>?> =
@@ -117,7 +124,7 @@ class UpdatesViewModel(
             Triple(status, profiles, catalogs.map { it.epoch })
         },
         catalogSync.installedApps,
-        zapstore.iolite.observeApps(),
+        myApps,
         ignoredIds,
         combine(batch, search, searchQuery, zapstore.installer.tasks) { batch, search, typed, tasks -> Quad(batch, search, typed, tasks) },
     ) { (status, profiles, epochs), installed, apps, ignored, (batch, search, typed, tasks) ->

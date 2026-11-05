@@ -1,6 +1,6 @@
 GRADLE ?= ./gradlew
 ADB := ./tools/adb
-PACKAGE ?= dev.zapstore.beta
+PACKAGE ?= dev.zapstore.app
 ACTIVITY ?= dev.zapstore.app.MainActivity
 # The Flutter release key, under the names the Flutter build used.
 KEYSTORE ?= $(or $(ZAPSTORE_KEY_PATH),release.keystore)
@@ -13,12 +13,28 @@ ASSETS_CATALOG_BUNDLE := src/main/assets/bundle-0-1.tar.zst
 RELAY_PORT := 3334
 # Baked into the APK. Example: CATALOG_RELAY=ws://127.0.0.1:3334 make run
 CATALOG_RELAY ?= wss://relay.zapstore.dev
-GRADLE_RELAY := -PCATALOG_RELAY="$(CATALOG_RELAY)"
+GRADLE_FILE := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))build.gradle.kts
+PRODUCTION_CATALOG_PUBKEY := $(shell sed -n 's/^[[:space:]]*val productionCatalogPubkey = "\([0-9a-f]*\)".*/\1/p' "$(GRADLE_FILE)" | head -n 1)
+# The key the bundled snapshot and the default catalog must be signed by. A local relay needs its own:
+# CATALOG_RELAY=ws://127.0.0.1:3334 CATALOG_PUBKEY=<hex> make run. Empty skips the check (debug only).
+CATALOG_PUBKEY ?= $(if $(filter wss://relay.zapstore.dev wss://relay.zapstore.dev/,$(CATALOG_RELAY)),$(PRODUCTION_CATALOG_PUBKEY),)
+GRADLE_RELAY := -PCATALOG_RELAY="$(CATALOG_RELAY)" -PCATALOG_PUBKEY="$(CATALOG_PUBKEY)"
 # IoliteConfig.maxCompressedBytes. Import treats a larger file as unreadable.
 CATALOG_BUNDLE_MAX_BYTES := 33554432
-APP_VERSION := $(shell sed -n 's/^[[:space:]]*versionName = "\([^"]*\)".*/\1/p' "$(dir $(abspath $(lastword $(MAKEFILE_LIST))))build.gradle.kts" | head -n 1)
+APP_VERSION := $(shell sed -n 's/^[[:space:]]*versionName = "\([^"]*\)".*/\1/p' "$(GRADLE_FILE)" | head -n 1)
 
-.PHONY: build release install run run-release deploy refresh vendor unbundle-catalog fetch-catalog-bundle reverse link-adb
+# $(call bundle_signer_ok,<file>): exits 1 unless the bundle's manifest is signed by CATALOG_PUBKEY.
+# The app verifies the signature itself; this stops a build from shipping someone else's catalog.
+bundle_signer_ok = if [ -n "$(CATALOG_PUBKEY)" ]; then \
+		command -v zstd >/dev/null || { echo "zstd is needed to check the catalog bundle" >&2; exit 1; }; \
+		signer=$$(zstd -dc "$(1)" | tar -xOf - manifest.json 2>/dev/null | sed -n 's/.*"pubkey"[[:space:]]*:[[:space:]]*"\([0-9a-f]\{64\}\)".*/\1/p' | head -n 1); \
+		if [ "$$signer" != "$(CATALOG_PUBKEY)" ]; then \
+			echo "catalog bundle manifest is signed by '$$signer', not $(CATALOG_PUBKEY)" >&2; \
+			exit 1; \
+		fi; \
+	fi
+
+.PHONY: build release sign-hotbox install run run-release deploy refresh vendor unbundle-catalog fetch-catalog-bundle reverse link-adb
 
 # Drop leftover seeds so a debug build without CATALOG_BUNDLE does not package them.
 unbundle-catalog:
@@ -45,6 +61,7 @@ fetch-catalog-bundle:
 		echo "catalog bundle is $$bytes bytes ($$sig); it must be a zstd frame of at most $(CATALOG_BUNDLE_MAX_BYTES) bytes" >&2; \
 		exit 1; \
 	fi; \
+	( $(call bundle_signer_ok,$$tmp) ) || { rm -f "$$tmp"; exit 1; }; \
 	mv "$$tmp" "$(ASSETS_CATALOG_BUNDLE)"
 
 ifeq ($(CATALOG_BUNDLE),)
@@ -60,6 +77,7 @@ $(ASSETS_CATALOG_BUNDLE):
 		echo "catalog bundle is $$bytes bytes ($$sig); it must be a zstd frame of at most $(CATALOG_BUNDLE_MAX_BYTES) bytes" >&2; \
 		exit 1; \
 	fi
+	@$(call bundle_signer_ok,$(CATALOG_BUNDLE))
 	@mkdir -p src/main/assets
 	rm -f src/main/assets/catalog-delta.tar.zst
 	cp "$(CATALOG_BUNDLE)" "$@"
@@ -76,6 +94,10 @@ vendor:
 
 build:
 	$(GRADLE) assembleDebug $(GRADLE_RELAY)
+
+# Unsigned release build + hotbox sign. Never calls zsp publish.
+sign-hotbox:
+	./tools/sign-release-hotbox.sh
 
 release:
 	@if [ -f "$(KEYSTORE)" ]; then \

@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 
 data class StackDetailUiState(
@@ -51,6 +52,8 @@ data class StackDetailUiState(
     val commentsCanLoadMore: Boolean = false,
     /** The signed-in account wrote this stack, so it can remove apps and rename it. */
     val own: Boolean = false,
+    /** The person who published this stack. Null until their profile is stored. */
+    val curator: ProfileRecord? = null,
     val edit: StackEditUi = StackEditUi(),
     /** Writing a comment on this stack as the signed-in account. */
     val social: SocialUi = SocialUi(),
@@ -98,12 +101,14 @@ class StackDetailViewModel(
         ::Pair,
     ).flatMapLatest { (catalogKeys, limit) ->
         iolite.query(Query.stackComments(root, (listOf(author) + catalogKeys).distinct(), limit), AppConfig.commentQuery)
-    }
+    }.onStart { emit(QueryState(emptyList(), settled = false)) }
 
     private val commentProfiles: Flow<Map<String, ProfileRecord>> = comments
         .map { state -> state.items.map(CommentRecord::pubkey).toSet() }
         .distinctUntilChanged()
         .flatMapLatest(iolite::observeProfiles)
+
+    private val curator = iolite.observeProfiles(setOf(author)).map { it[author] }
 
     fun loadMoreComments() {
         if (uiState.value.commentsCanLoadMore) commentLimit.update { it + COMMENT_PAGE }
@@ -112,10 +117,10 @@ class StackDetailViewModel(
     val uiState: StateFlow<StackDetailUiState> = combine(
         combine(stack, appsById, profiles, own, edit) { a, b, c, d, e -> Five(a, b, c, d, e) },
         comments,
-        commentProfiles,
+        combine(commentProfiles, curator, ::Pair),
         commentLimit,
         socialUi,
-    ) { (stackState, appsById, profiles, own, edit), comments, commentProfiles, limit, social ->
+    ) { (stackState, appsById, profiles, own, edit), comments, (commentProfiles, curator), limit, social ->
         val stack = stackState.items
         StackDetailUiState(
             own = own,
@@ -132,6 +137,7 @@ class StackDetailViewModel(
             threads = threadComments(comments.items.filter { it.content.isNotBlank() }),
             social = social,
             commentProfiles = commentProfiles,
+            curator = curator,
             commentsLoading = comments.items.isEmpty() && !comments.settled,
             commentsCanLoadMore = comments.items.size >= limit,
         )

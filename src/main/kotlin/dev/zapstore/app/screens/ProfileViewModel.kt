@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.stateIn
 
@@ -66,7 +67,7 @@ class ProfileViewModel(
                     canLoadMore = record.comments.size >= limit || record.zaps.size >= limit,
                 )
             }
-        }
+        }.onStart { emit(ActivityPage(QueryState(emptyList(), settled = false), canLoadMore = false)) }
     }
 
     fun loadMoreActivity() {

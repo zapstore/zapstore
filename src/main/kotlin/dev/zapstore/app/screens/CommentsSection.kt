@@ -305,11 +305,11 @@ internal fun CommentCard(
                         if (!reply) {
                             comment.version?.let { version ->
                                 Text(stringResource(R.string.comment_on_version), color = ZapText3, style = MaterialTheme.typography.bodySmall)
-                                VersionPill(version, Modifier.testTag("commentVersion:${comment.eventId}"))
+                                VersionPill(version, Modifier.testTag("commentVersion:${comment.eventId}"), scale = 0.85f)
                             }
                         }
                     }
-                    Text(formatDate(comment.createdAt), color = ZapText3, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                    Text(agoLabel(comment.createdAt), color = ZapText3, style = MaterialTheme.typography.bodySmall, maxLines = 1)
                 }
                 MarkdownText(value = comment.content, color = ZapText2, style = MaterialTheme.typography.bodyMedium, onOpenUrl = onOpenUrl)
                 onReply?.let { ReplyLink(it, Modifier.testTag("reply:${comment.eventId}")) }
@@ -372,22 +372,27 @@ internal fun ZapNoteCard(
         CommentAvatar(zap.pubkey, author, name, 32.dp, onAuthorClick, tag = "zapAuthor:${zap.pubkey}")
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                    name,
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                Icon(painterResource(R.drawable.ic_bolt), contentDescription = null, tint = ZapWarning, modifier = Modifier.size(14.dp))
-                Text(
-                    remember(zap.amountSats) { NumberFormat.getInstance().format(zap.amountSats) },
-                    color = ZapWarning,
-                    style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"),
-                    modifier = Modifier.testTag("zapSats:${zap.eventId}"),
-                )
-                Box(Modifier.weight(1f))
-                Text(formatDate(zap.createdAt), color = ZapText3, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(
+                        name,
+                        style = MaterialTheme.typography.titleSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    Icon(painterResource(R.drawable.ic_bolt), contentDescription = null, tint = ZapWarning, modifier = Modifier.size(14.dp))
+                    Text(
+                        remember(zap.amountSats) { NumberFormat.getInstance().format(zap.amountSats) },
+                        color = ZapWarning,
+                        style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"),
+                        modifier = Modifier.testTag("zapSats:${zap.eventId}"),
+                    )
+                }
+                Text(agoLabel(zap.createdAt), color = ZapText3, style = MaterialTheme.typography.bodySmall, maxLines = 1)
             }
             MarkdownText(value = zap.note, color = ZapText2, style = MaterialTheme.typography.bodyMedium, onOpenUrl = onOpenUrl)
         }

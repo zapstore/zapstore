@@ -186,7 +186,7 @@ class CatalogImporterTest {
             openConnection = ::JdbcSqliteConnection,
         )
         val bundle = golden("bundle-0-1.tar.zst")
-        val first = iolite.syncCatalog(catalogId = 1, bundled = bundle, endpoint = localRelay)
+        val first = iolite.syncCatalog(catalogId = 1, bundled = CatalogBundle.of(bundle), endpoint = localRelay)
         val imported = first.imported!!
         assertEquals(0, imported.from)
         assertEquals(1, imported.to)
@@ -226,7 +226,7 @@ class CatalogImporterTest {
             http = http,
             openConnection = ::JdbcSqliteConnection,
         )
-        val first = iolite.syncCatalog(catalogId = 1, bundled = ByteArray(0), endpoint = localRelay)
+        val first = iolite.syncCatalog(catalogId = 1, bundled = null, endpoint = localRelay)
         val imported = first.imported!!
         assertEquals(0, imported.from)
         assertEquals(1, imported.to)
@@ -286,6 +286,30 @@ class CatalogImporterTest {
         scope.coroutineContext.job.cancel()
     }
 
+    /** A full import reads `<app-id>/trust` before `apps.pubkey` is derived from the proofs; the followers must still land on the publisher. */
+    @Test
+    fun fullImportKeepsTrustForTheProofPublisher() {
+        val appId = "pub.trust.app"
+        val owner = Hex.decode("44".repeat(32))
+        val publisher = Hex.encode(Crypto.xOnlyPubkey(owner))
+        val follower = "77".repeat(32)
+        val line = "trust,1700000000,Ada,${follower.toNpub()}"
+        val listing = fixtureListing(Hex.decode("11".repeat(32)), appId, "Trust", "1.0.0", 10)
+        val proof = proofEvent(owner, "cd".repeat(32), 1_650_000_000)
+        withStore { store, importer ->
+            val bundle = rebuild(golden("bundle-0-2.tar.zst")) { members, indexed ->
+                if (indexed) return@rebuild
+                val diff = members.getValue("diff.jsonl").toString(Charsets.UTF_8).trimEnd()
+                val added = (listing.events + proof).joinToString("") { "${it.toJson()}\n" }
+                members["diff.jsonl"] = "$diff\n$added".toByteArray()
+                members["$appId/trust"] = line.toByteArray()
+            }
+            importer.importBundle(1, bundle, localRelay)
+            assertEquals(publisher, store.apps().first { it.appId == appId }.proofPubkey)
+            assertEquals(listOf(TrustFollower("Ada", follower)), store.trust(publisher)?.followers)
+        }
+    }
+
     @Test
     fun badLinesEventsAndMembersAreSkippedAndTheRestImports() {
         var cleanApps = emptyList<String>()
@@ -312,6 +336,22 @@ class CatalogImporterTest {
             assertTrue(result.skipped.any { it.endsWith("is not JSON") })
             assertTrue(result.skipped.any { it.contains("failed verification") || it.contains("invalid") })
             assertTrue(result.skipped.contains("hash mismatch for $corrupted"))
+        }
+    }
+
+    @Test
+    fun aDiffTheIndexListsButTheBundleLacksKeepsTheCatalog() {
+        withStore { store, importer ->
+            importer.importBundle(1, golden("bundle-0-2.tar.zst"), localRelay)
+            val apps = store.apps().map { it.appId }.sorted()
+            assertTrue(apps.isNotEmpty())
+            val stripped = rebuild(golden("bundle-0-2.tar.zst")) { members, indexed ->
+                if (indexed) members.remove("diff.jsonl")
+            }
+            val result = importer.importBundle(1, stripped, localRelay)
+            assertEquals(0, result.to)
+            assertEquals(apps, store.apps().map { it.appId }.sorted())
+            assertTrue(result.skipped.contains("member diff.jsonl is in the index but not the bundle"))
         }
     }
 
@@ -379,7 +419,7 @@ class CatalogImporterTest {
             openConnection = ::JdbcSqliteConnection,
         )
         val bundle = withCatalogRelays(golden("bundle-0-1.tar.zst"), listOf("wss://relay.zapstore.dev"))
-        iolite.syncCatalog(catalogId = 1, bundled = bundle, endpoint = "wss://relay.example.com".normalizeRelayUrl())
+        iolite.syncCatalog(catalogId = 1, bundled = CatalogBundle.of(bundle), endpoint = "wss://relay.example.com".normalizeRelayUrl())
         assertEquals(listOf("wss://relay.zapstore.dev"), iolite.defaultCatalog().relays.map { it.url })
         iolite.syncCatalog()
         assertEquals(
@@ -406,15 +446,15 @@ class CatalogImporterTest {
         )
         val bundle = golden("bundle-0-1.tar.zst")
         assertTrue(iolite.needsDefaultCatalog())
-        val seeded = iolite.seedDefaultCatalog(bundle, localRelay)!!
+        val seeded = iolite.seedDefaultCatalog(CatalogBundle.of(bundle), localRelay)!!
         assertEquals(iolite.bundleSigner(bundle), seeded.manifestPubkey)
         assertEquals(0, seeded.epoch)
         assertEquals(0, seeded.position)
         assertEquals(listOf(localRelay.url), seeded.relays.map { it.url })
-        assertNull(iolite.seedDefaultCatalog(bundle, localRelay))
+        assertNull(iolite.seedDefaultCatalog(CatalogBundle.of(bundle), localRelay))
         assertNull(iolite.bundleSigner(byteArrayOf(1, 2, 3)))
 
-        iolite.syncCatalog(catalogId = seeded.id, bundled = bundle)
+        iolite.syncCatalog(catalogId = seeded.id, bundled = CatalogBundle.of(bundle))
         assertEquals(1, iolite.apps().size)
         assertEquals(seeded.manifestPubkey, iolite.catalogs().single().manifestPubkey)
         iolite.close()
@@ -437,7 +477,7 @@ class CatalogImporterTest {
             openConnection = ::JdbcSqliteConnection,
         )
         val bundle = withCatalogRelays(golden("bundle-0-1.tar.zst"), listOf("wss://relay.zapstore.dev"))
-        iolite.syncCatalog(catalogId = 1, bundled = bundle, endpoint = localRelay)
+        iolite.syncCatalog(catalogId = 1, bundled = CatalogBundle.of(bundle), endpoint = localRelay)
         assertEquals(listOf(localRelay.url), iolite.defaultCatalog().relays.map { it.url })
         iolite.syncCatalog()
         assertEquals(
@@ -784,7 +824,7 @@ class CatalogImporterTest {
             """{"delete":["com.example.spy"]}""",
             """{"banned":true,"app_id":"com.example.spy","reason":"Records the microphone."}""",
         ).joinToString("\n")
-        val (events, deletes) = CatalogImporter.parseDiff(TarMember("diff.jsonl", diff.toByteArray()), 1_000_000)
+        val (events, deletes) = parseDiff(diff)
         assertEquals(emptyList<Event>(), events)
         assertEquals(
             listOf(
@@ -800,9 +840,16 @@ class CatalogImporterTest {
             "not json",
             """{"delete":["com.example.kept"]}""",
         ).joinToString("\n")
-        val (_, kept) = CatalogImporter.parseDiff(TarMember("diff.jsonl", mixed.toByteArray()), 1_000_000, skipped)
+        val (_, kept) = parseDiff(mixed, skipped)
         assertEquals(listOf(CatalogDelete.Listing("com.example.kept")), kept)
         assertEquals(listOf("diff line 1 is an invalid delete", "diff line 2 is not JSON"), skipped)
+    }
+
+    private fun parseDiff(diff: String, skipped: MutableList<String> = ArrayList()): Pair<List<Event>, List<CatalogDelete>> {
+        val events = ArrayList<Event>()
+        val deletes = ArrayList<CatalogDelete>()
+        CatalogImporter.readDiff(diff.byteInputStream(), 1_000_000, skipped, events::add, deletes::add)
+        return events to deletes
     }
 
     private fun storedName(store: IoliteStore, appId: String): String = store.read { db ->
@@ -974,13 +1021,7 @@ class CatalogImporterTest {
 
     private fun manifestPubkey(bundle: ByteArray): String {
         val config = IoliteConfig()
-        val members = TarZstd.read(
-            ByteArrayInputStream(bundle),
-            maxCompressedBytes = config.maxCompressedBytes,
-            maxUncompressedBytes = config.maxUncompressedBytes,
-            maxMembers = config.maxMembers,
-            maxMemberBytes = config.maxUncompressedBytes,
-        )
+        val members = TarZstd.read(ByteArrayInputStream(bundle), TarLimits.of(config))
         return Event.parse(members.first().data.toString(Charsets.UTF_8)).pubkey
     }
 
@@ -993,13 +1034,7 @@ class CatalogImporterTest {
     /** Re-signs [bundle] after [edit] runs on its members, once before the index is rebuilt and once after. */
     private fun rebuild(bundle: ByteArray, edit: (MutableMap<String, ByteArray>, Boolean) -> Unit): ByteArray {
         val config = IoliteConfig()
-        val members = TarZstd.read(
-            ByteArrayInputStream(bundle),
-            maxCompressedBytes = config.maxCompressedBytes,
-            maxUncompressedBytes = config.maxUncompressedBytes,
-            maxMembers = config.maxMembers,
-            maxMemberBytes = config.maxUncompressedBytes,
-        ).associate { it.name to it.data }.toMutableMap()
+        val members = TarZstd.read(ByteArrayInputStream(bundle), TarLimits.of(config)).associate { it.name to it.data }.toMutableMap()
         val manifest = Event.parse(members.getValue("manifest.json").toString(Charsets.UTF_8))
         edit(members, false)
         members["index"] = members.keys
@@ -1033,13 +1068,7 @@ class CatalogImporterTest {
         extra: List<Event> = emptyList(),
     ): ByteArray {
         val config = IoliteConfig()
-        val members = TarZstd.read(
-            ByteArrayInputStream(bundle),
-            maxCompressedBytes = config.maxCompressedBytes,
-            maxUncompressedBytes = config.maxUncompressedBytes,
-            maxMembers = config.maxMembers,
-            maxMemberBytes = config.maxUncompressedBytes,
-        ).associate { it.name to it.data }.toMutableMap()
+        val members = TarZstd.read(ByteArrayInputStream(bundle), TarLimits.of(config)).associate { it.name to it.data }.toMutableMap()
         val manifest = Event.parse(members.getValue("manifest.json").toString(Charsets.UTF_8))
         check(Hex.encode(Crypto.xOnlyPubkey(catalogSecret)) == manifest.pubkey) {
             "catalog secret does not match the bundle"

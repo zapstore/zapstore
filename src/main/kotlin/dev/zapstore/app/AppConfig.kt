@@ -17,6 +17,12 @@ object AppConfig {
     /** Bootstrap address for the first catalog fetch when the catalog has no stored relays. */
     val catalogRelay: RelayUrl = BuildConfig.CATALOG_RELAY.normalizeRelayUrl()
 
+    /** The key the default catalog must be signed by. Null only in a debug build against a local relay. */
+    val catalogPubkey: String? = BuildConfig.CATALOG_PUBKEY.ifEmpty { null }
+
+    /** Signs Vertex's kind 6312 and 7000 answers. */
+    const val VERTEX_PUBKEY = "5fc48ac4765ff81e9c51014b9d2f2c91621370f4c6b5452a9c06456e4cccaeb4"
+
     private val generalRelays = setOf("wss://relay.primal.net", "wss://relay.damus.io", "wss://nos.lol").toRelayUrls()
     private val profileRelays = setOf("wss://brelay.zapstore.dev", "wss://relay.vertexlab.io", "wss://purplepag.es", "wss://relay.primal.net").toRelayUrls()
     private val commentRelays = generalRelays + setOf(
@@ -54,8 +60,6 @@ object AppConfig {
     private val stackRelays: Set<RelayUrl> = writeRelays + catalogRelay
 
     val profileCacheDuration = 1.days
-    val zapRetention = 90.days
-
     /** Kind 0: one shot, cached for a day, author relays added when known. */
     val profileQuery: QueryOptions = QueryOptions.localAndRemote(profileRelays, RemoteMode.OneShot(), cachedFor = profileCacheDuration, useAuthorRelays = true)
 

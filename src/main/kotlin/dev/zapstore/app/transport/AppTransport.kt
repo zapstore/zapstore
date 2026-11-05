@@ -10,6 +10,11 @@ import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
+import okhttp3.Response
+import okio.buffer
+import okio.sink
+import java.io.File
+import java.io.IOException
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Proxy
@@ -188,18 +193,44 @@ class OkHttpAppTransport(
     constructor() : this(directClient())
 
     override fun get(url: String, headers: Map<String, String>): HttpResponse {
-        val builder = Request.Builder().url(url).get()
-        headers.forEach { (name, value) -> builder.header(name, value) }
-        client.newCall(builder.build()).execute().use { response ->
+        client.newCall(request(url, headers)).execute().use { response ->
             return HttpResponse(
                 status = response.code,
-                headers = buildMap {
-                    response.header("X-Error-Code")?.let { put("X-Error-Code", it) }
-                    response.header("X-Reason")?.let { put("X-Reason", it) }
-                },
+                headers = response.reasonHeaders(),
                 body = response.body.bytes().takeIf { response.code == 200 },
             )
         }
+    }
+
+    /** Streams a 200 body to [destination] in segments; the heap never holds more than one. */
+    override fun download(url: String, headers: Map<String, String>, destination: File, maxBytes: Long): HttpResponse {
+        client.newCall(request(url, headers)).execute().use { response ->
+            if (response.code != 200) return HttpResponse(response.code, response.reasonHeaders(), null)
+            if (response.body.contentLength() > maxBytes) throw IOException("response body exceeds $maxBytes bytes")
+            val source = response.body.source()
+            destination.sink().buffer().use { sink ->
+                var total = 0L
+                while (true) {
+                    val read = source.read(sink.buffer, DOWNLOAD_SEGMENT_BYTES)
+                    if (read < 0) break
+                    total += read
+                    if (total > maxBytes) throw IOException("response body exceeds $maxBytes bytes")
+                    sink.emitCompleteSegments()
+                }
+            }
+            return HttpResponse(response.code, response.reasonHeaders(), null)
+        }
+    }
+
+    private fun request(url: String, headers: Map<String, String>): Request {
+        val builder = Request.Builder().url(url).get()
+        headers.forEach { (name, value) -> builder.header(name, value) }
+        return builder.build()
+    }
+
+    private fun Response.reasonHeaders(): Map<String, String> = buildMap {
+        header("X-Error-Code")?.let { put("X-Error-Code", it) }
+        header("X-Reason")?.let { put("X-Reason", it) }
     }
 
     override fun open(url: String, listener: WebSocketListener): WebSocketSession {
@@ -237,6 +268,10 @@ class OkHttpAppTransport(
     fun closeConnections() {
         client.closeAppConnections()
     }
+
+    private companion object {
+        const val DOWNLOAD_SEGMENT_BYTES = 64L * 1024
+    }
 }
 
 internal class SplitRouter(
@@ -247,6 +282,9 @@ internal class SplitRouter(
 ) : HttpTransport, WebSocketFactory, Call.Factory {
     override fun get(url: String, headers: Map<String, String>): HttpResponse =
         route(url).http.get(url, headers)
+
+    override fun download(url: String, headers: Map<String, String>, destination: File, maxBytes: Long): HttpResponse =
+        route(url).http.download(url, headers, destination, maxBytes)
 
     override fun open(url: String, listener: WebSocketListener): WebSocketSession =
         route(url).webSocket.open(url, listener)
