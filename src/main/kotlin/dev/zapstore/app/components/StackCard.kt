@@ -109,11 +109,11 @@ private const val STACK_OVERLAP = 0.5f
 private const val STACK_LEFT_DROP = 0.25f
 private const val STACK_TOP_SHIFT = 0.25f
 
-/** Two lines of the row title (15 sp, line height 20). */
-private val StackNameHeight = 40.dp
+/** Two lines of the row title (16 sp, line height 21.25). */
+private val StackNameHeight = 42.5.dp
 
-/** "See all", the gap, and two lines of about (14 sp, line height 20). */
-private val SeeAllTextHeight = 20.dp + ZapSpacing.space1 + 40.dp
+/** "See all", the gap, and two lines of about (14.75 sp, line height 21.25). */
+private val SeeAllTextHeight = 21.25.dp + ZapSpacing.space1 + 42.5.dp
 
 /** The width of a four-icon tile, the widest there is. */
 private val StackTileSlotWidth = StackCardTile * STACK_ICON_FRACTION * (1 + STACK_OVERLAP + STACK_TOP_SHIFT)
@@ -156,6 +156,7 @@ fun StackCard(
     underName: (@Composable () -> Unit)? = null,
     count: Int? = null,
     verticalPadding: Dp = ZapSpacing.space2,
+    flushStart: Boolean = false,
 ) {
     StackFace(
         name = stack.name.ifBlank { stack.identifier },
@@ -169,6 +170,7 @@ fun StackCard(
         underName = underName,
         count = count,
         verticalPadding = verticalPadding,
+        flushStart = flushStart,
         modifier = modifier,
     )
 }
@@ -188,6 +190,7 @@ internal fun StackFace(
     underName: (@Composable () -> Unit)? = null,
     count: Int? = null,
     verticalPadding: Dp = ZapSpacing.space2,
+    flushStart: Boolean = false,
 ) {
     Row(
         verticalAlignment = if (head) Alignment.Top else Alignment.CenterVertically,
@@ -203,7 +206,15 @@ internal fun StackFace(
             mark()
         } else {
             // Every tile gets the width of the fullest one, so titles start at the same x whatever the app count.
-            Box(Modifier.width(StackTileSlotWidth), contentAlignment = if (head) Alignment.TopCenter else Alignment.Center) {
+            // On the shelf the pile sits at the card's left edge, so the leftmost icon lines up with the page's edge.
+            Box(
+                Modifier.width(StackTileSlotWidth),
+                contentAlignment = when {
+                    flushStart -> Alignment.CenterStart
+                    head -> Alignment.TopCenter
+                    else -> Alignment.Center
+                },
+            ) {
                 StackTile(appIds, apps, size = StackCardTile)
             }
         }
@@ -250,7 +261,12 @@ internal fun StackFace(
 
 /** The shelf's last slot: an arrow where the icons would be, and it opens every stack. */
 @Composable
-fun SeeAllStackCard(onClick: () -> Unit, modifier: Modifier = Modifier, verticalPadding: Dp = ZapSpacing.space2) {
+fun SeeAllStackCard(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    verticalPadding: Dp = ZapSpacing.space2,
+    flushStart: Boolean = false,
+) {
     StackFace(
         name = stringResource(R.string.see_all),
         appIds = emptyList(),
@@ -259,6 +275,7 @@ fun SeeAllStackCard(onClick: () -> Unit, modifier: Modifier = Modifier, vertical
         onClick = onClick,
         mark = { SeeAllMark() },
         verticalPadding = verticalPadding,
+        flushStart = flushStart,
         modifier = modifier,
     )
 }

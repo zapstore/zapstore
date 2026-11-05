@@ -22,7 +22,6 @@ import dev.zapstore.app.components.StackCardHeight
 import dev.zapstore.app.components.StackShelfGap
 import dev.zapstore.app.components.StackShelfPadding
 import dev.zapstore.app.components.StacksShelfRows
-import dev.zapstore.app.components.catalogCount
 import dev.zapstore.app.components.stackShelfFraction
 import dev.zapstore.iolite.AppRecord
 import dev.zapstore.iolite.StackRecord
@@ -62,7 +61,7 @@ fun StacksShelf(
         ) {
             if (saved != null && saved.ids.isNotEmpty()) {
                 item(key = "saved") {
-                    SavedStackCard(saved, onSavedClick, Modifier.width(shelfWidth))
+                    SavedStackCard(saved, onSavedClick, Modifier.width(shelfWidth), flushStart = true)
                 }
             }
             items(stacks, key = { it.eventId }) { stack ->
@@ -70,8 +69,8 @@ fun StacksShelf(
                     stack = stack,
                     apps = apps,
                     onClick = { onStackClick(stack) },
-                    count = stack.catalogCount(apps),
                     verticalPadding = StackShelfPadding,
+                    flushStart = true,
                     modifier = Modifier.width(shelfWidth).testTag("stack:${stack.identifier}"),
                 )
             }
@@ -80,6 +79,7 @@ fun StacksShelf(
                     SeeAllStackCard(
                         onClick = onSeeAll,
                         verticalPadding = StackShelfPadding,
+                        flushStart = true,
                         modifier = Modifier.width(shelfWidth).testTag("seeAllStacks"),
                     )
                 }

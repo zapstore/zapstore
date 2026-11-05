@@ -215,6 +215,8 @@ fun HomeScreen(
                             // The last slot, in place of one more stack. The web shelf does the same.
                             seeAll = onSeeAllStacks,
                             gridState = stackShelf,
+                            // The list already pads 16 dp, so the first card starts where "Recent activity" does.
+                            horizontalPadding = 0.dp,
                             modifier = Modifier.padding(top = ZapSpacing.space2),
                         )
                     }
