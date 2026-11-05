@@ -15,6 +15,29 @@ import dev.zapstore.iolite.WebSocketSession
 
 class AppTransportTest {
     @Test
+    fun downloadFollowsARedirectButGetDoesNot() {
+        okhttp3.mockwebserver.MockWebServer().use { server ->
+            server.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest) = when (request.requestUrl?.encodedPath) {
+                    "/v1/bundle" -> okhttp3.mockwebserver.MockResponse().setResponseCode(302).setHeader("Location", "/cdn/bundle")
+                    else -> okhttp3.mockwebserver.MockResponse().setBody("bundle")
+                }
+            }
+            server.start()
+            val transport = OkHttpAppTransport()
+            val url = server.url("/v1/bundle").toString()
+            val file = File.createTempFile("bundle", ".bin")
+            try {
+                assertEquals(302, transport.get(url, emptyMap()).status)
+                assertEquals(200, transport.download(url, emptyMap(), file, 1024).status)
+                assertEquals("bundle", file.readText())
+            } finally {
+                file.delete()
+            }
+        }
+    }
+
+    @Test
     fun torModeDoesNotFallBackToDirect() {
         try {
             AppTransports.create(NetworkMode.TorOnly)

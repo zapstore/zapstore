@@ -192,6 +192,15 @@ class OkHttpAppTransport(
 ) : HttpTransport, WebSocketFactory {
     constructor() : this(directClient())
 
+    /**
+     * The catalog bundle may later be served from a CDN, so [download] follows redirects. Plain [get] still
+     * does not, and a redirect never changes scheme (https stays https). The bundle is signature-checked on import,
+     * so the host it lands on is not trusted. Shares [client]'s connections, proxy and DNS.
+     */
+    private val downloadClient: OkHttpClient by lazy {
+        client.newBuilder().followRedirects(true).followSslRedirects(false).build()
+    }
+
     override fun get(url: String, headers: Map<String, String>): HttpResponse {
         client.newCall(request(url, headers)).execute().use { response ->
             return HttpResponse(
@@ -204,7 +213,7 @@ class OkHttpAppTransport(
 
     /** Streams a 200 body to [destination] in segments; the heap never holds more than one. */
     override fun download(url: String, headers: Map<String, String>, destination: File, maxBytes: Long): HttpResponse {
-        client.newCall(request(url, headers)).execute().use { response ->
+        downloadClient.newCall(request(url, headers)).execute().use { response ->
             if (response.code != 200) return HttpResponse(response.code, response.reasonHeaders(), null)
             if (response.body.contentLength() > maxBytes) throw IOException("response body exceeds $maxBytes bytes")
             val source = response.body.source()
