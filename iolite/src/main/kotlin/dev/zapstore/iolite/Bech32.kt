@@ -53,6 +53,18 @@ private fun convertBits(data: List<Int>, fromBits: Int, toBits: Int): List<Int> 
 /** Hex pubkey for an `npub`, or null when the string is not a valid NIP-19 public key. */
 fun String.decodeNpub(): String? = decodeKey("npub", this)
 
+/** NIP-19 `note` for a 64-char hex event id; other strings are returned unchanged. */
+fun String.toNote(): String = encodeKey("note", this) ?: this
+
+/** Hex event id of a `note`, or null when the string is not one. */
+fun String.decodeNote(): String? = decodeKey("note", this)
+
+/** Hex event id of an `nevent`, or null when it is not one or carries no id. */
+fun String.decodeNevent(): String? {
+    val tlv = decodeTlv(decodeBech32("nevent", this) ?: return null) ?: return null
+    return tlv[0]?.firstOrNull()?.takeIf { it.size == 32 }?.let(Hex::encode)
+}
+
 /** Hex secret key for an `nsec`, or null when the string is not a valid NIP-19 secret key. */
 fun String.decodeNsec(): String? = decodeKey("nsec", this)
 

@@ -23,5 +23,14 @@ class Bech32Test {
             neventOf(id, author),
         )
         assertNull(neventOf("abc", author))
+        assertEquals(id, neventOf(id, author)!!.decodeNevent())
+    }
+
+    @Test
+    fun noteRoundTrips() {
+        val id = "ab".repeat(32)
+        assertEquals(id, id.toNote().decodeNote())
+        assertNull(id.toNote().decodeNevent())
+        assertNull(id.toNpub().decodeNote())
     }
 }
