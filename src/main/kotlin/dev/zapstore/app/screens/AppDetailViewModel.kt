@@ -466,7 +466,7 @@ class AppDetailViewModel(
         val known = origin != null
         val installed = origin?.installed == true
         val newer = record != null && known && (!installed || record.versionCode > origin.versionCode)
-        val foreign = newer && installed && planFor(record!!, origin!!) == InstallPlan.Blocked(BlockReason.Signer)
+        val foreign = newer && installed && planFor(record, origin) == InstallPlan.Blocked(BlockReason.Signer)
         catalog.copy(
             social = social,
             userStacks = stacks,
