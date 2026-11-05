@@ -56,6 +56,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import dev.zapstore.iolite.decodeNpub
+import dev.zapstore.iolite.decodeNprofile
 import org.commonmark.ext.autolink.AutolinkExtension
 import org.commonmark.ext.gfm.strikethrough.Strikethrough
 import org.commonmark.ext.gfm.strikethrough.StrikethroughExtension
@@ -143,19 +145,29 @@ object ZapMarkdown {
         RegexOption.IGNORE_CASE,
     )
 
-    /** Blocks for [value]. Link taps go to [onOpenUrl]; results without a callback are cached. */
-    fun blocks(value: String, onOpenUrl: ((String) -> Unit)? = null): List<MdBlock> {
-        if (onOpenUrl == null) synchronized(cache) { cache[value] }?.let { return it }
+    /**
+     * Blocks for [value]. Link taps go to [onOpenUrl]. With [mentions], a `npub` or `nprofile` reads as
+     * `@name` (profile names by hex pubkey) instead of the raw token, and `@npub1abc…wxyz` until the name
+     * is known. Results with neither a callback nor [mentions] are cached.
+     */
+    fun blocks(value: String, onOpenUrl: ((String) -> Unit)? = null, mentions: Map<String, String>? = null): List<MdBlock> {
+        val cacheable = onOpenUrl == null && mentions == null
+        if (cacheable) synchronized(cache) { cache[value] }?.let { return it }
         val out = mutableListOf<MdBlock>()
-        Walker(onOpenUrl, out).blocks(parser.parse(value), indent = 0, quote = 0)
-        if (onOpenUrl == null) synchronized(cache) { cache[value] = out }
+        Walker(onOpenUrl, mentions, out).blocks(parser.parse(value), indent = 0, quote = 0)
+        if (cacheable) synchronized(cache) { cache[value] = out }
         return out
     }
 
+    /** Hex pubkeys of every `npub` and `nprofile` in [value], for loading the profiles that name them. */
+    fun mentionedPubkeys(value: String): Set<String> = inlineEntity.findAll(value)
+        .mapNotNull { match -> match.groups[1]?.value?.lowercase()?.let { it.decodeNpub() ?: it.decodeNprofile() } }
+        .toSet()
+
     /** The whole document as one string: blocks separated by a blank line, list items by a line break. */
-    fun parse(value: String, onOpenUrl: ((String) -> Unit)? = null): AnnotatedString = buildAnnotatedString {
+    fun parse(value: String, onOpenUrl: ((String) -> Unit)? = null, mentions: Map<String, String>? = null): AnnotatedString = buildAnnotatedString {
         var previous: MdBlock? = null
-        for (block in blocks(value, onOpenUrl)) {
+        for (block in blocks(value, onOpenUrl, mentions)) {
             if (previous != null) {
                 val bothItems = block is MdBlock.Prose && block.marker != null && previous is MdBlock.Prose && previous.marker != null
                 append(if (bothItems) "\n" else "\n\n")
@@ -188,7 +200,7 @@ object ZapMarkdown {
         else -> 14.sp
     }
 
-    private class Walker(val onOpenUrl: ((String) -> Unit)?, val out: MutableList<MdBlock>) {
+    private class Walker(val onOpenUrl: ((String) -> Unit)?, val mentions: Map<String, String>?, val out: MutableList<MdBlock>) {
         fun blocks(parent: Node, indent: Int, quote: Int) {
             var node = parent.firstChild
             while (node != null) {
@@ -345,10 +357,19 @@ object ZapMarkdown {
                 val href = token?.let(DeepLink::nip19Href) ?: tag?.let(DeepLink::hashtagHref)
                 if (href == null) return@forEach
                 append(Emoji.replace(literal.substring(cursor, match.range.first)))
-                link(href) { append(match.value) }
+                link(href) { append(token?.let(::mentionLabel) ?: match.value) }
                 cursor = match.range.last + 1
             }
             if (cursor < literal.length) append(Emoji.replace(literal.substring(cursor)))
+        }
+
+        /** `@name` for a profile token when [mentions] is on, else null so the text stays as written. */
+        fun mentionLabel(token: String): String? {
+            if (mentions == null) return null
+            val lower = token.lowercase()
+            val pubkey = lower.decodeNpub() ?: lower.decodeNprofile() ?: return null
+            val name = mentions[pubkey]?.trim()?.takeIf { it.isNotEmpty() }
+            return "@" + (name ?: "${lower.take(12)}…${lower.takeLast(4)}")
         }
 
         fun AnnotatedString.Builder.link(url: String, content: AnnotatedString.Builder.() -> Unit) {
@@ -397,17 +418,19 @@ fun MarkdownText(
     maxLines: Int = Int.MAX_VALUE,
     overflow: TextOverflow = TextOverflow.Clip,
     onOpenUrl: ((String) -> Unit)? = null,
+    /** Profile names by hex pubkey; when given, a `npub` or `nprofile` reads as `@name`. */
+    mentions: Map<String, String>? = null,
     collapsible: Boolean = false,
     collapsedMaxHeight: Dp = 140.dp,
     fadeColor: Color = ZapCanvas,
     modifier: Modifier = Modifier,
 ) {
     if (maxLines != Int.MAX_VALUE) {
-        val annotated = remember(value, onOpenUrl) { ZapMarkdown.parse(value, onOpenUrl) }
+        val annotated = remember(value, onOpenUrl, mentions) { ZapMarkdown.parse(value, onOpenUrl, mentions) }
         Text(annotated, color = color, style = style, maxLines = maxLines, overflow = overflow, modifier = modifier)
         return
     }
-    val blocks = remember(value, onOpenUrl) { ZapMarkdown.blocks(value, onOpenUrl) }
+    val blocks = remember(value, onOpenUrl, mentions) { ZapMarkdown.blocks(value, onOpenUrl, mentions) }
     if (!collapsible) {
         MarkdownBlocks(blocks, color, style, modifier)
         return

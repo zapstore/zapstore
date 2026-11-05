@@ -177,6 +177,20 @@ class MarkdownTest {
         assertEquals(listOf("https://example.com"), result.urls())
     }
 
+    @Test
+    fun `a mentioned profile reads as its name, or a short npub until it is known`() {
+        val pubkey = "6d04b3ef16e4b6a4357433ce64e93d66268c1e3c95a243f6de442412938aa537"
+        val npub = pubkey.toNpub()
+        val bio = "thanks nostr:$npub"
+
+        assertEquals(setOf(pubkey), ZapMarkdown.mentionedPubkeys(bio))
+        val named = ZapMarkdown.parse(bio, mentions = mapOf(pubkey to "Alice"))
+        assertEquals("thanks @Alice", named.text)
+        assertEquals(listOf("https://zapstore.dev/profile/$npub"), named.urls())
+        assertEquals("thanks @${npub.take(12)}…${npub.takeLast(4)}", ZapMarkdown.parse(bio, mentions = emptyMap()).text)
+        assertEquals(bio, ZapMarkdown.parse(bio).text)
+    }
+
     private fun AnnotatedString.urls(): List<String> =
         getLinkAnnotations(0, length).mapNotNull { (it.item as? LinkAnnotation.Url)?.url }
 }
