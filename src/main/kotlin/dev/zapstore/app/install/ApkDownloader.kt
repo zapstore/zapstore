@@ -25,7 +25,6 @@ class InstallException(val kind: Kind, message: String) : Exception(message) {
 
 object ApkDownloader {
     private const val TAG = "ApkDownloader"
-    const val MAX_BYTES = 300L * 1024 * 1024
     private const val MAX_REDIRECTS = 5
     private const val UNKNOWN_SPACE = 64L * 1024 * 1024
 
@@ -115,9 +114,6 @@ object ApkDownloader {
                     if (!append) dest.delete()
                     val body = response.body
                     val incoming = body.contentLength()
-                    if (incoming > MAX_BYTES) {
-                        throw InstallException(InstallException.Kind.Http, "APK is too large")
-                    }
                     val needed = if (incoming >= 0) incoming * 2 else UNKNOWN_SPACE
                     val parent = dest.parentFile ?: dest
                     if (freeBytes(parent) < needed) {
@@ -174,9 +170,6 @@ object ApkDownloader {
                         val read = source.read(buffer)
                         if (read < 0) break
                         written += read
-                        if (written > MAX_BYTES) {
-                            throw InstallException(InstallException.Kind.Http, "APK is too large")
-                        }
                         out.write(buffer, 0, read)
                         digest.update(buffer, 0, read)
                         onProgress(written, total)
