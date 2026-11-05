@@ -2,13 +2,6 @@ GRADLE ?= ./gradlew
 ADB := ./tools/adb
 PACKAGE ?= dev.zapstore.app
 ACTIVITY ?= dev.zapstore.app.MainActivity
-# The Flutter release key, under the names the Flutter build used.
-KEYSTORE ?= $(or $(ZAPSTORE_KEY_PATH),release.keystore)
-KEYSTORE_PASSWORD ?= $(ZAPSTORE_KEY_PASSWORD)
-KEY_ALIAS ?= $(ZAPSTORE_KEY_ALIAS)
-KEY_PASSWORD ?= $(KEYSTORE_PASSWORD)
-DEBUG_KEYSTORE ?= $(abspath debug.keystore)
-
 ASSETS_CATALOG_BUNDLE := src/main/assets/bundle-0-1.tar.zst
 RELAY_PORT := 3334
 # Baked into the APK. Example: CATALOG_RELAY=ws://127.0.0.1:3334 make run
@@ -34,7 +27,7 @@ bundle_signer_ok = if [ -n "$(CATALOG_PUBKEY)" ]; then \
 		fi; \
 	fi
 
-.PHONY: build release sign-hotbox install run run-release deploy refresh vendor unbundle-catalog fetch-catalog-bundle reverse link-adb
+.PHONY: build release install run run-release deploy refresh vendor unbundle-catalog fetch-catalog-bundle reverse link-adb
 
 # Drop leftover seeds so a debug build without CATALOG_BUNDLE does not package them.
 unbundle-catalog:
@@ -66,7 +59,6 @@ fetch-catalog-bundle:
 
 ifeq ($(CATALOG_BUNDLE),)
 build install: unbundle-catalog
-release: fetch-catalog-bundle
 else
 .PHONY: $(ASSETS_CATALOG_BUNDLE)
 $(ASSETS_CATALOG_BUNDLE):
@@ -95,42 +87,9 @@ vendor:
 build:
 	$(GRADLE) assembleDebug $(GRADLE_RELAY)
 
-# Unsigned release build + hotbox sign. Never calls zsp publish.
-sign-hotbox:
-	./tools/sign-release-hotbox.sh
-
+# Unsigned release build, then hotbox. Never calls zsp publish.
 release:
-	@if [ -f "$(KEYSTORE)" ]; then \
-		store="$(abspath $(KEYSTORE))"; \
-		pass="$(KEYSTORE_PASSWORD)"; \
-		alias="$(KEY_ALIAS)"; \
-		keypass="$(KEY_PASSWORD)"; \
-		if [ -z "$$pass" ] || [ -z "$$alias" ]; then \
-			echo "Found $$store; set KEYSTORE_PASSWORD and KEY_ALIAS to sign the release build."; \
-			exit 1; \
-		fi; \
-	elif [ "$(DEBUG_SIGNED)" != "1" ]; then \
-		echo "No $(KEYSTORE); set ZAPSTORE_KEY_PATH, or DEBUG_SIGNED=1 for a local build signed with the debug certificate." >&2; \
-		exit 1; \
-	else \
-		echo "No $(KEYSTORE); signing release with the Android debug certificate (local use only)"; \
-		store="$(DEBUG_KEYSTORE)"; \
-		if [ ! -f "$$store" ]; then \
-			mkdir -p "$$(dirname "$$store")"; \
-			keytool -genkeypair -keystore "$$store" \
-				-storepass android -keypass android \
-				-alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
-				-dname "CN=Android Debug,O=Android,C=US"; \
-		fi; \
-		pass=android; \
-		alias=androiddebugkey; \
-		keypass=android; \
-	fi; \
-	$(GRADLE) assembleRelease $(GRADLE_RELAY) \
-		-Pandroid.injected.signing.store.file="$$store" \
-		-Pandroid.injected.signing.store.password="$$pass" \
-		-Pandroid.injected.signing.key.alias="$$alias" \
-		-Pandroid.injected.signing.key.password="$$keypass"
+	./tools/sign-release-hotbox.sh
 
 # Forward this machine to the device. A local CATALOG_RELAY port is included.
 reverse:
@@ -140,7 +99,6 @@ reverse:
 		$(ADB) reverse tcp:$$port tcp:$$port >/dev/null || true; \
 	fi
 
-run-release: DEBUG_SIGNED ?= 1
 run-release: release reverse
 	$(ADB) install -r --no-incremental build/outputs/apk/release/zapstore-release.apk
 	$(ADB) shell am force-stop $(PACKAGE)

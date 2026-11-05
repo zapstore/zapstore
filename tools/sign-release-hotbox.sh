@@ -18,9 +18,16 @@ if ! command -v zsp >/dev/null 2>&1; then
 	exit 1
 fi
 
-make fetch-catalog-bundle CATALOG_RELAY="$CATALOG_RELAY"
+# make release copies CATALOG_BUNDLE into assets before this runs.
+if [ -z "${CATALOG_BUNDLE:-}" ]; then
+	make fetch-catalog-bundle CATALOG_RELAY="$CATALOG_RELAY"
+fi
 
-"$GRADLE" assembleRelease -PCATALOG_RELAY="$CATALOG_RELAY"
+gradle_args=(-PCATALOG_RELAY="$CATALOG_RELAY")
+if [ -n "${CATALOG_PUBKEY:-}" ]; then
+	gradle_args+=(-PCATALOG_PUBKEY="$CATALOG_PUBKEY")
+fi
+"$GRADLE" assembleRelease "${gradle_args[@]}"
 
 unsigned=$(
 	zsp utils find-unsigned . | grep -m1 arm64-v8a ||

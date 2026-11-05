@@ -28,7 +28,7 @@ The production APK is still published from the [Flutter client](https://github.c
 make build
 ```
 
-That runs `./gradlew assembleDebug`. The debug APK lands in `build/outputs/apk/debug/`. Set `CATALOG_BUNDLE` to a `tar.zst` seed and `make build`, `make run`, and `make release` copy it to `src/main/assets/bundle-0-1.tar.zst`. Without it, the APK ships no catalog bundle. First launch then requests `GET /v1/bundle?from=0&v=<versionName>` from `wss://relay.zapstore.dev` and imports that bundle.
+That runs `./gradlew assembleDebug`. The debug APK lands in `build/outputs/apk/debug/`. Set `CATALOG_BUNDLE` to a `tar.zst` seed and `make build`, `make run`, and `make release` copy it to `src/main/assets/bundle-0-1.tar.zst`. Without it, a debug APK ships no catalog bundle. First launch then requests `GET /v1/bundle?from=0&v=<versionName>` from `wss://relay.zapstore.dev` and imports that bundle. `make release` fetches that bundle for the current version, then signs the APK with hotbox.
 
 Tor uses a size-optimized `libarti_android.so` from `tools/arti-build` (Amethyst's JNI wrapper, zapstore package names). Rebuild the arm64-v8a library and commit it when bumping Arti:
 
@@ -40,7 +40,7 @@ That needs rustup, `cargo-ndk` at the version in `tools/arti-build/CARGO_NDK_VER
 
 ```bash
 make run            # installDebug, launch, then press r to rebuild
-make run-release    # assembleRelease (R8), install, launch
+make run-release    # release APK signed with hotbox, install, launch
 ```
 
 `make install` clears app data and embeds `CATALOG_BUNDLE` when that path is set. `make build` only builds.
