@@ -502,7 +502,8 @@ internal fun CatalogSignedNote(
                     append(stringResource(R.string.catalog_indexed_body, name))
                 } else {
                     append(stringResource(R.string.catalog_indexed_from_lead, name))
-                    withStyle(SpanStyle(color = Color.White, background = Color.Black)) { append(from) }
+                    // SpanStyle has no padding, so the spaces sit inside the highlight.
+                    withStyle(SpanStyle(color = Color.White, background = Color.Black)) { append("\u00A0$from\u00A0") }
                     append(stringResource(R.string.catalog_indexed_from_tail))
                 }
             },

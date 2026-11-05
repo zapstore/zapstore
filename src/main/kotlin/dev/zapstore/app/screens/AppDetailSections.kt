@@ -72,6 +72,16 @@ import java.text.NumberFormat
 import java.util.Date
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.ScrollState
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.layout.offset
@@ -328,8 +338,9 @@ internal fun PackageCard(onOpen: () -> Unit, modifier: Modifier = Modifier) {
 }
 
 /**
- * Zap, as in the reference app: one wide button, then who has zapped, biggest first. Without a
- * [onZap] (the account can't zap) only the strip shows. Where the sats go is said in the zap sheet.
+ * Zap: who has zapped, biggest first, scrolling sideways, with the Zap button pinned to the right.
+ * With no zappers (yet, or ever), the button just sits at the left instead. Without [onZap] (the
+ * account can't zap) only the strip shows. Where the sats go is said in the zap sheet.
  */
 @Composable
 internal fun ZapRow(
@@ -338,7 +349,13 @@ internal fun ZapRow(
     modifier: Modifier = Modifier,
     onZap: (() -> Unit)? = null,
 ) {
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ZapSpacing.space1)) {
+    val hasZappers = summary.zappers.isNotEmpty()
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3),
+        modifier = modifier.fillMaxWidth().heightIn(min = ZapSpacing.space12),
+    ) {
+        if (hasZappers) ZappersStrip(summary, onProfileClick, showBolt = onZap == null, modifier = Modifier.weight(1f))
         onZap?.let { zap ->
             ZapButton(
                 text = stringResource(R.string.zap),
@@ -346,23 +363,54 @@ internal fun ZapRow(
                 style = ZapButtonStyle.Tonal,
                 icon = R.drawable.ic_bolt,
                 iconTint = ZapWarning,
-                modifier = Modifier.fillMaxWidth().testTag("zapOpen"),
+                modifier = Modifier.testTag("zapOpen"),
             )
         }
-        if (summary.zappers.isNotEmpty()) ZappersStrip(summary, onProfileClick)
     }
 }
 
-/** `⚡ 3,400 sats by` then each zapper's face and total, scrolling sideways. A face opens the profile. */
+/** Fades whichever edge [scroll] can still move toward, so a clipped face reads as "more this way". */
+private fun Modifier.scrollFade(scroll: ScrollState, width: Dp = ZapSpacing.space6): Modifier = this
+    .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+    .drawWithContent {
+        drawContent()
+        val fade = width.toPx().coerceAtMost(size.width / 2)
+        if (scroll.canScrollBackward) drawRect(
+            Brush.horizontalGradient(listOf(Color.Transparent, Color.Black), startX = 0f, endX = fade),
+            size = Size(fade, size.height),
+            blendMode = BlendMode.DstIn,
+        )
+        if (scroll.canScrollForward) drawRect(
+            Brush.horizontalGradient(listOf(Color.Black, Color.Transparent), startX = size.width - fade, endX = size.width),
+            topLeft = Offset(size.width - fade, 0f),
+            size = Size(fade, size.height),
+            blendMode = BlendMode.DstIn,
+        )
+    }
+
+/**
+ * `3,400 sats by` then each zapper's face and total, scrolling sideways. A face opens the profile.
+ * An edge fades only while there is more to scroll toward it. [showBolt] leads with the bolt when no
+ * Zap button sits beside the strip to carry it.
+ */
 @Composable
-private fun ZappersStrip(summary: ZapSummary, onProfileClick: (String) -> Unit) {
+private fun ZappersStrip(
+    summary: ZapSummary,
+    onProfileClick: (String) -> Unit,
+    showBolt: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val scroll = rememberScrollState()
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3),
-        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).testTag("zappers"),
+        modifier = modifier
+            .scrollFade(scroll)
+            .horizontalScroll(scroll)
+            .testTag("zappers"),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space1)) {
-            Icon(painterResource(R.drawable.ic_bolt), contentDescription = null, tint = ZapWarning, modifier = Modifier.size(20.dp))
+            if (showBolt) Icon(painterResource(R.drawable.ic_bolt), contentDescription = null, tint = ZapWarning, modifier = Modifier.size(20.dp))
             Text(
                 pluralStringResource(R.plurals.zap_total, summary.totalSats.coerceIn(0, Int.MAX_VALUE.toLong()).toInt(), compactSats(summary.totalSats)),
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontFeatureSettings = "tnum"),
