@@ -282,7 +282,7 @@ fun ZapBadge(text: String, tone: BadgeTone, modifier: Modifier = Modifier, icon:
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             icon?.let { Icon(painterResource(it), contentDescription = null, tint = foreground, modifier = Modifier.size(14.dp)) }
-            Text(text, color = foreground, style = MaterialTheme.typography.labelLarge.copy(fontSize = 12.sp, lineHeight = 16.sp))
+            Text(text, color = foreground, style = MaterialTheme.typography.labelLarge.copy(fontSize = 12.75.sp, lineHeight = 17.sp))
         }
     }
 }
@@ -310,7 +310,7 @@ fun ZapChip(
             .padding(start = if (leadingIcon != null) 10.dp else 12.dp, end = if (trailingIcon != null) 8.dp else 12.dp),
     ) {
         leadingIcon?.let { Icon(painterResource(it), contentDescription = null, tint = foreground, modifier = Modifier.size(14.dp)) }
-        Text(text, color = foreground, style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp, lineHeight = 16.sp))
+        Text(text, color = foreground, style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.75.sp, lineHeight = 17.sp))
         trailingIcon?.let { Icon(painterResource(it), contentDescription = null, tint = foreground, modifier = Modifier.size(14.dp)) }
     }
 }
@@ -375,7 +375,7 @@ fun VersionPill(
 ) {
     val versions = if (next == null) version else "$version → $next"
     val spoken = if (status == null) versions else "$versions, ${stringResource(status.label)}"
-    val fontSize = 13.sp * textScale
+    val fontSize = 13.75.sp * textScale
     val style = MaterialTheme.typography.labelMedium.copy(
         fontSize = fontSize,
         lineHeight = fontSize,
@@ -462,7 +462,7 @@ fun EvidenceCard(
             .border(1.dp, ZapLine, RoundedCornerShape(ZapRadius.lg))
             .padding(contentPadding),
     ) {
-        val titleStyle = MaterialTheme.typography.titleSmall.copy(fontSize = 17.sp, lineHeight = 22.sp)
+        val titleStyle = MaterialTheme.typography.titleSmall.copy(fontSize = 18.sp, lineHeight = 23.25.sp)
         if (headerAction == null) {
             Text(title, style = titleStyle)
         } else {
@@ -577,7 +577,7 @@ internal fun GroupCount(count: Int, modifier: Modifier = Modifier) {
         Text(
             count.toString(),
             color = ZapText2,
-            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 12.sp, fontFeatureSettings = "tnum"),
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp, lineHeight = 12.75.sp, fontFeatureSettings = "tnum"),
         )
     }
 }

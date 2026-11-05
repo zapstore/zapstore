@@ -193,11 +193,11 @@ object ZapMarkdown {
     )
 
     private fun headingSize(level: Int): TextUnit = when (level) {
-        1 -> 24.sp
-        2 -> 21.sp
-        3 -> 18.sp
-        4 -> 16.sp
-        else -> 14.sp
+        1 -> 25.5.sp
+        2 -> 22.25.sp
+        3 -> 19.sp
+        4 -> 17.sp
+        else -> 14.75.sp
     }
 
     private class Walker(val onOpenUrl: ((String) -> Unit)?, val mentions: Map<String, String>?, val out: MutableList<MdBlock>) {

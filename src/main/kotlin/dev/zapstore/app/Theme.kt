@@ -37,7 +37,7 @@ object ZapSize {
 // so each style pins opsz to its size (axis range 9–40).
 
 @OptIn(ExperimentalTextApi::class)
-private fun dmSans(opsz: Int) = FontFamily(
+private fun dmSans(opsz: Float) = FontFamily(
     listOf(400, 500, 600, 700).flatMap { weight ->
         listOf(FontStyle.Normal to R.font.dm_sans, FontStyle.Italic to R.font.dm_sans_italic).map { (fontStyle, res) ->
             Font(
@@ -46,44 +46,44 @@ private fun dmSans(opsz: Int) = FontFamily(
                 style = fontStyle,
                 variationSettings = FontVariation.Settings(
                     FontVariation.weight(weight),
-                    FontVariation.Setting("opsz", opsz.coerceIn(9, 40).toFloat()),
+                    FontVariation.Setting("opsz", opsz.coerceIn(9f, 40f)),
                 ),
             )
         }
     },
 )
 
-private fun style(size: Int, line: Int, weight: Int, tracking: Double = 0.0) = TextStyle(
-    fontFamily = dmSans(size),
+private fun style(size: Number, line: Number, weight: Int, tracking: Double = 0.0) = TextStyle(
+    fontFamily = dmSans(size.toFloat()),
     fontWeight = FontWeight(weight),
-    fontSize = size.sp,
-    lineHeight = line.sp,
+    fontSize = size.toDouble().sp,
+    lineHeight = line.toDouble().sp,
     letterSpacing = tracking.em,
 )
 
 private val ZapTypography = Typography(
-    displayLarge = style(36, 44, 600, -0.01), // Display
-    displayMedium = style(36, 44, 600, -0.01),
-    displaySmall = style(36, 44, 600, -0.02), // Figure
-    headlineLarge = style(28, 36, 600, -0.01),
-    headlineMedium = style(28, 36, 600, -0.01), // Headline
-    headlineSmall = style(28, 34, 600, -0.025), // Title 1: screen titles
-    titleLarge = style(22, 28, 600, -0.015), // Title 2: sheet titles
-    titleMedium = style(18, 24, 600, -0.015), // Title 4: app name in detail heads
-    titleSmall = style(15, 20, 600), // Row title
-    bodyLarge = style(16, 24, 400), // Body
-    bodyMedium = style(14, 20, 400), // Body small
-    bodySmall = style(13, 18, 400), // Caption
-    labelLarge = style(14, 20, 600), // Button
-    labelMedium = style(13, 18, 500).copy(fontFeatureSettings = "tnum"), // Evidence
-    labelSmall = style(12, 16, 600, 0.08), // Label: uppercase at the call site
+    displayLarge = style(38.25, 46.75, 600, -0.01), // Display
+    displayMedium = style(38.25, 46.75, 600, -0.01),
+    displaySmall = style(38.25, 46.75, 600, -0.02), // Figure
+    headlineLarge = style(29.75, 38.25, 600, -0.01),
+    headlineMedium = style(29.75, 38.25, 600, -0.01), // Headline
+    headlineSmall = style(29.75, 36, 600, -0.025), // Title 1: screen titles
+    titleLarge = style(23.25, 29.75, 600, -0.015), // Title 2: sheet titles
+    titleMedium = style(19, 25.5, 600, -0.015), // Title 4: app name in detail heads
+    titleSmall = style(16, 21.25, 600), // Row title
+    bodyLarge = style(17, 25.5, 400), // Body
+    bodyMedium = style(14.75, 21.25, 400), // Body small
+    bodySmall = style(13.75, 19, 400), // Caption
+    labelLarge = style(14.75, 21.25, 600), // Button
+    labelMedium = style(13.75, 19, 500).copy(fontFeatureSettings = "tnum"), // Evidence
+    labelSmall = style(12.75, 17, 600, 0.08), // Label: uppercase at the call site
 )
 
 /** Hashes, package ids, npubs: same face, tabular figures. Never monospace. */
 val ZapEvidenceStyle: TextStyle = ZapTypography.labelMedium
 
 /** Card and plan titles. */
-val ZapTitle3Style: TextStyle = style(20, 26, 600, -0.015)
+val ZapTitle3Style: TextStyle = style(21.25, 27.5, 600, -0.015)
 
 private val ZapColorScheme = darkColorScheme(
     primary = ZapAction,

@@ -268,7 +268,7 @@ private fun CatalogUpdatedText(text: String, modifier: Modifier = Modifier) {
     Text(
         text,
         color = ZapText3,
-        style = MaterialTheme.typography.labelMedium.copy(fontSize = 11.sp, lineHeight = 14.sp),
+        style = MaterialTheme.typography.labelMedium.copy(fontSize = 11.75.sp, lineHeight = 14.75.sp),
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         modifier = modifier.testTag("catalogStatus"),
@@ -310,7 +310,7 @@ private fun EpochPill(epoch: Long) {
         Text(
             stringResource(R.string.catalog_epoch_pill, epoch),
             color = ZapText2,
-            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 12.sp, fontFeatureSettings = "tnum"),
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp, lineHeight = 12.75.sp, fontFeatureSettings = "tnum"),
         )
     }
 }

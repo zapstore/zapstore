@@ -179,7 +179,7 @@ private fun NavCountBadge(count: Int, modifier: Modifier = Modifier) {
             if (count > 99) "99+" else count.toString(),
             color = Color.White,
             textAlign = TextAlign.Center,
-            style = TextStyle(fontSize = 10.sp, lineHeight = 12.sp, fontWeight = FontWeight.Bold),
+            style = TextStyle(fontSize = 10.5.sp, lineHeight = 12.75.sp, fontWeight = FontWeight.Bold),
         )
     }
 }

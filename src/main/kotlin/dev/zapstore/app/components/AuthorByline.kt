@@ -123,7 +123,7 @@ fun IndexedMark(onClick: () -> Unit, modifier: Modifier = Modifier) {
         Text(
             INDEXED_GLYPH,
             modifier = Modifier.grayscale(),
-            style = MaterialTheme.typography.bodyLarge.copy(fontSize = 11.25.sp, lineHeight = 11.25.sp),
+            style = MaterialTheme.typography.bodyLarge.copy(fontSize = 12.sp, lineHeight = 12.sp),
         )
     }
 }
