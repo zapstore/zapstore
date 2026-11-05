@@ -16,6 +16,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,7 +32,7 @@ enum class TaskPhase {
     Downloading,
     Paused,
     Verifying,
-    /** The session is committed; a silent update may wait until the app is not in use. */
+    /** The session is committed; a silent update may wait until the app is not on screen. */
     Installing,
     /** Android's dialog is up or queued; [Installer.confirm] shows it again. */
     Confirm,
@@ -48,8 +49,10 @@ data class InstallTask(
     val phase: TaskPhase,
     val received: Long = 0,
     val total: Long? = null,
-    /** Android installs it without a dialog. */
+    /** Android installs it without a dialog, or its dialog was already accepted. */
     val silent: Boolean = false,
+    /** A silent update Android is holding until the app leaves the screen. */
+    val waiting: Boolean = false,
     val error: String? = null,
 ) {
     /** Zapstore is working on it or Android is waiting on the user; a new tap must not start another. */
@@ -87,6 +90,8 @@ class Installer(
     /** Main thread only: dialogs Android handed us, oldest first, and the one on screen. */
     private val confirmations = LinkedHashMap<String, Intent>()
     private var presenting: String? = null
+    /** Main thread only: the dialog that was up when Zapstore last paused. */
+    private var covered: String? = null
 
     @Volatile
     private var visible = false
@@ -109,6 +114,7 @@ class Installer(
                 session.requireUserAction == android.content.pm.PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED
             if (silent && id != null) holding += id else runCatching { sessions.abandonSession(session.sessionId) }
         }
+        holding.forEach { AppLog.i(TAG, "silent update of $it still waiting for the app to close") }
         val found = InstallCache.artifacts(context)
         _tasks.update { tasks ->
             val restored = found.filter { it.appId !in tasks }.associate { artifact ->
@@ -117,7 +123,8 @@ class Installer(
                     artifact.verified -> TaskPhase.Ready
                     else -> TaskPhase.Paused
                 }
-                artifact.appId to InstallTask(artifact.appId, artifact.hash, phase = phase, received = artifact.bytes, silent = artifact.appId in holding)
+                val held = artifact.appId in holding
+                artifact.appId to InstallTask(artifact.appId, artifact.hash, phase = phase, received = artifact.bytes, silent = held, waiting = held)
             }
             tasks + restored
         }
@@ -219,8 +226,33 @@ class Installer(
         }
     }
 
+    /**
+     * MainActivity's resume and pause. Android's dialog only pauses Zapstore, so a resume after a pause
+     * while it was up means the dialog closed: show the update as installing instead of Confirm while
+     * Android works. A decline answers within moments; no answer at all puts Confirm back.
+     */
+    fun setResumed(on: Boolean) {
+        main.post {
+            if (!on) {
+                covered = presenting
+                return@post
+            }
+            val id = covered ?: return@post
+            covered = null
+            if (presenting != id || _tasks.value[id]?.phase != TaskPhase.Confirm) return@post
+            set(id) { it.copy(phase = TaskPhase.Installing, silent = true) }
+            main.postDelayed({
+                if (presenting == id && _tasks.value[id]?.phase == TaskPhase.Installing) {
+                    set(id) { it.copy(phase = TaskPhase.Confirm, silent = false) }
+                }
+            }, CONFIRMED_GRACE_MS)
+        }
+    }
+
     /** From [InstallStatusReceiver], on the main thread. */
     fun onStatus(packageId: String, status: Int, confirm: Intent?, message: String?) {
+        val waited = _tasks.value[packageId]?.waiting == true
+        AppLog.i(TAG, "install $packageId status $status${if (waited) " after waiting" else ""}${message?.let { ": $it" }.orEmpty()}")
         when (status) {
             STATUS_PENDING_USER_ACTION -> {
                 if (confirm == null) {
@@ -270,8 +302,10 @@ class Installer(
                 return
             }
             val silent = plan is InstallPlan.Silent && SessionInstaller.silentSupported
-            set(id) { it.copy(phase = TaskPhase.Installing, silent = silent) }
+            set(id) { it.copy(phase = TaskPhase.Installing, silent = silent, waiting = false) }
             withContext(Dispatchers.IO) { SessionInstaller.commit(context, apk, id, app.name, plan, bulk) }
+            AppLog.i(TAG, "committed $id${if (silent) " silently" else ""}")
+            if (silent && Build.VERSION.SDK_INT >= 34) scope.launch { markWaiting(id) }
         } catch (e: CancellationException) {
             val paused = synchronized(jobs) { pausing.remove(id) }
             if (paused) set(id) { it.copy(phase = TaskPhase.Paused) } else _tasks.update { it - id }
@@ -369,12 +403,26 @@ class Installer(
         _tasks.update { tasks -> tasks + (appId to change(tasks[appId] ?: InstallTask(appId, "", phase = TaskPhase.Queued))) }
     }
 
+    /** Android gives no signal that it is holding a session, so a silent commit with no answer by now is. */
+    private suspend fun markWaiting(appId: String) {
+        delay(WAIT_HINT_MS)
+        var marked = false
+        _tasks.update { tasks ->
+            val task = tasks[appId]?.takeIf { it.phase == TaskPhase.Installing && it.silent && !it.waiting } ?: return@update tasks
+            marked = true
+            tasks + (appId to task.copy(waiting = true))
+        }
+        if (marked) AppLog.i(TAG, "silent update of $appId waiting for the app to close")
+    }
+
     private fun nameOf(appId: String) = _tasks.value[appId]?.name ?: appId
 
     companion object {
         private const val TAG = "Installer"
         private const val MAX_DOWNLOADS = 3
         private const val PROGRESS_STEP = 256L * 1024
+        private const val WAIT_HINT_MS = 15_000L
+        private const val CONFIRMED_GRACE_MS = 60_000L
         private const val STATUS_PENDING_USER_ACTION = android.content.pm.PackageInstaller.STATUS_PENDING_USER_ACTION
         private const val STATUS_SUCCESS = android.content.pm.PackageInstaller.STATUS_SUCCESS
         private const val STATUS_FAILURE_ABORTED = android.content.pm.PackageInstaller.STATUS_FAILURE_ABORTED

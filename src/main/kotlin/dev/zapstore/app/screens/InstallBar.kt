@@ -69,6 +69,7 @@ data class InstallActions(
 fun InstallBar(app: AppRecord, install: InstallUi, actions: InstallActions, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val button = install.button(
+        name = app.name,
         onError = { error ->
             Toasts.show(
                 Toast(error, ToastKind.Error, context.getString(R.string.copy)) {
@@ -116,6 +117,7 @@ private sealed interface BarButton {
 
 @Composable
 private fun InstallUi.button(
+    name: String,
     onError: (String) -> Unit,
     actions: InstallActions,
 ): BarButton? {
@@ -126,18 +128,21 @@ private fun InstallUi.button(
         InstallPhase.Paused ->
             BarButton.Progress(stringResource(R.string.install_paused, progressText()), fraction, paused = true, onClick = actions.onStart)
         InstallPhase.Verifying -> BarButton.Simple(stringResource(R.string.install_verifying), null, spinner = true)
-        InstallPhase.Installing -> BarButton.Simple(
-            stringResource(
-                when {
-                    silent && installedHere -> R.string.install_updating
-                    silent -> R.string.install_installing
-                    installedHere -> R.string.install_requesting_update
-                    else -> R.string.install_requesting
-                },
-            ),
-            null,
-            spinner = true,
-        )
+        InstallPhase.Installing -> when {
+            silent && waiting -> BarButton.Simple(stringResource(R.string.install_waiting_close, name), null)
+            else -> BarButton.Simple(
+                stringResource(
+                    when {
+                        silent && installedHere -> R.string.install_updating
+                        silent -> R.string.install_installing
+                        installedHere -> R.string.install_requesting_update
+                        else -> R.string.install_requesting
+                    },
+                ),
+                null,
+                spinner = true,
+            )
+        }
         InstallPhase.Confirm -> BarButton.Simple(
             stringResource(if (installedHere) R.string.confirm_update else R.string.install_notification),
             actions.onStart,

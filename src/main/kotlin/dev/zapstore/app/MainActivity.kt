@@ -165,8 +165,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        zapstore.installer.setResumed(true)
         zapstore.iolite.refreshConnections()
         UpdateNotifier.clear(this)
+    }
+
+    override fun onPause() {
+        zapstore.installer.setResumed(false)
+        super.onPause()
     }
 
     @androidx.compose.runtime.Composable

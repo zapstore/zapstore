@@ -149,6 +149,8 @@ data class InstallUi(
     val total: Long? = null,
     /** While [InstallPhase.Installing]: false when Android shows its own dialog. */
     val silent: Boolean = true,
+    /** While [InstallPhase.Installing]: Android holds the update until the app leaves the screen. */
+    val waiting: Boolean = false,
     /** What went wrong, while [InstallPhase.Failed]. */
     val error: String? = null,
     /** The name of the store that keeps this app current, when it is not Zapstore. */
@@ -808,5 +810,6 @@ private fun installUi(task: InstallTask?, dialog: InstallPlan?, blocked: String?
     received = task?.received ?: 0,
     total = task?.total,
     silent = task?.silent ?: true,
+    waiting = task?.waiting == true,
     error = blocked ?: task?.error,
 )

@@ -303,6 +303,7 @@
     <string name="install_verifying">Verifying…</string>
     <string name="install_installing">Installing…</string>
     <string name="install_updating">Updating…</string>
+    <string name="install_waiting_close">Updates when %1$s is closed</string>
     <string name="install_requesting">Requesting installation</string>
     <string name="install_requesting_update">Requesting update</string>
     <string name="install_error_details">Error (tap for details)</string>
@@ -363,8 +364,8 @@
     <string name="trust_disclaimer">Follows are not endorsements.</string>
     <string name="catalog_indexed">Indexed.</string>
     <string name="catalog_indexed_body">%1$s is tracked by the Zapstore indexer and its releases are signed with the catalog key.</string>
-    <string name="catalog_indexed_from_lead">%1$s is tracked by the Zapstore indexer from </string>
-    <string name="catalog_indexed_from_tail"> and its releases are signed with the catalog key.</string>
+    <string name="catalog_indexed_from_lead">%1$s is tracked by the Zapstore indexer from\u0020</string>
+    <string name="catalog_indexed_from_tail">\u0020and its releases are signed with the catalog key.</string>
     <string name="downloads_from">Downloads from its original release location:</string>
     <string name="install_cancel">Cancel</string>
     <string name="install_blocked_platform">This APK targets an Android version this device cannot install.</string>
