@@ -11,6 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import okhttp3.Call
 import okhttp3.Request
 import okhttp3.Response
+import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -82,7 +83,6 @@ object ApkDownloader {
                 val builder = Request.Builder().url(url)
                 if (existing > 0) builder.header("Range", "bytes=$existing-")
                 val call = calls.newCall(builder.build())
-                call.timeout().timeout(10, java.util.concurrent.TimeUnit.MINUTES)
                 val done = call.executeCancellable { response ->
                     if (response.isRedirect) {
                         hops++
@@ -120,8 +120,7 @@ object ApkDownloader {
                         throw InstallException(InstallException.Kind.Space, "not enough free space")
                     }
                     val total = if (incoming >= 0) (if (append) existing else 0L) + incoming else null
-                    write(body.byteStream(), dest, append, total, onProgress)
-                    val hash = dest.sha256()
+                    val hash = write(body.byteStream(), dest, append, total, onProgress)
                     if (!hash.equals(expectedHash, ignoreCase = true)) {
                         throw InstallException(InstallException.Kind.Hash, "hash mismatch")
                     }
@@ -152,47 +151,64 @@ object ApkDownloader {
         }
     }
 
+    /** Streams [input] onto [dest] and returns the SHA-256 of the whole file, resumed bytes included. */
     private fun write(
         input: java.io.InputStream,
         dest: File,
         append: Boolean,
         total: Long?,
         onProgress: (Long, Long?) -> Unit,
-    ) {
-        var written = if (append && dest.exists()) dest.length() else 0L
+    ): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        var written = if (append && dest.exists()) dest.digestInto(digest) else 0L
         input.use { source ->
-            FileOutputStream(dest, append).use { out ->
-                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                while (true) {
-                    val read = source.read(buffer)
-                    if (read < 0) break
-                    out.write(buffer, 0, read)
-                    written += read
-                    if (written > MAX_BYTES) {
-                        throw InstallException(InstallException.Kind.Http, "APK is too large")
+            FileOutputStream(dest, append).use { file ->
+                val out = BufferedOutputStream(file, WRITE_BUFFER)
+                val buffer = ByteArray(READ_BUFFER)
+                try {
+                    while (true) {
+                        val read = source.read(buffer)
+                        if (read < 0) break
+                        written += read
+                        if (written > MAX_BYTES) {
+                            throw InstallException(InstallException.Kind.Http, "APK is too large")
+                        }
+                        out.write(buffer, 0, read)
+                        digest.update(buffer, 0, read)
+                        onProgress(written, total)
                     }
-                    onProgress(written, total)
+                } finally {
+                    // A paused or dropped download keeps every byte that arrived, for the Range resume.
+                    out.flush()
                 }
-                out.fd.sync()
+                file.fd.sync()
             }
         }
+        return digest.hex()
     }
+
+    private const val READ_BUFFER = 64 * 1024
+    private const val WRITE_BUFFER = 512 * 1024
 }
 
 /** A dropped or timed-out connection, worth retrying later. */
 fun Throwable.isTransient(): Boolean = this is IOException
 
-private fun File.sha256(): String {
-    val digest = MessageDigest.getInstance("SHA-256")
+/** Feeds this file to [digest] and returns its length. */
+private fun File.digestInto(digest: MessageDigest): Long {
+    var length = 0L
     inputStream().use { input ->
-        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        val buffer = ByteArray(64 * 1024)
         while (true) {
             val read = input.read(buffer)
             if (read < 0) break
             digest.update(buffer, 0, read)
+            length += read
         }
     }
-    return digest.digest().joinToString("") { byte ->
-        (byte.toInt() and 0xff).toString(16).padStart(2, '0')
-    }
+    return length
+}
+
+private fun MessageDigest.hex(): String = digest().joinToString("") { byte ->
+    (byte.toInt() and 0xff).toString(16).padStart(2, '0')
 }
