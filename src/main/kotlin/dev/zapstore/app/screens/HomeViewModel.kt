@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import dev.zapstore.app.AppConfig
+import dev.zapstore.app.DeviceSettings
 import dev.zapstore.iolite.AppCoordinate
 import dev.zapstore.iolite.AppFilter
 import dev.zapstore.iolite.AppRecord
@@ -83,12 +84,14 @@ data class HomeUiState(
 @OptIn(ExperimentalCoroutinesApi::class)
 class HomeViewModel(
     private val iolite: Iolite,
+    private val settings: DeviceSettings,
     private val savedStateHandle: SavedStateHandle,
     private val encodeQuery: (String) -> ByteArray?,
 ) : ViewModel() {
     private val searchQuery = savedStateHandle.getStateFlow(SEARCH_QUERY_KEY, "")
     private val submittedQuery = savedStateHandle.getStateFlow(SUBMITTED_QUERY_KEY, "")
-    private val activityFilter = MutableStateFlow(ActivityFilter.All)
+    /** Kept in the device settings, so it survives a restart and follows the device key. */
+    private val activityFilter: Flow<ActivityFilter> = settings.state.map { it.activityFilter }.distinctUntilChanged()
     private val stackLimit = MutableStateFlow(STACK_PAGE)
     private val activityLimit = MutableStateFlow(ACTIVITY_PAGE)
 
@@ -347,7 +350,7 @@ class HomeViewModel(
     }
 
     fun setActivityFilter(filter: ActivityFilter) {
-        activityFilter.value = filter
+        settings.update { it.copy(activityFilter = filter) }
         activityLimit.value = ACTIVITY_PAGE
     }
 
@@ -377,8 +380,8 @@ class HomeViewModel(
         private const val ACTIVITY_STACKS = 6
         private const val ACTIVITY_STACKS_READ = 30
 
-        fun factory(iolite: Iolite, encodeQuery: (String) -> ByteArray?): ViewModelProvider.Factory = viewModelFactory {
-            initializer { HomeViewModel(iolite, createSavedStateHandle(), encodeQuery) }
+        fun factory(iolite: Iolite, settings: DeviceSettings, encodeQuery: (String) -> ByteArray?): ViewModelProvider.Factory = viewModelFactory {
+            initializer { HomeViewModel(iolite, settings, createSavedStateHandle(), encodeQuery) }
         }
     }
 }

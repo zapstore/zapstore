@@ -1,6 +1,7 @@
 package dev.zapstore.app
 
 import android.content.Context
+import dev.zapstore.app.screens.ActivityFilter
 import dev.zapstore.app.transport.NetworkMode
 import dev.zapstore.iolite.DeviceEvents
 import dev.zapstore.iolite.Iolite
@@ -50,6 +51,8 @@ data class DeviceState(
     val networkMode: NetworkMode = NetworkMode.DirectOnly,
     val bugReports: Boolean = false,
     val syncInterval: SyncInterval = SyncInterval.Hourly,
+    /** Which entries Home's Recent activity lists. */
+    val activityFilter: ActivityFilter = ActivityFilter.All,
 ) {
     val backgroundAutoUpdates: Boolean get() = backgroundUpdateInterval != UpdateInterval.Never
 
@@ -60,6 +63,7 @@ data class DeviceState(
         put("networkMode", if (networkMode == NetworkMode.DirectOnly) "direct" else "tor")
         put("bugReports", bugReports)
         put("catalogSyncIntervalMinutes", syncInterval.minutes)
+        put("activityFilter", activityFilter.name.lowercase())
     }
 
     companion object {
@@ -87,6 +91,8 @@ data class DeviceState(
             } else {
                 defaults.syncInterval
             },
+            activityFilter = ActivityFilter.entries.firstOrNull { it.name.equals(json.optString("activityFilter"), ignoreCase = true) }
+                ?: defaults.activityFilter,
         )
     }
 }
@@ -144,6 +150,7 @@ class DeviceSettings(
             .putBoolean(KEY_ANY_NETWORK, state.backgroundAutoUpdatesAnyNetwork)
             .putBoolean(KEY_REPORTS, state.bugReports)
             .putInt(KEY_SYNC, state.syncInterval.minutes)
+            .putString(KEY_ACTIVITY, state.activityFilter.name)
             .apply()
         _state.value = state
     }
@@ -154,6 +161,7 @@ class DeviceSettings(
         networkMode = NetworkMode.fromStored(prefs.getString(KEY_MODE, defaultMode.name)),
         bugReports = prefs.getBoolean(KEY_REPORTS, false),
         syncInterval = SyncInterval.fromMinutes(prefs.getInt(KEY_SYNC, SyncInterval.Hourly.minutes)),
+        activityFilter = ActivityFilter.entries.firstOrNull { it.name == prefs.getString(KEY_ACTIVITY, null) } ?: ActivityFilter.All,
     )
 
     private companion object {
@@ -164,6 +172,7 @@ class DeviceSettings(
         const val KEY_ANY_NETWORK = "background_any_network"
         const val KEY_REPORTS = "bug_reports"
         const val KEY_SYNC = "catalog_sync_interval_minutes"
+        const val KEY_ACTIVITY = "activity_filter"
         const val PUBLISH_DELAY_MS = 1_500L
     }
 }

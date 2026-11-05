@@ -291,7 +291,7 @@ class MainActivity : ComponentActivity() {
             popExitTransition = { if (switchingTabs()) fadeOut(tween(NAVIGATION_TRANSITION_DURATION)) else slideOut(AnimatedContentTransitionScope.SlideDirection.Right) },
         ) {
             composable(Routes.HOME) {
-                val viewModel: HomeViewModel = viewModel(factory = HomeViewModel.factory(iolite, zapstore.queryEncoder::encode))
+                val viewModel: HomeViewModel = viewModel(factory = HomeViewModel.factory(iolite, zapstore.settings, zapstore.queryEncoder::encode))
                 val state by viewModel.uiState.collectAsStateWithLifecycle()
                 SideEffect { homeShown = state.ready }
                 HomeScreen(
@@ -622,7 +622,7 @@ class MainActivity : ComponentActivity() {
     /** Puts [query] into the home search after [showTab] has the home entry on the stack. */
     private fun openHomeSearch(navController: NavHostController, query: String) {
         val owner = navController.getBackStackEntry(Routes.HOME)
-        ViewModelProvider(owner, HomeViewModel.factory(zapstore.iolite, zapstore.queryEncoder::encode))
+        ViewModelProvider(owner, HomeViewModel.factory(zapstore.iolite, zapstore.settings, zapstore.queryEncoder::encode))
             .get(HomeViewModel::class.java)
             .openSearch(query)
     }

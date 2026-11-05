@@ -1,5 +1,6 @@
 package dev.zapstore.app
 
+import dev.zapstore.app.screens.ActivityFilter
 import dev.zapstore.app.transport.NetworkMode
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -38,6 +39,15 @@ class DeviceStateTest {
         assertTrue(json.has("futureField"))
         assertEquals(signer, json.getJSONArray("trustedSigners").getString(0))
         assertEquals(state, DeviceState.fromJson(JSONObject(json.toString())))
+    }
+
+    @Test
+    fun activityFilterRoundTripsAndDefaultsToAll() {
+        assertEquals(ActivityFilter.All, DeviceState.fromJson(JSONObject("""{"backgroundAutoUpdatesEnabled": true}""")).activityFilter)
+        assertEquals(ActivityFilter.All, DeviceState.fromJson(JSONObject("""{"activityFilter": "nonsense"}""")).activityFilter)
+        val social = DeviceState(activityFilter = ActivityFilter.Social)
+        assertEquals("social", social.toJson().getString("activityFilter"))
+        assertEquals(social, DeviceState.fromJson(JSONObject(social.toJson().toString())))
     }
 
     @Test
