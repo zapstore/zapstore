@@ -19,8 +19,8 @@ android {
         minSdk = 29
         targetSdk = 37
         // Above every Flutter 1.1.3 split (armeabi-v7a 2010, arm64-v8a 3010, x86_64 5010).
-        versionCode = 6000
-        versionName = "2.0.0"
+        versionCode = 6001
+        versionName = "2.0.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             abiFilters += "arm64-v8a"
