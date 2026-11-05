@@ -130,7 +130,11 @@ internal fun LazyListScope.activityRows(
         else -> {
             // No rules between entries: the padding of each row is the only gap.
             itemsIndexed(items, key = { _, item -> "activity:${item.eventId}" }, contentType = { _, _ -> "activity" }) { _, item ->
-                ActivityRow(item, profiles[item.pubkey], stackApps, catalogKeys, showWho, onClick = { onOpen(item) }, modifier = modifier)
+                if (!showWho && item.app != null && item.stack == null && !item.release) {
+                    PersonActivityRow(item, item.app, onClick = { onOpen(item) }, modifier = modifier)
+                } else {
+                    ActivityRow(item, profiles[item.pubkey], stackApps, catalogKeys, showWho, onClick = { onOpen(item) }, modifier = modifier)
+                }
             }
             if (canLoadMore) {
                 if (onLoadMore != null) {
@@ -276,6 +280,66 @@ private fun ActivityRow(
                     modifier = Modifier.padding(top = 6.dp),
                 )
             }
+        }
+    }
+}
+
+/**
+ * One comment or zap on a person's own page, told from their side: "sent ⚡ 21 sats to <app>" or
+ * "commented on <app>", the app with its small icon, the time at the right edge, and a comment's text under it.
+ * The main feed says "<app> received ..." instead, which is the app's side.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PersonActivityRow(
+    item: ActivityItem,
+    app: AppRecord,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 14.dp)
+            .testTag("activity:${item.eventId}"),
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                itemVerticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f),
+            ) {
+                if (item.sats != null) {
+                    Verb(stringResource(R.string.activity_sent))
+                    Sats(item.sats)
+                    Verb(stringResource(R.string.activity_to))
+                } else {
+                    Verb(stringResource(R.string.activity_commented_on))
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ACTIVITY_GAP)) {
+                    AppIcon(title = app.name, iconUrl = app.iconUrl, iconFile = app.iconFile, size = ACTIVITY_ICON)
+                    Strong(app.name, Modifier.weight(1f, fill = false))
+                }
+            }
+            Text(
+                agoLabel(item.createdAt),
+                color = ZapText3,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                modifier = Modifier.padding(top = 1.dp),
+            )
+        }
+        item.comment?.takeIf { it.isNotBlank() }?.let {
+            Text(
+                it,
+                color = ZapText2,
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 6.dp),
+            )
         }
     }
 }

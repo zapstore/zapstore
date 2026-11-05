@@ -1,7 +1,6 @@
 package dev.zapstore.app.screens
 
 import dev.zapstore.app.Toasts
-import dev.zapstore.app.components.VersionStatus
 import dev.zapstore.iolite.Social
 import dev.zapstore.iolite.Kinds
 import dev.zapstore.iolite.Bolt11
@@ -23,7 +22,9 @@ import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import dev.zapstore.app.components.VersionStatus
 import dev.zapstore.app.AppConfig
+import dev.zapstore.app.AppLog
 import dev.zapstore.app.R
 import dev.zapstore.app.ZapstoreApplication
 import dev.zapstore.app.catalog.InstalledApp
@@ -77,6 +78,8 @@ data class ZapSummary(
     val error: String? = null,
     /** Biggest zappers by total, at most [TOP_ZAPPERS]. */
     val zappers: List<Zapper> = emptyList(),
+    /** Everyone who zapped, which can be more than [zappers] holds. */
+    val zapperCount: Int = zappers.size,
     val recipient: ZapRecipient? = null,
     val profiles: Map<String, ProfileRecord> = emptyMap(),
 )
@@ -88,6 +91,7 @@ data class ZapRecipient(val pubkey: String, val catalog: Boolean)
 data class Zapper(val pubkey: String, val sats: Long)
 
 const val TOP_ZAPPERS = 10
+private const val TAG = "AppDetail"
 private const val TRUST_FOLLOWERS = 5
 
 /** Vertex answers in a few seconds; a person waiting on a sheet should not wait for the library's 30. */
@@ -160,11 +164,7 @@ data class InstallUi(
 ) {
     val busy: Boolean get() = phase in BUSY_PHASES
 
-    /**
-     * What the version pill marks: an update to install, the app up to date, or the app not yet installed.
-     * Null while the device state is unknown, and when the installed copy is signed differently, since
-     * neither "up to date" nor an update is true of it.
-     */
+    /** Icon inside the Latest release version pill: install, update, or up to date. */
     val versionStatus: VersionStatus?
         get() = when {
             updating -> VersionStatus.Update
@@ -409,6 +409,7 @@ class AppDetailViewModel(
                 loading = zaps?.settled != true,
                 error = zaps?.relayError(),
                 zappers = topZappers(zaps?.items.orEmpty()),
+                zapperCount = zaps?.items.orEmpty().distinctBy(ZapRecord::pubkey).size,
                 recipient = app?.zapRecipient?.let { ZapRecipient(it, catalog = app.proofPubkey == null) },
                 profiles = zapProfiles,
             ),
@@ -626,6 +627,7 @@ class AppDetailViewModel(
                 if (connection != null) iolite.walletRequest(connection, "pay_invoice", JSONObject().put("invoice", invoice))
                 (connection != null) to invoice
             }
+            result.exceptionOrNull()?.let { AppLog.w(TAG, "zap failed: ${zapFailure(it)}") }
             social.update { state ->
                 result.fold(
                     onSuccess = { (paid, invoice) ->
@@ -644,13 +646,21 @@ class AppDetailViewModel(
         if (social.value.signingIn) return
         social.update { it.copy(signingIn = true, signInError = null) }
         viewModelScope.launch {
-            val error = runCatching { appContext.account.signIn() }.exceptionOrNull()?.message
-            social.update { it.copy(signingIn = false, signInError = error) }
+            val failure = runCatching { appContext.account.signIn() }.exceptionOrNull()
+            failure?.let { AppLog.w(TAG, "sign in failed: ${it::class.simpleName} ${it.message}") }
+            social.update { it.copy(signingIn = false, signInError = failure?.message) }
         }
     }
 
     /** False when [input] is not a NWC connection string. */
     fun connectWallet(input: String): Boolean = appContext.wallet.connect(input)
+
+    /** What failed, for the log: never the address, invoice, or wallet string. */
+    private fun zapFailure(error: Throwable): String = when (error) {
+        is ZapException -> error.failure.name
+        is NwcException -> "wallet ${error.code}"
+        else -> error::class.simpleName ?: "unknown"
+    }
 
     private fun zapMessage(error: Throwable): String = when (error) {
         is ZapException -> appContext.getString(

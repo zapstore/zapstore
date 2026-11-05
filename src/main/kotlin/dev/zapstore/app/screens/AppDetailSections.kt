@@ -9,6 +9,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import dev.zapstore.app.components.ZapTextLink
 import androidx.compose.ui.res.painterResource
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import dev.zapstore.iolite.StackRecord
 import dev.zapstore.app.ZapSurface2
@@ -58,6 +59,7 @@ import dev.zapstore.app.components.EvidenceCard
 import dev.zapstore.app.components.ProfileImage
 import dev.zapstore.app.components.SectionLabel
 import dev.zapstore.app.components.VersionPill
+import dev.zapstore.app.components.VersionStatus
 import dev.zapstore.app.components.ZapBadge
 import dev.zapstore.app.components.ZapButton
 import dev.zapstore.app.components.ZapButtonStyle
@@ -70,18 +72,12 @@ import dev.zapstore.iolite.ZapRecord
 import java.text.DateFormat
 import java.text.NumberFormat
 import java.util.Date
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.ScrollState
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.unit.Dp
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import dev.zapstore.app.ZapCanvas
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.layout.offset
@@ -305,14 +301,19 @@ private fun PermissionRow(line: PermissionLine) {
 
 /** Latest release: the version pill and the date, with the notes behind the title-row icon. Size stays in the sheet. */
 @Composable
-internal fun ReleaseCard(app: AppRecord, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+internal fun ReleaseCard(
+    app: AppRecord,
+    onOpen: () -> Unit,
+    modifier: Modifier = Modifier,
+    versionStatus: VersionStatus? = null,
+) {
     EvidenceCard(
         stringResource(R.string.release_title),
         modifier.fillMaxWidth().testTag("releaseCard"),
         headerAction = { CardSheetButton(stringResource(R.string.release_notes), onOpen, "releaseLink") },
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3)) {
-            if (app.version.isNotBlank()) VersionPill(app.version)
+            if (app.version.isNotBlank()) VersionPill(app.version, status = versionStatus, modifier = Modifier.testTag("releaseVersion"))
             Text(
                 formatDate(app.releasedAt),
                 color = ZapText2,
@@ -338,9 +339,9 @@ internal fun PackageCard(onOpen: () -> Unit, modifier: Modifier = Modifier) {
 }
 
 /**
- * Zap: the Zap button pinned to the left, then who has zapped, biggest first, scrolling sideways
- * in the remaining width. With no zappers the button just sits alone at the left. Without [onZap]
- * (the account can't zap) only the strip shows. Where the sats go is said in the zap sheet.
+ * Zap: what people have given on the left, the Zap button on the right, so the total never reads as
+ * the amount the button sends. The summary opens [ZappersSheet]. With no zappers the left side asks
+ * for a zap to the recipient. Without [onZap] (the account can't zap) only the summary shows.
  */
 @Composable
 internal fun ZapRow(
@@ -349,12 +350,43 @@ internal fun ZapRow(
     modifier: Modifier = Modifier,
     onZap: (() -> Unit)? = null,
 ) {
-    val hasZappers = summary.zappers.isNotEmpty()
+    var listing by rememberSaveable { mutableStateOf(false) }
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3),
         modifier = modifier.fillMaxWidth().heightIn(min = ZapSpacing.space12),
     ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+            modifier = Modifier.weight(1f),
+        ) {
+            Box(Modifier.weight(1f, fill = false)) {
+                val recipient = summary.recipient
+                when {
+                    summary.zappers.isNotEmpty() -> ZappersSummary(summary, onClick = { listing = true })
+                    onZap != null && recipient != null -> Text(
+                        if (recipient.catalog) stringResource(R.string.zap_support_catalog)
+                        else stringResource(
+                            R.string.zap_support,
+                            shortDisplayName(recipient.pubkey, summary.profiles[recipient.pubkey]),
+                        ),
+                        color = ZapText2,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.testTag("zapSupport"),
+                    )
+                }
+            }
+            if (summary.loading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(10.dp).testTag("zapsLoading"),
+                    color = ZapText,
+                    strokeWidth = 2.5.dp,
+                )
+            }
+        }
         onZap?.let { zap ->
             ZapButton(
                 text = stringResource(R.string.zap),
@@ -365,98 +397,137 @@ internal fun ZapRow(
                 modifier = Modifier.testTag("zapOpen"),
             )
         }
-        if (hasZappers) ZappersStrip(summary, onProfileClick, showBolt = onZap == null, modifier = Modifier.weight(1f))
+    }
+    if (listing) {
+        ZappersSheet(
+            summary,
+            onProfileClick = { pubkey ->
+                listing = false
+                onProfileClick(pubkey)
+            },
+            onDismiss = { listing = false },
+        )
     }
 }
 
-/** Fades whichever edge [scroll] can still move toward, so a clipped face reads as "more this way". */
-private fun Modifier.scrollFade(scroll: ScrollState, width: Dp = ZapSpacing.space6): Modifier = this
-    .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
-    .drawWithContent {
-        drawContent()
-        val fade = width.toPx().coerceAtMost(size.width / 2)
-        if (scroll.canScrollBackward) drawRect(
-            Brush.horizontalGradient(listOf(Color.Transparent, Color.Black), startX = 0f, endX = fade),
-            size = Size(fade, size.height),
-            blendMode = BlendMode.DstIn,
-        )
-        if (scroll.canScrollForward) drawRect(
-            Brush.horizontalGradient(listOf(Color.Black, Color.Transparent), startX = size.width - fade, endX = size.width),
-            topLeft = Offset(size.width - fade, 0f),
-            size = Size(fade, size.height),
-            blendMode = BlendMode.DstIn,
-        )
-    }
+/** How many faces [ZappersSummary] stacks; the rest are in [ZappersSheet]. */
+private const val STACKED_ZAPPERS = 3
 
 /**
- * `3,400 sats by` stays put, then each zapper's face and total scrolls sideways in the room left
- * over. A face opens the profile. An edge fades only while there is more to scroll toward it.
- * [showBolt] leads with the bolt when no Zap button sits beside the strip to carry it.
+ * The biggest zappers' faces stacked, the top one ringed in bolt yellow, then `21k sats received`
+ * with the total in bold. One target: it opens the full list.
  */
 @Composable
-private fun ZappersStrip(
-    summary: ZapSummary,
-    onProfileClick: (String) -> Unit,
-    showBolt: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    val scroll = rememberScrollState()
+private fun ZappersSummary(summary: ZapSummary, onClick: () -> Unit) {
+    val total = pluralStringResource(R.plurals.zap_total, summary.totalSats.coerceIn(0, Int.MAX_VALUE.toLong()).toInt(), compactSats(summary.totalSats))
+    val line = stringResource(R.string.zap_received, total)
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3),
-        modifier = modifier.testTag("zappers"),
+        modifier = Modifier
+            .heightIn(min = ZapSpacing.space12)
+            .clip(RoundedCornerShape(ZapRadius.md))
+            .clickable(role = Role.Button, onClick = onClick)
+            .testTag("zappers"),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space1)) {
-            if (showBolt) Icon(painterResource(R.drawable.ic_bolt), contentDescription = null, tint = ZapWarning, modifier = Modifier.size(20.dp))
-            Text(
-                pluralStringResource(R.plurals.zap_total, summary.totalSats.coerceIn(0, Int.MAX_VALUE.toLong()).toInt(), compactSats(summary.totalSats)),
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontFeatureSettings = "tnum"),
-                maxLines = 1,
-                modifier = Modifier.testTag("zapTotal"),
-            )
-            Text(
-                stringResource(R.string.zap_sats_by),
-                color = ZapText2,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 1,
-                modifier = Modifier.padding(start = ZapSpacing.space1),
-            )
+        Row(horizontalArrangement = Arrangement.spacedBy(-ZapSpacing.space2)) {
+            val stacked = summary.zappers.take(STACKED_ZAPPERS)
+            stacked.forEachIndexed { i, zapper ->
+                val profile = summary.profiles[zapper.pubkey]
+                Box(
+                    Modifier
+                        .zIndex((stacked.size - i).toFloat())
+                        .size(28.dp)
+                        .background(if (i == 0) ZapWarning else ZapCanvas, CircleShape)
+                        .padding(2.dp)
+                        .clip(CircleShape)
+                        .background(ZapSurface3),
+                ) {
+                    ProfileImage(
+                        pubkey = zapper.pubkey,
+                        pictureUrl = profile?.picture,
+                        profileVersion = profile?.eventId,
+                        contentDescription = null,
+                        modifier = Modifier.matchParentSize(),
+                    )
+                }
+            }
         }
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3),
+        Text(
+            buildAnnotatedString {
+                append(line)
+                val at = line.indexOf(total)
+                if (at >= 0) addStyle(SpanStyle(color = ZapText, fontWeight = FontWeight.Bold), at, at + total.length)
+            },
+            color = ZapText2,
+            style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false).padding(end = ZapSpacing.space2).testTag("zapTotal"),
+        )
+    }
+}
+
+/** Every zapper the summary holds, biggest first; each row opens the profile. */
+@Composable
+private fun ZappersSheet(summary: ZapSummary, onProfileClick: (String) -> Unit, onDismiss: () -> Unit) {
+    ZapSheet(onDismiss) {
+        Column(
             modifier = Modifier
-                .weight(1f, fill = false)
-                .scrollFade(scroll)
-                .horizontalScroll(scroll),
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(start = ZapSpacing.space5, end = ZapSpacing.space5, bottom = ZapSpacing.space5)
+                .testTag("zappersSheet"),
         ) {
+            Text(
+                stringResource(R.string.zappers_title),
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(bottom = ZapSpacing.space2),
+            )
             summary.zappers.forEach { zapper ->
                 val profile = summary.profiles[zapper.pubkey]
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+                    horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3),
                     modifier = Modifier
-                        .heightIn(min = ZapSpacing.space12)
-                        .clip(RoundedCornerShape(ZapRadius.full))
+                        .fillMaxWidth()
+                        .heightIn(min = 56.dp)
                         .clickable(role = Role.Button) { onProfileClick(zapper.pubkey) }
                         .testTag("zapper:${zapper.pubkey}"),
                 ) {
-                    Box(Modifier.size(ZapSpacing.space6).clip(CircleShape).background(ZapSurface3)) {
+                    Box(Modifier.size(ZapSpacing.space8).clip(CircleShape).background(ZapSurface3)) {
                         ProfileImage(
                             pubkey = zapper.pubkey,
                             pictureUrl = profile?.picture,
                             profileVersion = profile?.eventId,
-                            contentDescription = shortDisplayName(zapper.pubkey, profile),
+                            contentDescription = null,
                             modifier = Modifier.matchParentSize(),
                         )
                     }
                     Text(
-                        compactSats(zapper.sats),
+                        shortDisplayName(zapper.pubkey, profile),
+                        color = ZapText,
+                        style = MaterialTheme.typography.bodyLarge,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        pluralStringResource(R.plurals.zap_total, zapper.sats.coerceIn(0, Int.MAX_VALUE.toLong()).toInt(), compactSats(zapper.sats)),
                         color = ZapText2,
-                        style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
+                        style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
                         maxLines = 1,
                     )
                 }
+            }
+            val more = summary.zapperCount - summary.zappers.size
+            if (more > 0) {
+                Text(
+                    pluralStringResource(R.plurals.zappers_more, more, more),
+                    color = ZapText3,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = ZapSpacing.space2),
+                )
             }
         }
     }

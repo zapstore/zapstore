@@ -69,6 +69,7 @@ import dev.zapstore.app.ZapOnDangerFill
 import dev.zapstore.app.ZapRadius
 import dev.zapstore.app.ZapSize
 import dev.zapstore.app.ZapSpacing
+import dev.zapstore.app.ZapSurface1
 import dev.zapstore.app.ZapSurface3
 import dev.zapstore.app.ZapSurface4
 import dev.zapstore.app.ZapText
@@ -100,11 +101,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * My apps as one list of sections: updates Zapstore installs alone, updates Android asks about
- * (including ones another store owned), apps that are current, apps another store keeps current,
- * packages the catalog lacks, and ignored apps. A submitted search replaces them all.
- * Row actions live behind a swipe to the left: Ignore on catalog apps, Uninstall on packages the
- * catalog lacks, Resume on ignored apps.
+ * My apps as one list of sections: installs in progress, updates Zapstore installs alone, updates
+ * Android asks about (including ones another store owned), apps that are current, apps another
+ * store keeps current, packages the catalog lacks, and ignored apps. A submitted search replaces
+ * them all. Row actions live behind a swipe to the left: Cancel on installs, Ignore on catalog
+ * apps, Uninstall on packages the catalog lacks, Resume on ignored apps.
  */
 @Composable
 fun UpdatesScreen(
@@ -121,10 +122,12 @@ fun UpdatesScreen(
     onResumeUpdates: (String) -> Unit = {},
     onIgnoreUpdates: (String) -> Unit = {},
     onPause: (String) -> Unit = {},
+    onInstall: (AppRecord) -> Unit = {},
+    onCancelInstall: (String) -> Unit = {},
     onSearchQueryChanged: (String) -> Unit = {},
 ) {
     var query by rememberSaveable { mutableStateOf("") }
-    val rowActions = RowActions(onAppClick, onUpdateOne, onPause, onIgnoreUpdates)
+    val rowActions = RowActions(onAppClick, onUpdateOne, onPause, onIgnoreUpdates, onInstall)
 
     Column(modifier = modifier.fillMaxSize()) {
         Row(
@@ -133,10 +136,11 @@ fun UpdatesScreen(
                 .fillMaxWidth()
                 .padding(start = ZapSpacing.space4, end = ZapSpacing.space2, top = ZapSpacing.space2, bottom = ZapSpacing.space2),
         ) {
-            Column(Modifier.weight(1f)) {
-                Text(stringResource(R.string.my_apps), style = MaterialTheme.typography.headlineSmall)
-                CatalogStatus(state)
-            }
+            Text(
+                stringResource(R.string.my_apps),
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.weight(1f),
+            )
             if (BuildConfig.DEBUG) {
                 ZapButton(
                     text = stringResource(R.string.sync_now),
@@ -196,13 +200,16 @@ fun UpdatesScreen(
             if (!state.loaded) return@LazyColumn
             state.searchResults?.let { results ->
                 searchSection(state, results, onAppClick, onUninstallInstalled)
+                catalogEpochsItem(state.catalogEpochs)
                 return@LazyColumn
             }
+            installingSection(state, rowActions, onCancelInstall)
             updatesSection(state, rowActions, onUpdateAll)
             installedSection(state, onAppClick, onIgnoreUpdates)
-            otherStoresSection(state, onAppClick, onIgnoreUpdates)
+            otherStoresSection(state, rowActions)
             notInCatalogSection(state, onUninstallInstalled)
             ignoredSection(state, onAppClick, onResumeUpdates)
+            catalogEpochsItem(state.catalogEpochs)
         }
     }
     if (state.updateAll.confirm) {
@@ -215,23 +222,76 @@ fun UpdatesScreen(
     }
 }
 
-/** `Updated 5 minutes ago` beside a catalog epoch pill for each catalog, or Syncing while a pull runs. */
+/**
+ * `Checked 5 minutes ago` for the catalog check. Hidden while a sync is running, since the
+ * section already says Syncing, and hidden before the first sync.
+ */
 @Composable
-private fun CatalogStatus(state: UpdatesUiState) {
-    val status = when {
-        state.status.syncing -> stringResource(R.string.syncing)
-        state.status.lastSyncedAtMillis != null -> updatedText(state.status.lastSyncedAtMillis)
-        else -> null
-    }
-    val epochs = state.catalogEpochs.filter { it > 0 }
-    if (status == null && epochs.isEmpty()) return
+private fun catalogUpdated(state: UpdatesUiState): String? {
+    if (state.status.syncing) return null
+    return state.status.lastSyncedAtMillis?.let { checkedText(it) }
+}
+
+/**
+ * The check and "All up to date", with the catalog time on a second line. The check stays centered
+ * against both lines.
+ */
+@Composable
+private fun UpToDateRow(updated: String?) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
-        modifier = Modifier.padding(top = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(ZapRadius.md))
+            .background(ZapSurface1)
+            .padding(ZapSpacing.space4)
+            .testTag("noUpdates"),
     ) {
-        status?.let { StatusText(it, Modifier.testTag("catalogStatus")) }
-        epochs.forEach { EpochPill(it) }
+        Icon(painterResource(R.drawable.ic_check), contentDescription = null, tint = ZapVerified, modifier = Modifier.size(20.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.weight(1f)) {
+            Text(stringResource(R.string.all_up_to_date), color = ZapText2, style = MaterialTheme.typography.bodyMedium)
+            updated?.let { CatalogUpdatedText(it) }
+        }
+    }
+}
+
+/** The catalog check time, on the right of the top updates header. */
+@Composable
+private fun CatalogUpdated(state: UpdatesUiState, modifier: Modifier = Modifier) {
+    val text = catalogUpdated(state) ?: return
+    CatalogUpdatedText(text, modifier)
+}
+
+@Composable
+private fun CatalogUpdatedText(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text,
+        color = ZapText3,
+        style = MaterialTheme.typography.labelMedium.copy(fontSize = 11.sp, lineHeight = 14.sp),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier.testTag("catalogStatus"),
+    )
+}
+
+/** One `EPOCH n` pill per catalog, the last row of the list. */
+private fun LazyListScope.catalogEpochsItem(epochs: List<Long>) {
+    item(key = "epochs", contentType = "epochs") { CatalogEpochs(epochs) }
+}
+
+@Composable
+private fun CatalogEpochs(epochs: List<Long>) {
+    val shown = epochs.filter { it > 0 }
+    if (shown.isEmpty()) return
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = ZapSpacing.space4)
+            .padding(top = ZapSpacing.space2, bottom = ZapSpacing.space4),
+    ) {
+        shown.forEach { EpochPill(it) }
     }
 }
 
@@ -256,7 +316,7 @@ private fun EpochPill(epoch: Long) {
 }
 
 @Composable
-private fun updatedText(syncedAtMillis: Long): String {
+private fun checkedText(syncedAtMillis: Long): String {
     var now by remember(syncedAtMillis) { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(syncedAtMillis) {
         while (true) {
@@ -268,11 +328,11 @@ private fun updatedText(syncedAtMillis: Long): String {
     val minutes = (elapsed / 60_000L).toInt()
     val hours = (elapsed / 3_600_000L).toInt()
     return when {
-        minutes < 1 -> stringResource(R.string.updated_just_now)
-        minutes < 60 -> pluralStringResource(R.plurals.updated_minutes_ago, minutes, minutes)
-        hours < 48 -> pluralStringResource(R.plurals.updated_hours_ago, hours, hours)
+        minutes < 1 -> stringResource(R.string.checked_just_now)
+        minutes < 60 -> pluralStringResource(R.plurals.checked_minutes_ago, minutes, minutes)
+        hours < 48 -> pluralStringResource(R.plurals.checked_hours_ago, hours, hours)
         else -> stringResource(
-            R.string.updated_at,
+            R.string.checked_at,
             DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(syncedAtMillis)),
         )
     }
@@ -284,7 +344,43 @@ private data class RowActions(
     val onUpdate: (AvailableUpdate) -> Unit,
     val onPause: (String) -> Unit,
     val onIgnore: (String) -> Unit,
+    val onInstall: (AppRecord) -> Unit,
 )
+
+/** Installs Zapstore is working on or that wait for a tap, so a first install can be followed here too. */
+private fun LazyListScope.installingSection(
+    state: UpdatesUiState,
+    actions: RowActions,
+    onCancel: (String) -> Unit,
+) {
+    if (state.installing.isEmpty()) return
+    item(key = "sectionInstalling", contentType = "header") {
+        GroupHeader(stringResource(R.string.updates_section_installing), Modifier.testTag("sectionInstalling"), count = state.installing.size)
+    }
+    items(state.installing, key = { "installing:${it.appId}" }, contentType = { "update" }) { app ->
+        val task = state.tasks[app.appId]
+        SwipeAction(
+            label = stringResource(R.string.install_cancel),
+            icon = R.drawable.ic_close,
+            background = ZapDangerFill,
+            foreground = ZapOnDangerFill,
+            onAction = { onCancel(app.appId) },
+            modifier = Modifier.testTag("cancelInstall:${app.appId}"),
+            enabled = task?.phase !in UncancellablePhases,
+        ) {
+            AppRow(
+                app = app,
+                onClick = { actions.onAppClick(app) },
+                onDevice = true,
+                showAuthor = false,
+                modifier = Modifier.testTag("installing:${app.appId}"),
+                trailing = {
+                    UpdateButton(app, task, stringResource(R.string.install), { actions.onInstall(app) }, actions.onPause)
+                },
+            )
+        }
+    }
+}
 
 private fun LazyListScope.updatesSection(
     state: UpdatesUiState,
@@ -293,31 +389,28 @@ private fun LazyListScope.updatesSection(
 ) {
     val updates = state.updates
     val manual = state.manualUpdates
-    val storeUpdates = state.otherStores.filter { it.entry.update != null }
     val idle = { list: List<AvailableUpdate> -> list.count { state.tasks[it.app.appId]?.busy != true } }
-    if (updates.isNotEmpty() || (manual.isEmpty() && storeUpdates.isEmpty())) {
+    if (updates.isNotEmpty() || manual.isEmpty()) {
         item(key = "sectionUpdates", contentType = "header") {
             GroupHeader(
                 stringResource(R.string.updates_section_updates),
                 Modifier.testTag("sectionUpdates"),
                 count = updates.size.takeIf { it > 0 },
+                aside = if (updates.isEmpty()) null else {
+                    { CatalogUpdated(state) }
+                },
                 action = stringResource(R.string.update_all).takeIf { idle(updates) > 1 },
                 onAction = { onUpdateAll(UpdateGroup.Automatic) },
                 actionTag = "updateAll",
             )
         }
     }
-    if (updates.isEmpty() && manual.isEmpty() && storeUpdates.isEmpty()) {
+    if (updates.isEmpty() && manual.isEmpty()) {
         item(key = "noUpdates", contentType = "empty") {
             if (state.status.syncing) {
                 EmptyRow(stringResource(R.string.syncing), modifier = Modifier.testTag("noUpdates"))
             } else {
-                EmptyRow(
-                    stringResource(R.string.all_up_to_date),
-                    icon = R.drawable.ic_check,
-                    iconTint = ZapVerified,
-                    modifier = Modifier.testTag("noUpdates"),
-                )
+                UpToDateRow(catalogUpdated(state))
             }
         }
         return
@@ -325,24 +418,25 @@ private fun LazyListScope.updatesSection(
     items(updates, key = { "update:${it.app.appId}" }, contentType = { "update" }) { update ->
         UpdateRow(update, state.tasks[update.app.appId], actions)
     }
-    if (manual.isNotEmpty() || storeUpdates.isNotEmpty()) {
+    if (manual.isNotEmpty()) {
         item(key = "sectionManual", contentType = "header") {
             GroupHeader(
                 stringResource(R.string.updates_section_manual),
                 Modifier.testTag("sectionManual"),
-                count = manual.size + storeUpdates.size,
-                action = stringResource(R.string.update_all).takeIf { idle(manual + storeUpdates.mapNotNull { it.entry.update }) > 1 },
+                count = manual.size,
+                aside = if (updates.isNotEmpty()) null else {
+                    { CatalogUpdated(state) }
+                },
+                action = stringResource(R.string.update_all).takeIf { idle(manual) > 1 },
                 onAction = { onUpdateAll(UpdateGroup.Manual) },
                 actionTag = "updateAllManual",
             )
         }
     }
     items(manual, key = { "manual:${it.app.appId}" }, contentType = { "update" }) { update ->
-        UpdateRow(update, state.tasks[update.app.appId], actions, why = state.manualReasons[update.app.appId]?.let(UpdateWhy::Manual))
-    }
-    items(storeUpdates, key = { "storeUpdate:${it.entry.app.appId}" }, contentType = { "update" }) { item ->
-        val update = item.entry.update ?: return@items
-        UpdateRow(update, state.tasks[update.app.appId], actions, why = UpdateWhy.Store(item.storeLabel))
+        val id = update.app.appId
+        val why = state.manualStores[id]?.let(UpdateWhy::Store) ?: state.manualReasons[id]?.let(UpdateWhy::Manual)
+        UpdateRow(update, state.tasks[id], actions, why = why)
     }
 }
 
@@ -400,13 +494,9 @@ private fun LazyListScope.installedSection(
     }
 }
 
-/** Apps another store keeps current, one sublist per store. */
-private fun LazyListScope.otherStoresSection(
-    state: UpdatesUiState,
-    onAppClick: (AppRecord) -> Unit,
-    onIgnore: (String) -> Unit,
-) {
-    val current = state.otherStores.filter { it.entry.update == null }
+/** Apps another store keeps current with a key the catalog does not list, one sublist per store. */
+private fun LazyListScope.otherStoresSection(state: UpdatesUiState, actions: RowActions) {
+    val current = state.otherStores
     if (current.isEmpty()) return
     item(key = "sectionStores", contentType = "header") {
         GroupHeader(stringResource(R.string.updates_section_stores), Modifier.testTag("sectionStores"), count = current.size)
@@ -427,14 +517,15 @@ private fun LazyListScope.otherStoresSection(
             }
             items(apps, key = { "store:${it.entry.app.appId}" }, contentType = { "store" }) { item ->
                 val entry = item.entry
-                IgnoreSwipe(entry.app.appId, onIgnore) {
+                val id = entry.app.appId
+                IgnoreSwipe(id, actions.onIgnore) {
                     AppRow(
                         app = entry.app,
-                        onClick = { onAppClick(entry.app) },
+                        onClick = { actions.onAppClick(entry.app) },
                         onDevice = true,
                         author = state.profiles.authorOf(entry.app),
                         note = if (entry.signedDifferently) stringResource(R.string.store_signed_differently) else null,
-                        modifier = Modifier.testTag("store:${entry.app.appId}"),
+                        modifier = Modifier.testTag("store:$id"),
                     )
                 }
             }
@@ -442,7 +533,7 @@ private fun LazyListScope.otherStoresSection(
 }
 
 /**
- * Store name under Updated by other stores. The package id sits under the name when Android
+ * Store name under Updated by other stores, then its package id on the same line when Android
  * gave the store a name of its own; otherwise the name already is that id.
  */
 @Composable
@@ -456,23 +547,22 @@ private fun StoreGroupHeader(name: String, appId: String, count: Int, modifier: 
             .defaultMinSize(minHeight = 32.dp)
             .semantics(mergeDescendants = true) {},
     ) {
-        Column(Modifier.weight(1f, fill = false)) {
+        Text(
+            name,
+            color = ZapText2,
+            style = MaterialTheme.typography.labelLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (id != null) {
             Text(
-                name,
-                color = ZapText2,
-                style = MaterialTheme.typography.labelLarge,
+                id,
+                color = ZapText3,
+                style = MaterialTheme.typography.labelMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
             )
-            if (id != null) {
-                Text(
-                    id,
-                    color = ZapText3,
-                    style = MaterialTheme.typography.labelMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
         }
         GroupCount(count)
     }
@@ -611,7 +701,7 @@ private fun UpdateRow(
             trailing = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     why?.let { WhyButton(id, it) }
-                    UpdateButton(update, current, actions)
+                    UpdateButton(update.app, current, stringResource(R.string.update_app), { actions.onUpdate(update) }, actions.onPause)
                 }
             },
         )
@@ -670,15 +760,21 @@ private fun WhySheet(why: UpdateWhy, onDismiss: () -> Unit) {
 }
 
 /**
- * One pill per update, always [UpdateButtonWidth] wide, carrying that update's progress: Update,
- * Queued, a fill with the percent while downloading (tap to pause), Paused over the same fill (tap
- * to resume), a spinner while Zapstore verifies or installs, Confirm while Android's dialog waits,
- * and Retry after a failure (tap shows the error and starts again).
+ * One pill per install or update, always [UpdateButtonWidth] wide, carrying its progress:
+ * [idleLabel], Queued, a fill with the percent while downloading (tap to pause), Paused over the
+ * same fill (tap to resume), a spinner while Zapstore verifies or installs, Confirm while Android's
+ * dialog waits, and Retry after a failure (tap shows the error and starts again).
  */
 @Composable
-private fun UpdateButton(update: AvailableUpdate, task: InstallTask?, actions: RowActions) {
+private fun UpdateButton(
+    app: AppRecord,
+    task: InstallTask?,
+    idleLabel: String,
+    onStart: () -> Unit,
+    onPause: (String) -> Unit,
+) {
     val context = LocalContext.current
-    val id = update.app.appId
+    val id = app.appId
     val phase = task?.phase
     val working = phase == TaskPhase.Verifying || phase == TaskPhase.Installing
     val transferring = phase == TaskPhase.Downloading || phase == TaskPhase.Queued
@@ -706,17 +802,17 @@ private fun UpdateButton(update: AvailableUpdate, task: InstallTask?, actions: R
             .background(base)
             .clickable(enabled = !working, role = Role.Button) {
                 when {
-                    transferring -> actions.onPause(id)
+                    transferring -> onPause(id)
                     failed -> {
                         Toasts.show(
                             Toast(error, ToastKind.Error, copy) {
                                 context.getSystemService(ClipboardManager::class.java)
-                                    ?.setPrimaryClip(ClipData.newPlainText(update.app.name, error))
+                                    ?.setPrimaryClip(ClipData.newPlainText(app.name, error))
                             },
                         )
-                        actions.onUpdate(update)
+                        onStart()
                     }
-                    else -> actions.onUpdate(update)
+                    else -> onStart()
                 }
             }
             .testTag("updateOne:$id"),
@@ -745,12 +841,15 @@ private fun UpdateButton(update: AvailableUpdate, task: InstallTask?, actions: R
                 phase == TaskPhase.Confirm -> stringResource(R.string.confirm)
                 failed -> stringResource(R.string.retry)
                 working || transferring -> null
-                else -> stringResource(R.string.update_app)
+                else -> idleLabel
             }
             label?.let { Text(it, color = content, style = MaterialTheme.typography.labelLarge, maxLines = 1) }
         }
     }
 }
+
+/** Android has the session; Zapstore can no longer take it back. */
+private val UncancellablePhases = setOf(TaskPhase.Verifying, TaskPhase.Installing, TaskPhase.Confirm)
 
 private val UpdateButtonShape = RoundedCornerShape(ZapRadius.full)
 private val UpdateButtonWidth = 92.dp

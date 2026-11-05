@@ -446,6 +446,31 @@ class ScreensTest {
     }
 
     @Test
+    fun profileActivityReadsFromThePersonsSide() {
+        val zap = app("dev.zap", "Zap")
+        composeRule.setContent {
+            ZapstoreTheme {
+                ProfileScreen(
+                    state = ProfileUiState(
+                        pubkey = AUTHOR,
+                        activity = listOf(
+                            ActivityItem("c".repeat(64), AUTHOR, 1_750_000_000, zap, sats = 21),
+                            ActivityItem("d".repeat(64), AUTHOR, 1_750_000_100, zap, comment = "Works great"),
+                        ),
+                        activityLoading = false,
+                    ),
+                    onOpenUrl = {},
+                    onAppClick = {},
+                )
+            }
+        }
+        composeRule.onNodeWithText("sent").assertIsDisplayed()
+        composeRule.onNodeWithText("21 sats").assertIsDisplayed()
+        composeRule.onNodeWithText("commented on").assertIsDisplayed()
+        assertTrue(composeRule.onAllNodesWithText("received").fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test
     fun stackCommentsAreCardsWithRepliesAndAnAddCommentButton() {
         var openedProfile: String? = null
         var posted: Pair<String, CommentRecord?>? = null
@@ -772,8 +797,9 @@ class ScreensTest {
     }
 
     @Test
-    fun appDetailZappersStripShowsBiggestFirstWithoutAZapButton() {
+    fun appDetailZapSummaryOpensRankedZappersWithoutAZapButton() {
         val other = "2".repeat(64)
+        val third = "3".repeat(64)
         composeRule.setContent {
             ZapstoreTheme {
                 AppDetailScreen(
@@ -785,7 +811,8 @@ class ScreensTest {
                             loading = false,
                             count = 3,
                             totalSats = 3_400,
-                            zappers = listOf(Zapper(AUTHOR, 2_100), Zapper(other, 1_300)),
+                            zappers = listOf(Zapper(AUTHOR, 2_100), Zapper(other, 1_000), Zapper(third, 300)),
+                            profiles = mapOf(AUTHOR to ProfileRecord(AUTHOR, 0, "a".repeat(64), "Alice", null, null, null, null, null, null)),
                         ),
                     ),
                     onOpenUrl = {},
@@ -793,10 +820,41 @@ class ScreensTest {
             }
         }
         composeRule.onNodeWithTag("appDetail").performScrollToKey("zaps")
-        composeRule.onNodeWithTag("zapTotal").assertIsDisplayed().assertTextContains("3.4k sats")
-        composeRule.onNodeWithText("2.1k").assertIsDisplayed()
-        composeRule.onNodeWithText("1.3k").assertIsDisplayed()
+        composeRule.onNodeWithTag("zapTotal", useUnmergedTree = true).assertIsDisplayed().assertTextEquals("3.4k sats received")
         assertTrue(composeRule.onAllNodesWithTag("zapOpen").fetchSemanticsNodes().isEmpty())
+
+        composeRule.onNodeWithTag("zappers").performClick()
+        composeRule.onNodeWithTag("zappersSheet").assertIsDisplayed()
+        composeRule.onNodeWithText("2.1k sats").assertIsDisplayed()
+        composeRule.onNodeWithText("1k sats").assertIsDisplayed()
+        composeRule.onNodeWithText("300 sats").assertIsDisplayed()
+    }
+
+    @Test
+    fun appDetailZapRowAsksForTheFirstZap() {
+        composeRule.setContent {
+            ZapstoreTheme {
+                AppDetailScreen(
+                    state = AppDetailUiState(
+                        app = app("dev.zap", "Zap"),
+                        loaded = true,
+                        comments = CommentsState(loading = false),
+                        zaps = ZapSummary(
+                            loading = false,
+                            recipient = ZapRecipient(AUTHOR, catalog = false),
+                            profiles = mapOf(AUTHOR to ProfileRecord(AUTHOR, 0, "a".repeat(64), "Alice", null, null, null, null, null, null)),
+                        ),
+                        social = SocialUi(zappable = true),
+                    ),
+                    onOpenUrl = {},
+                )
+            }
+        }
+        composeRule.onNodeWithTag("appDetail").performScrollToKey("zaps")
+        composeRule.onNodeWithTag("zapSupport").assertIsDisplayed().assertTextEquals("Support Alice with a zap")
+        composeRule.onNodeWithTag("zapOpen").assertIsDisplayed()
+        assertTrue(composeRule.onAllNodesWithTag("zappers").fetchSemanticsNodes().isEmpty())
+        assertTrue(composeRule.onAllNodesWithTag("zapsLoading").fetchSemanticsNodes().isEmpty())
     }
 
     @Test
@@ -1044,10 +1102,9 @@ class ScreensTest {
                 )
             }
         }
-        assertTrue(composeRule.onAllNodesWithText("Indexed by catalog").fetchSemanticsNodes().isEmpty())
-        // The head names nobody: no "by" and no catalog avatar, only the mark.
+        // The head names nobody: no "by" and no catalog avatar, the mark and a line that says so.
         assertTrue(composeRule.onAllNodesWithTag("profile:$AUTHOR").fetchSemanticsNodes().isEmpty())
-        composeRule.onNodeWithTag("headVersion").assertIsDisplayed()
+        composeRule.onNodeWithTag("headIndexed").assertTextEquals("Published by the catalog")
         composeRule.onNodeWithTag("indexedAuthor").performClick()
         composeRule.onNodeWithTag("authorSheet").assertIsDisplayed()
         composeRule.onNodeWithText("Developer information").assertIsDisplayed()
@@ -1063,29 +1120,6 @@ class ScreensTest {
         composeRule.onNodeWithTag("seeFullReport").performClick()
         assertTrue(composeRule.onAllNodesWithTag("reportDeveloper").fetchSemanticsNodes().isEmpty())
         assertTrue(composeRule.onAllNodesWithText("Developer").fetchSemanticsNodes().isEmpty())
-    }
-
-    @Test
-    fun headVersionPillMarksInstallUpdateAndUpToDate() {
-        var install by mutableStateOf(InstallUi(offer = true))
-        composeRule.setContent {
-            ZapstoreTheme {
-                AppDetailScreen(
-                    state = AppDetailUiState(app = app("dev.zap", "Zap", version = "2.0"), loaded = true, install = install),
-                    onOpenUrl = {},
-                )
-            }
-        }
-        composeRule.onNodeWithTag("headVersion").assertContentDescriptionEquals("2.0, Not installed")
-        install = InstallUi(offer = true, updating = true)
-        composeRule.onNodeWithTag("headVersion").assertContentDescriptionEquals("2.0, Update available")
-        install = InstallUi(installed = true)
-        composeRule.onNodeWithTag("headVersion").assertContentDescriptionEquals("2.0, Up to date")
-        // Nothing is claimed while the phone's state is unknown, or for a copy signed by someone else.
-        install = InstallUi()
-        composeRule.onNodeWithTag("headVersion").assertContentDescriptionEquals("2.0")
-        install = InstallUi(installed = true, signedDifferently = true)
-        composeRule.onNodeWithTag("headVersion").assertContentDescriptionEquals("2.0")
     }
 
     @Test
@@ -1170,17 +1204,17 @@ class ScreensTest {
                             AvailableUpdate(app("dev.silent", "Silent", version = "2.0"), "1.0", 1),
                             AvailableUpdate(app("dev.silent2", "Silent Two", version = "2.0"), "1.0", 1),
                         ),
-                        manualUpdates = listOf(AvailableUpdate(app("dev.manual", "Manual", version = "3.0"), "2.0", 2)),
+                        manualUpdates = listOf(
+                            AvailableUpdate(app("dev.manual", "Manual", version = "3.0"), "2.0", 2),
+                            AvailableUpdate(play, "1.0", 1),
+                        ),
                         manualReasons = mapOf("dev.manual" to ManualReason.Sideloaded),
+                        manualStores = mapOf("dev.play" to "Google Play"),
                         installedApps = listOf(app("dev.current", "Current")),
                         otherStores = listOf(
-                            OtherStoreApp(
-                                StoreApp(play, "com.android.vending", "1.0", AvailableUpdate(play, "1.0", 1), signedDifferently = false),
-                                storeLabel = "Google Play",
-                            ),
-                            OtherStoreApp(StoreApp(fdroid, "org.fdroid.fdroid", "1.0", null, signedDifferently = false), storeLabel = "F-Droid"),
-                            OtherStoreApp(StoreApp(kept, "com.android.vending", "1.0", null, signedDifferently = false), storeLabel = "Google Play"),
-                            OtherStoreApp(StoreApp(odd, "com.android.vending", "1.0", null, signedDifferently = true), storeLabel = "Google Play"),
+                            OtherStoreApp(StoreApp(fdroid, "org.fdroid.fdroid", "1.0", signedDifferently = false), storeLabel = "F-Droid"),
+                            OtherStoreApp(StoreApp(kept, "com.android.vending", "1.0", signedDifferently = false), storeLabel = "Google Play"),
+                            OtherStoreApp(StoreApp(odd, "com.android.vending", "1.0", signedDifferently = true), storeLabel = "Google Play"),
                         ),
                         ignored = listOf(IgnoredApp(app("dev.quiet", "Quiet"), installer = "F-Droid")),
                         otherInstalled = listOf(InstalledApp("dev.side", 1, "1.0", emptySet(), label = "Sideloaded")),

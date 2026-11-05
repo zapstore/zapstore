@@ -2,7 +2,7 @@ package dev.zapstore.app
 
 import android.content.Context
 
-enum class OnboardingStep { Privacy, Network, Signer, InstallPermission, Notifications }
+enum class OnboardingStep { Privacy, Network, BugReports, Signer, InstallPermission, Notifications }
 
 /**
  * First-launch steps. The plan is fixed when the flow first opens, so the step count stays the
@@ -41,8 +41,8 @@ class Onboarding(context: Context) {
 
         /**
          * The steps this phone shows. A phone that carried a Flutter device key still starts on the
-         * privacy screen, then sees network and notifications; signer and install permission stay
-         * skipped. Without a signer the Signer step offers Amber instead.
+         * privacy screen, then sees network, bug reports, and notifications; signer and install
+         * permission stay skipped. Without a signer the Signer step offers Amber instead.
          */
         fun steps(
             migrated: Boolean,
@@ -51,6 +51,7 @@ class Onboarding(context: Context) {
         ): List<OnboardingStep> = buildList {
             add(OnboardingStep.Privacy)
             add(OnboardingStep.Network)
+            add(OnboardingStep.BugReports)
             if (!migrated) add(OnboardingStep.Signer)
             if (!migrated && !canInstall) add(OnboardingStep.InstallPermission)
             if (needsNotificationPermission) add(OnboardingStep.Notifications)

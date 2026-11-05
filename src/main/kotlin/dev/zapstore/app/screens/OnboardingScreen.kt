@@ -38,6 +38,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.fromHtml
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import dev.zapstore.app.OnboardingStep
@@ -77,6 +82,7 @@ fun OnboardingScreen(
     onRequestNotifications: () -> Unit,
     modifier: Modifier = Modifier,
     onGetAmber: () -> Unit = onNext,
+    onBugReportsChange: (Boolean) -> Unit = {},
 ) {
     val step = state.step ?: return
     val animate = animationsEnabled()
@@ -114,15 +120,26 @@ fun OnboardingScreen(
                     .testTag("onboarding:${shown.name}"),
             ) {
                 val noSigner = shown == OnboardingStep.Signer && !state.hasSigner
+                val returning = shown == OnboardingStep.Privacy && state.upgradedFromFlutter
                 StepIcon(shown.icon(), logo = shown == OnboardingStep.Privacy)
                 Text(
-                    stringResource(if (noSigner) R.string.onboarding_get_signer_title else shown.title()),
+                    stringResource(
+                        when {
+                            noSigner -> R.string.onboarding_get_signer_title
+                            returning -> R.string.onboarding_upgraded_title
+                            else -> shown.title()
+                        },
+                    ),
                     style = MaterialTheme.typography.headlineSmall,
                 )
-                Text(
-                    stringResource(if (noSigner) R.string.onboarding_get_signer_body else shown.body()),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = ZapText2,
+                StepBody(
+                    stringResource(
+                        when {
+                            noSigner -> R.string.onboarding_get_signer_body
+                            returning -> R.string.onboarding_upgraded_body
+                            else -> shown.body()
+                        },
+                    ),
                 )
                 if (shown == OnboardingStep.Network) {
                     NetworkChoice(state.networkMode, onNetworkModeChange)
@@ -134,6 +151,7 @@ fun OnboardingScreen(
         }
         val (label, action) = when (step) {
             OnboardingStep.Privacy, OnboardingStep.Network -> R.string.onboarding_continue to onNext
+            OnboardingStep.BugReports -> R.string.onboarding_send_bug_reports to { onBugReportsChange(true); onNext() }
             OnboardingStep.Signer -> if (state.hasSigner) R.string.onboarding_connect_signer to onConnectSigner else R.string.onboarding_get_amber to onGetAmber
             OnboardingStep.InstallPermission -> R.string.onboarding_open_settings to onOpenInstallSettings
             OnboardingStep.Notifications -> R.string.onboarding_allow_notifications to onRequestNotifications
@@ -150,6 +168,14 @@ fun OnboardingScreen(
                 onClick = onNext,
                 style = ZapButtonStyle.Ghost,
                 modifier = Modifier.fillMaxWidth().padding(top = ZapSpacing.space1).testTag("onboardingCancelSigner"),
+            )
+        }
+        if (step == OnboardingStep.BugReports) {
+            ZapButton(
+                text = stringResource(R.string.onboarding_no_bug_reports),
+                onClick = { onBugReportsChange(false); onNext() },
+                style = ZapButtonStyle.Ghost,
+                modifier = Modifier.fillMaxWidth().padding(top = ZapSpacing.space1).testTag("onboardingDeclineBugReports"),
             )
         }
     }
@@ -205,22 +231,42 @@ private fun StepIcon(icon: Int, logo: Boolean = false) {
     }
 }
 
+/** Paragraphs split on blank lines; `<b>` in the string is bold, in the primary text color. */
+@Composable
+private fun StepBody(text: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space4)) {
+        text.split("\n\n").forEach { paragraph ->
+            Text(
+                AnnotatedString.fromHtml(paragraph.trim()).let { html ->
+                    buildAnnotatedString {
+                        append(html)
+                        html.spanStyles.filter { it.item.fontWeight == FontWeight.Bold }
+                            .forEach { addStyle(SpanStyle(color = ZapText), it.start, it.end) }
+                    }
+                },
+                style = MaterialTheme.typography.bodyLarge,
+                color = ZapText2,
+            )
+        }
+    }
+}
+
 @Composable
 private fun NetworkChoice(selected: NetworkMode, onSelect: (NetworkMode) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space3), modifier = Modifier.selectableGroup()) {
-        NetworkOption(
-            title = stringResource(R.string.onboarding_tor_title),
-            body = stringResource(R.string.onboarding_tor_body),
-            selected = selected == NetworkMode.TorOnly,
-            onClick = { onSelect(NetworkMode.TorOnly) },
-            tag = "onboardingTor",
-        )
         NetworkOption(
             title = stringResource(R.string.network_direct),
             body = stringResource(R.string.onboarding_direct_body),
             selected = selected == NetworkMode.DirectOnly,
             onClick = { onSelect(NetworkMode.DirectOnly) },
             tag = "onboardingDirect",
+        )
+        NetworkOption(
+            title = stringResource(R.string.network_tor),
+            body = stringResource(R.string.onboarding_tor_body),
+            selected = selected == NetworkMode.TorOnly,
+            onClick = { onSelect(NetworkMode.TorOnly) },
+            tag = "onboardingTor",
         )
     }
 }
@@ -261,6 +307,7 @@ private fun NetworkOption(title: String, body: String, selected: Boolean, onClic
 private fun OnboardingStep.icon(): Int = when (this) {
     OnboardingStep.Privacy -> R.drawable.ic_mark
     OnboardingStep.Network -> R.drawable.ic_shield
+    OnboardingStep.BugReports -> R.drawable.ic_info
     OnboardingStep.Signer -> R.drawable.ic_key
     OnboardingStep.InstallPermission -> R.drawable.ic_download
     OnboardingStep.Notifications -> R.drawable.ic_update
@@ -269,6 +316,7 @@ private fun OnboardingStep.icon(): Int = when (this) {
 private fun OnboardingStep.title(): Int = when (this) {
     OnboardingStep.Privacy -> R.string.onboarding_privacy_title
     OnboardingStep.Network -> R.string.onboarding_network_title
+    OnboardingStep.BugReports -> R.string.onboarding_bug_reports_title
     OnboardingStep.Signer -> R.string.onboarding_signer_title
     OnboardingStep.InstallPermission -> R.string.onboarding_install_title
     OnboardingStep.Notifications -> R.string.onboarding_notifications_title
@@ -277,6 +325,7 @@ private fun OnboardingStep.title(): Int = when (this) {
 private fun OnboardingStep.body(): Int = when (this) {
     OnboardingStep.Privacy -> R.string.onboarding_privacy_body
     OnboardingStep.Network -> R.string.onboarding_network_body
+    OnboardingStep.BugReports -> R.string.onboarding_bug_reports_body
     OnboardingStep.Signer -> R.string.onboarding_signer_body
     OnboardingStep.InstallPermission -> R.string.onboarding_install_body
     OnboardingStep.Notifications -> R.string.onboarding_notifications_body

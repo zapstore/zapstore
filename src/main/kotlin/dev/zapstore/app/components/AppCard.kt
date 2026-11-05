@@ -48,7 +48,6 @@ import dev.zapstore.app.ZapSurface3
 import dev.zapstore.app.ZapText
 import dev.zapstore.app.ZapText2
 import dev.zapstore.app.ZapText3
-import dev.zapstore.app.ZapTitle3Style
 import dev.zapstore.app.ZapVerified
 import dev.zapstore.app.cdnImageUrl
 import dev.zapstore.app.isHttpUrl
@@ -148,6 +147,7 @@ fun AppRow(
             RowTitleLine(
                 title = app.name,
                 installed = !onDevice && (installed != null || pendingFrom != null),
+                updateAvailable = !onDevice && updating,
                 authorPubkey = authorPubkey,
                 author = author,
                 note = note,
@@ -182,7 +182,10 @@ fun AppRow(
     }
 }
 
-/** Line 1: the name, then the installed check, then "by" the author or a note. Nothing draws past the row. */
+/**
+ * Line 1: the name, then the installed mark, then "by" the author or a note. The mark is a tick
+ * when the phone has the listed version, a clock when a newer one is listed. Nothing draws past the row.
+ */
 @Composable
 private fun RowTitleLine(
     title: String,
@@ -190,6 +193,7 @@ private fun RowTitleLine(
     authorPubkey: String?,
     author: ProfileRecord?,
     note: String?,
+    updateAvailable: Boolean = false,
 ) {
     val titleStyle = MaterialTheme.typography.titleSmall.copy(fontSize = 16.5.sp, lineHeight = 22.sp)
     val asideStyle = MaterialTheme.typography.bodySmall
@@ -199,7 +203,7 @@ private fun RowTitleLine(
         modifier = Modifier.fillMaxWidth().height(ROW_TITLE_LINE),
         content = {
             Text(title, color = ZapText, style = titleStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (installed) InstalledPill(Modifier.testTag("installedMark"))
+            if (installed) InstalledPill(Modifier.testTag("installedMark"), updateAvailable = updateAvailable)
             if (note != null) {
                 Text(note, color = ZapText3, style = asideStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
             } else if (authorPubkey != null) {
@@ -275,26 +279,23 @@ private fun RowTitleLine(
     }
 }
 
-/** The detail head tile. The title line is 28 and the version pill is 24, with 4 between them. */
+/** The detail head tile. */
 private val HEAD_ICON = 56.dp
 
-/** Tall enough for the author mark, which is a 28 dp target. */
+/** Tall enough for the verification mark, which is a 28 dp target. */
 private val HEAD_TITLE_LINE = 28.dp
 
-/** The version pill's own height. */
-private val HEAD_PILL_LINE = 24.dp
-
 /**
- * App page head. The tile is as tall as the two lines: the name, then "by" the author and the
- * verification mark, and the version pill under that. A catalog-signed app uses the indexed mark.
+ * App page head. The name and its verification mark top-align with the icon, "by" the author
+ * bottom-aligns with it, so the two lines span the same height as the icon. A catalog-signed app
+ * has no author: the indexed mark, and a line that says so. The version lives in the Latest
+ * release card.
  */
 @Composable
 fun AppDetailHead(
     name: String,
     iconUrl: String?,
-    version: String,
     modifier: Modifier = Modifier,
-    versionStatus: VersionStatus? = null,
     iconFile: File? = null,
     authorPubkey: String? = null,
     author: ProfileRecord? = null,
@@ -310,12 +311,45 @@ fun AppDetailHead(
         modifier = modifier.fillMaxWidth(),
     ) {
         AppIcon(title = name, iconUrl = iconUrl, iconFile = iconFile, size = HEAD_ICON)
-        Column(Modifier.weight(1f).height(HEAD_ICON), verticalArrangement = Arrangement.SpaceBetween) {
-            HeadTitleLine(name, authorPubkey, author, verified, indexed, onAuthorClick, onMarkClick)
-            Box(Modifier.fillMaxWidth().height(HEAD_PILL_LINE), contentAlignment = Alignment.CenterStart) {
-                version.takeIf { it.isNotBlank() }?.let {
-                    VersionPill(it, Modifier.testTag("headVersion"), status = versionStatus, textScale = 0.92f)
+        Column(
+            // Top-aligns the name with the icon's top edge and the author line with its bottom edge,
+            // so the two lines span the same height as the icon instead of floating centered in it.
+            Modifier.weight(1f).height(HEAD_ICON),
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                modifier = Modifier.fillMaxWidth().height(HEAD_TITLE_LINE),
+            ) {
+                Text(
+                    name,
+                    color = ZapText,
+                    style = MaterialTheme.typography.titleLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                when {
+                    indexed -> IndexedMark(onMarkClick)
+                    verified -> VerifiedSeal(onMarkClick)
+                    authorPubkey != null -> UnverifiedMark(onMarkClick)
                 }
+            }
+            when {
+                authorPubkey != null -> AuthorByline(
+                    pubkey = authorPubkey,
+                    profile = author,
+                    lead = stringResource(R.string.row_by),
+                    onClick = { onAuthorClick(authorPubkey) },
+                )
+                indexed -> Text(
+                    stringResource(R.string.indexed_author),
+                    color = ZapText2,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    modifier = Modifier.testTag("headIndexed"),
+                )
             }
         }
         onMore?.let {
@@ -326,112 +360,6 @@ fun AppDetailHead(
                 style = ZapButtonStyle.Ghost,
                 modifier = Modifier.offset(x = ZapSpacing.space2).testTag("appMore"),
             )
-        }
-    }
-}
-
-/**
- * Line 1: the name, then "by" the author, then the mark. The name ellipsizes; the author's name drops
- * before the mark does. An [indexed] listing has no author, so the mark follows the name directly.
- */
-@Composable
-private fun HeadTitleLine(
-    title: String,
-    authorPubkey: String?,
-    author: ProfileRecord?,
-    verified: Boolean,
-    indexed: Boolean,
-    onAuthorClick: (String) -> Unit,
-    onMarkClick: () -> Unit,
-) {
-    val asideStyle = MaterialTheme.typography.bodySmall
-    val name = authorPubkey?.let { shortDisplayName(it, author) }
-    val byWord = stringResource(R.string.row_by)
-    Layout(
-        modifier = Modifier.fillMaxWidth().height(HEAD_TITLE_LINE),
-        content = {
-            Text(
-                title,
-                color = ZapText,
-                style = ZapTitle3Style,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                softWrap = false,
-            )
-            if (authorPubkey != null) {
-                fun openAuthor() = Modifier.clickable { onAuthorClick(authorPubkey) }
-                Text(byWord, color = ZapText2, style = asideStyle, modifier = openAuthor())
-                Box(
-                    Modifier
-                        .size(ROW_MARK)
-                        .clip(CircleShape)
-                        .background(ZapSurface3)
-                        .clickable { onAuthorClick(authorPubkey) }
-                        .testTag("profile:$authorPubkey"),
-                ) {
-                    ProfileImage(
-                        pubkey = authorPubkey,
-                        pictureUrl = author?.picture,
-                        profileVersion = author?.eventId,
-                        contentDescription = null,
-                        modifier = Modifier.matchParentSize(),
-                    )
-                }
-                Text(
-                    name.orEmpty(),
-                    color = ZapText2,
-                    style = asideStyle.copy(fontWeight = FontWeight.SemiBold),
-                    maxLines = 1,
-                    softWrap = false,
-                    modifier = openAuthor(),
-                )
-            }
-            if (authorPubkey != null || indexed) {
-                when {
-                    indexed -> IndexedMark(onMarkClick)
-                    verified -> VerifiedSeal(onMarkClick)
-                    else -> UnverifiedMark(onMarkClick)
-                }
-            }
-        },
-    ) { measurables, constraints ->
-        val width = constraints.maxWidth
-        val loose = constraints.copy(minWidth = 0, minHeight = 0, maxWidth = Constraints.Infinity)
-        val gap = 8.dp.roundToPx()
-        val inner = 6.dp.roundToPx()
-        val height = constraints.maxHeight
-        var cursor = 1
-        val by = if (authorPubkey != null) measurables[cursor++].measure(loose) else null
-        val avatar = if (authorPubkey != null) measurables[cursor++].measure(loose) else null
-        val nameNatural = if (authorPubkey != null) measurables[cursor++].measure(loose) else null
-        val mark = if (authorPubkey != null || indexed) measurables[cursor].measure(loose) else null
-        val titleWidth = measurables[0].maxIntrinsicWidth(constraints.maxHeight)
-        // Width of everything after the title, including the gap that separates it from the title.
-        fun tail(withName: Boolean): Int {
-            var total = 0
-            if (by != null && avatar != null && nameNatural != null) {
-                total += gap + by.width + inner + avatar.width + if (withName) inner + nameNatural.width else 0
-            }
-            if (mark != null) total += (if (by != null) inner else gap) + mark.width
-            return total
-        }
-        val showName = by != null && titleWidth + tail(true) <= width
-        val titleMax = (width - tail(showName)).coerceAtLeast(0)
-        val titlePlaceable = measurables[0].measure(loose.copy(maxWidth = minOf(titleWidth, titleMax)))
-        layout(width, height) {
-            var x = 0
-            fun place(item: androidx.compose.ui.layout.Placeable, before: Int) {
-                x += before
-                item.placeRelative(x, (height - item.height) / 2)
-                x += item.width
-            }
-            place(titlePlaceable, 0)
-            if (by != null && avatar != null && nameNatural != null) {
-                place(by, gap)
-                place(avatar, inner)
-                if (showName) place(nameNatural, inner)
-            }
-            if (mark != null) place(mark, if (by != null) inner else gap)
         }
     }
 }

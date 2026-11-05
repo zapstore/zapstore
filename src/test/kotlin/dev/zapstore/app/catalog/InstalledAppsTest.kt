@@ -79,25 +79,25 @@ class InstalledAppsTest {
             InstalledApp("dev.play", 1, "1", setOf("aa"), installingPackage = "com.android.vending", label = "Play"),
             InstalledApp("dev.resigned", 1, "1", setOf("pp"), installingPackage = "com.android.vending", label = "Resigned"),
             InstalledApp("dev.owned", 1, "1", setOf("aa"), installingPackage = ours, updateOwner = "org.fdroid.fdroid", label = "Owned"),
+            InstalledApp("dev.kept", 2, "2", setOf("aa"), installingPackage = "com.android.vending", label = "Kept"),
+            InstalledApp("dev.foreign", 2, "2", setOf("pp"), installingPackage = "org.fdroid.fdroid", label = "Foreign"),
             InstalledApp("dev.current", 2, "2", setOf("aa"), label = "Current"),
             InstalledApp("dev.skip", 1, "1", setOf("aa"), installingPackage = ours, label = "Skip"),
             InstalledApp("com.other", 1, "1.4", setOf("zz"), label = "Other"),
         )
-        val catalog = listOf("dev.ready", "dev.sideloaded", "dev.play", "dev.resigned", "dev.owned", "dev.current", "dev.skip")
+        val catalog = listOf("dev.ready", "dev.sideloaded", "dev.play", "dev.resigned", "dev.owned", "dev.kept", "dev.foreign", "dev.current", "dev.skip")
             .map { app(it, it.removePrefix("dev."), "2", 2, certificateHash = "aa") }
-        val groups = updateGroups(installed, catalog, ignored = setOf("dev.skip"), ourPackage = ours) { it.installingPackage == ours }
+        val groups = updateGroups(installed, catalog, ignored = setOf("dev.skip"), ourPackage = ours) { it.installingPackage == ours && it.updateOwner == null }
 
         assertEquals(listOf("dev.ready"), groups.updates.map { it.app.appId })
-        assertEquals(listOf("dev.sideloaded"), groups.manualUpdates.map { it.app.appId })
-        assertEquals(listOf("dev.current"), groups.installedApps.map { it.appId })
-        assertEquals(listOf("dev.owned", "dev.play", "dev.resigned"), groups.otherStores.map { it.app.appId })
-        val play = groups.otherStores.first { it.app.appId == "dev.play" }
-        assertEquals("com.android.vending", play.store)
-        assertEquals("dev.play", play.update?.app?.appId)
+        // Another store installed these with the listed key, so Zapstore updates them after one confirmation.
+        assertEquals(listOf("dev.owned", "dev.play", "dev.sideloaded"), groups.manualUpdates.map { it.app.appId })
+        assertEquals(listOf("dev.current", "dev.kept"), groups.installedApps.map { it.appId })
+        assertEquals(listOf("dev.foreign", "dev.resigned"), groups.otherStores.map { it.app.appId })
         val resigned = groups.otherStores.first { it.app.appId == "dev.resigned" }
-        assertEquals(null, resigned.update)
+        assertEquals("com.android.vending", resigned.store)
         assertEquals(true, resigned.signedDifferently)
-        assertEquals("org.fdroid.fdroid", groups.otherStores.first { it.app.appId == "dev.owned" }.store)
+        assertEquals(true, groups.otherStores.first { it.app.appId == "dev.foreign" }.signedDifferently)
         assertEquals(listOf("com.other"), groups.otherInstalled.map { it.packageId })
     }
 

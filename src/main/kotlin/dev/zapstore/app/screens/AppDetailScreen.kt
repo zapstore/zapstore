@@ -155,8 +155,6 @@ fun AppDetailScreen(
                     name = app.name,
                     iconUrl = app.iconUrl,
                     iconFile = app.iconFile,
-                    version = app.version,
-                    versionStatus = state.install.versionStatus,
                     // An indexed listing names nobody: the mark alone says the catalog published it.
                     authorPubkey = app.bylinePubkey.takeIf { app.byline != AppByline.Indexed },
                     author = state.author,
@@ -167,11 +165,6 @@ fun AppDetailScreen(
                     onMore = { actions = true },
                     modifier = Modifier.scrollParallax(listState),
                 )
-            }
-            state.install.otherStore?.let { store ->
-                item(key = "otherStore", contentType = "status") {
-                    StatusText(stringResource(R.string.installed_by_store, store), Modifier.testTag("installedByStore"))
-                }
             }
             if (state.install.signedDifferently) {
                 item(key = "signedDifferently", contentType = "status") {
@@ -254,7 +247,7 @@ fun AppDetailScreen(
             }
 
             item(key = "release", contentType = "card") {
-                ReleaseCard(app, onOpen = { releasing = true })
+                ReleaseCard(app, onOpen = { releasing = true }, versionStatus = state.install.versionStatus)
             }
             if (app.hasSecurityCard()) {
                 item(key = "security", contentType = "card") {

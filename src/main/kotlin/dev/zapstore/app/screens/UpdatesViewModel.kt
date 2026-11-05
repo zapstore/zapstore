@@ -13,6 +13,7 @@ import dev.zapstore.app.catalog.CatalogSync
 import dev.zapstore.app.catalog.InstalledApp
 import dev.zapstore.app.catalog.ManualReason
 import dev.zapstore.app.catalog.manualReason
+import dev.zapstore.app.catalog.otherStore
 import dev.zapstore.app.catalog.StoreApp
 import dev.zapstore.app.catalog.SyncStatus
 import dev.zapstore.app.catalog.updateGroups
@@ -55,7 +56,7 @@ data class UpdateAllUi(
 /** An installed app whose updates are ignored, and the store Android says installed it. */
 data class IgnoredApp(val app: AppRecord, val installer: String?)
 
-/** A catalog app another store keeps current, with that store's name. */
+/** A catalog app another store keeps current with its own key, with that store's name. */
 data class OtherStoreApp(val entry: StoreApp, val storeLabel: String)
 
 data class UpdatesUiState(
@@ -66,7 +67,11 @@ data class UpdatesUiState(
     val manualUpdates: List<AvailableUpdate> = emptyList(),
     /** Why each manual update needs Android's dialog, by app id. */
     val manualReasons: Map<String, ManualReason> = emptyMap(),
+    /** The store that updates a manual update's app today, by app id. This update hands the app to Zapstore. */
+    val manualStores: Map<String, String> = emptyMap(),
     val installedApps: List<AppRecord> = emptyList(),
+    /** Apps with an install in flight, waiting or failed that no update row already carries. */
+    val installing: List<AppRecord> = emptyList(),
     val otherStores: List<OtherStoreApp> = emptyList(),
     val otherInstalled: List<InstalledApp> = emptyList(),
     val ignored: List<IgnoredApp> = emptyList(),
@@ -92,11 +97,14 @@ class UpdatesViewModel(
     private val installerLabels = HashMap<String, String?>()
     private val ignoredIds = zapstore.lists.ignored
 
+    private val taskIds: Flow<Set<String>> = zapstore.installer.tasks.map { it.keys }.distinctUntilChanged()
+
     private val myAppIds: Flow<Set<String>> =
-        combine(catalogSync.installedApps, ignoredIds) { installed, ignored ->
+        combine(catalogSync.installedApps, ignoredIds, taskIds) { installed, ignored, tasks ->
             buildSet {
                 installed.mapTo(this) { it.packageId }
                 addAll(ignored)
+                addAll(tasks)
             }
         }.distinctUntilChanged()
 
@@ -131,9 +139,12 @@ class UpdatesViewModel(
         val groups = updateGroups(installed, apps, ignored.toSet(), zapstore.packageName) { update -> update.isReady() }
         val byId = apps.associateBy { it.appId }
         val installedById = installed.associateBy { it.packageId }
+        val updateRows = (groups.updates + groups.manualUpdates).mapTo(HashSet()) { it.app.appId }
+        val installing = tasks.keys.filter { it !in updateRows }.mapNotNull(byId::get).sortedBy { it.name.lowercase() }
+        val installingIds = installing.mapTo(HashSet()) { it.appId }
         UpdatesUiState(
             profiles = profiles,
-            ignored = ignored.mapNotNull { id ->
+            ignored = ignored.filter { it !in installingIds }.mapNotNull { id ->
                 byId[id]?.let { IgnoredApp(it, installerLabel(installedById[id]?.installingPackage)) }
             },
             status = status,
@@ -143,8 +154,14 @@ class UpdatesViewModel(
             manualReasons = groups.manualUpdates.mapNotNull { update ->
                 update.manualReason(zapstore.packageName, SessionInstaller.silentSupported)?.let { update.app.appId to it }
             }.toMap(),
-            installedApps = groups.installedApps,
-            otherStores = groups.otherStores.map { OtherStoreApp(it, installerLabel(it.store) ?: it.store) },
+            manualStores = groups.manualUpdates.mapNotNull { update ->
+                update.otherStore(zapstore.packageName)?.let { update.app.appId to (installerLabel(it) ?: it) }
+            }.toMap(),
+            installedApps = groups.installedApps.filter { it.appId !in installingIds },
+            installing = installing,
+            otherStores = groups.otherStores
+                .filter { it.app.appId !in installingIds }
+                .map { OtherStoreApp(it, installerLabel(it.store) ?: it.store) },
             otherInstalled = groups.otherInstalled,
             loaded = true,
             updateAll = batch,
@@ -203,6 +220,11 @@ class UpdatesViewModel(
     /** Starts, resumes or shows Android's waiting dialog for one update. */
     fun updateOne(update: AvailableUpdate) = zapstore.installer.install(update.app)
 
+    /** Starts, resumes or retries an install from the Installing section. */
+    fun install(app: AppRecord) = zapstore.installer.install(app)
+
+    fun cancelInstall(appId: String) = zapstore.installer.cancel(appId)
+
     private fun AvailableUpdate.isReady(): Boolean = SessionInstaller.silentSupported && isSilentUpdate(
         ourPackage = zapstore.packageName,
         packageId = app.appId,
@@ -228,7 +250,7 @@ private fun List<InstalledApp>.matching(query: String): List<InstalledApp> =
 
 private fun UpdatesUiState.startable(group: UpdateGroup): List<AvailableUpdate> = when (group) {
     UpdateGroup.Automatic -> updates
-    UpdateGroup.Manual -> manualUpdates + otherStores.mapNotNull { it.entry.update }
+    UpdateGroup.Manual -> manualUpdates
 }.filter { tasks[it.app.appId]?.busy != true }
 
 private data class Quad<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)

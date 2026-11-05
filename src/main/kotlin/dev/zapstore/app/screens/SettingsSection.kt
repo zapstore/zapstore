@@ -459,7 +459,6 @@ private fun networkStatusText(mode: NetworkMode, torState: TorRuntimeState): Str
 }
 
 private fun SyncInterval.labelRes(): Int = when (this) {
-    SyncInterval.FiveMinutes -> R.string.interval_5m
     SyncInterval.FifteenMinutes -> R.string.interval_15m
     SyncInterval.Hourly -> R.string.interval_1h
     SyncInterval.SixHours -> R.string.interval_6h

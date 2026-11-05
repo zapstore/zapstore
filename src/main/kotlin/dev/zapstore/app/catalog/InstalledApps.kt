@@ -105,13 +105,12 @@ fun AvailableUpdate.manualReason(ourPackage: String, silentSupported: Boolean): 
     else -> ManualReason.UnknownInstaller
 }
 
-/** A catalog app another store installed. [update] is set when the catalog build can replace it. */
+/** A catalog app another store installed with a key the catalog does not list, so Zapstore cannot update it. */
 data class StoreApp(
     val app: AppRecord,
     val store: String,
     val installedVersion: String,
-    val update: AvailableUpdate?,
-    /** The catalog has a newer build signed by a different key; switching needs a reinstall. */
+    /** The catalog lists a different signer; switching needs a reinstall. False when the listing names none. */
     val signedDifferently: Boolean,
 )
 
@@ -125,8 +124,10 @@ data class UpdateGroups(
 
 /**
  * My apps, one bucket per app: updates Zapstore commits alone, updates that need the
- * Android dialog, current apps Zapstore updates, catalog apps another store updates,
- * and installed packages that are not in the catalog. [ignored] apps are in none.
+ * Android dialog, current apps Zapstore updates, catalog apps another store installed with
+ * a key the catalog does not list, and installed packages that are not in the catalog.
+ * An app another store installed with the listed key is Zapstore's like any other: its next
+ * update is a manual one, and after that Zapstore owns it. [ignored] apps are in none.
  */
 fun updateGroups(
     installed: List<InstalledApp>,
@@ -146,13 +147,14 @@ fun updateGroups(
         if (pkg.packageId in ignored) return@forEach
         val update = available[pkg.packageId]
         val store = pkg.otherStore(ourPackage)
+        val chain = app.certificateChain()
+        val sameSigner = chain.any { hash -> pkg.certificateHashes.any { it.equals(hash, ignoreCase = true) } }
         when {
-            store != null -> stores += StoreApp(
+            store != null && !sameSigner -> stores += StoreApp(
                 app = app,
                 store = store,
                 installedVersion = pkg.versionName,
-                update = update,
-                signedDifferently = update == null && app.versionCode > pkg.versionCode,
+                signedDifferently = chain.isNotEmpty(),
             )
             update == null -> current += app
             silent(update) -> updates += update

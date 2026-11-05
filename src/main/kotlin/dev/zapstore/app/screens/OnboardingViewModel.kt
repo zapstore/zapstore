@@ -27,10 +27,12 @@ data class SignerStepUi(val busy: Boolean = false, val message: String? = null)
 data class OnboardingUiState(
     val steps: List<OnboardingStep> = emptyList(),
     val index: Int = 0,
-    val networkMode: NetworkMode = NetworkMode.TorOnly,
+    val networkMode: NetworkMode = NetworkMode.DirectOnly,
     val signer: SignerStepUi = SignerStepUi(),
     /** False when no NIP-55 signer is installed; the Signer step then offers Amber. */
     val hasSigner: Boolean = true,
+    /** The phone had the Flutter app; the welcome step greets an existing user. */
+    val upgradedFromFlutter: Boolean = false,
     val finished: Boolean = false,
 ) {
     val step: OnboardingStep? get() = steps.getOrNull(index)
@@ -60,6 +62,7 @@ class OnboardingViewModel(private val zapstore: ZapstoreApplication) : ViewModel
             steps = steps,
             index = index.coerceAtLeast(0),
             hasSigner = zapstore.account.bridge.installedSigners().isNotEmpty(),
+            upgradedFromFlutter = zapstore.upgradedFromFlutter,
             finished = index < 0,
         )
     }
@@ -81,6 +84,8 @@ class OnboardingViewModel(private val zapstore: ZapstoreApplication) : ViewModel
     }
 
     fun setNetworkMode(mode: NetworkMode) = zapstore.settings.update { it.copy(networkMode = mode) }
+
+    fun setBugReports(enabled: Boolean) = zapstore.settings.update { it.copy(bugReports = enabled) }
 
     /**
      * Signs in, then uses the newest key backup for this account. With none, backs the phone's

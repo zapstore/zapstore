@@ -190,6 +190,7 @@ class MainActivity : ComponentActivity() {
             onNext = viewModel::next,
             onSkipAll = viewModel::skipAll,
             onNetworkModeChange = viewModel::setNetworkMode,
+            onBugReportsChange = viewModel::setBugReports,
             onConnectSigner = viewModel::connectSigner,
             onGetAmber = {
                 pendingLink.value = DeepLink.App(Nip55Bridge.AMBER)
@@ -343,6 +344,11 @@ class MainActivity : ComponentActivity() {
                     onResumeUpdates = viewModel::resumeUpdates,
                     onIgnoreUpdates = viewModel::ignoreUpdates,
                     onPause = viewModel::pause,
+                    onInstall = { app ->
+                        if (packageManager.canRequestPackageInstalls()) viewModel.install(app)
+                        else openUnknownSourcesSettings()
+                    },
+                    onCancelInstall = viewModel::cancelInstall,
                     onSearchQueryChanged = viewModel::setSearchQuery,
                 )
             }

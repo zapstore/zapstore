@@ -8,7 +8,9 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
+import dev.zapstore.app.AppLog
 import okhttp3.Call
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
 import okhttp3.Response
 import java.io.BufferedOutputStream
@@ -22,6 +24,7 @@ class InstallException(val kind: Kind, message: String) : Exception(message) {
 }
 
 object ApkDownloader {
+    private const val TAG = "ApkDownloader"
     const val MAX_BYTES = 300L * 1024 * 1024
     private const val MAX_REDIRECTS = 5
     private const val UNKNOWN_SPACE = 64L * 1024 * 1024
@@ -58,6 +61,7 @@ object ApkDownloader {
             } catch (e: Exception) {
                 if (!e.isTransient()) dest.delete()
                 if (!currentCoroutineContext().isActive) throw e
+                AppLog.w(TAG, "download from ${url.toHttpUrlOrNull()?.host ?: "invalid url"} failed: ${(e as? InstallException)?.kind ?: e::class.simpleName} ${e.message}")
                 last = e
             }
         }

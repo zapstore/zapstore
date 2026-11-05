@@ -3,6 +3,7 @@ package dev.zapstore.app
 import dev.zapstore.app.transport.NetworkMode
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -40,10 +41,10 @@ class DeviceStateTest {
     }
 
     @Test
-    fun bugReportsDefaultOnAndRoundTrip() {
-        assertTrue(DeviceState.fromJson(JSONObject("""{"backgroundAutoUpdatesEnabled": true}""")).bugReports)
-        val off = DeviceState(bugReports = false)
-        assertEquals(off, DeviceState.fromJson(JSONObject(off.toJson().toString())))
+    fun bugReportsDefaultOffAndRoundTrip() {
+        assertFalse(DeviceState.fromJson(JSONObject("""{"backgroundAutoUpdatesEnabled": true}""")).bugReports)
+        val on = DeviceState(bugReports = true)
+        assertEquals(on, DeviceState.fromJson(JSONObject(on.toJson().toString())))
     }
 
     @Test

@@ -340,10 +340,14 @@ enum class VersionStatus(val icon: Int, val label: Int) {
     Current(R.drawable.ic_pill_current, R.string.version_status_current),
 }
 
-/** "Already installed" in a list row: the version pill's own tick, alone in a mini pill of the same navy. */
+/**
+ * "Already installed" in a list row: the version pill's own tick, alone in a mini pill of the same
+ * navy. [updateAvailable] swaps the tick for a clock, when the listing is newer than what's on the phone.
+ */
 @Composable
-fun InstalledPill(modifier: Modifier = Modifier) {
-    val label = stringResource(R.string.installed_mark)
+fun InstalledPill(modifier: Modifier = Modifier, updateAvailable: Boolean = false) {
+    val label = stringResource(if (updateAvailable) R.string.installed_update_mark else R.string.installed_mark)
+    val icon = if (updateAvailable) R.drawable.ic_clock else VersionStatus.Current.icon
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier
@@ -352,7 +356,7 @@ fun InstalledPill(modifier: Modifier = Modifier) {
             .background(ZapBrand)
             .semantics { contentDescription = label },
     ) {
-        Icon(painterResource(VersionStatus.Current.icon), contentDescription = null, tint = Color.White, modifier = Modifier.size(10.dp))
+        Icon(painterResource(icon), contentDescription = null, tint = Color.White, modifier = Modifier.size(10.dp))
     }
 }
 
@@ -526,7 +530,10 @@ fun EmptyRow(
     }
 }
 
-/** List-group header with an optional item count beside the title and an action link on the right. */
+/**
+ * List-group header with an optional item count beside the title and an action link on the right.
+ * [aside] follows the count and takes the free width; [trailing] sits on the right.
+ */
 @Composable
 fun GroupHeader(
     title: String,
@@ -535,7 +542,8 @@ fun GroupHeader(
     action: String? = null,
     onAction: () -> Unit = {},
     actionTag: String = "groupAction",
-    trailing: (@Composable () -> Unit)? = null,
+    aside: (@Composable () -> Unit)? = null,
+    trailing: (@Composable RowScope.() -> Unit)? = null,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -544,8 +552,12 @@ fun GroupHeader(
     ) {
         SectionLabel(title)
         count?.let { GroupCount(it) }
-        Spacer(Modifier.weight(1f))
-        trailing?.invoke()
+        if (aside != null) {
+            Box(Modifier.weight(1f).padding(start = 2.dp)) { aside() }
+        } else {
+            Spacer(Modifier.weight(1f))
+        }
+        trailing?.invoke(this)
         if (action != null) ZapTextLink(action, onAction, Modifier.testTag(actionTag))
     }
 }

@@ -29,12 +29,8 @@ enum class UpdateInterval(val hours: Int) {
     }
 }
 
-/**
- * How often the catalog is fetched. Android runs background work at most every 15 minutes, so
- * [FiveMinutes] syncs that often only while Zapstore is open.
- */
+/** How often the catalog is fetched in the background. Android runs background work at most every 15 minutes. */
 enum class SyncInterval(val minutes: Int) {
-    FiveMinutes(5),
     FifteenMinutes(15),
     Hourly(60),
     SixHours(360),
@@ -43,7 +39,7 @@ enum class SyncInterval(val minutes: Int) {
     ;
 
     companion object {
-        fun fromMinutes(minutes: Int): SyncInterval = entries.firstOrNull { it.minutes == minutes } ?: FifteenMinutes
+        fun fromMinutes(minutes: Int): SyncInterval = entries.firstOrNull { it.minutes == minutes } ?: Hourly
     }
 }
 
@@ -51,9 +47,9 @@ enum class SyncInterval(val minutes: Int) {
 data class DeviceState(
     val backgroundUpdateInterval: UpdateInterval = UpdateInterval.Hourly,
     val backgroundAutoUpdatesAnyNetwork: Boolean = false,
-    val networkMode: NetworkMode = NetworkMode.TorOnly,
-    val bugReports: Boolean = true,
-    val syncInterval: SyncInterval = SyncInterval.FifteenMinutes,
+    val networkMode: NetworkMode = NetworkMode.DirectOnly,
+    val bugReports: Boolean = false,
+    val syncInterval: SyncInterval = SyncInterval.Hourly,
 ) {
     val backgroundAutoUpdates: Boolean get() = backgroundUpdateInterval != UpdateInterval.Never
 
@@ -105,9 +101,7 @@ class DeviceSettings(
     private val scope: CoroutineScope,
     defaultMode: NetworkMode,
 ) {
-    private val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).also { stored ->
-        if (stored.contains(KEY_SIGNERS)) stored.edit().remove(KEY_SIGNERS).apply()
-    }
+    private val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val _state = MutableStateFlow(load(defaultMode))
     val state: StateFlow<DeviceState> = _state.asStateFlow()
 
@@ -155,27 +149,19 @@ class DeviceSettings(
     }
 
     private fun load(defaultMode: NetworkMode) = DeviceState(
-        backgroundUpdateInterval = when {
-            prefs.contains(KEY_INTERVAL) -> UpdateInterval.fromHours(prefs.getInt(KEY_INTERVAL, UpdateInterval.Hourly.hours))
-            !prefs.getBoolean(KEY_AUTO, true) -> UpdateInterval.Never
-            else -> UpdateInterval.Hourly
-        },
+        backgroundUpdateInterval = UpdateInterval.fromHours(prefs.getInt(KEY_INTERVAL, UpdateInterval.Hourly.hours)),
         backgroundAutoUpdatesAnyNetwork = prefs.getBoolean(KEY_ANY_NETWORK, false),
         networkMode = NetworkMode.fromStored(prefs.getString(KEY_MODE, defaultMode.name)),
-        bugReports = prefs.getBoolean(KEY_REPORTS, true),
-        syncInterval = SyncInterval.fromMinutes(prefs.getInt(KEY_SYNC, SyncInterval.FifteenMinutes.minutes)),
+        bugReports = prefs.getBoolean(KEY_REPORTS, false),
+        syncInterval = SyncInterval.fromMinutes(prefs.getInt(KEY_SYNC, SyncInterval.Hourly.minutes)),
     )
 
     private companion object {
         const val TAG = "DeviceSettings"
         const val PREFS = "network"
         const val KEY_MODE = "mode"
-        /** Before the interval: a boolean, read once to carry an off switch over. */
-        const val KEY_AUTO = "background_auto_updates"
         const val KEY_INTERVAL = "background_update_interval_hours"
         const val KEY_ANY_NETWORK = "background_any_network"
-        /** Leftover from the always-trust list. Dropped once; no longer read. */
-        const val KEY_SIGNERS = "trusted_signers"
         const val KEY_REPORTS = "bug_reports"
         const val KEY_SYNC = "catalog_sync_interval_minutes"
         const val PUBLISH_DELAY_MS = 1_500L
