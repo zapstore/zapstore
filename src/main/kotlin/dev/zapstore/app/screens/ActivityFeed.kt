@@ -195,12 +195,12 @@ private fun ActivityRow(
             { StackTile(stack.appIds, stackApps, size = ACTIVITY_ICON, modifier = Modifier.wrapContentSize(Alignment.Center, unbounded = true)) }
         }
         app != null -> {
-            { AppIcon(title = app.name, iconUrl = app.iconUrl, iconFile = app.iconFile, size = ACTIVITY_ICON) }
+            { AppIcon(title = app.name, iconUrl = app.iconUrl, iconFile = app.iconFile, size = ACTIVITY_APP_ICON) }
         }
         else -> null
     }
     Row(
-        horizontalArrangement = Arrangement.spacedBy(ACTIVITY_GAP),
+        horizontalArrangement = Arrangement.spacedBy(ACTIVITY_APP_ICON_GAP),
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
@@ -208,7 +208,7 @@ private fun ActivityRow(
             .testTag("activity:${item.eventId}"),
     ) {
         // A box of the icon's width, so the lines below can start where the name does.
-        if (leading != null) Box(Modifier.size(ACTIVITY_ICON), contentAlignment = Alignment.Center) { leading() }
+        if (leading != null) Box(Modifier.size(ACTIVITY_APP_ICON), contentAlignment = Alignment.Center) { leading() }
         Column(Modifier.weight(1f)) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 FlowRow(
@@ -451,5 +451,9 @@ internal fun LoadMoreNearEnd(position: () -> Pair<Int?, Int>, canLoadMore: Boole
 private const val PREFETCH = 6
 /** The person's picture and the app or stack picture in a line share one size. */
 private val ACTIVITY_ICON = 20.dp
+/** The app's icon leading a main-feed entry: two lines of the line's text (2 x 21.25 dp, body small). */
+private val ACTIVITY_APP_ICON = 42.5.dp
+/** The gap between that icon and the text beside it. */
+private val ACTIVITY_APP_ICON_GAP = 10.dp
 /** The gap between that picture and the name beside it. */
 private val ACTIVITY_GAP = 6.dp
