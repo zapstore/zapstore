@@ -16,9 +16,24 @@ object FlutterMigration {
     fun run(context: Context, secrets: SecretStore): Boolean {
         val state = context.getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE)
         if (state.getBoolean(DONE, false)) return state.getBoolean(CARRIED_KEY, false)
-        val carried = carrySecrets(context, secrets)
-        state.edit().putBoolean(DONE, true).putBoolean(CARRIED_KEY, carried).commit()
+        val carried = carrySecrets(context, secrets) ?: return false
+        state.edit()
+            .putBoolean(DONE, true)
+            .putBoolean(CARRIED_KEY, carried)
+            .putBoolean(FETCH_PENDING, carried)
+            .commit()
         return carried
+    }
+
+    /**
+     * True once after a Flutter device key was carried: its settings and lists are still on the relay.
+     * Later starts return false. Onboarding still sees [run], which stays true.
+     */
+    fun takeFetchPending(context: Context): Boolean {
+        val state = context.getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE)
+        if (!state.getBoolean(FETCH_PENDING, false)) return false
+        state.edit().remove(FETCH_PENDING).commit()
+        return true
     }
 
     /** Deletes Flutter's files and cancels its WorkManager jobs. Disk work: call off the main thread. */
@@ -30,7 +45,8 @@ object FlutterMigration {
         state.edit().putBoolean(CLEANED, true).apply()
     }
 
-    private fun carrySecrets(context: Context, secrets: SecretStore): Boolean {
+    /** Null when Flutter's storage is there but could not be read, so the next start tries again. */
+    private fun carrySecrets(context: Context, secrets: SecretStore): Boolean? {
         val file = File(context.dataDir, "shared_prefs/$FLUTTER_PREFS.xml")
         if (!file.isFile) return false
         val values = runCatching {
@@ -49,7 +65,7 @@ object FlutterMigration {
         }.getOrElse {
             // Leave the file: a key we could not read is still the user's identity.
             AppLog.e(TAG, "Flutter secure storage unreadable", it)
-            return false
+            return null
         }
         val deviceKey = values[SecretStore.DEVICE_KEY]?.trim()?.lowercase()?.takeIf { HEX_KEY.matches(it) }
         deviceKey?.let { secrets.put(SecretStore.DEVICE_KEY, it) }
@@ -85,6 +101,7 @@ object FlutterMigration {
     private const val STATE_PREFS = "migration"
     private const val DONE = "flutter_done"
     private const val CARRIED_KEY = "flutter_key"
+    private const val FETCH_PENDING = "flutter_fetch"
     private const val CLEANED = "flutter_cleaned"
     private const val FLUTTER_PREFS = "FlutterSecureStorage"
     private const val KEY_PREFIX = "VGhpcyBpcyB0aGUgcHJlZml4IGZvciBhIHNlY3VyZSBzdG9yYWdlCg"

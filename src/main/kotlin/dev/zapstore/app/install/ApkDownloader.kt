@@ -1,12 +1,16 @@
 package dev.zapstore.app.install
 
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import okhttp3.Call
 import okhttp3.Request
+import okhttp3.Response
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -79,10 +83,7 @@ object ApkDownloader {
                 if (existing > 0) builder.header("Range", "bytes=$existing-")
                 val call = calls.newCall(builder.build())
                 call.timeout().timeout(10, java.util.concurrent.TimeUnit.MINUTES)
-                currentCoroutineContext()[Job]?.invokeOnCompletion { cause ->
-                    if (cause != null) call.cancel()
-                }
-                call.execute().use { response ->
+                val done = call.executeCancellable { response ->
                     if (response.isRedirect) {
                         hops++
                         if (hops > MAX_REDIRECTS) {
@@ -94,14 +95,14 @@ object ApkDownloader {
                             ?: throw InstallException(InstallException.Kind.Redirect, "bad redirect")
                         allowRange = false
                         dest.delete()
-                        return@use
+                        return@executeCancellable false
                     }
                     if (response.code == 416) {
                         if (rejectedRange) throw InstallException(InstallException.Kind.Http, "HTTP 416")
                         rejectedRange = true
                         allowRange = false
                         dest.delete()
-                        return@use
+                        return@executeCancellable false
                     }
                     if (response.code != 200 && response.code != 206) {
                         throw InstallException(InstallException.Kind.Http, "HTTP ${response.code}")
@@ -124,9 +125,30 @@ object ApkDownloader {
                     if (!hash.equals(expectedHash, ignoreCase = true)) {
                         throw InstallException(InstallException.Kind.Hash, "hash mismatch")
                     }
-                    return@withContext
+                    true
                 }
+                if (done) return@withContext
             }
+        }
+    }
+
+    /**
+     * Runs [block] on the response and cancels the call as soon as the coroutine is cancelled, so a
+     * blocking body read ends on Pause or Cancel instead of when the transfer finishes.
+     */
+    private suspend fun <T> Call.executeCancellable(block: (Response) -> T): T = coroutineScope {
+        val call = this@executeCancellable
+        val watcher = launch(start = CoroutineStart.UNDISPATCHED) {
+            try {
+                awaitCancellation()
+            } finally {
+                call.cancel()
+            }
+        }
+        try {
+            call.execute().use(block)
+        } finally {
+            watcher.cancel()
         }
     }
 

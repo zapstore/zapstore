@@ -101,7 +101,11 @@ class Nip55Bridge(context: Context) {
         extraPubkey: String?,
         column: String,
     ): String? = withContext(Dispatchers.IO) {
-        val uri = "content://$signerPackage.${type.uppercase()}".toUri()
+        val authority = "$signerPackage.${type.uppercase()}"
+        // Any app can claim an authority the signer does not declare; only the signer's own provider may answer.
+        val owner = runCatching { appContext.packageManager.resolveContentProvider(authority, 0)?.packageName }.getOrNull()
+        if (owner != signerPackage) return@withContext null
+        val uri = "content://$authority".toUri()
         val args = arrayOf(content, extraPubkey.orEmpty(), pubkey)
         val cursor = runCatching { appContext.contentResolver.query(uri, args, null, null, null) }.getOrNull()
             ?: return@withContext null

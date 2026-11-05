@@ -49,7 +49,7 @@ class Nip55Signer(
         val signed = Event.parse(requestSignedEvent(unsigned.toString()))
         require(signed.verify()) { "NIP-55 returned an invalid signature" }
         require(signed.pubkey == publicKey) { "NIP-55 pubkey does not match the requested signer" }
-        require(signed.kind == kind && signed.createdAt == createdAt && signed.content == content) {
+        require(signed.kind == kind && signed.createdAt == createdAt && signed.content == content && signed.tags == tags) {
             "NIP-55 returned a different event template"
         }
         return signed

@@ -7,7 +7,10 @@ import dev.zapstore.iolite.LocalSigner
 import dev.zapstore.iolite.decodeNsec
 
 object DeviceKeys {
-    /** The device key: carried from Flutter, moved from the old plaintext prefs, or new. */
+    /**
+     * The device key: carried from Flutter, moved from the old plaintext prefs, or new. Throws
+     * [UnreadableSecretException] rather than replace a stored key the Keystore failed to open.
+     */
     fun loadOrCreate(context: Context, secrets: SecretStore): LocalSigner {
         secrets.get(SecretStore.DEVICE_KEY)?.let { return LocalSigner(Hex.decode(it)) }
         val legacy = context.getSharedPreferences(LEGACY_PREFS, Context.MODE_PRIVATE)

@@ -14,7 +14,7 @@ import org.json.JSONObject
 
 /** The NWC connection, kept in [SecretStore] and never in device state or logs. */
 class Wallet(private val secrets: SecretStore) {
-    private val state = MutableStateFlow(secrets.get(SecretStore.NWC)?.let(NwcConnection::parse))
+    private val state = MutableStateFlow(secrets.getOrNull(SecretStore.NWC)?.let(NwcConnection::parse))
     val connection: StateFlow<NwcConnection?> = state.asStateFlow()
 
     /** False when [input] is not a NWC connection string. */
@@ -57,7 +57,10 @@ class Lnurl(private val calls: Call.Factory) {
 
     /** A BOLT11 invoice for [amountMsat] carrying the signed [zapRequest]. */
     suspend fun invoice(pay: LnurlPay, amountMsat: Long, zapRequest: Event): String {
-        val url = pay.callback.toHttpUrlOrNull()?.newBuilder()
+        // LUD-06: clear HTTP only to an onion, or anyone on the path (a Tor exit) could swap the invoice.
+        val url = pay.callback.toHttpUrlOrNull()
+            ?.takeIf { it.isHttps || it.host.endsWith(".onion") }
+            ?.newBuilder()
             ?.addQueryParameter("amount", amountMsat.toString())
             ?.addQueryParameter("nostr", zapRequest.toJson())
             ?.build() ?: throw ZapException(ZapFailure.Invoice)

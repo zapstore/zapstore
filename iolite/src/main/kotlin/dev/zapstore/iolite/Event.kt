@@ -168,6 +168,19 @@ data class Filter(
         search?.let { json.put("search", it) }
         return json
     }
+
+    /** NIP-01 match. `search` and `limit` are the relay's to apply and are not checked. */
+    fun matches(event: Event): Boolean {
+        if (ids != null && event.id !in ids) return false
+        if (authors != null && event.pubkey !in authors) return false
+        if (kinds != null && event.kind !in kinds) return false
+        if (since != null && event.createdAt < since) return false
+        if (until != null && event.createdAt > until) return false
+        tags?.forEach { (name, values) ->
+            if (event.tags.none { it.size > 1 && it[0] == name && it[1] in values }) return false
+        }
+        return true
+    }
 }
 
 fun Int.isReplaceable(): Boolean = this == 0 || this == 3 || this in 10_000..19_999

@@ -54,7 +54,7 @@ class AccountStore(
     }
 
     private fun load(): Account? {
-        val pubkey = secrets.get(SecretStore.AMBER_PUBKEY) ?: return null
+        val pubkey = secrets.getOrNull(SecretStore.AMBER_PUBKEY) ?: return null
         return Account(pubkey, prefs.getString(KEY_PACKAGE, null) ?: Nip55Bridge.AMBER)
     }
 
