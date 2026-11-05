@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The stacks line says "User curated stacks"
 - A generated summary says it comes from the catalog
 
+### Fixed
+
+- An APK larger than 300 MiB downloads
+
 ## [2.0.0] - 2026-11-05
 
 ### Added
