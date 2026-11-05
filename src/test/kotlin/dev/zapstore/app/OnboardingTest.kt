@@ -26,9 +26,9 @@ class OnboardingTest {
     }
 
     @Test
-    fun flutterPhoneSeesOnlyNetworkAndNotifications() {
+    fun flutterPhoneStartsOnPrivacyThenNetworkAndNotifications() {
         assertEquals(
-            listOf(Network, Notifications),
+            listOf(Privacy, Network, Notifications),
             Onboarding.steps(migrated = true, canInstall = false, needsNotificationPermission = true),
         )
     }

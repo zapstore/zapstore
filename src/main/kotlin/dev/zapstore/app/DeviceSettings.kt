@@ -17,6 +17,7 @@ import org.json.JSONObject
 /** How often background updates run. [Never] turns them off. */
 enum class UpdateInterval(val hours: Int) {
     Never(0),
+    Hourly(1),
     Every6Hours(6),
     Every12Hours(12),
     Daily(24),
@@ -24,7 +25,7 @@ enum class UpdateInterval(val hours: Int) {
     ;
 
     companion object {
-        fun fromHours(hours: Int): UpdateInterval = entries.firstOrNull { it.hours == hours } ?: Daily
+        fun fromHours(hours: Int): UpdateInterval = entries.firstOrNull { it.hours == hours } ?: Hourly
     }
 }
 
@@ -48,7 +49,7 @@ enum class SyncInterval(val minutes: Int) {
 
 /** Plaintext of `zapstore-device-state`. The NWC string never goes here. */
 data class DeviceState(
-    val backgroundUpdateInterval: UpdateInterval = UpdateInterval.Daily,
+    val backgroundUpdateInterval: UpdateInterval = UpdateInterval.Hourly,
     val backgroundAutoUpdatesAnyNetwork: Boolean = false,
     val networkMode: NetworkMode = NetworkMode.TorOnly,
     val bugReports: Boolean = true,
@@ -155,9 +156,9 @@ class DeviceSettings(
 
     private fun load(defaultMode: NetworkMode) = DeviceState(
         backgroundUpdateInterval = when {
-            prefs.contains(KEY_INTERVAL) -> UpdateInterval.fromHours(prefs.getInt(KEY_INTERVAL, UpdateInterval.Daily.hours))
+            prefs.contains(KEY_INTERVAL) -> UpdateInterval.fromHours(prefs.getInt(KEY_INTERVAL, UpdateInterval.Hourly.hours))
             !prefs.getBoolean(KEY_AUTO, true) -> UpdateInterval.Never
-            else -> UpdateInterval.Daily
+            else -> UpdateInterval.Hourly
         },
         backgroundAutoUpdatesAnyNetwork = prefs.getBoolean(KEY_ANY_NETWORK, false),
         networkMode = NetworkMode.fromStored(prefs.getString(KEY_MODE, defaultMode.name)),

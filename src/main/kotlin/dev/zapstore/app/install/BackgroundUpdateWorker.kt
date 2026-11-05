@@ -70,7 +70,7 @@ class BackgroundUpdateWorker(context: Context, params: WorkerParameters) : Corou
         private const val MAX_RETRIES = 3
         private const val BACKOFF_MINUTES = 15L
 
-        /** Schedules or cancels the daily run to match [state]. */
+        /** Schedules or cancels the periodic run to match [state]. */
         fun apply(context: Context, state: DeviceState) {
             val work = WorkManager.getInstance(context)
             if (!state.backgroundAutoUpdates) {

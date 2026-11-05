@@ -40,15 +40,16 @@ class Onboarding(context: Context) {
         private const val COMPLETED = "completed"
 
         /**
-         * The steps this phone shows. A phone that carried a Flutter device key sees only the
-         * network and notification steps. Without a signer the Signer step offers Amber instead.
+         * The steps this phone shows. A phone that carried a Flutter device key still starts on the
+         * privacy screen, then sees network and notifications; signer and install permission stay
+         * skipped. Without a signer the Signer step offers Amber instead.
          */
         fun steps(
             migrated: Boolean,
             canInstall: Boolean,
             needsNotificationPermission: Boolean,
         ): List<OnboardingStep> = buildList {
-            if (!migrated) add(OnboardingStep.Privacy)
+            add(OnboardingStep.Privacy)
             add(OnboardingStep.Network)
             if (!migrated) add(OnboardingStep.Signer)
             if (!migrated && !canInstall) add(OnboardingStep.InstallPermission)
