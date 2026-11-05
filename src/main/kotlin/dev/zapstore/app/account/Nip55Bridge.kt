@@ -76,6 +76,10 @@ class Nip55Bridge(context: Context) {
     suspend fun nip44Decrypt(payload: String, from: String, pubkey: String, signerPackage: String): String =
         request(TYPE_DECRYPT, payload, pubkey, signerPackage, extraPubkey = from, column = "result")
 
+    /** Flutter 1.x wrote its Amber key backup with NIP-04. */
+    suspend fun nip04Decrypt(payload: String, from: String, pubkey: String, signerPackage: String): String =
+        request(TYPE_DECRYPT_NIP04, payload, pubkey, signerPackage, extraPubkey = from, column = "result")
+
     private suspend fun request(
         type: String,
         content: String,
@@ -155,6 +159,7 @@ class Nip55Bridge(context: Context) {
         private const val TYPE_SIGN_EVENT = "sign_event"
         private const val TYPE_ENCRYPT = "nip44_encrypt"
         private const val TYPE_DECRYPT = "nip44_decrypt"
+        private const val TYPE_DECRYPT_NIP04 = "nip04_decrypt"
 
         /** Asked once at sign-in so later requests can be answered with no screen. */
         private val PERMISSIONS: String = JSONArray().apply {
@@ -163,6 +168,7 @@ class Nip55Bridge(context: Context) {
             }
             put(JSONObject().put("type", TYPE_ENCRYPT))
             put(JSONObject().put("type", TYPE_DECRYPT))
+            put(JSONObject().put("type", TYPE_DECRYPT_NIP04))
         }.toString()
 
         /** Signers return hex or an npub. */

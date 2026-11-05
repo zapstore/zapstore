@@ -50,7 +50,11 @@ class AccountStore(
 
     suspend fun decryptFromSelf(payload: String): String {
         val current = _account.value ?: throw Nip55Exception("Not signed in")
-        return bridge.nip44Decrypt(payload, current.pubkey, current.pubkey, current.signerPackage)
+        return if (payload.contains("?iv=")) {
+            bridge.nip04Decrypt(payload, current.pubkey, current.pubkey, current.signerPackage)
+        } else {
+            bridge.nip44Decrypt(payload, current.pubkey, current.pubkey, current.signerPackage)
+        }
     }
 
     private fun load(): Account? {

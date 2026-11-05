@@ -2,13 +2,11 @@ package dev.zapstore.app
 
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collectLatest
 import android.app.Application
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.pm.ApplicationInfo
 import android.os.Build
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
@@ -92,6 +90,10 @@ class ZapstoreApplication : Application() {
     var migratedFromFlutter = false
         private set
 
+    /** This phone had the Flutter app, whether or not its key came over. */
+    var upgradedFromFlutter = false
+        private set
+
     @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
     override fun onCreate() {
         super.onCreate()
@@ -99,16 +101,22 @@ class ZapstoreApplication : Application() {
         secrets = SecretStore(this)
         val carriedFlutterKey = FlutterMigration.run(this, secrets)
         migratedFromFlutter = carriedFlutterKey
+        upgradedFromFlutter = FlutterMigration.found(this)
         onboarding = Onboarding(this)
-        deviceSigner = DeviceKeys.loadOrCreate(this, secrets)
+        deviceSigner = DeviceKeys.loadOrCreate(secrets)
         account = AccountStore(this, secrets, Nip55Bridge(this))
         wallet = Wallet(secrets)
         scope.launch(Dispatchers.IO) {
             FlutterMigration.cleanUp(this@ZapstoreApplication)
         }
-        val debuggable = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
-        settings = DeviceSettings(this, scope, if (debuggable) NetworkMode.DirectOnly else NetworkMode.TorOnly)
+        settings = DeviceSettings(this, scope, NetworkMode.DirectOnly)
         network = NetworkRuntime(this, scope, settings.state.value.networkMode)
+        AppLog.i(
+            "start",
+            "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) android ${Build.VERSION.RELEASE} sdk ${Build.VERSION.SDK_INT} " +
+                "abi ${Build.SUPPORTED_ABIS.firstOrNull()} network ${settings.state.value.networkMode}" +
+                if (upgradedFromFlutter) " upgraded from Flutter" else "",
+        )
         queryEncoder = QueryEncoder(this)
         registerComponentCallbacks(queryEncoder)
         scope.launch(Dispatchers.IO) { runCatching { queryEncoder.prepare() } }
@@ -121,6 +129,7 @@ class ZapstoreApplication : Application() {
                 indexerRelays = AppConfig.indexerRelays,
                 relayMonitors = AppConfig.relayMonitors,
                 monitorRelays = AppConfig.monitorRelays,
+                log = { message, error -> if (error == null) AppLog.i("iolite", message) else AppLog.w("iolite", message, error) },
             ),
             http = network.http,
             webSocket = network.webSocket,
@@ -146,7 +155,7 @@ class ZapstoreApplication : Application() {
             bundledSnapshot = CatalogBundle { assets.open(BUNDLED_CATALOG_DELTA) }
                 .takeIf { runCatching { assets.open(BUNDLED_CATALOG_DELTA).close() }.isSuccess },
             useOnion = { network.mode.value.usesTor },
-            ourPackage = packageName,
+            awaitRemote = { network.awaitRemoteReady(TOR_WAIT_MS) },
             pinnedKey = AppConfig.catalogPubkey,
         )
         catalogSync.request()
@@ -231,14 +240,11 @@ class ZapstoreApplication : Application() {
         else registerReceiver(receiver, filter)
     }
 
-    /** Intervals under WorkManager's floor sync on a timer while Zapstore is in the foreground. */
+    /** While Zapstore is in the foreground the catalog syncs on its own timer; the setting is for background syncs. */
     private suspend fun syncWhileOpen() {
-        settings.state.map { it.syncInterval }.distinctUntilChanged().collectLatest { interval ->
-            if (interval.minutes >= CatalogSyncWorker.MIN_PERIODIC_MINUTES) return@collectLatest
-            while (true) {
-                delay(interval.minutes * 60_000L)
-                catalogSync.request(force = true)
-            }
+        while (true) {
+            delay(FOREGROUND_SYNC_MS)
+            catalogSync.request(force = true)
         }
     }
 
@@ -253,11 +259,13 @@ class ZapstoreApplication : Application() {
                     Query.devicePrivate(deviceSigner.publicKey),
                     QueryOptions.remote(relays = setOf(AppConfig.catalogRelay), remoteMode = RemoteMode.OneShot()),
                 ).first { it.settled }
-            }
+            }.onFailure { AppLog.w("start", "device lists fetch failed", it) }
         }
     }
 
     private companion object {
         const val BUNDLED_CATALOG_DELTA = "bundle-0-1.tar.zst"
+        const val TOR_WAIT_MS = 90_000L
+        const val FOREGROUND_SYNC_MS = 5 * 60_000L
     }
 }

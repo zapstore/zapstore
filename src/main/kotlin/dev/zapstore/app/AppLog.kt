@@ -61,7 +61,7 @@ object AppLog {
     }
 
     private fun write(priority: Int, tag: String, message: String, error: Throwable?) {
-        Log.println(priority, tag, if (error == null) message else "$message\n${Log.getStackTraceString(error)}")
+        runCatching { Log.println(priority, tag, if (error == null) message else "$message\n${Log.getStackTraceString(error)}") }
         val logs = dir ?: return
         val line = line(priority, tag, message, error, System.currentTimeMillis())
         writer.execute {

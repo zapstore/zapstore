@@ -12,18 +12,28 @@ import java.io.File
  * Runs before the device key is read. Returns true when a Flutter device key was carried over.
  */
 object FlutterMigration {
-    /** Moves the secrets. Small and synchronous: the device key is needed before anything else starts. */
+    /**
+     * Moves the secrets, once. Storage that cannot be read is not tried again: the phone starts on a
+     * new key, and the user can restore the old one from their signer's backup.
+     * Small and synchronous: the device key is needed before anything else starts.
+     */
     fun run(context: Context, secrets: SecretStore): Boolean {
         val state = context.getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE)
         if (state.getBoolean(DONE, false)) return state.getBoolean(CARRIED_KEY, false)
-        val carried = carrySecrets(context, secrets) ?: return false
+        val found = File(context.dataDir, "shared_prefs/$FLUTTER_PREFS.xml").isFile || File(context.filesDir, "zapstore.db").isFile
+        val carried = carrySecrets(context, secrets)
         state.edit()
             .putBoolean(DONE, true)
+            .putBoolean(FOUND, found)
             .putBoolean(CARRIED_KEY, carried)
             .putBoolean(FETCH_PENDING, carried)
             .commit()
         return carried
     }
+
+    /** True when this phone had the Flutter app, whether or not its key could be carried. Call after [run]. */
+    fun found(context: Context): Boolean =
+        context.getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE).getBoolean(FOUND, false)
 
     /**
      * True once after a Flutter device key was carried: its settings and lists are still on the relay.
@@ -45,8 +55,8 @@ object FlutterMigration {
         state.edit().putBoolean(CLEANED, true).apply()
     }
 
-    /** Null when Flutter's storage is there but could not be read, so the next start tries again. */
-    private fun carrySecrets(context: Context, secrets: SecretStore): Boolean? {
+    /** True when a Flutter device key was carried over. */
+    private fun carrySecrets(context: Context, secrets: SecretStore): Boolean {
         val file = File(context.dataDir, "shared_prefs/$FLUTTER_PREFS.xml")
         if (!file.isFile) return false
         val values = runCatching {
@@ -63,32 +73,34 @@ object FlutterMigration {
             listOf(SecretStore.DEVICE_KEY, SecretStore.AMBER_PUBKEY, SecretStore.NWC)
                 .associateWith { prefs.getString("${KEY_PREFIX}_$it", null) }
         }.getOrElse {
-            // Leave the file: a key we could not read is still the user's identity.
             AppLog.e(TAG, "Flutter secure storage unreadable", it)
-            return null
+            context.deleteSharedPreferences(FLUTTER_PREFS)
+            return false
         }
         val deviceKey = values[SecretStore.DEVICE_KEY]?.trim()?.lowercase()?.takeIf { HEX_KEY.matches(it) }
         deviceKey?.let { secrets.put(SecretStore.DEVICE_KEY, it) }
-        values[SecretStore.AMBER_PUBKEY]?.trim()?.lowercase()?.takeIf { HEX_KEY.matches(it) }
-            ?.let { secrets.put(SecretStore.AMBER_PUBKEY, it) }
-        values[SecretStore.NWC]?.trim()?.takeIf { it.startsWith("nostr+walletconnect://") }
-            ?.let { secrets.put(SecretStore.NWC, it) }
-        if (deviceKey == null) {
-            AppLog.e(TAG, "Flutter secure storage has no readable device key")
-            return false
-        }
+        val signer = values[SecretStore.AMBER_PUBKEY]?.trim()?.lowercase()?.takeIf { HEX_KEY.matches(it) }
+        signer?.let { secrets.put(SecretStore.AMBER_PUBKEY, it) }
+        val wallet = values[SecretStore.NWC]?.trim()?.takeIf { it.startsWith("nostr+walletconnect://") }
+        wallet?.let { secrets.put(SecretStore.NWC, it) }
         context.deleteSharedPreferences(FLUTTER_PREFS)
-        return true
+        AppLog.i(TAG, "carried device key ${deviceKey != null}, signer ${signer != null}, wallet ${wallet != null}")
+        if (deviceKey == null) AppLog.e(TAG, "Flutter secure storage has no readable device key")
+        return deviceKey != null
     }
 
     private fun deleteLeftovers(context: Context) {
         val files = context.filesDir
         listOf("zapstore.db", "zapstore.db-wal", "zapstore.db-shm", "zapstore.db-journal",
-            "installed_packages_snapshot.json", "background_pending_installs.json", ".clear_on_restart")
+            "installed_packages_snapshot.json", "background_pending_installs.json", ".clear_on_restart",
+            "libCachedImageData.db", "libCachedImageData.db-journal", "flutter_callback_cache.json")
             .forEach { File(files, it).delete() }
-        listOf(File(files, "logs"), File(files, "background_updates"), File(context.cacheDir, "flutter_background_downloader"))
+        listOf(File(files, "logs"), File(files, "background_updates"), File(files, "backgroundDownloaderDatabase"),
+            File(context.cacheDir, "flutter_background_downloader"), File(context.cacheDir, "libCachedImageData"),
+            File(context.dataDir, "app_flutter"))
             .forEach { it.deleteRecursively() }
-        context.deleteSharedPreferences("FlutterSharedPreferences")
+        listOf("FlutterSharedPreferences", "FlutterSecureKeyStorage", "flutter_workmanager_plugin")
+            .forEach(context::deleteSharedPreferences)
     }
 
     private fun cancelFlutterWork(context: Context) {
@@ -101,6 +113,7 @@ object FlutterMigration {
     private const val STATE_PREFS = "migration"
     private const val DONE = "flutter_done"
     private const val CARRIED_KEY = "flutter_key"
+    private const val FOUND = "flutter_found"
     private const val FETCH_PENDING = "flutter_fetch"
     private const val CLEANED = "flutter_cleaned"
     private const val FLUTTER_PREFS = "FlutterSecureStorage"

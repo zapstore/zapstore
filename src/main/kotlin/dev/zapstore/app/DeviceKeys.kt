@@ -8,15 +8,20 @@ import dev.zapstore.iolite.decodeNsec
 
 object DeviceKeys {
     /**
-     * The device key: carried from Flutter, moved from the old plaintext prefs, or new. Throws
-     * [UnreadableSecretException] rather than replace a stored key the Keystore failed to open.
+     * The device key: the stored one (carried from Flutter or made here), or a new one. When the
+     * Keystore fails to open the stored key, this run uses a key that is never stored, so the app
+     * still starts and the next start tries the stored key again.
      */
-    fun loadOrCreate(context: Context, secrets: SecretStore): LocalSigner {
-        secrets.get(SecretStore.DEVICE_KEY)?.let { return LocalSigner(Hex.decode(it)) }
-        val legacy = context.getSharedPreferences(LEGACY_PREFS, Context.MODE_PRIVATE)
-        val secret = legacy.getString(LEGACY_KEY, null)?.let(Hex::decode) ?: Crypto.randomBytes(32)
+    fun loadOrCreate(secrets: SecretStore): LocalSigner {
+        val stored = try {
+            secrets.get(SecretStore.DEVICE_KEY)
+        } catch (e: UnreadableSecretException) {
+            AppLog.e(TAG, "device key unreadable; using a temporary key for this run", e)
+            return LocalSigner(Crypto.randomBytes(32))
+        }
+        stored?.let { return LocalSigner(Hex.decode(it)) }
+        val secret = Crypto.randomBytes(32)
         secrets.put(SecretStore.DEVICE_KEY, Hex.encode(secret))
-        context.deleteSharedPreferences(LEGACY_PREFS)
         return LocalSigner(secret)
     }
 
@@ -45,8 +50,7 @@ object DeviceKeys {
         return true
     }
 
-    private const val LEGACY_PREFS = "device_keys"
-    private const val LEGACY_KEY = "nsec"
+    private const val TAG = "DeviceKeys"
     private const val STATE_PREFS = "device_key_state"
     private const val RESTORE_PENDING = "restore_pending"
     private val HEX_KEY = Regex("^[0-9a-f]{64}$")

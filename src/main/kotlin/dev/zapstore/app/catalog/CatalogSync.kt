@@ -58,13 +58,15 @@ class CatalogSync(
     /** The snapshot shipped in the APK, opened again for each read so it is never held in memory. Null when the build has none. */
     private val bundledSnapshot: CatalogBundle?,
     private val useOnion: () -> Boolean = { false },
-    /** Apps another store installed are never updated from here, by hand or in the background. */
-    private val ourPackage: String = "",
+    /** Waits until relays can be reached, so a sync started while Tor bootstraps does not fail at once. */
+    private val awaitRemote: suspend () -> Unit = {},
     /** The key the default catalog must be signed by; null trusts the first signer seen. */
     private val pinnedKey: String? = null,
     private val now: () -> Long = System::currentTimeMillis,
 ) {
     private val mutex = Mutex()
+    /** Set by [wipe]: the next sync fetches the full bundle from the relay instead of the APK's snapshot. */
+    @Volatile private var skipBundled = false
     private val _status = MutableStateFlow(SyncStatus())
     private var requested: Job? = null
     val status: StateFlow<SyncStatus> = _status.asStateFlow()
@@ -75,7 +77,8 @@ class CatalogSync(
     val installedApps: StateFlow<List<InstalledApp>> = installed.asStateFlow()
 
     /**
-     * Newer catalog listings Zapstore may install: not ignored, and not kept current by another store.
+     * Newer catalog listings Zapstore may install: signed by a listed key and not ignored. An app another
+     * store installed counts too; its update hands it to Zapstore.
      * Only the installed packages' listings are read; the whole catalog would be tens of MB per emission.
      */
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -83,7 +86,7 @@ class CatalogSync(
         installed.flatMapLatest { packages ->
             combine(iolite.observeApps(AppFilter(appIds = packages.map(InstalledApp::packageId))), ignored) { apps, skip ->
                 val ignoredIds = skip.toSet()
-                availableUpdates(packages, apps).filter { it.app.appId !in ignoredIds && it.otherStore(ourPackage) == null }
+                availableUpdates(packages, apps).filter { it.app.appId !in ignoredIds }
             }
         }
             .shareIn(scope, SharingStarted.WhileSubscribed(5_000), replay = 1)
@@ -145,6 +148,7 @@ class CatalogSync(
     suspend fun sync() {
         mutex.withLock {
             _status.update { it.copy(syncing = true, error = null) }
+            awaitRemote()
             var elapsedMs: Long? = null
             val pass = Pass()
             val failure = runCatching {
@@ -163,6 +167,7 @@ class CatalogSync(
             refreshInstalledApps()
             val error = failure?.let { it.message ?: it::class.simpleName } ?: pass.errors.firstOrNull()
             val succeeded = error == null
+            if (succeeded) skipBundled = false
             _status.update {
                 it.copy(
                     syncing = false,
@@ -216,7 +221,7 @@ class CatalogSync(
         return iolite.syncCatalog(
             catalogId = catalog.id,
             useOnion = useOnion(),
-            bundled = if (key != null && key == snapshotKey) bundledSnapshot else null,
+            bundled = if (!skipBundled && key != null && key == snapshotKey) bundledSnapshot else null,
             endpoint = if (isDefault) AppConfig.catalogRelay else null,
             client = BuildConfig.VERSION_NAME,
         )
@@ -250,10 +255,17 @@ class CatalogSync(
         refreshInstalledApps()
     }
 
+    /**
+     * Clears what was downloaded and syncs again from the relay's latest full bundle. The snapshot in the
+     * APK is skipped until that sync succeeds, since it may be what went wrong.
+     */
     suspend fun wipe() {
         mutex.withLock {
             _status.update { it.copy(syncing = true, error = null) }
             val result = runCatching { withContext(Dispatchers.IO) { iolite.wipeLocalData() } }
+            result.exceptionOrNull()?.let { AppLog.e(TAG, "clear local storage failed", it) }
+                ?: AppLog.i(TAG, "local storage cleared; resyncing without the bundled snapshot")
+            if (result.isSuccess) skipBundled = true
             _status.update {
                 it.copy(
                     syncing = false,
@@ -265,6 +277,7 @@ class CatalogSync(
                 )
             }
         }
+        if (skipBundled) request(force = true)
     }
 
     /** One package change arrives as removed, added and replaced; a burst reads the device once. */

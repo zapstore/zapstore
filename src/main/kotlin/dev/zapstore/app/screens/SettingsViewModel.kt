@@ -49,7 +49,7 @@ data class SettingsUiState(
     val catalogSheet: CatalogSheetUi = CatalogSheetUi(),
     val appCount: Int = 0,
     val localStorageBytes: Long = 0,
-    val networkMode: NetworkMode = NetworkMode.TorOnly,
+    val networkMode: NetworkMode = NetworkMode.DirectOnly,
     val torState: TorRuntimeState = TorRuntimeState.Stopped,
     val deviceState: DeviceState = DeviceState(),
     val account: Account? = null,
@@ -304,8 +304,8 @@ class SettingsViewModel(
 
     fun wipe() {
         viewModelScope.launch {
-            catalogSync.wipe()
             network.clearArtiCache()
+            catalogSync.wipe()
             refreshLocalStorage()
         }
     }

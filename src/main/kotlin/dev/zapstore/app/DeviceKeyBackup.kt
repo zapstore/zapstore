@@ -45,8 +45,11 @@ class DeviceKeyBackup(
             ),
             relays = AppConfig.writeRelays + AppConfig.catalogRelay,
         ).firstOrNull() ?: return null
+        // Amber answers a failed decrypt with its error text as the result.
         val plaintext = accounts.decryptFromSelf(event.content)
-        return DeviceKeys.parse(JSONObject(plaintext).optString("deviceKey"))
+        val backup = runCatching { JSONObject(plaintext) }.getOrNull()
+            ?: error("Amber could not read your device key backup: ${plaintext.take(80)}")
+        return DeviceKeys.parse(backup.optString("deviceKey"))
     }
 
     /** Swaps the key and restarts, so nothing keeps signing with the old one. */
