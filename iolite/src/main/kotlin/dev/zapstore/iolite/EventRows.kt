@@ -223,7 +223,7 @@ internal object EventRows {
     private fun insertZap(db: SQLiteConnection, event: Event, appId: String, amountSats: Long) {
         db.prepare(
             """
-            INSERT OR IGNORE INTO zaps (event_id, pubkey, amount_sats, created_at, app_id, metadata)
+            INSERT OR IGNORE INTO zaps (event_id, pubkey, amount_sats, created_at, app_id, note)
             VALUES (?, ?, ?, ?, ?, ?)
             """.trimIndent(),
         ).use { statement ->
@@ -232,7 +232,7 @@ internal object EventRows {
             statement.bindLong(3, amountSats)
             statement.bindLong(4, event.createdAt)
             statement.bindText(5, appId)
-            statement.bindText(6, JSONObject().put("tags", event.tags.toJsonArray()).toString())
+            statement.bindTextOrNull(6, zapNote(event.tags).ifEmpty { null })
             statement.step()
         }
     }
@@ -244,7 +244,7 @@ internal object EventRows {
         db.prepare(
             """
             INSERT OR IGNORE INTO comments (
-                event_id, pubkey, created_at, content, app_id, stack, parent_event_id, metadata
+                event_id, pubkey, created_at, content, app_id, root, parent_event_id, version
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """.trimIndent(),
         ).use { statement ->
@@ -255,7 +255,7 @@ internal object EventRows {
             statement.bindTextOrNull(5, appId)
             statement.bindTextOrNull(6, event.tagValue("A"))
             statement.bindBlobOrNull(7, event.tagValue("e")?.let(Hex::decode))
-            statement.bindText(8, JSONObject().put("tags", event.tags.toJsonArray()).toString())
+            statement.bindTextOrNull(8, event.tagValue("v")?.takeIf { it.isNotBlank() })
             statement.step()
         }
     }

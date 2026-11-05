@@ -99,24 +99,27 @@ internal object Schema {
             created_at          INTEGER NOT NULL,
             content             TEXT NOT NULL,
             app_id              TEXT,
-            -- The NIP-22 root coordinate (`A`): an app's or a stack's. Named for stacks, which it was added for.
-            stack               TEXT,
+            -- The NIP-22 root coordinate (`A`): an app's or a stack's.
+            root                TEXT,
             parent_event_id     BLOB,
-            metadata            TEXT NOT NULL DEFAULT '{}'
-        )
+            -- The `v` tag: the app version the comment was written on.
+            version             TEXT
+        ) WITHOUT ROWID
         """.trimIndent(),
         "CREATE INDEX comments_app_idx ON comments(app_id, created_at DESC)",
-        "CREATE INDEX comments_stack_idx ON comments(stack, created_at DESC)",
+        "CREATE INDEX comments_root_idx ON comments(root, created_at DESC)",
         "CREATE INDEX comments_parent_idx ON comments(parent_event_id)",
         """
         CREATE TABLE zaps (
             event_id        BLOB PRIMARY KEY,
+            -- The sender: the zap request's pubkey, not the receipt's.
             pubkey          BLOB NOT NULL,
             amount_sats     INTEGER NOT NULL CHECK (amount_sats > 0),
             created_at      INTEGER NOT NULL,
             app_id          TEXT NOT NULL,
-            metadata        TEXT NOT NULL DEFAULT '{}'
-        )
+            -- The zap request's content; NULL when blank.
+            note            TEXT
+        ) WITHOUT ROWID
         """.trimIndent(),
         "CREATE INDEX zaps_app_idx ON zaps(app_id, created_at DESC)",
         "CREATE INDEX zaps_pubkey_idx ON zaps(pubkey, created_at DESC)",

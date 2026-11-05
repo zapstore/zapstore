@@ -66,11 +66,12 @@ class IoliteStore internal constructor(
     private val iconsDir: File = File(File(path).parentFile, "icons"),
     private val avatarsDir: File = File(File(path).parentFile, "avatars"),
     openConnection: (String) -> SQLiteConnection = ::openBundled,
+    log: IoliteLog = IoliteLog { _, _ -> },
 ) : AutoCloseable {
     private class Listener(val tables: Set<Table>, val notify: () -> Unit)
 
     private val lock = ReentrantLock()
-    private val connection: SQLiteConnection = open(path, openConnection)
+    private val connection: SQLiteConnection = open(path, openConnection, log)
     private val readLock = ReentrantLock()
     private val reader: SQLiteConnection = openReader(path, openConnection)
     private val listeners = CopyOnWriteArrayList<Listener>()
@@ -483,14 +484,14 @@ class IoliteStore internal constructor(
      * Drops everything downloaded. The user's catalog list stays exactly as it is, empty included, with
      * each catalog's key: they are choices, not cache. Every catalog is fetched again from epoch 0.
      */
+    /**
+     * Drops everything that is fetched again: the catalog and social reads. The catalog list, the
+     * device's own lists (`preferences`), and events not yet published stay, since they may exist only here.
+     */
     fun wipe() {
         write { tx ->
-            listOf("comments", "zaps", "stacks", "profiles", "publish_queue", "relay_reports", "certificate_proofs", "apps", "query_refresh")
+            listOf("comments", "zaps", "stacks", "profiles", "relay_reports", "certificate_proofs", "apps", "query_refresh")
                 .forEach { tx.db.execSQL("DELETE FROM $it") }
-            tx.db.prepare("DELETE FROM preferences WHERE identifier <> ?").use { statement ->
-                statement.bindText(1, EventRows.CATALOG_RELAY_LIST_KEY)
-                statement.step()
-            }
             tx.db.execSQL("UPDATE catalogs SET epoch = 0")
             tx.touch(*Table.values())
         }
@@ -976,13 +977,11 @@ class IoliteStore internal constructor(
     fun zaps(appId: String, limit: Int? = null): List<ZapRecord> = read { db ->
         val limitSql = limit?.let { " LIMIT $it" } ?: ""
         db.prepare(
-            "SELECT event_id, pubkey, amount_sats, created_at, metadata FROM zaps WHERE app_id = ? ORDER BY created_at DESC$limitSql",
+            "SELECT event_id, pubkey, amount_sats, created_at, note FROM zaps WHERE app_id = ? ORDER BY created_at DESC$limitSql",
         ).use { statement ->
             statement.bindText(1, appId)
             statement.rows {
-                val tags = runCatching { JSONObject(getText(4)).optJSONArray("tags") }.getOrNull()
-                val note = EventRows.zapNote(tags.toStringLists())
-                ZapRecord(Hex.encode(getBlob(0)), Hex.encode(getBlob(1)), getLong(2), getLong(3), appId, note)
+                ZapRecord(Hex.encode(getBlob(0)), Hex.encode(getBlob(1)), getLong(2), getLong(3), appId, textOrNull(4).orEmpty())
             }
         }
     }
@@ -990,7 +989,7 @@ class IoliteStore internal constructor(
     fun comments(appId: String, limit: Int? = null): List<CommentRecord> = read { db ->
         val limitSql = limit?.let { " LIMIT $it" } ?: ""
         db.prepare(
-            "SELECT event_id, pubkey, created_at, content, stack, parent_event_id, metadata FROM comments " +
+            "SELECT event_id, pubkey, created_at, content, root, parent_event_id, version FROM comments " +
                 "WHERE app_id = ? ORDER BY created_at DESC$limitSql",
         ).use { statement ->
             statement.bindText(1, appId)
@@ -1003,16 +1002,10 @@ class IoliteStore internal constructor(
                     appId = appId,
                     root = textOrNull(4),
                     parentEventId = blobHexOrNull(5),
-                    version = commentVersion(getText(6)),
+                    version = textOrNull(6),
                 )
             }
         }
-    }
-
-    /** The `v` tag of a stored comment's tags, or null. */
-    private fun commentVersion(metadata: String): String? {
-        val tags = runCatching { JSONObject(metadata).optJSONArray("tags") }.getOrNull().toStringLists()
-        return tags.firstOrNull { it.firstOrNull() == "v" }?.getOrNull(1)?.takeIf { it.isNotBlank() }
     }
 
     /** Comments whose root coordinate is [root], newest first. Their `i` tag, if any, is not read. */
@@ -1020,7 +1013,7 @@ class IoliteStore internal constructor(
         val limitSql = limit?.let { " LIMIT $it" } ?: ""
         db.prepare(
             "SELECT event_id, pubkey, created_at, content, app_id, parent_event_id FROM comments " +
-                "WHERE stack = ? ORDER BY created_at DESC$limitSql",
+                "WHERE root = ? ORDER BY created_at DESC$limitSql",
         ).use { statement ->
             statement.bindText(1, root)
             statement.rows {
@@ -1040,7 +1033,7 @@ class IoliteStore internal constructor(
     /** What [pubkey] wrote on apps, newest first. */
     fun commentsBy(pubkey: String, limit: Int): List<CommentRecord> = read { db ->
         db.prepare(
-            "SELECT event_id, pubkey, created_at, content, app_id, stack, parent_event_id FROM comments " +
+            "SELECT event_id, pubkey, created_at, content, app_id, root, parent_event_id FROM comments " +
                 "WHERE pubkey = ? AND app_id IS NOT NULL ORDER BY created_at DESC LIMIT $limit",
         ).use { statement ->
             statement.bindBlob(1, Hex.decode(pubkey))
@@ -1071,7 +1064,7 @@ class IoliteStore internal constructor(
     /** Newest comments on any app, replies included. */
     fun recentComments(limit: Int): List<CommentRecord> = read { db ->
         db.prepare(
-            "SELECT event_id, pubkey, created_at, content, app_id, stack, parent_event_id FROM comments " +
+            "SELECT event_id, pubkey, created_at, content, app_id, root, parent_event_id FROM comments " +
                 "WHERE app_id IS NOT NULL ORDER BY created_at DESC LIMIT $limit",
         ).use { statement ->
             statement.rows {
@@ -1253,21 +1246,31 @@ class IoliteStore internal constructor(
         fun open(
             path: String,
             openConnection: (String) -> SQLiteConnection = ::openBundled,
+            log: IoliteLog = IoliteLog { _, _ -> },
         ): SQLiteConnection {
             File(path).parentFile?.mkdirs()
-            val connection = openConnection(path)
+            // A crash here could not be fixed by an update, since updates come through this database.
+            var connection = openConnection(path)
+            var version = try {
+                connection.userVersion()
+            } catch (unreadable: Exception) {
+                connection.close()
+                log.log("database unreadable; moved aside as .corrupt and starting empty", unreadable)
+                moveAside(path, "corrupt")
+                connection = openConnection(path)
+                connection.userVersion()
+            }
+            if (version != 0 && version != Schema.USER_VERSION) {
+                connection.close()
+                log.log("database schema $version is not ${Schema.USER_VERSION}; moved aside as .v$version and starting empty", null)
+                moveAside(path, "v$version")
+                connection = openConnection(path)
+                version = connection.userVersion()
+            }
             connection.execSQL("PRAGMA foreign_keys = ON")
             connection.execSQL("PRAGMA journal_mode = WAL")
             connection.execSQL("PRAGMA busy_timeout = $BUSY_TIMEOUT_MS")
-            val version = connection.prepare("PRAGMA user_version").use { statement ->
-                statement.step()
-                statement.getLong(0).toInt()
-            }
-            when (version) {
-                Schema.USER_VERSION -> Unit
-                0 -> applySchema(connection) { Schema.statements.forEach(connection::execSQL) }
-                else -> error("unsupported Iolite schema version $version")
-            }
+            if (version == 0) applySchema(connection) { Schema.statements.forEach(connection::execSQL) }
             runCatching {
                 connection.prepare("PRAGMA wal_checkpoint(TRUNCATE)").use { it.step() }
             }
@@ -1282,6 +1285,26 @@ class IoliteStore internal constructor(
             }
 
         private const val BUSY_TIMEOUT_MS = 5_000
+
+        private fun SQLiteConnection.userVersion(): Int = prepare("PRAGMA user_version").use { statement ->
+            statement.step()
+            statement.getLong(0).toInt()
+        }
+
+        /**
+         * Keeps one copy of a database this build cannot read, named by [label], and clears the path.
+         * Icon folders are named by catalog id, which the new database reuses, so they go too.
+         */
+        private fun moveAside(path: String, label: String) {
+            File(File(path).parentFile, "icons").deleteRecursively()
+            listOf("", "-wal", "-shm", "-journal").forEach { suffix ->
+                val file = File(path + suffix)
+                if (!file.exists()) return@forEach
+                val kept = File("$path.$label$suffix")
+                kept.delete()
+                if (!file.renameTo(kept)) file.delete()
+            }
+        }
 
         private fun applySchema(connection: SQLiteConnection, create: () -> Unit) {
             connection.execSQL("BEGIN IMMEDIATE")
