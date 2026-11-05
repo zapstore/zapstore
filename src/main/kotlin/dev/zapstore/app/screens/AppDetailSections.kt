@@ -338,9 +338,9 @@ internal fun PackageCard(onOpen: () -> Unit, modifier: Modifier = Modifier) {
 }
 
 /**
- * Zap: who has zapped, biggest first, scrolling sideways, with the Zap button pinned to the right.
- * With no zappers (yet, or ever), the button just sits at the left instead. Without [onZap] (the
- * account can't zap) only the strip shows. Where the sats go is said in the zap sheet.
+ * Zap: the Zap button pinned to the left, then who has zapped, biggest first, scrolling sideways
+ * in the remaining width. With no zappers the button just sits alone at the left. Without [onZap]
+ * (the account can't zap) only the strip shows. Where the sats go is said in the zap sheet.
  */
 @Composable
 internal fun ZapRow(
@@ -355,7 +355,6 @@ internal fun ZapRow(
         horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3),
         modifier = modifier.fillMaxWidth().heightIn(min = ZapSpacing.space12),
     ) {
-        if (hasZappers) ZappersStrip(summary, onProfileClick, showBolt = onZap == null, modifier = Modifier.weight(1f))
         onZap?.let { zap ->
             ZapButton(
                 text = stringResource(R.string.zap),
@@ -366,6 +365,7 @@ internal fun ZapRow(
                 modifier = Modifier.testTag("zapOpen"),
             )
         }
+        if (hasZappers) ZappersStrip(summary, onProfileClick, showBolt = onZap == null, modifier = Modifier.weight(1f))
     }
 }
 
@@ -389,9 +389,9 @@ private fun Modifier.scrollFade(scroll: ScrollState, width: Dp = ZapSpacing.spac
     }
 
 /**
- * `3,400 sats by` then each zapper's face and total, scrolling sideways. A face opens the profile.
- * An edge fades only while there is more to scroll toward it. [showBolt] leads with the bolt when no
- * Zap button sits beside the strip to carry it.
+ * `3,400 sats by` stays put, then each zapper's face and total scrolls sideways in the room left
+ * over. A face opens the profile. An edge fades only while there is more to scroll toward it.
+ * [showBolt] leads with the bolt when no Zap button sits beside the strip to carry it.
  */
 @Composable
 private fun ZappersStrip(
@@ -404,10 +404,7 @@ private fun ZappersStrip(
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3),
-        modifier = modifier
-            .scrollFade(scroll)
-            .horizontalScroll(scroll)
-            .testTag("zappers"),
+        modifier = modifier.testTag("zappers"),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space1)) {
             if (showBolt) Icon(painterResource(R.drawable.ic_bolt), contentDescription = null, tint = ZapWarning, modifier = Modifier.size(20.dp))
@@ -425,32 +422,41 @@ private fun ZappersStrip(
                 modifier = Modifier.padding(start = ZapSpacing.space1),
             )
         }
-        summary.zappers.forEach { zapper ->
-            val profile = summary.profiles[zapper.pubkey]
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
-                modifier = Modifier
-                    .heightIn(min = ZapSpacing.space12)
-                    .clip(RoundedCornerShape(ZapRadius.full))
-                    .clickable(role = Role.Button) { onProfileClick(zapper.pubkey) }
-                    .testTag("zapper:${zapper.pubkey}"),
-            ) {
-                Box(Modifier.size(ZapSpacing.space6).clip(CircleShape).background(ZapSurface3)) {
-                    ProfileImage(
-                        pubkey = zapper.pubkey,
-                        pictureUrl = profile?.picture,
-                        profileVersion = profile?.eventId,
-                        contentDescription = shortDisplayName(zapper.pubkey, profile),
-                        modifier = Modifier.matchParentSize(),
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3),
+            modifier = Modifier
+                .weight(1f, fill = false)
+                .scrollFade(scroll)
+                .horizontalScroll(scroll),
+        ) {
+            summary.zappers.forEach { zapper ->
+                val profile = summary.profiles[zapper.pubkey]
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+                    modifier = Modifier
+                        .heightIn(min = ZapSpacing.space12)
+                        .clip(RoundedCornerShape(ZapRadius.full))
+                        .clickable(role = Role.Button) { onProfileClick(zapper.pubkey) }
+                        .testTag("zapper:${zapper.pubkey}"),
+                ) {
+                    Box(Modifier.size(ZapSpacing.space6).clip(CircleShape).background(ZapSurface3)) {
+                        ProfileImage(
+                            pubkey = zapper.pubkey,
+                            pictureUrl = profile?.picture,
+                            profileVersion = profile?.eventId,
+                            contentDescription = shortDisplayName(zapper.pubkey, profile),
+                            modifier = Modifier.matchParentSize(),
+                        )
+                    }
+                    Text(
+                        compactSats(zapper.sats),
+                        color = ZapText2,
+                        style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
+                        maxLines = 1,
                     )
                 }
-                Text(
-                    compactSats(zapper.sats),
-                    color = ZapText2,
-                    style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
-                    maxLines = 1,
-                )
             }
         }
     }
