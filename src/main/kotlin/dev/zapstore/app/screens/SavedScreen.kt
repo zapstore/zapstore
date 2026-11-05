@@ -14,7 +14,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import dev.zapstore.app.R
 import dev.zapstore.app.ZapCanvas
@@ -50,7 +49,6 @@ internal fun SavedStackCard(saved: SavedApps, onClick: () -> Unit, modifier: Mod
         name = stringResource(R.string.saved),
         appIds = saved.ids,
         apps = saved.apps,
-        supporting = pluralStringResource(R.plurals.saved_count, saved.ids.size, saved.ids.size),
         onClick = onClick,
         modifier = modifier.testTag("savedStack"),
     )

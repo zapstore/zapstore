@@ -15,8 +15,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
@@ -25,9 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import dev.zapstore.app.MarkdownText
 import dev.zapstore.app.R
@@ -39,8 +35,6 @@ import dev.zapstore.app.components.GroupHeader
 import dev.zapstore.app.components.ShareButton
 import dev.zapstore.app.components.ZapButtonStyle
 import dev.zapstore.app.components.ZapIconButton
-import dev.zapstore.app.components.StackCard
-import dev.zapstore.app.components.stackShelfFraction
 import dev.zapstore.app.components.ProfileImage
 import dev.zapstore.app.components.FitTitle
 import dev.zapstore.app.components.StatusText
@@ -64,7 +58,6 @@ fun ProfileScreen(
     onShare: (() -> Unit)? = null,
 ) {
     val own = onSettings != null
-    val noApps = stringResource(R.string.no_profile_apps)
     val yourApps = stringResource(R.string.your_apps)
     val profile = state.profile
     val title = shortDisplayName(state.pubkey, profile)
@@ -134,6 +127,7 @@ fun ProfileScreen(
                     color = ZapText2,
                     style = MaterialTheme.typography.bodyLarge,
                     onOpenUrl = onOpenUrl,
+                    mentions = state.mentions,
                     collapsible = true,
                     modifier = Modifier.padding(horizontal = ZapSpacing.space4),
                 )
@@ -144,32 +138,24 @@ fun ProfileScreen(
         if (state.stacks.isNotEmpty() || showSaved) {
             item(key = "stacks", contentType = "stacks") {
                 Column {
-                    val shelfFraction = stackShelfFraction(LocalConfiguration.current.screenWidthDp.dp - ZapSpacing.space4 * 2)
                     GroupHeader(stringResource(R.string.stacks), Modifier.padding(horizontal = ZapSpacing.space4))
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
-                        contentPadding = PaddingValues(horizontal = ZapSpacing.space4),
-                    ) {
-                        if (showSaved) item(key = "saved") {
-                            SavedStackCard(saved, onSavedClick, Modifier.fillParentMaxWidth(shelfFraction))
-                        }
-                        items(state.stacks, key = { it.identifier }) { stack ->
-                            StackCard(
-                                stack = stack,
-                                apps = state.stackApps,
-                                onClick = { onStackClick(stack) },
-                                modifier = Modifier.fillParentMaxWidth(shelfFraction).testTag("profileStack:${stack.identifier}"),
-                            )
-                        }
-                    }
+                    StacksShelf(
+                        stacks = state.stacks,
+                        apps = state.stackApps,
+                        onStackClick = onStackClick,
+                        saved = saved?.takeIf { showSaved },
+                        onSavedClick = onSavedClick,
+                        modifier = Modifier.padding(top = ZapSpacing.space2),
+                    )
                 }
             }
         }
 
-        if (!own || state.apps.apps.isNotEmpty()) {
+        // No apps, no section: an empty profile says nothing about it.
+        if (state.apps.apps.isNotEmpty()) {
             appList(
                 state = state.apps,
-                emptyMessage = noApps,
+                emptyMessage = "",
                 onAppClick = onAppClick,
                 modifier = Modifier.padding(horizontal = ZapSpacing.space4),
                 title = if (own) yourApps else null,

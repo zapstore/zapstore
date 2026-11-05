@@ -14,13 +14,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.lazy.grid.LazyHorizontalGrid
-import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.clickable
 import java.text.NumberFormat
 import android.text.format.DateUtils
@@ -60,7 +57,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -89,13 +85,8 @@ import dev.zapstore.app.components.GroupHeader
 import dev.zapstore.app.components.LoadingIndicator
 import dev.zapstore.app.components.DeveloperResultRow
 import dev.zapstore.app.components.StackResultRow
-import dev.zapstore.app.components.SeeAllStackCard
-import dev.zapstore.app.components.StackCard
-import dev.zapstore.app.components.StackCardHeight
-import dev.zapstore.app.components.StackShelfGap
 import dev.zapstore.app.components.StackShelfPadding
 import dev.zapstore.app.ZapSurface1
-import dev.zapstore.app.components.stackShelfFraction
 import dev.zapstore.app.components.AppIcon
 import dev.zapstore.app.components.shortDisplayName
 import dev.zapstore.app.components.ZapSearchField
@@ -199,9 +190,7 @@ fun HomeScreen(
         val hairline by animateFloatAsState(if (scrolled) 1f else 0f, ZapMotion.fast(), label = "searchHairline")
         HorizontalDivider(color = ZapLine, modifier = Modifier.graphicsLayer { alpha = hairline })
 
-        BoxWithConstraints(Modifier.weight(1f)) {
-            val contentWidth = maxWidth - ZapSpacing.space4 * 2
-            val shelfWidth = contentWidth * stackShelfFraction(contentWidth)
+        Box(Modifier.weight(1f)) {
             val activityEmptyText = stringResource(R.string.activity_empty)
             LazyColumn(
                 modifier = Modifier.fillMaxSize().testTag("homeList"),
@@ -219,34 +208,15 @@ fun HomeScreen(
                             modifier = Modifier.padding(top = ZapSpacing.space2).testTag("stacksEmpty"),
                         )
                     } else {
-                        val shelf = Modifier
-                            .padding(top = ZapSpacing.space2)
-                            .height(StackCardHeight * StackShelfRows + StackShelfGap * (StackShelfRows - 1))
-                        LazyHorizontalGrid(
-                            rows = GridCells.Fixed(StackShelfRows),
-                            state = stackShelf,
-                            horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
-                            verticalArrangement = Arrangement.spacedBy(StackShelfGap),
-                            modifier = shelf.testTag("stackShelf"),
-                        ) {
-                            gridItems(state.stacks, key = { it.eventId }) { stack ->
-                                StackCard(
-                                    stack = stack,
-                                    apps = state.stackApps,
-                                    onClick = { onStackClick(stack) },
-                                    verticalPadding = StackShelfPadding,
-                                    modifier = Modifier.width(shelfWidth).testTag("stack:${stack.identifier}"),
-                                )
-                            }
+                        StacksShelf(
+                            stacks = state.stacks,
+                            apps = state.stackApps,
+                            onStackClick = onStackClick,
                             // The last slot, in place of one more stack. The web shelf does the same.
-                            item(key = "see-all") {
-                                SeeAllStackCard(
-                                    onClick = onSeeAllStacks,
-                                    verticalPadding = StackShelfPadding,
-                                    modifier = Modifier.width(shelfWidth).testTag("seeAllStacks"),
-                                )
-                            }
-                        }
+                            seeAll = onSeeAllStacks,
+                            gridState = stackShelf,
+                            modifier = Modifier.padding(top = ZapSpacing.space2),
+                        )
                     }
                 }
 
@@ -478,8 +448,6 @@ private fun ActivityFilterMenu(selected: ActivityFilter, onSelect: (ActivityFilt
         }
     }
 }
-
-private const val StackShelfRows = 3
 
 private fun ActivityFilter.label(): Int = when (this) {
     ActivityFilter.All -> R.string.activity_filter_all

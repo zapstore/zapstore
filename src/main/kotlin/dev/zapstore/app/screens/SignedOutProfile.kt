@@ -65,7 +65,9 @@ fun SignedOutProfile(
         }
         if (saved.ids.isNotEmpty()) {
             GroupHeader(stringResource(R.string.stacks))
-            SavedStackCard(saved, onSavedClick)
+            // Signed out there is no account to curate other stacks, so this shelf only ever carries
+            // the device's own Saved list, shown the same way Home shows anyone's.
+            StacksShelf(stacks = emptyList(), apps = emptyMap(), onStackClick = {}, saved = saved, onSavedClick = onSavedClick)
         }
         SettingsGroup(Modifier.testTag("profileSignIn")) {
             if (hasSigner) {

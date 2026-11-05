@@ -131,6 +131,9 @@ val StackShelfPadding = ZapSpacing.space1
 /** The gap between the rows of Home's shelf. */
 val StackShelfGap = ZapSpacing.space1
 
+/** Rows in a stacks shelf: Home's, and anywhere else stacks show the same way (a profile, signed in or not). */
+const val StacksShelfRows = 3
+
 /** One shelf row: the icon pile, a two-line name, or the See all slot, plus the card's vertical padding. */
 val StackCardHeight = maxOf(stackPileHeight(StackCardTile, 4), StackNameHeight, SeeAllTextHeight) + StackShelfPadding * 2
 

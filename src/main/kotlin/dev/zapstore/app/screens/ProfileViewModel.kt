@@ -7,6 +7,8 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import dev.zapstore.app.AppConfig
+import dev.zapstore.app.ZapMarkdown
+import dev.zapstore.app.components.resolvedName
 import dev.zapstore.app.components.AppListState
 import dev.zapstore.iolite.AppFilter
 import dev.zapstore.iolite.AppRecord
@@ -39,6 +41,8 @@ data class ProfileUiState(
     val activity: List<ActivityItem> = emptyList(),
     val activityLoading: Boolean = true,
     val activityCanLoadMore: Boolean = false,
+    /** Names of the people the bio mentions by npub, by hex pubkey, so the bio reads "@name". */
+    val mentions: Map<String, String> = emptyMap(),
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -54,6 +58,14 @@ class ProfileViewModel(
     private val stackApps = stacks.map { it.flatMap(StackRecord::appIds).toSet() }
         .distinctUntilChanged()
         .flatMapLatest(iolite::observeAppsById)
+
+    /** Names for the `npub`s in the bio, fetched like any profile; empty until they arrive. */
+    private val mentions: Flow<Map<String, String>> = profile
+        .map { state -> state.items?.about?.let(ZapMarkdown::mentionedPubkeys).orEmpty() }
+        .distinctUntilChanged()
+        .flatMapLatest(iolite::observeProfiles)
+        .map { profiles -> profiles.mapNotNull { (key, record) -> resolvedName(record)?.let { key to it } }.toMap() }
+        .onStart { emit(emptyMap()) }
 
     private val activityLimit = MutableStateFlow(ACTIVITY_PAGE)
 
@@ -74,19 +86,22 @@ class ProfileViewModel(
         if (uiState.value.activityCanLoadMore) activityLimit.update { it + ACTIVITY_PAGE }
     }
 
-    val uiState: StateFlow<ProfileUiState> = combine(profile, apps, stacks, stackApps, activity) { profileState, apps, stacks, stackApps, activity ->
-        ProfileUiState(
-            pubkey = pubkey,
-            profile = profileState.items,
-            apps = AppListState(apps = apps, loading = false),
-            stacks = stacks.filter { stack -> stack.appIds.any(stackApps::containsKey) },
-            stackApps = stackApps,
-            error = profileState.relayError(),
-            activity = activity.state.items,
-            activityLoading = activity.state.items.isEmpty() && !activity.state.settled,
-            activityCanLoadMore = activity.canLoadMore,
-        )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), ProfileUiState(pubkey))
+    val uiState: StateFlow<ProfileUiState> = combine(
+        combine(profile, apps, stacks, stackApps, activity) { profileState, apps, stacks, stackApps, activity ->
+            ProfileUiState(
+                pubkey = pubkey,
+                profile = profileState.items,
+                apps = AppListState(apps = apps, loading = false),
+                stacks = stacks.filter { stack -> stack.appIds.any(stackApps::containsKey) },
+                stackApps = stackApps,
+                error = profileState.relayError(),
+                activity = activity.state.items,
+                activityLoading = activity.state.items.isEmpty() && !activity.state.settled,
+                activityCanLoadMore = activity.canLoadMore,
+            )
+        },
+        mentions,
+    ) { state, mentions -> state.copy(mentions = mentions) }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), ProfileUiState(pubkey))
 
     companion object {
         private const val ACTIVITY_PAGE = 20
