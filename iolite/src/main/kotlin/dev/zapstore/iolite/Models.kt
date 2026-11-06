@@ -233,7 +233,7 @@ class AppRecord(
 
     private fun securityProse(): String = parseSecurityDocument(security).prose
     val iconUrl: String? get() = metadata.string("icon")
-    val screenshots: List<String> get() = metadata.stringList("image")
+    val screenshots: List<String> get() = metadata.stringList("image").distinct()
 
     /** The listing's `t` tags, lowercase. Empty for a listing stored before tags were kept. */
     val tags: List<String> get() = metadata.stringList("tag")
