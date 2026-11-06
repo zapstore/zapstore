@@ -4,6 +4,21 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.os.Build
 import androidx.compose.foundation.background
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.layout.offset
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
+import kotlinx.coroutines.CoroutineStart
+import kotlin.math.roundToInt
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,13 +41,11 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,6 +68,7 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import dev.zapstore.app.BuildConfig
 import dev.zapstore.app.R
@@ -63,6 +77,7 @@ import dev.zapstore.app.ToastKind
 import dev.zapstore.app.Toasts
 import dev.zapstore.app.ZapAction
 import dev.zapstore.app.ZapCanvas
+import dev.zapstore.app.ZapDanger
 import dev.zapstore.app.ZapDangerFill
 import dev.zapstore.app.ZapOnAction
 import dev.zapstore.app.ZapOnDangerFill
@@ -77,7 +92,6 @@ import dev.zapstore.app.ZapText2
 import dev.zapstore.app.ZapText3
 import dev.zapstore.app.ZapVerified
 import dev.zapstore.app.ZapWarning
-import dev.zapstore.app.ZapWarningTint
 import dev.zapstore.app.catalog.AvailableUpdate
 import dev.zapstore.app.catalog.InstalledApp
 import dev.zapstore.app.catalog.ManualReason
@@ -127,89 +141,91 @@ fun UpdatesScreen(
     onSearchQueryChanged: (String) -> Unit = {},
 ) {
     var query by rememberSaveable { mutableStateOf("") }
-    val rowActions = RowActions(onAppClick, onUpdateOne, onPause, onIgnoreUpdates, onInstall)
+    val rowActions = RowActions(onAppClick, onUpdateOne, onPause, onIgnoreUpdates, onInstall, onCancelInstall)
 
-    Column(modifier = modifier.fillMaxSize()) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = ZapSpacing.space4, end = ZapSpacing.space2, top = ZapSpacing.space2, bottom = ZapSpacing.space2),
-        ) {
-            Text(
-                stringResource(R.string.my_apps),
-                style = MaterialTheme.typography.headlineSmall,
-                modifier = Modifier.weight(1f),
-            )
-            if (BuildConfig.DEBUG) {
-                ZapButton(
-                    text = stringResource(R.string.sync_now),
-                    onClick = onSync,
-                    style = ZapButtonStyle.Primary,
-                    loading = state.status.syncing,
-                    modifier = Modifier.testTag("syncCatalog"),
+    CompositionLocalProvider(LocalOpenSwipe provides remember { mutableStateOf<String?>(null) }) {
+        Column(modifier = modifier.fillMaxSize()) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = ZapSpacing.space4, end = ZapSpacing.space2, top = ZapSpacing.space2, bottom = ZapSpacing.space2),
+            ) {
+                Text(
+                    stringResource(R.string.my_apps),
+                    style = MaterialTheme.typography.headlineSmall,
+                    modifier = Modifier.weight(1f),
                 )
-            }
-        }
-        state.status.error?.let {
-            StatusText(it, Modifier.padding(horizontal = ZapSpacing.space4).testTag("updatesError"))
-        }
-        ZapSearchField(
-            value = query,
-            onValueChange = {
-                query = it
-                if (it.isEmpty()) onSearchQueryChanged("")
-            },
-            onSearch = { onSearchQueryChanged(query) },
-            placeholder = stringResource(R.string.search_my_apps),
-            trailingIcon = {
-                if (query.isNotEmpty() || state.searchResults != null) {
-                    val clearDescription = stringResource(R.string.clear_search)
-                    IconButton(
-                        onClick = {
-                            query = ""
-                            onSearchQueryChanged("")
-                        },
-                        modifier = Modifier
-                            .size(ZapSize.control)
-                            .semantics { contentDescription = clearDescription }
-                            .testTag("clearMyAppsSearch"),
-                    ) {
-                        Icon(painterResource(R.drawable.ic_close), contentDescription = null, tint = ZapText3, modifier = Modifier.size(16.dp))
-                    }
+                if (BuildConfig.DEBUG) {
+                    ZapButton(
+                        text = stringResource(R.string.sync_now),
+                        onClick = onSync,
+                        style = ZapButtonStyle.Primary,
+                        loading = state.status.syncing,
+                        modifier = Modifier.testTag("syncCatalog"),
+                    )
                 }
-            },
-            leadingIcon = {
-                Icon(
-                    painter = painterResource(R.drawable.ic_search),
-                    contentDescription = null,
-                    tint = ZapText3,
-                    modifier = Modifier.size(18.dp),
-                )
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = ZapSpacing.space4, vertical = ZapSpacing.space2)
-                .testTag("myAppsSearch"),
-        )
-        LazyColumn(
-            modifier = Modifier.weight(1f).testTag("myAppsList"),
-            contentPadding = PaddingValues(start = ZapSpacing.space4, end = ZapSpacing.space4, bottom = ZapSpacing.space8),
-        ) {
-            // Nothing until the local read lands; a spinner for a database read is only a flash.
-            if (!state.loaded) return@LazyColumn
-            state.searchResults?.let { results ->
-                searchSection(state, results, onAppClick, onUninstallInstalled)
-                catalogEpochsItem(state.catalogEpochs)
-                return@LazyColumn
             }
-            installingSection(state, rowActions, onCancelInstall)
-            updatesSection(state, rowActions, onUpdateAll)
-            installedSection(state, onAppClick, onIgnoreUpdates)
-            otherStoresSection(state, rowActions)
-            notInCatalogSection(state, onUninstallInstalled)
-            ignoredSection(state, onAppClick, onResumeUpdates)
-            catalogEpochsItem(state.catalogEpochs)
+            state.status.error?.let {
+                StatusText(it, Modifier.padding(horizontal = ZapSpacing.space4).testTag("updatesError"))
+            }
+            ZapSearchField(
+                value = query,
+                onValueChange = {
+                    query = it
+                    if (it.isEmpty()) onSearchQueryChanged("")
+                },
+                onSearch = { onSearchQueryChanged(query) },
+                placeholder = stringResource(R.string.search_my_apps),
+                trailingIcon = {
+                    if (query.isNotEmpty() || state.searchResults != null) {
+                        val clearDescription = stringResource(R.string.clear_search)
+                        IconButton(
+                            onClick = {
+                                query = ""
+                                onSearchQueryChanged("")
+                            },
+                            modifier = Modifier
+                                .size(ZapSize.control)
+                                .semantics { contentDescription = clearDescription }
+                                .testTag("clearMyAppsSearch"),
+                        ) {
+                            Icon(painterResource(R.drawable.ic_close), contentDescription = null, tint = ZapText3, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                },
+                leadingIcon = {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_search),
+                        contentDescription = null,
+                        tint = ZapText3,
+                        modifier = Modifier.size(18.dp),
+                    )
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = ZapSpacing.space4, vertical = ZapSpacing.space2)
+                    .testTag("myAppsSearch"),
+            )
+            LazyColumn(
+                modifier = Modifier.weight(1f).testTag("myAppsList"),
+                contentPadding = PaddingValues(start = ZapSpacing.space4, end = ZapSpacing.space4, bottom = ZapSpacing.space8),
+            ) {
+                // Nothing until the local read lands; a spinner for a database read is only a flash.
+                if (!state.loaded) return@LazyColumn
+                state.searchResults?.let { results ->
+                    searchSection(state, results, onAppClick, onUninstallInstalled)
+                    catalogEpochsItem(state.catalogEpochs)
+                    return@LazyColumn
+                }
+                installingSection(state, rowActions, onCancelInstall)
+                updatesSection(state, rowActions, onUpdateAll)
+                installedSection(state, onAppClick, onIgnoreUpdates, onUninstall)
+                otherStoresSection(state, rowActions)
+                notInCatalogSection(state, onUninstallInstalled)
+                ignoredSection(state, onAppClick, onResumeUpdates)
+                catalogEpochsItem(state.catalogEpochs)
+            }
         }
     }
     if (state.updateAll.confirm) {
@@ -345,6 +361,7 @@ private data class RowActions(
     val onPause: (String) -> Unit,
     val onIgnore: (String) -> Unit,
     val onInstall: (AppRecord) -> Unit,
+    val onCancel: (String) -> Unit,
 )
 
 /** Installs Zapstore is working on or that wait for a tap, so a first install can be followed here too. */
@@ -359,14 +376,9 @@ private fun LazyListScope.installingSection(
     }
     items(state.installing, key = { "installing:${it.appId}" }, contentType = { "update" }) { app ->
         val task = state.tasks[app.appId]
-        SwipeAction(
-            label = stringResource(R.string.install_cancel),
-            icon = R.drawable.ic_close,
-            background = ZapDangerFill,
-            foreground = ZapOnDangerFill,
-            onAction = { onCancel(app.appId) },
-            modifier = Modifier.testTag("cancelInstall:${app.appId}"),
-            enabled = task?.phase !in UncancellablePhases,
+        SwipeActions(
+            key = "installing:${app.appId}",
+            actions = listOf(ignoreAction(app.appId, actions.onIgnore), cancelAction(app.appId, onCancel)),
         ) {
             AppRow(
                 app = app,
@@ -375,7 +387,7 @@ private fun LazyListScope.installingSection(
                 showAuthor = false,
                 modifier = Modifier.testTag("installing:${app.appId}"),
                 trailing = {
-                    UpdateButton(app, task, stringResource(R.string.install), { actions.onInstall(app) }, actions.onPause)
+                    UpdateButton(app, task, stringResource(R.string.install), { actions.onInstall(app) }, actions.onPause, actions.onCancel)
                 },
             )
         }
@@ -476,13 +488,15 @@ private fun LazyListScope.installedSection(
     state: UpdatesUiState,
     onAppClick: (AppRecord) -> Unit,
     onIgnore: (String) -> Unit,
+    onUninstall: (AppRecord) -> Unit,
 ) {
     if (state.installedApps.isEmpty()) return
     item(key = "sectionInstalled", contentType = "header") {
         GroupHeader(stringResource(R.string.updates_section_installed), Modifier.testTag("sectionInstalled"), count = state.installedApps.size)
     }
     items(state.installedApps, key = { "installed:${it.appId}" }, contentType = { "installed" }) { app ->
-        IgnoreSwipe(app.appId, onIgnore) {
+        val swipe = listOf(ignoreAction(app.appId, onIgnore), uninstallAction(app, onUninstall))
+        SwipeActions("installed:${app.appId}", swipe) {
             AppRow(
                 app = app,
                 onClick = { onAppClick(app) },
@@ -518,7 +532,7 @@ private fun LazyListScope.otherStoresSection(state: UpdatesUiState, actions: Row
             items(apps, key = { "store:${it.entry.app.appId}" }, contentType = { "store" }) { item ->
                 val entry = item.entry
                 val id = entry.app.appId
-                IgnoreSwipe(id, actions.onIgnore) {
+                SwipeActions("store:$id", listOf(ignoreAction(id, actions.onIgnore))) {
                     AppRow(
                         app = entry.app,
                         onClick = { actions.onAppClick(entry.app) },
@@ -592,14 +606,15 @@ private fun LazyListScope.ignoredSection(
     }
     items(state.ignored, key = { "ignored:${it.app.appId}" }, contentType = { "ignored" }) { ignored ->
         val id = ignored.app.appId
-        SwipeAction(
+        val resume = RowAction(
             label = stringResource(R.string.resume),
             icon = R.drawable.ic_update,
             background = ZapAction,
             foreground = ZapOnAction,
-            onAction = { onResumeUpdates(id) },
-            modifier = Modifier.testTag("resume:$id"),
-        ) {
+            tag = "resume:$id",
+            onClick = { onResumeUpdates(id) },
+        )
+        SwipeActions("ignored:$id", listOf(resume)) {
             AppRow(
                 app = ignored.app,
                 onClick = { onAppClick(ignored.app) },
@@ -613,73 +628,155 @@ private fun LazyListScope.ignoredSection(
     }
 }
 
+/** One button a swipe uncovers. */
+private class RowAction(
+    val label: String,
+    val icon: Int,
+    val background: Color,
+    val foreground: Color,
+    val tag: String,
+    val onClick: () -> Unit,
+)
+
+/** The row whose buttons are showing; opening another row closes it. */
+private val LocalOpenSwipe = compositionLocalOf<MutableState<String?>> { mutableStateOf(null) }
+
+private val ActionWidth = 84.dp
+private const val FLING_VELOCITY = 800f
+
 /**
- * Swipe left to reveal [label] and run [onAction]; the row springs back afterwards, and a row that
- * leaves its section with the action simply goes. Screen readers get the same action by name.
+ * Swipe left and the row slides over to uncover [actions] as buttons; nothing runs until one is
+ * tapped. It stays open until a button is tapped, the row is tapped or swiped back, or another row
+ * opens. Screen readers get the same actions by name.
  */
 @Composable
-private fun SwipeAction(
-    label: String,
-    icon: Int,
-    background: Color,
-    foreground: Color,
-    onAction: () -> Unit,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-    content: @Composable () -> Unit,
-) {
-    val state = rememberSwipeToDismissBoxState()
+private fun SwipeActions(key: String, actions: List<RowAction>, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    val open = LocalOpenSwipe.current
     val scope = rememberCoroutineScope()
-    SwipeToDismissBox(
-        state = state,
-        enableDismissFromStartToEnd = false,
-        gesturesEnabled = enabled,
-        onDismiss = {
-            onAction()
-            scope.launch { state.reset() }
-        },
-        backgroundContent = {
-            if (state.dismissDirection == SwipeToDismissBoxValue.EndToStart) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(vertical = ZapSpacing.space1)
-                        .clip(RoundedCornerShape(ZapRadius.md))
-                        .background(background)
-                        .padding(horizontal = ZapSpacing.space4),
-                ) {
-                    Icon(painterResource(icon), contentDescription = null, tint = foreground, modifier = Modifier.size(18.dp))
-                    Text(label, color = foreground, style = MaterialTheme.typography.labelLarge, maxLines = 1)
-                }
-            }
-        },
+    val offset = remember { Animatable(0f) }
+    val reveal = with(LocalDensity.current) { (ActionWidth * actions.size).toPx() }
+    val showing by remember { derivedStateOf { offset.value < 0f } }
+    val opened = offset.targetValue < 0f
+
+    fun settle(target: Float) {
+        open.value = if (target < 0f) key else open.value.takeIf { it != key }
+        scope.launch { offset.animateTo(target, tween(durationMillis = 180)) }
+    }
+
+    LaunchedEffect(open.value) {
+        if (open.value != key && offset.targetValue != 0f) offset.animateTo(0f, tween(durationMillis = 180))
+    }
+    LaunchedEffect(reveal) {
+        if (offset.targetValue < 0f && offset.targetValue != -reveal) offset.animateTo(-reveal)
+    }
+    val drag = rememberDraggableState { delta ->
+        scope.launch(start = CoroutineStart.UNDISPATCHED) { offset.snapTo((offset.value + delta).coerceIn(-reveal, 0f)) }
+    }
+
+    Box(
         modifier = modifier.semantics {
-            if (enabled) customActions = listOf(CustomAccessibilityAction(label) { onAction(); true })
+            customActions = actions.map { action -> CustomAccessibilityAction(action.label) { action.onClick(); true } }
         },
     ) {
-        Box(Modifier.background(ZapCanvas)) { content() }
+        if (showing) {
+            // Flush with the row's full height, edge to edge; only the outer corners follow its shape.
+            Row(
+                horizontalArrangement = Arrangement.End,
+                modifier = Modifier
+                    .matchParentSize()
+                    .clip(RoundedCornerShape(ZapRadius.md)),
+            ) {
+                actions.forEach { action ->
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                        modifier = Modifier
+                            .width(ActionWidth)
+                            .fillMaxHeight()
+                            .background(action.background)
+                            .clickable(role = Role.Button) {
+                                settle(0f)
+                                action.onClick()
+                            }
+                            .padding(horizontal = ZapSpacing.space1)
+                            .testTag(action.tag),
+                    ) {
+                        Icon(painterResource(action.icon), contentDescription = null, tint = action.foreground, modifier = Modifier.size(20.dp))
+                        Text(
+                            action.label,
+                            color = action.foreground,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = (-0.02).em,
+                            ),
+                            textAlign = TextAlign.Center,
+                            maxLines = 2,
+                        )
+                    }
+                }
+            }
+        }
+        Box(
+            Modifier
+                .offset { IntOffset(offset.value.roundToInt(), 0) }
+                .draggable(
+                    state = drag,
+                    orientation = Orientation.Horizontal,
+                    onDragStopped = { velocity ->
+                        settle(
+                            when {
+                                velocity < -FLING_VELOCITY -> -reveal
+                                velocity > FLING_VELOCITY -> 0f
+                                offset.value < -reveal / 2 -> -reveal
+                                else -> 0f
+                            },
+                        )
+                    },
+                ),
+        ) {
+            Box(Modifier.background(ZapCanvas)) { content() }
+            if (opened) {
+                // An open row swallows taps so one tap closes it instead of opening the app.
+                Box(Modifier.matchParentSize().clickable(interactionSource = null, indication = null) { settle(0f) })
+            }
+        }
     }
 }
 
 @Composable
-private fun IgnoreSwipe(appId: String, onIgnore: (String) -> Unit, enabled: Boolean = true, content: @Composable () -> Unit) {
-    SwipeAction(
-        label = stringResource(R.string.ignore),
-        icon = R.drawable.ic_close,
-        background = ZapWarningTint,
-        foreground = ZapWarning,
-        onAction = { onIgnore(appId) },
-        modifier = Modifier.testTag("ignore:$appId"),
-        enabled = enabled,
-        content = content,
-    )
-}
+private fun ignoreAction(appId: String, onIgnore: (String) -> Unit) = RowAction(
+    label = stringResource(R.string.action_ignore_updates),
+    icon = R.drawable.ic_close,
+    background = ZapWarning,
+    foreground = ZapOnAction,
+    tag = "ignore:$appId",
+    onClick = { onIgnore(appId) },
+)
+
+@Composable
+private fun cancelAction(appId: String, onCancel: (String) -> Unit) = RowAction(
+    label = stringResource(R.string.install_cancel),
+    icon = R.drawable.ic_close,
+    background = ZapDanger,
+    foreground = ZapOnAction,
+    tag = "cancelInstall:$appId",
+    onClick = { onCancel(appId) },
+)
+
+/** Installed apps only: removes it from the device, next to Ignore updates. */
+@Composable
+private fun uninstallAction(app: AppRecord, onUninstall: (AppRecord) -> Unit) = RowAction(
+    label = stringResource(R.string.uninstall),
+    icon = R.drawable.ic_trash,
+    background = ZapDanger,
+    foreground = ZapOnAction,
+    tag = "uninstall:${app.appId}",
+    onClick = { onUninstall(app) },
+)
 
 /**
  * Tile, name and the `installed → listed` pill. The fixed-width button carries the whole install:
- * no second line. Swipe left to ignore, except while Zapstore is working on it.
+ * no second line. Swipe left for Ignore updates, and Cancel while an install is in progress.
  */
 @Composable
 private fun UpdateRow(
@@ -690,7 +787,11 @@ private fun UpdateRow(
 ) {
     val id = update.app.appId
     val current = task?.takeIf { it.busy || it.phase == TaskPhase.Failed || it.hash.equals(update.app.apkHash, ignoreCase = true) }
-    IgnoreSwipe(id, actions.onIgnore, enabled = current?.busy != true) {
+    val swipe = buildList {
+        add(ignoreAction(id, actions.onIgnore))
+        if (current != null) add(cancelAction(id, actions.onCancel))
+    }
+    SwipeActions("update:$id", swipe) {
         AppRow(
             app = update.app,
             onClick = { actions.onAppClick(update.app) },
@@ -701,7 +802,7 @@ private fun UpdateRow(
             trailing = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     why?.let { WhyButton(id, it) }
-                    UpdateButton(update.app, current, stringResource(R.string.update_app), { actions.onUpdate(update) }, actions.onPause)
+                    UpdateButton(update.app, current, stringResource(R.string.update_app), { actions.onUpdate(update) }, actions.onPause, actions.onCancel)
                 }
             },
         )
@@ -763,7 +864,8 @@ private fun WhySheet(why: UpdateWhy, onDismiss: () -> Unit) {
  * One pill per install or update, always [UpdateButtonWidth] wide, carrying its progress:
  * [idleLabel], Queued, a fill with the percent while downloading (tap to pause), Paused over the
  * same fill (tap to resume), a spinner while Zapstore verifies or installs, Confirm while Android's
- * dialog waits, and Retry after a failure (tap shows the error and starts again).
+ * dialog waits, and Retry after a failure (tap shows the error and starts again). Anything in
+ * progress carries a ✕ segment that cancels at any stage.
  */
 @Composable
 private fun UpdateButton(
@@ -772,10 +874,12 @@ private fun UpdateButton(
     idleLabel: String,
     onStart: () -> Unit,
     onPause: (String) -> Unit,
+    onCancel: (String) -> Unit,
 ) {
     val context = LocalContext.current
     val id = app.appId
     val phase = task?.phase
+    val cancellable = phase != null && phase != TaskPhase.Ready && phase != TaskPhase.Failed
     val working = phase == TaskPhase.Verifying || phase == TaskPhase.Installing
     val transferring = phase == TaskPhase.Downloading || phase == TaskPhase.Queued
     val paused = phase == TaskPhase.Paused
@@ -793,13 +897,18 @@ private fun UpdateButton(
     }
     val error = task?.error ?: stringResource(R.string.install_failed)
     val copy = stringResource(R.string.copy)
-    Box(
-        contentAlignment = Alignment.Center,
+    Row(
         modifier = Modifier
             .width(UpdateButtonWidth)
             .height(ZapSize.control)
             .clip(UpdateButtonShape)
-            .background(base)
+            .background(base),
+    ) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxHeight()
             .clickable(enabled = !working, role = Role.Button) {
                 when {
                     transferring -> onPause(id)
@@ -846,24 +955,39 @@ private fun UpdateButton(
             label?.let { Text(it, color = content, style = MaterialTheme.typography.labelLarge, maxLines = 1) }
         }
     }
+    if (cancellable) {
+        val cancel = stringResource(R.string.install_cancel)
+        Box(Modifier.width(1.dp).fillMaxHeight().padding(vertical = 10.dp).background(content.copy(alpha = 0.3f)))
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .width(CancelSegmentWidth)
+                .fillMaxHeight()
+                .clickable(role = Role.Button) { onCancel(id) }
+                .semantics { contentDescription = cancel }
+                .testTag("cancelOne:$id"),
+        ) {
+            Icon(painterResource(R.drawable.ic_close), contentDescription = null, tint = content, modifier = Modifier.size(18.dp))
+        }
+    }
+    }
 }
 
-/** Android has the session; Zapstore can no longer take it back. */
-private val UncancellablePhases = setOf(TaskPhase.Verifying, TaskPhase.Installing, TaskPhase.Confirm)
-
 private val UpdateButtonShape = RoundedCornerShape(ZapRadius.full)
-private val UpdateButtonWidth = 92.dp
+private val UpdateButtonWidth = 138.dp
+private val CancelSegmentWidth = 44.dp
 
 @Composable
 private fun OtherInstalledRow(installed: InstalledApp, onUninstall: () -> Unit) {
-    SwipeAction(
+    val uninstall = RowAction(
         label = stringResource(R.string.uninstall),
         icon = R.drawable.ic_trash,
-        background = ZapDangerFill,
-        foreground = ZapOnDangerFill,
-        onAction = onUninstall,
-        modifier = Modifier.testTag("uninstall:${installed.packageId}"),
-    ) {
+        background = ZapDanger,
+        foreground = ZapOnAction,
+        tag = "uninstall:${installed.packageId}",
+        onClick = onUninstall,
+    )
+    SwipeActions("other:${installed.packageId}", listOf(uninstall)) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3),

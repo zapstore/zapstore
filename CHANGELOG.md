@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Swiping a row in My apps slides it over to uncover buttons instead of running an action. An install in progress offers Ignore updates and Cancel, and an installed app now also offers Uninstall
+- Swipe buttons are solid color with bold white text, and span the row's full height
+- The update button on each row is wider
+
+### Added
+
+- A cancel button on the app page and on each row while an install is in progress
+
+### Fixed
+
+- Cancel works at every stage of an install and no longer leaves the row stuck
+- Ignoring an app's updates cancels its install in progress, and it no longer appears under Installing
+- Downloads keep going after leaving Zapstore, over Tor too
+- Background updates run as a foreground job, so Android no longer stops long downloads
+- An app that runs in the background, like a messenger or VPN, no longer waits to update until it is closed. The update closes it and installs right away
+
 ## [2.0.1] - 2026-11-05
 
 ### Changed

@@ -1243,8 +1243,12 @@ class ScreensTest {
         composeRule.onNodeWithText("Google Play updates this app now", substring = true).assertIsDisplayed()
         pressBack()
         composeRule.onNodeWithTag("update:dev.play").assertIsDisplayed()
-        composeRule.onNodeWithTag("myAppsList").performScrollToNode(hasTestTag("resume:dev.quiet"))
+        composeRule.onNodeWithTag("myAppsList").performScrollToNode(hasTestTag("ignored:dev.quiet"))
         composeRule.onNodeWithTag("ignored:dev.quiet").performTouchInput { swipeLeft() }
+        composeRule.waitForIdle()
+        // The swipe only uncovers the button; nothing runs until it is tapped.
+        assertEquals(null, resumed)
+        composeRule.onNodeWithTag("resume:dev.quiet").performClick()
         composeRule.waitForIdle()
         assertEquals("dev.quiet", resumed)
 
