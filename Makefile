@@ -27,11 +27,11 @@ bundle_signer_ok = if [ -n "$(CATALOG_PUBKEY)" ]; then \
 		fi; \
 	fi
 
-.PHONY: build release install run run-release deploy refresh vendor unbundle-catalog fetch-catalog-bundle reverse link-adb
+.PHONY: build release install run run-release deploy reload watch refresh vendor unbundle-catalog fetch-catalog-bundle reverse link-adb
 
 # Drop leftover seeds so a debug build without CATALOG_BUNDLE does not package them.
 unbundle-catalog:
-	rm -f "$(ASSETS_CATALOG_BUNDLE)" src/main/assets/catalog-delta.tar.zst
+	@rm -f "$(ASSETS_CATALOG_BUNDLE)" src/main/assets/catalog-delta.tar.zst
 
 # The asset name stays bundle-0-1.tar.zst. The manifest's from and to are the epochs.
 fetch-catalog-bundle:
@@ -58,7 +58,7 @@ fetch-catalog-bundle:
 	mv "$$tmp" "$(ASSETS_CATALOG_BUNDLE)"
 
 ifeq ($(CATALOG_BUNDLE),)
-build install: unbundle-catalog
+build install reload watch: unbundle-catalog
 else
 .PHONY: $(ASSETS_CATALOG_BUNDLE)
 $(ASSETS_CATALOG_BUNDLE):
@@ -74,7 +74,7 @@ $(ASSETS_CATALOG_BUNDLE):
 	rm -f src/main/assets/catalog-delta.tar.zst
 	cp "$(CATALOG_BUNDLE)" "$@"
 
-build install release: $(ASSETS_CATALOG_BUNDLE)
+build install release reload watch: $(ASSETS_CATALOG_BUNDLE)
 endif
 
 # Rebuild libarti_android.so into src/main/jniLibs/arm64-v8a.
@@ -87,7 +87,8 @@ vendor:
 build:
 	$(GRADLE) assembleDebug $(GRADLE_RELAY)
 
-# Unsigned release build, then hotbox. Never calls zsp publish.
+# Two hotbox-signed APKs of this version: with the catalog, and without it.
+# Never calls zsp publish.
 release:
 	./tools/sign-release-hotbox.sh
 
@@ -143,6 +144,29 @@ run: install reverse
 	fi
 
 deploy: run
+
+# One-shot, non-interactive build + install + relaunch for scripts and agents. Keeps app data.
+# Silent on success except the last line. Prints only compiler errors on a failed build, and the
+# crash log if the app is not running after launch. Exit code is non-zero on either failure.
+# Run `make run` once first so the app is installed with a clean state.
+reload: link-adb
+	@$(ADB) reverse tcp:$(RELAY_PORT) tcp:$(RELAY_PORT) >/dev/null 2>&1 || true
+	@$(ADB) logcat -b crash -c >/dev/null 2>&1 || true
+	@start=$$(date +%s); \
+	$(GRADLE) -q --console=plain runDebug $(GRADLE_RELAY) >/tmp/zapstore-reload.log 2>&1 || { \
+		{ grep -E '^e: ' /tmp/zapstore-reload.log || grep -E -A3 'What went wrong' /tmp/zapstore-reload.log; } | head -40; \
+		echo "reload: build failed (full log: /tmp/zapstore-reload.log)" >&2; exit 1; }; \
+	sleep 2; \
+	if $(ADB) shell pidof $(PACKAGE) >/dev/null 2>&1; then \
+		echo "reload: ok ($$(( $$(date +%s) - start ))s)"; \
+	else \
+		$(ADB) logcat -b crash -d -t 40; \
+		echo "reload: app is not running after launch" >&2; exit 1; \
+	fi
+
+# Interactive: rebuild, reinstall and relaunch on every saved change. Keeps app data.
+watch: link-adb reverse
+	$(GRADLE) -t runDebug $(GRADLE_RELAY)
 
 refresh:
 	$(ADB) shell am force-stop $(PACKAGE)

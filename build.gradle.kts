@@ -49,6 +49,11 @@ android {
 
     androidResources {
         localeFilters += "en"
+        // The update APK leaves the catalog out. New installs ship it so the first open has the list.
+        if (providers.gradleProperty("OMIT_CATALOG_BUNDLE").orElse("false").get().toBoolean()) {
+            ignoreAssetsPattern =
+                "!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~:!bundle-0-1.tar.zst"
+        }
     }
 
     // `make run` passes -PCATALOG_RELAY. The daemon ignores a new environment, so the property is the input.
@@ -113,6 +118,14 @@ android {
 
 kotlin {
     jvmToolchain(21)
+}
+
+// Install the debug APK, then restart the app. `make watch` runs this under `gradlew -t`,
+// so every saved change rebuilds, reinstalls and relaunches without clearing app data.
+tasks.register<Exec>("runDebug") {
+    dependsOn("installDebug")
+    val adb = layout.projectDirectory.file("tools/adb").asFile.absolutePath
+    commandLine(adb, "shell", "am", "start", "-S", "-W", "-n", "dev.zapstore.app/dev.zapstore.app.MainActivity")
 }
 
 tasks.register("verifyArtiAbis") {
