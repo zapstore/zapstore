@@ -300,7 +300,6 @@
     <string name="install_verifying">Verifying…</string>
     <string name="install_installing">Installing…</string>
     <string name="install_updating">Updating…</string>
-    <string name="install_waiting_close">Updates when %1$s is closed</string>
     <string name="install_requesting">Requesting installation</string>
     <string name="install_requesting_update">Requesting update</string>
     <string name="install_error_details">Error (tap for details)</string>
@@ -387,6 +386,7 @@
         <item quantity="other">%1$d apps waiting for you to confirm</item>
     </plurals>
     <string name="downloads_notification_channel">Downloads</string>
+    <string name="updating_apps">Updating apps</string>
     <plurals name="downloading_apps">
         <item quantity="one">Downloading %1$d app</item>
         <item quantity="other">Downloading %1$d apps</item>
@@ -492,9 +492,9 @@
     <string name="onboarding_continue">Continue</string>
     <string name="onboarding_cancel">Cancel</string>
     <string name="onboarding_privacy_title">Welcome to the most private app store</string>
-    <string name="onboarding_privacy_body">&lt;b&gt;No account needed.&lt;/b&gt; The whole catalog comes to your phone in signed bundles.\n\n&lt;b&gt;Search runs on your phone&lt;/b&gt;, so no server sees what you look for.</string>
+    <string name="onboarding_privacy_body">&lt;b&gt;No account needed.&lt;/b&gt; The whole catalog comes to your phone in signed bundles.\n\n&lt;b&gt;Search runs on your phone&lt;/b&gt;, so no server sees what you look for.\n\n&lt;b&gt;Update checks run on your phone too&lt;/b&gt;. No third party learns which apps you have installed.</string>
     <string name="onboarding_upgraded_title">Welcome to the new Zapstore</string>
-    <string name="onboarding_upgraded_body">&lt;b&gt;Rebuilt from scratch.&lt;/b&gt; Your saved apps, settings, Amber and wallet come along after the first sync. Something missing? Connect Amber and restore from your backup.\n\n&lt;b&gt;Search runs on your phone&lt;/b&gt;, so no server sees what you look for.</string>
+    <string name="onboarding_upgraded_body">&lt;b&gt;Rebuilt from scratch.&lt;/b&gt; Your saved apps, settings, Amber and wallet come along after the first sync. Something missing? Connect Amber and restore from your backup.\n\n&lt;b&gt;Search runs on your phone&lt;/b&gt;, so no server sees what you look for.\n\n&lt;b&gt;Update checks run on your phone too&lt;/b&gt;. No third party learns which apps you have installed.</string>
     <string name="onboarding_network_title">How should Zapstore connect?</string>
     <string name="onboarding_network_body">You can change this later in Settings.</string>
     <string name="onboarding_tor_body">Hides your IP address from the catalog and download servers. Downloads are slower.</string>

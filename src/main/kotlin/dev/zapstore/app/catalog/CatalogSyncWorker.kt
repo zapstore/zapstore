@@ -2,8 +2,6 @@ package dev.zapstore.app.catalog
 
 import dev.zapstore.app.SyncInterval
 import android.content.Context
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -13,8 +11,6 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import dev.zapstore.app.ZapstoreApplication
 import java.util.concurrent.TimeUnit
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 /** Catalog refresh outside the foreground (`zapstore-periodic-sync`). It never installs. */
 class CatalogSyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
@@ -22,10 +18,7 @@ class CatalogSyncWorker(context: Context, params: WorkerParameters) : CoroutineW
         val app = applicationContext as ZapstoreApplication
         if (!app.network.awaitRemoteReady(TOR_TIMEOUT_MS)) return Result.retry()
         app.catalogSync.sync()
-        val foreground = withContext(Dispatchers.Main) {
-            ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
-        }
-        if (!foreground) app.network.setForeground(false)
+        app.releaseNetwork()
         return if (app.catalogSync.status.value.error == null) Result.success() else Result.retry()
     }
 

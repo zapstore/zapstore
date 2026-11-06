@@ -557,6 +557,7 @@ class MainActivity : ComponentActivity() {
                         else openUnknownSourcesSettings()
                     },
                     onPauseInstall = viewModel::pauseInstall,
+                    onCancelInstall = viewModel::cancelInstall,
                     onStartInstall = viewModel::startInstall,
                     onDismissInstallError = viewModel::dismissError,
                     onConfirmInstall = viewModel::confirmInstall,

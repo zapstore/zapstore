@@ -16,7 +16,6 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,6 +24,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Call
 
 enum class TaskPhase {
@@ -32,7 +32,7 @@ enum class TaskPhase {
     Downloading,
     Paused,
     Verifying,
-    /** The session is committed; a silent update may wait until the app is not on screen. */
+    /** The session is committed and Android is installing it. */
     Installing,
     /** Android's dialog is up or queued; [Installer.confirm] shows it again. */
     Confirm,
@@ -51,8 +51,6 @@ data class InstallTask(
     val total: Long? = null,
     /** Android installs it without a dialog, or its dialog was already accepted. */
     val silent: Boolean = false,
-    /** A silent update Android is holding until the app leaves the screen. */
-    val waiting: Boolean = false,
     val error: String? = null,
 ) {
     /** Zapstore is working on it or Android is waiting on the user; a new tap must not start another. */
@@ -81,6 +79,9 @@ class Installer(
     private val _tasks = MutableStateFlow<Map<String, InstallTask>>(emptyMap())
     val tasks: StateFlow<Map<String, InstallTask>> = _tasks.asStateFlow()
 
+    /** A download is running, so the network must stay up even with Zapstore off screen. */
+    val transferring: Boolean get() = _tasks.value.values.any { it.transferring }
+
     private val jobs = HashMap<String, Job>()
     private val pausing = HashSet<String>()
     private val backgroundErrors = java.util.concurrent.ConcurrentHashMap<String, Throwable>()
@@ -102,29 +103,28 @@ class Installer(
 
     /**
      * After a restart: drop stale files, abandon sessions whose dialog died with the process, keep the
-     * silent ones Android is still holding, and show each verified APK left on disk as [TaskPhase.Ready].
+     * silent ones Android is still installing, and show each verified APK left on disk as [TaskPhase.Ready].
      */
     private fun restore() {
         InstallCache.sweep(context)
         val sessions = context.packageManager.packageInstaller
-        val holding = HashSet<String>()
+        val installing = HashSet<String>()
         sessions.mySessions.forEach { session ->
             val id = session.appPackageName
             val silent = Build.VERSION.SDK_INT >= 31 && session.isCommitted &&
                 session.requireUserAction == android.content.pm.PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED
-            if (silent && id != null) holding += id else runCatching { sessions.abandonSession(session.sessionId) }
+            if (silent && id != null) installing += id else runCatching { sessions.abandonSession(session.sessionId) }
         }
-        holding.forEach { AppLog.i(TAG, "silent update of $it still waiting for the app to close") }
         val found = InstallCache.artifacts(context)
         _tasks.update { tasks ->
             val restored = found.filter { it.appId !in tasks }.associate { artifact ->
                 val phase = when {
-                    artifact.appId in holding -> TaskPhase.Installing
+                    artifact.appId in installing -> TaskPhase.Installing
                     artifact.verified -> TaskPhase.Ready
                     else -> TaskPhase.Paused
                 }
-                val held = artifact.appId in holding
-                artifact.appId to InstallTask(artifact.appId, artifact.hash, phase = phase, received = artifact.bytes, silent = held, waiting = held)
+                val silent = artifact.appId in installing
+                artifact.appId to InstallTask(artifact.appId, artifact.hash, phase = phase, received = artifact.bytes, silent = silent)
             }
             tasks + restored
         }
@@ -179,17 +179,29 @@ class Installer(
         if (failed) scope.launch(Dispatchers.IO) { InstallCache.delete(context, appId) }
     }
 
-    /** Stops a download for good, or drops a verified APK the user no longer wants. */
+    /**
+     * Ends [appId]'s install at any stage: the download stops, Android's session is abandoned, the
+     * file is deleted and the task is gone at once. Cleanup never waits on the download job.
+     */
     fun cancel(appId: String) {
-        val job = synchronized(jobs) { jobs[appId] }
+        val job = synchronized(jobs) {
+            pausing -= appId
+            jobs[appId]
+        }
         job?.cancel()
-        confirmations.remove(appId)
+        _tasks.update { it - appId }
+        main.post {
+            confirmations.remove(appId)
+            if (presenting == appId) presenting = null
+            if (covered == appId) covered = null
+            if (visible) presentNext() else if (confirmations.isEmpty()) ConfirmNotifier.clear(context)
+        }
         scope.launch(Dispatchers.IO) {
-            job?.join()
-            if (_tasks.value[appId]?.busy != true) {
+            if (job != null) withTimeoutOrNull(CANCEL_JOIN_MS) { job.join() }
+            // A new install of the same app may have started meanwhile; its files are not ours to delete.
+            if (_tasks.value[appId] == null) {
                 SessionInstaller.abandon(context, appId)
                 InstallCache.delete(context, appId)
-                _tasks.update { it - appId }
             }
         }
     }
@@ -251,8 +263,7 @@ class Installer(
 
     /** From [InstallStatusReceiver], on the main thread. */
     fun onStatus(packageId: String, status: Int, confirm: Intent?, message: String?) {
-        val waited = _tasks.value[packageId]?.waiting == true
-        AppLog.i(TAG, "install $packageId status $status${if (waited) " after waiting" else ""}${message?.let { ": $it" }.orEmpty()}")
+        AppLog.i(TAG, "install $packageId status $status${message?.let { ": $it" }.orEmpty()}")
         when (status) {
             STATUS_PENDING_USER_ACTION -> {
                 if (confirm == null) {
@@ -268,7 +279,8 @@ class Installer(
                 scope.launch(Dispatchers.IO) { InstallCache.delete(context, packageId) }
                 _tasks.update { it - packageId }
             }
-            STATUS_FAILURE_ABORTED -> set(packageId) { it.copy(phase = TaskPhase.Ready, error = null) }
+            // A cancelled install has no task left to put back.
+            STATUS_FAILURE_ABORTED -> if (packageId in _tasks.value) set(packageId) { it.copy(phase = TaskPhase.Ready, error = null) }
             else -> {
                 scope.launch(Dispatchers.IO) { InstallCache.delete(context, packageId) }
                 fail(packageId, message ?: context.getString(R.string.install_failed))
@@ -302,10 +314,9 @@ class Installer(
                 return
             }
             val silent = plan is InstallPlan.Silent && SessionInstaller.silentSupported
-            set(id) { it.copy(phase = TaskPhase.Installing, silent = silent, waiting = false) }
+            set(id) { it.copy(phase = TaskPhase.Installing, silent = silent) }
             withContext(Dispatchers.IO) { SessionInstaller.commit(context, apk, id, app.name, plan, bulk) }
             AppLog.i(TAG, "committed $id${if (silent) " silently" else ""}")
-            if (silent && Build.VERSION.SDK_INT >= 34) scope.launch { markWaiting(id) }
         } catch (e: CancellationException) {
             val paused = synchronized(jobs) { pausing.remove(id) }
             if (paused) set(id) { it.copy(phase = TaskPhase.Paused) } else _tasks.update { it - id }
@@ -403,26 +414,14 @@ class Installer(
         _tasks.update { tasks -> tasks + (appId to change(tasks[appId] ?: InstallTask(appId, "", phase = TaskPhase.Queued))) }
     }
 
-    /** Android gives no signal that it is holding a session, so a silent commit with no answer by now is. */
-    private suspend fun markWaiting(appId: String) {
-        delay(WAIT_HINT_MS)
-        var marked = false
-        _tasks.update { tasks ->
-            val task = tasks[appId]?.takeIf { it.phase == TaskPhase.Installing && it.silent && !it.waiting } ?: return@update tasks
-            marked = true
-            tasks + (appId to task.copy(waiting = true))
-        }
-        if (marked) AppLog.i(TAG, "silent update of $appId waiting for the app to close")
-    }
-
     private fun nameOf(appId: String) = _tasks.value[appId]?.name ?: appId
 
     companion object {
         private const val TAG = "Installer"
         private const val MAX_DOWNLOADS = 3
         private const val PROGRESS_STEP = 256L * 1024
-        private const val WAIT_HINT_MS = 15_000L
         private const val CONFIRMED_GRACE_MS = 60_000L
+        private const val CANCEL_JOIN_MS = 10_000L
         private const val STATUS_PENDING_USER_ACTION = android.content.pm.PackageInstaller.STATUS_PENDING_USER_ACTION
         private const val STATUS_SUCCESS = android.content.pm.PackageInstaller.STATUS_SUCCESS
         private const val STATUS_FAILURE_ABORTED = android.content.pm.PackageInstaller.STATUS_FAILURE_ABORTED

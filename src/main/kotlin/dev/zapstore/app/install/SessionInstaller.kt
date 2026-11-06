@@ -14,7 +14,7 @@ object SessionInstaller {
 
     /**
      * Writes [apk] into a new session and commits it. The result arrives at [InstallStatusReceiver],
-     * which survives process death. A silent update on Android 14+ waits until the app is not on screen.
+     * which survives process death. A silent update stops the app if it is running.
      */
     fun commit(
         context: Context,
@@ -54,14 +54,7 @@ object SessionInstaller {
                 apk.inputStream().use { it.copyTo(out) }
                 session.fsync(out)
             }
-            if (Build.VERSION.SDK_INT < 34 || !silent) session.commit(pending)
-        }
-        if (Build.VERSION.SDK_INT >= 34 && silent) {
-            // Not "not interacting": an app with a foreground service (messengers without Play Services, VPNs, players) never satisfies it.
-            val constraints = PackageInstaller.InstallConstraints.Builder()
-                .setAppNotForegroundRequired()
-                .build()
-            installer.commitSessionAfterInstallConstraintsAreMet(sessionId, pending, constraints, CONSTRAINT_TIMEOUT_MILLIS)
+            session.commit(pending)
         }
     }
 
@@ -72,8 +65,6 @@ object SessionInstaller {
             .filter { it.appPackageName == packageId }
             .forEach { session -> runCatching { installer.abandonSession(session.sessionId) } }
     }
-
-    private const val CONSTRAINT_TIMEOUT_MILLIS = 60L * 60 * 1000
 
     private fun statusIntent(context: Context, sessionId: Int, packageId: String): android.content.IntentSender {
         val intent = Intent(context, InstallStatusReceiver::class.java)

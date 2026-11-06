@@ -153,8 +153,6 @@ data class InstallUi(
     val total: Long? = null,
     /** While [InstallPhase.Installing]: false when Android shows its own dialog. */
     val silent: Boolean = true,
-    /** While [InstallPhase.Installing]: Android holds the update until the app leaves the screen. */
-    val waiting: Boolean = false,
     /** What went wrong, while [InstallPhase.Failed]. */
     val error: String? = null,
     /** The name of the store that keeps this app current, when it is not Zapstore. */
@@ -163,6 +161,9 @@ data class InstallUi(
     val signedDifferently: Boolean = false,
 ) {
     val busy: Boolean get() = phase in BUSY_PHASES
+
+    /** There is an install to end: anything in progress, including a paused download. */
+    val cancellable: Boolean get() = busy || phase == InstallPhase.Paused
 
     /** Icon inside the Latest release version pill: install, update, or up to date. */
     val versionStatus: VersionStatus?
@@ -729,6 +730,9 @@ class AppDetailViewModel(
     /** Stops the download and keeps what arrived. */
     fun pauseInstall() = installer.pause(appId)
 
+    /** Ends the install at any stage and deletes what it downloaded. */
+    fun cancelInstall() = installer.cancel(appId)
+
     /** The error was shown; back to the normal button. */
     fun dismissError() {
         blocked.value = null
@@ -820,6 +824,5 @@ private fun installUi(task: InstallTask?, dialog: InstallPlan?, blocked: String?
     received = task?.received ?: 0,
     total = task?.total,
     silent = task?.silent ?: true,
-    waiting = task?.waiting == true,
     error = blocked ?: task?.error,
 )

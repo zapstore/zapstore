@@ -52,6 +52,8 @@ import java.util.Locale
 data class InstallActions(
     val onInstall: () -> Unit = {},
     val onPause: () -> Unit = {},
+    /** Ends the install at any stage and removes what it downloaded. */
+    val onCancel: () -> Unit = {},
     /** Resumes a paused download, or shows Android's waiting dialog again. */
     val onStart: () -> Unit = {},
     val onDismissError: () -> Unit = {},
@@ -63,13 +65,12 @@ data class InstallActions(
  * The app page's fixed bottom bar: one wide button whose label follows the installer — queued,
  * download (tap to pause, tap again to resume), verify, install, Android's dialog waiting for the
  * user (tap to show it again), and failures — with Open beside an update and Uninstall beside any
- * installed app at rest. No background of its own.
+ * installed app at rest; while an install is in progress a cancel X takes Uninstall's place. No background of its own.
  */
 @Composable
 fun InstallBar(app: AppRecord, install: InstallUi, actions: InstallActions, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val button = install.button(
-        name = app.name,
         onError = { error ->
             Toasts.show(
                 Toast(error, ToastKind.Error, context.getString(R.string.copy)) {
@@ -97,6 +98,8 @@ fun InstallBar(app: AppRecord, install: InstallUi, actions: InstallActions, modi
                 BarIconButton(R.drawable.ic_external, stringResource(R.string.open_app), ZapAction, ZapOnAction, actions.onOpen, "openApp")
             }
             BarIconButton(R.drawable.ic_trash, stringResource(R.string.uninstall), ZapDangerFill, ZapOnDangerFill, actions.onUninstall, "uninstallIcon")
+        } else if (install.cancellable) {
+            BarIconButton(R.drawable.ic_close, stringResource(R.string.install_cancel), ZapDangerFill, ZapOnDangerFill, actions.onCancel, "cancelInstall")
         }
     }
 }
@@ -117,7 +120,6 @@ private sealed interface BarButton {
 
 @Composable
 private fun InstallUi.button(
-    name: String,
     onError: (String) -> Unit,
     actions: InstallActions,
 ): BarButton? {
@@ -128,21 +130,18 @@ private fun InstallUi.button(
         InstallPhase.Paused ->
             BarButton.Progress(stringResource(R.string.install_paused, progressText()), fraction, paused = true, onClick = actions.onStart)
         InstallPhase.Verifying -> BarButton.Simple(stringResource(R.string.install_verifying), null, spinner = true)
-        InstallPhase.Installing -> when {
-            silent && waiting -> BarButton.Simple(stringResource(R.string.install_waiting_close, name), null)
-            else -> BarButton.Simple(
-                stringResource(
-                    when {
-                        silent && installedHere -> R.string.install_updating
-                        silent -> R.string.install_installing
-                        installedHere -> R.string.install_requesting_update
-                        else -> R.string.install_requesting
-                    },
-                ),
-                null,
-                spinner = true,
-            )
-        }
+        InstallPhase.Installing -> BarButton.Simple(
+            stringResource(
+                when {
+                    silent && installedHere -> R.string.install_updating
+                    silent -> R.string.install_installing
+                    installedHere -> R.string.install_requesting_update
+                    else -> R.string.install_requesting
+                },
+            ),
+            null,
+            spinner = true,
+        )
         InstallPhase.Confirm -> BarButton.Simple(
             stringResource(if (installedHere) R.string.confirm_update else R.string.install_notification),
             actions.onStart,

@@ -57,12 +57,7 @@ class DownloadService : Service() {
     }
 
     private fun notification(tasks: List<InstallTask>): Notification {
-        val manager = getSystemService(NotificationManager::class.java)
-        if (manager?.getNotificationChannel(CHANNEL) == null) {
-            manager?.createNotificationChannel(
-                NotificationChannel(CHANNEL, getString(R.string.downloads_notification_channel), NotificationManager.IMPORTANCE_LOW),
-            )
-        }
+        ensureChannel(this)
         val received = tasks.sumOf { it.received }
         val total = tasks.sumOf { it.total ?: 0 }
         val sized = tasks.isNotEmpty() && tasks.all { (it.total ?: 0) > 0 }
@@ -79,9 +74,31 @@ class DownloadService : Service() {
 
     companion object {
         private const val CHANNEL = "downloads"
-        private const val ID = 0x5552
+        const val ID = 0x5552
         private const val UPDATE_MS = 1_000L
         private const val PROGRESS_MAX = 1_000
+
+        fun ensureChannel(context: Context) {
+            val manager = context.getSystemService(NotificationManager::class.java)
+            if (manager?.getNotificationChannel(CHANNEL) == null) {
+                manager?.createNotificationChannel(
+                    NotificationChannel(CHANNEL, context.getString(R.string.downloads_notification_channel), NotificationManager.IMPORTANCE_LOW),
+                )
+            }
+        }
+
+        /** The notification a background update run holds while it downloads; it has no progress of its own. */
+        fun backgroundNotification(context: Context): Notification {
+            ensureChannel(context)
+            return Notification.Builder(context, CHANNEL)
+                .setSmallIcon(android.R.drawable.stat_sys_download)
+                .setContentTitle(context.getString(R.string.updating_apps))
+                .setProgress(0, 0, true)
+                .setContentIntent(openUpdates(context, ID))
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .build()
+        }
 
         /** Only from the foreground: Android 12+ refuses to start it from the background. */
         fun start(context: Context) {

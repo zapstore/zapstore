@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
 import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import coil3.ImageLoader
@@ -46,6 +47,8 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
@@ -206,9 +209,17 @@ class ZapstoreApplication : Application() {
             override fun onStop(owner: LifecycleOwner) {
                 foregroundSync?.cancel()
                 iolite.setRelayTrafficEnabled(false)
-                network.setForeground(false)
+                releaseNetwork()
             }
         })
+        scope.launch {
+            // A download that outlived the screen was holding Tor up; let go when the last one ends.
+            installer.tasks.map { tasks -> tasks.values.any { it.transferring } }
+                .distinctUntilChanged()
+                .drop(1)
+                .filter { !it }
+                .collect { releaseNetwork() }
+        }
         scope.launch {
             settings.state.map { it.syncInterval }.distinctUntilChanged().collect { interval ->
                 CatalogSyncWorker.schedule(this@ZapstoreApplication, interval)
@@ -223,6 +234,17 @@ class ZapstoreApplication : Application() {
                 .collect { BackgroundUpdateWorker.apply(this@ZapstoreApplication, it) }
         }
         if (DeviceKeys.takeRestorePending(this) || FlutterMigration.takeFetchPending(this)) restoreDevicePrivate()
+    }
+
+    /**
+     * Tor sleeps when nothing needs it: Zapstore is off screen and no download is running. Dropping
+     * its connections under a running download would end it as soon as the user left the screen.
+     */
+    fun releaseNetwork() {
+        scope.launch(Dispatchers.Main) {
+            val onScreen = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+            if (!onScreen && !installer.transferring) network.setForeground(false)
+        }
     }
 
     /** Installs, updates and removals from any source reach My apps and the app page without polling. */

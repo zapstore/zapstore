@@ -87,6 +87,7 @@ fun AppDetailScreen(
     onUninstall: () -> Unit = {},
     onOpenApp: () -> Unit = {},
     onPauseInstall: () -> Unit = {},
+    onCancelInstall: () -> Unit = {},
     onStartInstall: () -> Unit = {},
     onDismissInstallError: () -> Unit = {},
     saved: Boolean = false,
@@ -334,6 +335,7 @@ fun AppDetailScreen(
                 actions = InstallActions(
                     onInstall = onInstall,
                     onPause = onPauseInstall,
+                    onCancel = onCancelInstall,
                     onStart = onStartInstall,
                     onDismissError = onDismissInstallError,
                     onOpen = onOpenApp,

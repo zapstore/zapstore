@@ -1,12 +1,14 @@
 package dev.zapstore.app.install
 
 import android.content.Context
+import android.content.pm.ServiceInfo
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ForegroundInfo
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
@@ -36,6 +38,7 @@ class BackgroundUpdateWorker(context: Context, params: WorkerParameters) : Corou
             app.catalogSync.sync()
             if (app.catalogSync.status.value.error != null) transient++
             val updates = app.catalogSync.updates.first()
+            if (updates.isNotEmpty()) holdForeground()
             var committed = 0
             val ready = LinkedHashMap<String, String>()
             for (update in updates) {
@@ -51,9 +54,25 @@ class BackgroundUpdateWorker(context: Context, params: WorkerParameters) : Corou
             AppLog.i(TAG, "background updates: ${updates.size} available, $committed committed, ${ready.size} ready, $transient to retry")
             if (!isStopped && !inForeground()) UpdateNotifier.post(app, ready.keys, ready.values.toList())
         } finally {
-            if (!inForeground()) app.network.setForeground(false)
+            app.releaseNetwork()
         }
         return if (transient > 0) retryOrGiveUp() else Result.success()
+    }
+
+    /**
+     * Without this Android stops the run after about ten minutes, which is less than a few large
+     * downloads on a slow connection. Android may refuse from some states; the run then goes on unprotected.
+     */
+    private suspend fun holdForeground() {
+        runCatching {
+            setForeground(
+                ForegroundInfo(
+                    DownloadService.ID,
+                    DownloadService.backgroundNotification(applicationContext),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+                ),
+            )
+        }.onFailure { AppLog.w(TAG, "foreground", it) }
     }
 
     /** A periodic run retries a few times with backoff; after that it waits for the next period. */

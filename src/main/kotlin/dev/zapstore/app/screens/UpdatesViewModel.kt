@@ -23,6 +23,7 @@ import dev.zapstore.iolite.normalizeSearchQuery
 import dev.zapstore.iolite.ProfileRecord
 import dev.zapstore.app.install.InstallTask
 import dev.zapstore.app.install.SessionInstaller
+import dev.zapstore.app.install.TaskPhase
 import dev.zapstore.app.install.isSilentUpdate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -140,7 +141,9 @@ class UpdatesViewModel(
         val byId = apps.associateBy { it.appId }
         val installedById = installed.associateBy { it.packageId }
         val updateRows = (groups.updates + groups.manualUpdates).mapTo(HashSet()) { it.app.appId }
-        val installing = tasks.keys.filter { it !in updateRows }.mapNotNull(byId::get).sortedBy { it.name.lowercase() }
+        // Only work in progress. A verified APK waiting for a tap stays on its update row, or on the app page.
+        val installing = tasks.values.filter { it.appId !in updateRows && it.phase != TaskPhase.Ready }
+            .mapNotNull { byId[it.appId] }.sortedBy { it.name.lowercase() }
         val installingIds = installing.mapTo(HashSet()) { it.appId }
         UpdatesUiState(
             profiles = profiles,
@@ -183,7 +186,9 @@ class UpdatesViewModel(
         Toasts.show(zapstore.getString(R.string.toast_unignored))
     }
 
+    /** Ignoring ends whatever the app has in progress and drops its downloaded file. */
     fun ignoreUpdates(appId: String) {
+        zapstore.installer.cancel(appId)
         zapstore.lists.setIgnored(appId, true)
         Toasts.show(zapstore.getString(R.string.toast_ignored))
     }
