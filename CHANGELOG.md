@@ -7,9 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.3] - 2026-11-07
+
 ### Changed
 
+- On Home, stack names in the shelf and in Recent activity break onto a second line before they are cut, and the shelf cards grow with the text size
+- Recent activity starts with releases only (the Social chip turns on the rest), shows the time in smaller text, and loads the next page as you scroll instead of a Load more button
+- On an app page, the release and the privacy and security read are one "Latest release" card, and a tap anywhere on it opens one sheet with the release details and the full report; the sheet icon is gone
+- The "Latest release" sheet reads security first (chips, text, permissions), then the release notes cut at 300 dp with Read more, then one table of release, package and source details with short hashes and a tiny copy icon right after each value
+- On an app page, the app name is 5% larger with the author line closer under it, and the "…" zapper circle sits behind the last face in the stack
+- In the release sheet, the details table keys have normal letter spacing, and "Show all" permissions are one plate with a chip per permission, what it does and its Android name, then the unnamed ones as chips
+- In the release sheet, permissions list only the ones that matter, each in plain words (Camera, Nearby devices, Always running); routine ones such as INTERNET and the app's own are left out. Up to three are listed in full, more show as chips with a "What they allow" link
+- On an app page, the Latest release card ends in a "Full report and release details" button, and the sheet opens with a line on the C1 proof (verified, none, or indexed only); "Activity" is "Comments"
+- The install sheet shows where the APK comes from as "Installs from": the logo and short name on GitHub, GitLab, Codeberg and F-Droid, the full address elsewhere, for every app, not only indexed ones
+- In the install sheet, "See full report" is the same "Full report and release details" button as on the Latest release card
+- On an indexed app's page, the head reads "From" and the host's logo and short name (owner/repo on GitHub, GitLab and Codeberg, the app id on F-Droid, otherwise the host) in place of "Published by the catalog", and tapping it opens the repository, as in the Flutter app. The line is smaller and gray, runs under the "..." menu's edge, and when it must be cut it shortens the owner and keeps "/repo"
+- On Home, the icons and avatars in Recent activity are about 5% bigger
+- The warning sign in warning chips is a little smaller
+- The version pill has about 10% more padding (23 dp tall, 8.8 dp on the sides)
+- In Recent activity, a release names its author only when the author has a verified C1 proof
+- Dates older than 60 days in comments and Recent activity read "Jun 6, 2025" instead of "2025-06-06"
+- The version pill is one size everywhere (small bold text, light padding) instead of scaled copies for lists, Activity and comments
+- The app icon in the app page head is 64 dp, a step up
+- On an app page, "Stacked in" sits closer under the zap row
+- A failed check in the privacy and security report is a yellow warning chip with a warning sign, not a red one with an X
+- The share icon is Android's three connected dots
+- On an app page, the zap total shows a "…" circle when more zappers than faces are listed, and no "from" when there are no faces; "Activity" shows only when there are comments; screenshots have a little more room above and below
+- On a profile, a comment reads "Commented on <app>" and a stack update "Updated <stack>"
+- A `nostr:nevent…`, `note…` or `naddr…` in a comment or zap note reads as "note", "app", "stack" or "post" and opens its link, and a mentioned person reads as `@name`, never the raw token; Recent activity previews show the same
+- In app lists, the installed tick (or update clock) is a round badge on the app icon's corner instead of a pill after the name
+- In Recent activity, a comment from someone with no name reads "Someone on <app>"
 - In My apps, a Zapstore update stays first in its list, on the same gray as the stack cards
+- App rows and the version pill grow with the system font size, and the pill's status icon sits closer to the text. At a large size, the Update or Install button on a My apps row moves onto its own line under the name
+- An install error stays on screen until it is closed and offers Copy. Warning and error toasts use an alert icon, and a toast with a button spans the screen
+
+### Added
+
+- When Android refuses an update because the installed copy is signed by another key, My apps and the app page offer Reinstall. Confirming warns that the old copy and its data are removed, then installs the listed build
+
+### Fixed
+
+- An APK the listed key did not sign is refused as not the listed file
 
 ## [2.0.2] - 2026-11-06
 
