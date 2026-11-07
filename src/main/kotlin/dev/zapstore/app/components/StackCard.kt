@@ -22,6 +22,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.runtime.remember
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -117,9 +120,8 @@ private const val STACK_OVERLAP = 0.5f
 private const val STACK_LEFT_DROP = 0.25f
 private const val STACK_TOP_SHIFT = 0.25f
 
-/** Two lines of the shelf title. Label size (14.75 sp) on the caption line (19), the step under the 16/21.25 row title. */
-private val StackShelfLine = 19.dp
-private val StackNameHeight = StackShelfLine * 2
+/** One line of the shelf title. Label size (14.75 sp) on the caption line (19 sp), the step under the 16/21.25 row title. */
+private val StackShelfLine = 19.sp
 
 /** The width of a four-icon tile, the widest there is. */
 private fun tileSlotWidth(size: Dp) = size * STACK_ICON_FRACTION * (1 + STACK_OVERLAP + STACK_TOP_SHIFT)
@@ -142,8 +144,26 @@ val StackShelfGap = ZapSpacing.space3
 /** Rows in a stacks shelf: Home's, and anywhere else stacks show the same way (a profile, signed in or not). */
 const val StacksShelfRows = 3
 
-/** One shelf row: the icon pile, a two-line name, or the See all slot, plus the card's vertical padding. */
-val StackCardHeight = maxOf(stackPileHeight(StackShelfTile, 4), StackNameHeight) + StackShelfPadding * 2
+/** The shelf title: label size on the caption line. */
+private val StackShelfTitleStyle
+    @Composable get() = MaterialTheme.typography.labelLarge.copy(lineHeight = StackShelfLine)
+
+/**
+ * One shelf row: the icon pile, a two-line name, or the See all slot, plus the card's vertical padding. The
+ * name is measured as the text will lay out, so the card grows with the user's font size; a fixed height
+ * would cut the name to one line with an ellipsis.
+ */
+@Composable
+fun stackCardHeight(): Dp {
+    val measurer = rememberTextMeasurer()
+    val style = StackShelfTitleStyle
+    val density = LocalDensity.current
+    val nameHeight = remember(style, density) {
+        // A little slack: the card's padding rounds to whole pixels, and a line short of its height is dropped.
+        with(density) { measurer.measure("A\nA", style, maxLines = 2).size.height.toDp() } + 2.dp
+    }
+    return maxOf(stackPileHeight(StackShelfTile, 4), nameHeight) + StackShelfPadding * 2
+}
 
 /**
  * The one stack card: Home's shelf, Profile's shelf, the Stacks list and a stack page's head.
@@ -228,7 +248,7 @@ internal fun StackFace(
         }
         val titleStyle = when {
             head -> ZapTitle3Style
-            plate -> MaterialTheme.typography.labelLarge.copy(lineHeight = StackShelfLine.value.sp)
+            plate -> StackShelfTitleStyle
             else -> MaterialTheme.typography.titleSmall
         }
         Column(

@@ -17,10 +17,10 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import dev.zapstore.app.ZapSpacing
 import dev.zapstore.app.components.StackCard
-import dev.zapstore.app.components.StackCardHeight
 import dev.zapstore.app.components.StackShelfGap
 import dev.zapstore.app.components.StackShelfPadding
 import dev.zapstore.app.components.StacksShelfRows
+import dev.zapstore.app.components.stackCardHeight
 import dev.zapstore.app.components.stackShelfFraction
 import dev.zapstore.iolite.AppRecord
 import dev.zapstore.iolite.StackRecord
@@ -46,6 +46,7 @@ fun StacksShelf(
         val shelfWidth = contentWidth * stackShelfFraction(contentWidth)
         val cards = (if (saved != null && saved.ids.isNotEmpty()) 1 else 0) + stacks.size
         val rows = cards.coerceIn(1, StacksShelfRows)
+        val cardHeight = stackCardHeight()
         LazyHorizontalGrid(
             rows = GridCells.Fixed(rows),
             state = gridState,
@@ -54,7 +55,7 @@ fun StacksShelf(
             contentPadding = PaddingValues(horizontal = horizontalPadding),
             modifier = Modifier
                 .fillMaxWidth()
-                .height(StackCardHeight * rows + StackShelfGap * (rows - 1))
+                .height(cardHeight * rows + StackShelfGap * (rows - 1))
                 .testTag("stackShelf"),
         ) {
             if (saved != null && saved.ids.isNotEmpty()) {
