@@ -650,7 +650,13 @@ private const val FLING_VELOCITY = 800f
  * opens. Screen readers get the same actions by name.
  */
 @Composable
-private fun SwipeActions(key: String, actions: List<RowAction>, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+private fun SwipeActions(
+    key: String,
+    actions: List<RowAction>,
+    modifier: Modifier = Modifier,
+    plate: Boolean = false,
+    content: @Composable () -> Unit,
+) {
     val open = LocalOpenSwipe.current
     val scope = rememberCoroutineScope()
     val offset = remember { Animatable(0f) }
@@ -734,7 +740,8 @@ private fun SwipeActions(key: String, actions: List<RowAction>, modifier: Modifi
                     },
                 ),
         ) {
-            Box(Modifier.background(ZapCanvas)) { content() }
+            // A plate is the gray of a stack card, with its corners; the buttons stay hidden behind it.
+            Box(if (plate) Modifier.clip(RoundedCornerShape(ZapRadius.md)).background(ZapSurface1) else Modifier.background(ZapCanvas)) { content() }
             if (opened) {
                 // An open row swallows taps so one tap closes it instead of opening the app.
                 Box(Modifier.matchParentSize().clickable(interactionSource = null, indication = null) { settle(0f) })
@@ -791,14 +798,21 @@ private fun UpdateRow(
         add(ignoreAction(id, actions.onIgnore))
         if (current != null) add(cancelAction(id, actions.onCancel))
     }
-    SwipeActions("update:$id", swipe) {
+    // Zapstore's own update is pinned first; it sits on the gray of a stack card, inset from the plate's edge.
+    val own = id == LocalContext.current.packageName
+    SwipeActions(
+        "update:$id",
+        swipe,
+        modifier = if (own) Modifier.padding(bottom = ZapSpacing.space1) else Modifier,
+        plate = own,
+    ) {
         AppRow(
             app = update.app,
             onClick = { actions.onAppClick(update.app) },
             onDevice = true,
             pendingFrom = update.installedVersion,
             showAuthor = false,
-            modifier = Modifier.testTag("update:$id"),
+            modifier = (if (own) Modifier.padding(horizontal = ZapSpacing.space3) else Modifier).testTag("update:$id"),
             trailing = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     why?.let { WhyButton(id, it) }

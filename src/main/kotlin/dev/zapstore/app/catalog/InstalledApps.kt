@@ -127,7 +127,8 @@ data class UpdateGroups(
  * Android dialog, current apps Zapstore updates, catalog apps another store installed with
  * a key the catalog does not list, and installed packages that are not in the catalog.
  * An app another store installed with the listed key is Zapstore's like any other: its next
- * update is a manual one, and after that Zapstore owns it. [ignored] apps are in none.
+ * update is a manual one, and after that Zapstore owns it. [ignored] apps are in none. An update
+ * to [ourPackage] comes first in its list.
  */
 fun updateGroups(
     installed: List<InstalledApp>,
@@ -161,7 +162,8 @@ fun updateGroups(
             else -> manual += update
         }
     }
-    val byName = compareBy<AvailableUpdate> { it.app.name.lowercase() }
+    // Zapstore's own update is pinned first in whichever section it lands in.
+    val byName = compareBy<AvailableUpdate> { it.app.appId != ourPackage }.thenBy { it.app.name.lowercase() }
     return UpdateGroups(
         updates = updates.sortedWith(byName),
         manualUpdates = manual.sortedWith(byName),

@@ -102,6 +102,25 @@ class InstalledAppsTest {
     }
 
     @Test
+    fun `an update to Zapstore comes first in its list`() {
+        val ours = "dev.zapstore.app"
+        val installed = listOf(
+            InstalledApp("dev.alpha", 1, "1", setOf("aa"), installingPackage = ours),
+            InstalledApp(ours, 1, "1", setOf("aa"), installingPackage = ours),
+            InstalledApp("dev.beta", 1, "1", setOf("aa"), installingPackage = ours),
+        )
+        val catalog = listOf(
+            app("dev.alpha", "Alpha", "2", 2, certificateHash = "aa"),
+            app(ours, "Zapstore", "2", 2, certificateHash = "aa"),
+            app("dev.beta", "Beta", "2", 2, certificateHash = "aa"),
+        )
+
+        val groups = updateGroups(installed, catalog, ignored = emptySet(), ourPackage = ours) { true }
+
+        assertEquals(listOf(ours, "dev.alpha", "dev.beta"), groups.updates.map { it.app.appId })
+    }
+
+    @Test
     fun `a manual update names why Android asks`() {
         val listed = app("dev.one", "One", "1.1", 11, certificateHash = "aa")
         fun reason(installer: String?, silentSupported: Boolean = true) =

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- In My apps, a Zapstore update stays first in its list, on the same gray as the stack cards
+
 ## [2.0.2] - 2026-11-06
 
 ### Changed
