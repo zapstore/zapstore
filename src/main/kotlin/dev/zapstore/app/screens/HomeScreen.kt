@@ -116,6 +116,12 @@ fun HomeScreen(
         state.stacksCanLoadMore,
         onLoadMoreStacks,
     )
+    // Activity pages in as the list nears its end, a page at a time.
+    LoadMoreNearEnd(
+        { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index to listState.layoutInfo.totalItemsCount },
+        state.activityCanLoadMore,
+        onLoadMoreActivity,
+    )
     // Results are inserted above the stacks, which the list would otherwise stay anchored to.
     // Skip the first run: re-entering Home from the back stack must keep the restored position.
     var scrollKey by rememberSaveable { mutableStateOf<Pair<String?, Boolean>?>(null) }
@@ -231,7 +237,6 @@ fun HomeScreen(
                             ?: item.app?.let { app -> if (item.comment != null) onCommentClick(app, item.eventId) else onAppClick(app) }
                     },
                     catalogKeys = state.catalogKeys,
-                    onLoadMore = onLoadMoreActivity,
                 )
             }
         }

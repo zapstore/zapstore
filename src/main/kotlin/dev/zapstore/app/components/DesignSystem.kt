@@ -1,5 +1,7 @@
 package dev.zapstore.app.components
 
+import dev.zapstore.app.ZapCanvas
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Surface
 import androidx.compose.foundation.BorderStroke
@@ -263,9 +265,9 @@ fun ZapTextLink(text: String, onClick: () -> Unit, modifier: Modifier = Modifier
 
 enum class BadgeTone { Verified, Warning, Danger, Neutral }
 
-/** 26 dp pill in a 12% tint of its color. Always words, never a bare icon or score. */
+/** 26 dp pill in a 12% tint of its color. Always words, never a bare icon or score. [emoji] leads the words, as a warning sign does. */
 @Composable
-fun ZapBadge(text: String, tone: BadgeTone, modifier: Modifier = Modifier, icon: Int? = null) {
+fun ZapBadge(text: String, tone: BadgeTone, modifier: Modifier = Modifier, icon: Int? = null, emoji: String? = null) {
     val (background, foreground) = when (tone) {
         BadgeTone.Verified -> ZapVerifiedTint to ZapVerified
         BadgeTone.Warning -> ZapWarningTint to ZapWarning
@@ -278,10 +280,11 @@ fun ZapBadge(text: String, tone: BadgeTone, modifier: Modifier = Modifier, icon:
             .heightIn(min = 26.dp)
             .clip(RoundedCornerShape(ZapRadius.full))
             .background(background)
-            .padding(start = if (icon != null) 8.dp else 10.dp, end = 10.dp),
+            .padding(start = if (icon != null || emoji != null) 8.dp else 10.dp, end = 10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             icon?.let { Icon(painterResource(it), contentDescription = null, tint = foreground, modifier = Modifier.size(14.dp)) }
+            emoji?.let { Text(it, style = MaterialTheme.typography.labelLarge.copy(fontSize = 10.sp, lineHeight = 17.sp)) }
             Text(text, color = foreground, style = MaterialTheme.typography.labelLarge.copy(fontSize = 12.75.sp, lineHeight = 17.sp))
         }
     }
@@ -341,18 +344,21 @@ enum class VersionStatus(val icon: Int, val label: Int) {
 }
 
 /**
- * "Already installed" in a list row: the version pill's own tick, alone in a mini pill of the same
- * navy. [updateAvailable] swaps the tick for a clock, when the listing is newer than what's on the phone.
+ * "Already installed" on a list row: the version pill's own tick, alone in a navy circle that sits on the
+ * app icon's corner, ringed in the canvas color so it reads on any icon. [updateAvailable] swaps the tick
+ * for a clock, when the listing is newer than what's on the phone.
  */
 @Composable
-fun InstalledPill(modifier: Modifier = Modifier, updateAvailable: Boolean = false) {
+fun InstalledBadge(modifier: Modifier = Modifier, updateAvailable: Boolean = false) {
     val label = stringResource(if (updateAvailable) R.string.installed_update_mark else R.string.installed_mark)
     val icon = if (updateAvailable) R.drawable.ic_clock else VersionStatus.Current.icon
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier
-            .size(width = 22.dp, height = 15.dp)
-            .clip(RoundedCornerShape(ZapRadius.full))
+            .size(20.dp)
+            .background(ZapCanvas, CircleShape)
+            .padding(2.dp)
+            .clip(CircleShape)
             .background(ZapBrand)
             .semantics { contentDescription = label },
     ) {
@@ -360,48 +366,49 @@ fun InstalledPill(modifier: Modifier = Modifier, updateAvailable: Boolean = fals
     }
 }
 
+/** The one version pill: 23 dp tall, 8.8 dp of padding each side, 11 dp icons. Never scaled; every screen draws the same pill. */
+private val PillHeight = 23.dp
+private val PillPadding = 8.8.dp
+private val PillGap = ZapSpacing.space1
+private val PillIcon = 11.dp
+/** About 10% under the label size (12.75sp). */
+private val PillFontSize = 11.5.sp
+
 /**
- * Every version number sits in this navy pill, alone or as `current → next`. A [status] adds its icon
- * after the version, in white, and its words to what a screen reader hears.
+ * Every version number sits in this navy pill, alone or as `current → next`, at one size on every screen.
+ * A [status] adds its icon after the version, in white, and its words to what a screen reader hears.
  */
 @Composable
 fun VersionPill(
     version: String,
     modifier: Modifier = Modifier,
     next: String? = null,
-    scale: Float = 1f,
     status: VersionStatus? = null,
-    textScale: Float = scale,
 ) {
     val versions = if (next == null) version else "$version → $next"
     val spoken = if (status == null) versions else "$versions, ${stringResource(status.label)}"
-    val fontSize = 13.75.sp * textScale
-    val style = MaterialTheme.typography.labelMedium.copy(
-        fontSize = fontSize,
-        lineHeight = fontSize,
-        fontWeight = FontWeight(680),
-        fontFeatureSettings = "tnum",
-    )
-    val spacing = 4.dp * scale
+    // Small and bold: the label size, tabular so digits line up between rows.
+    val label = MaterialTheme.typography.labelSmall
+    val style = label.copy(fontSize = PillFontSize, fontWeight = FontWeight.Bold, letterSpacing = 0.sp, lineHeight = PillFontSize, fontFeatureSettings = "tnum")
     Layout(
         content = {
             Text(version.pillText(), color = Color.White, style = style, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (next != null) {
-                VersionPillArrow(scale)
+                VersionPillArrow()
                 Text(next.pillText(), color = Color.White, style = style, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             if (status != null) {
-                Icon(painterResource(status.icon), contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp * scale))
+                Icon(painterResource(status.icon), contentDescription = null, tint = Color.White, modifier = Modifier.size(PillIcon))
             }
         },
         modifier = modifier
-            .height(24.dp * scale)
+            .height(PillHeight)
             .clip(RoundedCornerShape(ZapRadius.full))
             .background(ZapBrand)
             .semantics(mergeDescendants = true) { contentDescription = spoken }
-            .padding(horizontal = 10.dp * scale),
+            .padding(horizontal = PillPadding),
     ) { measurables, constraints ->
-        val gap = spacing.roundToPx()
+        val gap = PillGap.roundToPx()
         val loose = constraints.copy(minWidth = 0, minHeight = 0, maxWidth = Constraints.Infinity)
         // A measurable is measured once, so the fit is worked out from intrinsic widths first.
         val natural = measurables.map { it.maxIntrinsicWidth(constraints.maxHeight) }
@@ -430,8 +437,8 @@ fun VersionPill(
 
 /** The small filled triangle between a pair's two versions, matching the web pill's inline SVG. */
 @Composable
-private fun VersionPillArrow(scale: Float) {
-    Canvas(Modifier.size(6.dp * scale, 7.dp * scale)) {
+private fun VersionPillArrow() {
+    Canvas(Modifier.size(5.5.dp, 6.5.dp)) {
         val path = Path().apply {
             moveTo(size.width * 0.2f, 0f)
             lineTo(size.width, size.height / 2f)
@@ -444,14 +451,15 @@ private fun VersionPillArrow(scale: Float) {
 
 // ---- Containers ----
 
-/** Surface-2 card for checkable facts (Security, Releases). Never nested in another card. */
+/** Surface-2 card for checkable facts (Latest release, with its privacy and security read). Never nested in another card. */
 @Composable
 fun EvidenceCard(
     title: String,
     modifier: Modifier = Modifier,
     contentPadding: Dp = ZapSpacing.space4,
-    /** A text link at the end of the title row, for a card whose body is one line. */
-    headerAction: (@Composable () -> Unit)? = null,
+    /** Makes the whole card one button; [actionTag] tags it. */
+    onClick: (() -> Unit)? = null,
+    actionTag: String = "evidenceAction",
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Column(
@@ -460,17 +468,10 @@ fun EvidenceCard(
             .clip(RoundedCornerShape(ZapRadius.lg))
             .background(ZapSurface2)
             .border(1.dp, ZapLine, RoundedCornerShape(ZapRadius.lg))
+            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick).testTag(actionTag) else Modifier)
             .padding(contentPadding),
     ) {
-        val titleStyle = MaterialTheme.typography.titleSmall.copy(fontSize = 18.sp, lineHeight = 23.25.sp)
-        if (headerAction == null) {
-            Text(title, style = titleStyle)
-        } else {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(title, style = titleStyle, modifier = Modifier.weight(1f))
-                headerAction()
-            }
-        }
+        Text(title, style = MaterialTheme.typography.titleSmall.copy(fontSize = 18.sp, lineHeight = 23.25.sp))
         content()
     }
 }

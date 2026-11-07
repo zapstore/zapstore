@@ -61,6 +61,19 @@ object FactCatalog {
         Permission("system_alert_window", "Overlay", "Draw over other apps") to listOf("SYSTEM_ALERT_WINDOW"),
         Permission("device_admin", "Device admin", "Manage this device, such as locking it") to listOf("BIND_DEVICE_ADMIN"),
         Permission("vpn_service", "VPN", "Route all network traffic through itself") to listOf("BIND_VPN_SERVICE"),
+        Permission("background_location", "Background location", "See your location even when the app is closed") to listOf("ACCESS_BACKGROUND_LOCATION"),
+        Permission("calendar", "Calendar", "Read and change your calendar") to listOf("READ_CALENDAR", "WRITE_CALENDAR"),
+        Permission("phone", "Phone", "See your phone status and number") to listOf("READ_PHONE_STATE", "READ_PHONE_NUMBERS"),
+        Permission("call_phone", "Calls", "Place phone calls") to listOf("CALL_PHONE", "ANSWER_PHONE_CALLS"),
+        Permission("all_files", "All files", "Read and change every file on this phone") to listOf("MANAGE_EXTERNAL_STORAGE"),
+        Permission("storage", "Files", "Read files on this phone") to listOf("READ_EXTERNAL_STORAGE", "WRITE_EXTERNAL_STORAGE"),
+        Permission("media", "Photos and media", "Read your photos, videos and music") to listOf("READ_MEDIA_IMAGES", "READ_MEDIA_VIDEO", "READ_MEDIA_AUDIO"),
+        Permission("nearby_devices", "Nearby devices", "Find and connect to devices around you") to listOf("BLUETOOTH_SCAN", "BLUETOOTH_CONNECT", "NEARBY_WIFI_DEVICES"),
+        Permission("body_sensors", "Body sensors", "Read health sensors such as heart rate") to listOf("BODY_SENSORS", "ACTIVITY_RECOGNITION"),
+        Permission("notifications", "Notifications", "Send you notifications") to listOf("POST_NOTIFICATIONS"),
+        Permission("background_run", "Always running", "Keep running in the background without limits") to listOf("REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"),
+        Permission("write_settings", "System settings", "Change system settings") to listOf("WRITE_SETTINGS", "WRITE_SECURE_SETTINGS"),
+        Permission("delete_packages", "Uninstall apps", "Uninstall other apps") to listOf("REQUEST_DELETE_PACKAGES"),
     )
     private val permissionByFact = permissions.associate { (permission, _) -> permission.fact to permission }
     private val permissionById = permissions.flatMap { (permission, ids) -> ids.map { it to permission } }.toMap()
@@ -78,8 +91,11 @@ object FactCatalog {
     /** What the permission for a fact lets an app do, such as `Take photos and record video`. */
     fun permissionDoes(fact: String): String? = permissionByFact[fact]?.does
 
-    /** Fact and label for an Android permission id, such as `CAMERA`. Null for an id not in the table. */
-    fun permissionForId(id: String): Permission? = permissionById[id]
+    /**
+     * Fact and label for an Android permission id, such as `CAMERA` or `android.permission.CAMERA`. Null for an id
+     * not in the table: routine ones (`INTERNET`, `VIBRATE`) and the app's own, which tell a reader nothing.
+     */
+    fun permissionForId(id: String): Permission? = permissionById[id.removePrefix("android.permission.")]
 
     /** Badge label for a flag id. Null for an id the app does not show. */
     fun flag(id: String): String? = flagLabels[id]

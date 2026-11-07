@@ -1,5 +1,6 @@
 package dev.zapstore.app.screens
 
+import androidx.compose.ui.unit.sp
 import dev.zapstore.app.ZapWarning
 import androidx.compose.ui.semantics.Role
 import androidx.compose.runtime.remember
@@ -36,7 +37,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import dev.zapstore.app.ZapActionText
@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import dev.zapstore.app.MarkdownText
 import dev.zapstore.app.R
 import dev.zapstore.app.ZapLine
+import dev.zapstore.app.ZapSurface1
 import dev.zapstore.app.ZapSpacing
 import dev.zapstore.app.ZapSurface3
 import dev.zapstore.app.ZapText
@@ -64,6 +65,8 @@ import dev.zapstore.app.components.SectionLabel
 import dev.zapstore.app.components.VersionPill
 import dev.zapstore.app.components.VersionStatus
 import dev.zapstore.app.components.ZapBadge
+import dev.zapstore.app.components.EvidenceLine
+import dev.zapstore.iolite.AppByline
 import dev.zapstore.app.components.ZapButton
 import dev.zapstore.app.components.ZapButtonStyle
 import dev.zapstore.app.components.shortDisplayName
@@ -99,12 +102,16 @@ internal fun String.withoutLeadingId(id: String?): String {
     return rest.replaceFirstChar { it.uppercaseChar() }
 }
 
+/**
+ * The permissions worth reading, one per kind: those the catalog has plain words for. Routine ones and the
+ * app's own are left out, since a bare id tells nobody what it lets the app do.
+ */
 internal fun AppRecord.permissionLines(): List<PermissionLine> {
     val notes = securityNotes
-    return permissionIds.map { id ->
-        val known = FactCatalog.permissionForId(id)
-        PermissionLine(id, known?.label, known?.let { notes[it.fact] }.orEmpty().withoutLeadingId(id), known?.does)
-    }.ifEmpty {
+    return permissionIds.mapNotNull { id ->
+        val known = FactCatalog.permissionForId(id) ?: return@mapNotNull null
+        PermissionLine(id.removePrefix("android.permission."), known.label, notes[known.fact].orEmpty().withoutLeadingId(id), known.does)
+    }.distinctBy { it.label }.ifEmpty {
         factRows.mapNotNull { fact ->
             if (!fact.yes) return@mapNotNull null
             val label = FactCatalog.permission(fact.key) ?: return@mapNotNull null
@@ -133,52 +140,87 @@ internal fun AppRecord.factPills(): List<FactPill> = factRows.mapNotNull { fact 
     FactPill(fact.key, label, pill.tone(fact.yes))
 }
 
-/** The card: warning flags, fact pills and a short read of the prose. The rest opens from [onSeeFull]. */
+/** The warning sign every warning chip wears. */
+internal const val WARNING_SIGN = "\u26A0\uFE0F"
+
+/**
+ * One card, "Latest release": the version, its date and notes status, then under a hairline the privacy and
+ * security read (flag chips, fact chips and a short prose), with no label of its own. The whole card is one button to the release sheet.
+ */
 @Composable
-internal fun SecurityReportCard(
+internal fun ReleaseAndSecurityCard(
     app: AppRecord,
+    versionStatus: VersionStatus?,
     onOpenUrl: (String) -> Unit,
-    onSeeFull: () -> Unit,
+    onOpen: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val flags = app.flagLabels()
     EvidenceCard(
-        stringResource(R.string.privacy_and_security),
-        modifier.fillMaxWidth().testTag("securityCard"),
-        headerAction = { CardSheetButton(stringResource(R.string.see_full_report), onSeeFull, "seeFullReport") },
+        stringResource(R.string.release_title),
+        modifier.fillMaxWidth(),
+        onClick = onOpen,
+        actionTag = "releaseLink",
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space3), modifier = Modifier.fillMaxWidth()) {
-            if (flags.isNotEmpty()) {
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
-                    verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
-                    modifier = Modifier.testTag("cardFlags"),
-                ) { flags.forEach { (label, _) -> ZapBadge(label, BadgeTone.Warning) } }
-            }
-            FactPills(app.factPills())
-            SecurityProse(app, onOpenUrl, brief = true)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            if (app.version.isNotBlank()) VersionPill(app.version, status = versionStatus, modifier = Modifier.testTag("releaseVersion"))
+            Text(
+                buildString {
+                    append(formatDate(app.releasedAt))
+                    if (app.releaseNotes.isBlank()) append(" · ").append(stringResource(R.string.release_no_notes_short))
+                },
+                color = ZapText2,
+                style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
         }
+        HorizontalDivider(color = ZapLine, modifier = Modifier.padding(vertical = ZapSpacing.space1))
+        Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space3), modifier = Modifier.fillMaxWidth()) {
+            if (app.hasSecurityCard()) {
+                val flags = app.flagLabels()
+                if (flags.isNotEmpty()) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+                        verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+                        modifier = Modifier.testTag("cardFlags"),
+                    ) { flags.forEach { (label, _) -> ZapBadge(label, BadgeTone.Warning, emoji = WARNING_SIGN) } }
+                }
+                FactPills(app.factPills())
+                SecurityProse(app, onOpenUrl, brief = true)
+            } else {
+                Text(stringResource(R.string.no_security_report), color = ZapText2, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+        // Said as a button, so it is plain there is more behind the card.
+        ZapButton(
+            stringResource(R.string.card_full_report),
+            onOpen,
+            Modifier.fillMaxWidth().padding(top = ZapSpacing.space2).testTag("releaseOpen"),
+            style = ZapButtonStyle.Tonal,
+        )
     }
 }
 
-/**
- * The icon in a card's title row that opens the card's sheet. It is 32 dp, not Material's 48 dp minimum,
- * which would stretch the title row. The offset lines the glyph up with the card's right padding.
- */
+/** The C1 proof in one line: whether the developer proved the app is theirs, before the security read. */
 @Composable
-private fun CardSheetButton(contentDescription: String, onClick: () -> Unit, tag: String) {
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier
-            .offset(x = ZapSpacing.space2)
-            .size(32.dp)
-            .clip(CircleShape)
-            .clickable(role = Role.Button, onClick = onClick)
-            .semantics { this.contentDescription = contentDescription }
-            .testTag(tag),
-    ) {
-        Icon(painterResource(R.drawable.ic_open_sheet), contentDescription = null, tint = ZapActionText, modifier = Modifier.size(20.dp))
+internal fun ProofState(app: AppRecord, modifier: Modifier = Modifier) {
+    val (title, body) = when (app.byline) {
+        AppByline.Verified -> R.string.proof_verified_title to R.string.proof_verified_body
+        AppByline.Unverified -> R.string.proof_missing_title to R.string.proof_missing_body
+        AppByline.Indexed -> R.string.proof_indexed_title to R.string.proof_indexed_body
     }
+    EvidenceLine(
+        stringResource(title),
+        checked = app.byline == AppByline.Verified,
+        warning = app.byline != AppByline.Verified,
+        detail = stringResource(body),
+        modifier = modifier.testTag("proofState"),
+    )
 }
 
 /** Warning flags as label and note, in file order, for the ids the app knows. */
@@ -197,7 +239,7 @@ internal fun SecurityVerdict(app: AppRecord, onOpenUrl: (String) -> Unit) {
         if (flags.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2), modifier = Modifier.testTag("securityFlags")) {
                 flags.forEach { (label, note) ->
-                    ZapBadge(label, BadgeTone.Warning)
+                    ZapBadge(label, BadgeTone.Warning, emoji = WARNING_SIGN)
                     if (note.isNotBlank()) Text(note, color = ZapText2, style = MaterialTheme.typography.bodyMedium)
                 }
             }
@@ -214,33 +256,43 @@ internal fun SecurityVerdict(app: AppRecord, onOpenUrl: (String) -> Unit) {
 @Composable
 internal fun PermissionsList(app: AppRecord) {
     val lines = app.permissionLines()
-    val (named, other) = lines.partition { it.label != null }
-    var expanded by rememberSaveable { mutableStateOf(false) }
+    var open by rememberSaveable { mutableStateOf(false) }
+    // A few permissions are just shown in full; a longer list is chips, with a link for what each allows.
+    val short = lines.size <= PERMISSIONS_SHOWN_IN_FULL
+    val expanded = short || open
     Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space3), modifier = Modifier.fillMaxWidth().testTag("permissions")) {
         if (expanded) {
-            named.forEach { PermissionRow(it) }
-            if (other.isNotEmpty()) {
-                Text(
-                    other.joinToString(" · ") { it.id.orEmpty() },
-                    color = ZapText3,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.testTag("otherPermissions"),
-                )
+            // One plate, a row per permission: its chip, what it does, and the Android name small.
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(ZapRadius.md))
+                    .background(ZapSurface1),
+            ) {
+                lines.forEachIndexed { index, line ->
+                    if (index > 0) HorizontalDivider(color = ZapLine)
+                    PermissionRow(line)
+                }
             }
-        } else if (named.isNotEmpty()) {
+        } else {
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
                 verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
                 modifier = Modifier.testTag("permissionPills"),
-            ) { named.mapNotNull { it.label }.distinct().forEach { ZapBadge(it, BadgeTone.Neutral) } }
+            ) { lines.mapNotNull { it.label }.forEach { ZapBadge(it, BadgeTone.Neutral) } }
         }
-        ZapTextLink(
-            if (expanded) stringResource(R.string.permissions_show_less) else stringResource(R.string.permissions_show_all, lines.size),
-            { expanded = !expanded },
-            Modifier.offset(x = -ZapSpacing.space2).testTag("permissionsExpand"),
-        )
+        if (!short) {
+            ZapTextLink(
+                if (open) stringResource(R.string.permissions_show_less) else stringResource(R.string.permissions_show_all),
+                { open = !open },
+                Modifier.offset(x = -ZapSpacing.space2).testTag("permissionsExpand"),
+            )
+        }
     }
 }
+
+/** This many permissions or fewer are listed in full, with no link to open them. */
+private const val PERMISSIONS_SHOWN_IN_FULL = 3
 
 internal fun AppRecord.hasPermissions(): Boolean = permissionLines().isNotEmpty()
 
@@ -255,7 +307,7 @@ internal fun FactPills(pills: List<FactPill>) {
         pills.forEach { (key, label, tone) ->
             when (tone) {
                 FactCatalog.Tone.Good -> ZapBadge(label, BadgeTone.Verified, Modifier.testTag("fact_$key"), R.drawable.ic_check)
-                FactCatalog.Tone.Bad -> ZapBadge(label, BadgeTone.Danger, Modifier.testTag("fact_$key"), R.drawable.ic_close)
+                FactCatalog.Tone.Bad -> ZapBadge(label, BadgeTone.Warning, Modifier.testTag("fact_$key"), emoji = WARNING_SIGN)
                 FactCatalog.Tone.Neutral -> ZapBadge(label, BadgeTone.Neutral, Modifier.testTag("fact_$key"))
             }
         }
@@ -292,50 +344,20 @@ private fun SecurityProse(app: AppRecord, onOpenUrl: (String) -> Unit, brief: Bo
 
 @Composable
 private fun PermissionRow(line: PermissionLine) {
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(line.does ?: line.label ?: line.id.orEmpty(), color = ZapText, style = MaterialTheme.typography.bodyMedium)
-        if (line.note.isNotBlank()) Text(line.note, color = ZapText2, style = MaterialTheme.typography.bodySmall)
-        // The Android name for anyone who wants to look it up; shown once, under what it does.
-        line.id?.let { Text(it, color = ZapText3, style = MaterialTheme.typography.labelMedium) }
-    }
-}
-
-/** Latest release: the version pill and the date, with the notes behind the title-row icon. Size stays in the sheet. */
-@Composable
-internal fun ReleaseCard(
-    app: AppRecord,
-    onOpen: () -> Unit,
-    modifier: Modifier = Modifier,
-    versionStatus: VersionStatus? = null,
-) {
-    EvidenceCard(
-        stringResource(R.string.release_title),
-        modifier.fillMaxWidth().testTag("releaseCard"),
-        headerAction = { CardSheetButton(stringResource(R.string.release_notes), onOpen, "releaseLink") },
+    val says = line.does?.takeIf { it != line.label }
+    Column(
+        verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = ZapSpacing.space3, vertical = ZapSpacing.space3),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3)) {
-            if (app.version.isNotBlank()) VersionPill(app.version, status = versionStatus, modifier = Modifier.testTag("releaseVersion"))
-            Text(
-                formatDate(app.releasedAt),
-                color = ZapText2,
-                style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2)) {
+            ZapBadge(line.label ?: line.id.orEmpty(), BadgeTone.Neutral)
+            // The Android name for anyone who wants to look it up.
+            line.id?.takeIf { it != line.label }?.let {
+                Text(it, color = ZapText3, style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
-    }
-}
-
-/** For an app with no security data: who published it, the package and the source still open from here. */
-@Composable
-internal fun PackageCard(onOpen: () -> Unit, modifier: Modifier = Modifier) {
-    EvidenceCard(
-        stringResource(R.string.privacy_and_security),
-        modifier.fillMaxWidth().testTag("packageCard"),
-        headerAction = { CardSheetButton(stringResource(R.string.see_full_report), onOpen, "seeFullReport") },
-    ) {
-        Text(stringResource(R.string.no_security_report), color = ZapText2, style = MaterialTheme.typography.bodyMedium)
+        says?.let { Text(it, color = ZapText, style = MaterialTheme.typography.bodyMedium) }
+        if (line.note.isNotBlank()) Text(line.note, color = ZapText2, style = MaterialTheme.typography.bodySmall)
     }
 }
 
@@ -461,14 +483,14 @@ private fun stacksZapperFace(profile: ProfileRecord?): Boolean =
     isHttpUrl(profile?.picture?.trim().orEmpty())
 
 /**
- * `21k sats` on one line, then `from` the faces and `…` in caption, sharing the amount's baseline.
+ * `21k sats` on one line, then `from` and the faces, with a face-sized `…` circle when more zappers than
+ * faces are shown. With no face to show (every zapper unknown or without a picture) it is the amount alone.
  * One target: it opens the full list.
  */
 @Composable
 private fun ZappersSummary(summary: ZapSummary, onClick: () -> Unit) {
     val total = pluralStringResource(R.plurals.zap_total, summary.totalSats.coerceIn(0, Int.MAX_VALUE.toLong()).toInt(), compactSats(summary.totalSats))
     val stacked = stackedZappers(summary.zappers, summary.profiles)
-    var shown by remember(stacked) { mutableIntStateOf(stacked.size) }
     val aside = MaterialTheme.typography.bodySmall
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -504,45 +526,58 @@ private fun ZappersSummary(summary: ZapSummary, onClick: () -> Unit) {
             StackedFaces(
                 stacked,
                 summary.profiles,
+                summary.zapperCount,
                 Modifier.weight(1f, fill = false).align(Alignment.CenterVertically),
-                onShown = { shown = it },
-            )
-        }
-        if (summary.zapperCount > shown) {
-            Text(
-                stringResource(R.string.zap_and_more),
-                color = ZapText2,
-                style = aside,
-                maxLines = 1,
-                softWrap = false,
             )
         }
     }
 }
 
+/** The face behind the stack when more zappers exist than faces shown: a circle of the same size holding `…`. */
+@Composable
+private fun MoreFace(more: Int) {
+    val description = pluralStringResource(R.plurals.zappers_more, more, more)
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .fillMaxSize()
+            .background(ZapCanvas, CircleShape)
+            .padding(2.dp * 0.9f)
+            .clip(CircleShape)
+            .background(ZapSurface3)
+            .semantics { contentDescription = description }
+            .testTag("zappersMore"),
+    ) {
+        Icon(painterResource(R.drawable.ic_more), contentDescription = null, tint = ZapText2, modifier = Modifier.size(14.dp))
+    }
+}
+
 /**
- * As many pictured zappers as the leftover width holds. Preferred overlap when they fit;
- * a little tighter when the slack on the right is enough for one more. `from` and `…` are
- * outside this and keep their width.
+ * As many pictured zappers as the leftover width holds. Preferred overlap when they fit; a little tighter when
+ * the slack on the right is enough for one more. When [zapperCount] is more than the faces shown, one more
+ * circle holding `…` sits behind the last face, so it reads as the stack carrying on. `from` is outside this.
  */
 @Composable
 private fun StackedFaces(
     stacked: List<Zapper>,
     profiles: Map<String, ProfileRecord>,
+    zapperCount: Int,
     modifier: Modifier = Modifier,
-    onShown: (Int) -> Unit = {},
 ) {
     SubcomposeLayout(modifier) { constraints ->
         val face = stackedFace.roundToPx()
         val preferredStep = (stackedFace + stackedOverlap).roundToPx().coerceAtLeast(1)
         val maxWidth = if (constraints.hasBoundedWidth) constraints.maxWidth else Int.MAX_VALUE
-        val count = facesThatFit(stacked.size, face, preferredStep, maxWidth)
-        onShown(count)
-        val pack = packFaces(count, face, preferredStep, maxWidth)
-        if (count == 0 || pack.face == 0) {
+        // The `…` circle takes a place of its own whenever someone is left out.
+        val hasMore = zapperCount > stacked.size
+        val slots = facesThatFit(stacked.size + if (hasMore) 1 else 0, face, preferredStep, maxWidth)
+        val count = if (hasMore && slots <= stacked.size) slots - 1 else minOf(slots, stacked.size)
+        val withMore = zapperCount > count
+        val pack = packFaces(count + if (withMore) 1 else 0, face, preferredStep, maxWidth)
+        if (count <= 0 || pack.face == 0) {
             layout(0, 0) {}
         } else {
-            val placeables = subcompose(count) {
+            val placeables = subcompose(count to withMore) {
                 stacked.take(count).forEachIndexed { i, zapper ->
                     val profile = profiles[zapper.pubkey]
                     Box(
@@ -562,10 +597,12 @@ private fun StackedFaces(
                         )
                     }
                 }
+                if (withMore) MoreFace(zapperCount - count)
             }.map { it.measure(Constraints.fixed(pack.face, pack.face)) }
             layout(pack.width, pack.face) {
+                val total = placeables.size
                 placeables.forEachIndexed { i, placeable ->
-                    placeable.placeRelative(i * pack.step, 0, zIndex = (count - i).toFloat())
+                    placeable.placeRelative(i * pack.step, 0, zIndex = (total - i).toFloat())
                 }
             }
         }

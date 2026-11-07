@@ -3,18 +3,21 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
+    <!-- Android's share glyph: three dots joined by two lines. -->
     <path
-        android:pathData="M12 4v11M8 8l4-4 4 4"
+        android:pathData="M18 5.5L6 12L18 18.5"
         android:strokeColor="#FF000000"
         android:strokeWidth="1.75"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
         android:fillColor="@android:color/transparent" />
     <path
-        android:pathData="M6 12v6.5A1.5 1.5 0 0 0 7.5 20h9a1.5 1.5 0 0 0 1.5-1.5V12"
-        android:strokeColor="#FF000000"
-        android:strokeWidth="1.75"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:fillColor="@android:color/transparent" />
+        android:pathData="M18 2.75a2.75 2.75 0 1 0 0 5.5a2.75 2.75 0 1 0 0-5.5Z"
+        android:fillColor="#FF000000" />
+    <path
+        android:pathData="M6 9.25a2.75 2.75 0 1 0 0 5.5a2.75 2.75 0 1 0 0-5.5Z"
+        android:fillColor="#FF000000" />
+    <path
+        android:pathData="M18 15.75a2.75 2.75 0 1 0 0 5.5a2.75 2.75 0 1 0 0-5.5Z"
+        android:fillColor="#FF000000" />
 </vector>

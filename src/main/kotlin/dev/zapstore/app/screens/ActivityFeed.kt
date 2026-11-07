@@ -33,8 +33,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.zapstore.app.R
-import dev.zapstore.app.ZapSize
+import dev.zapstore.app.ZapMarkdown
 import dev.zapstore.app.ZapSpacing
 import dev.zapstore.app.ZapText
 import dev.zapstore.app.ZapSurface3
@@ -47,14 +48,16 @@ import dev.zapstore.app.components.LoadingIndicator
 import dev.zapstore.app.components.ProfileImage
 import dev.zapstore.app.components.shortDisplayName
 import dev.zapstore.app.components.StackTile
-import dev.zapstore.app.components.ZapButton
-import dev.zapstore.app.components.ZapButtonStyle
+import dev.zapstore.app.components.UNKNOWN_PERSON
 import dev.zapstore.app.components.resolvedName
 import dev.zapstore.app.components.VersionPill
 import dev.zapstore.iolite.ActivityRecord
 import dev.zapstore.iolite.AppRecord
 import dev.zapstore.iolite.ProfileRecord
 import dev.zapstore.iolite.StackRecord
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
+import java.util.Locale
 import java.time.Instant
 import java.time.ZoneOffset
 
@@ -101,8 +104,8 @@ internal fun StackRecord.activity(): ActivityItem = ActivityItem(eventId, pubkey
 
 /**
  * The entries of an activity section, under a header the caller draws: loading, empty, or the rows. A row
- * opens through [onOpen]. When older entries exist, [onLoadMore] makes a left-aligned "Load more" button
- * that asks for the next page; without it the caller scrolls them in and a spinner stands in for them.
+ * opens through [onOpen]. When older entries exist a spinner ends the list, and the caller pages them in as
+ * it scrolls (see [LoadMoreNearEnd]).
  */
 internal fun LazyListScope.activityRows(
     items: List<ActivityItem>,
@@ -118,7 +121,6 @@ internal fun LazyListScope.activityRows(
     /** False on a person's own page, where every entry is theirs and their name would only repeat. */
     showWho: Boolean = true,
     modifier: Modifier = Modifier,
-    onLoadMore: (() -> Unit)? = null,
 ) {
     when {
         items.isEmpty() -> if (!loading && emptyText != null) {
@@ -135,19 +137,8 @@ internal fun LazyListScope.activityRows(
                 }
             }
             if (canLoadMore) {
-                if (onLoadMore != null) {
-                    item(key = "activityMore", contentType = "more") {
-                        ZapButton(
-                            text = stringResource(R.string.load_more),
-                            onClick = onLoadMore,
-                            style = ZapButtonStyle.Tonal,
-                            modifier = modifier.padding(top = ZapSpacing.space2).testTag("activityLoadMore"),
-                        )
-                    }
-                } else {
-                    item(key = "activityMore", contentType = "loading") {
-                        LoadingIndicator(modifier.padding(vertical = ZapSpacing.space4).testTag("activityLoadingMore"))
-                    }
+                item(key = "activityMore", contentType = "loading") {
+                    LoadingIndicator(modifier.padding(vertical = ZapSpacing.space4).testTag("activityLoadingMore"))
                 }
             }
         }
@@ -169,7 +160,8 @@ private fun ReleaseRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val named = showWho && item.pubkey !in catalogKeys && !app.isCatalogSigned && resolvedName(profile) != null
+    // Only an author with a NIP-C1 proof is named; whoever merely signed the listing is not.
+    val named = showWho && app.authorPubkey != null && item.pubkey !in catalogKeys && resolvedName(profile) != null
     Row(
         horizontalArrangement = Arrangement.spacedBy(ACTIVITY_APP_ICON_GAP),
         modifier = modifier
@@ -188,7 +180,7 @@ private fun ReleaseRow(
                 ) {
                     // Unweighted, so the app's name keeps its width and only the author's name is cut.
                     Strong(app.name, weight = FontWeight.Bold)
-                    if (app.version.isNotBlank()) VersionPill(app.version, scale = 0.8f)
+                    if (app.version.isNotBlank()) VersionPill(app.version)
                     if (named) {
                         Verb(stringResource(R.string.activity_by), style = AgoStyle)
                         Avatar(item.pubkey, profile, size = RELEASE_BYLINE_AVATAR)
@@ -205,8 +197,8 @@ private fun ReleaseRow(
 /**
  * One comment, zap or stack update, led by who did it: "[avatar] <name> on [icon] <app>", "... [bolt] N sats
  * to [icon] <app>" or "... updated [tile] <stack>" on one line, and a comment's text under it. A catalog key
- * reads "The catalog"; anyone else with no profile name, or anyone on a person's own page ([showWho] false),
- * is left out. With no app or stack, the entry belongs to the stack whose page lists it.
+ * reads "The catalog"; anyone else with no profile name reads "Someone" unless a zap opens the line with its
+ * amount, and on a person's own page ([showWho] false) nobody is named. With no app or stack, the entry belongs to the stack whose page lists it.
  */
 @Composable
 private fun SocialRow(
@@ -236,13 +228,16 @@ private fun SocialRow(
                 modifier = Modifier.weight(1f),
             ) {
                 if (byCatalog) Strong(stringResource(R.string.activity_the_catalog))
+                // A comment or a stack update never opens on its verb: "Someone on <app>", not "on <app>". A zap
+                // opens with its amount, so it needs no name.
+                if (showWho && !byCatalog && !hasAvatar && item.sats == null) Strong(UNKNOWN_PERSON)
                 if (hasAvatar) {
                     Avatar(item.pubkey, profile)
                     Strong(shortDisplayName(item.pubkey, profile))
                 }
                 when {
                     stack != null -> {
-                        Verb(stringResource(R.string.activity_updated))
+                        Verb(stringResource(if (showWho) R.string.activity_updated else R.string.activity_updated_lead))
                         Target(stack.name, Modifier.weight(1f, fill = false)) {
                             StackTile(stack.appIds, stackApps, size = ACTIVITY_ICON)
                         }
@@ -252,7 +247,8 @@ private fun SocialRow(
                             Sats(item.sats)
                             Verb(stringResource(R.string.activity_to))
                         } else {
-                            Verb(stringResource(R.string.activity_on))
+                            // Someone's own page has no name to lead, so the verb does.
+                            Verb(stringResource(if (showWho) R.string.activity_on else R.string.activity_commented_on))
                         }
                         Target(app.name, Modifier.weight(1f, fill = false)) {
                             AppIcon(title = app.name, iconUrl = app.iconUrl, iconFile = app.iconFile, size = ACTIVITY_ICON)
@@ -264,7 +260,8 @@ private fun SocialRow(
             }
             Ago(item.createdAt)
         }
-        item.comment?.takeIf { it.isNotBlank() }?.let {
+        // `nostr:nevent1…` and the like read as "note", a mentioned profile as `@npub1abc…wxyz`.
+        item.comment?.let(ZapMarkdown::plain)?.takeIf { it.isNotBlank() }?.let {
             SecondLine(
                 it,
                 italic = true,
@@ -277,7 +274,7 @@ private fun SocialRow(
 
 @Composable
 private fun Ago(createdAt: Long) {
-    Text(agoLabel(createdAt), color = ZapText3, style = AgoStyle, maxLines = 1, modifier = Modifier.padding(top = 1.dp))
+    Text(agoLabel(createdAt), color = ZapText3, style = AgoTimeStyle, maxLines = 1, modifier = Modifier.padding(top = 1.dp))
 }
 
 /** A row's about or comment, one line under the first. */
@@ -307,28 +304,29 @@ private fun Avatar(pubkey: String, profile: ProfileRecord?, size: Dp = ACTIVITY_
     }
 }
 
-/** A stack's or app's small icon and its name; the name is what gives way to an ellipsis. */
+/** A stack's or app's small icon and its name, which breaks onto a second line before it is cut. */
 @Composable
 private fun Target(name: String, modifier: Modifier = Modifier, icon: @Composable () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ACTIVITY_GAP), modifier = modifier) {
         Box(Modifier.size(ACTIVITY_ICON), contentAlignment = Alignment.Center) { icon() }
-        Strong(name, Modifier.weight(1f, fill = false))
+        Strong(name, Modifier.weight(1f, fill = false), maxLines = 2)
     }
 }
 
-/** A name in the line, cut with an ellipsis when there is no room. */
+/** A name in the line, cut with an ellipsis after [maxLines] when there is no room. */
 @Composable
 private fun Strong(
     text: String,
     modifier: Modifier = Modifier,
     style: TextStyle = MaterialTheme.typography.bodyMedium,
     weight: FontWeight = FontWeight.SemiBold,
+    maxLines: Int = 1,
 ) {
     Text(
         text,
         color = ZapText,
         style = style.copy(fontWeight = weight),
-        maxLines = 1,
+        maxLines = maxLines,
         overflow = TextOverflow.Ellipsis,
         modifier = modifier,
     )
@@ -340,6 +338,10 @@ private val AgoStyle
         fontSize = MaterialTheme.typography.labelSmall.fontSize,
         lineHeight = MaterialTheme.typography.labelSmall.lineHeight,
     )
+
+/** The time at the right of a row: the app's smallest text, the size of the count badge and the tab labels. */
+private val AgoTimeStyle
+    @Composable get() = MaterialTheme.typography.bodySmall.copy(fontSize = 10.5.sp, lineHeight = 12.75.sp, fontFeatureSettings = "tnum")
 
 /** What was done, in the quieter colour: "by", "to", "on", "updated". */
 @Composable
@@ -360,7 +362,7 @@ private fun Sats(sats: Long) {
     }
 }
 
-/** "just now", "5m ago", "13h ago", "1d ago", and the UTC date from 60 days on: the web page's `ago`. */
+/** "just now", "5m ago", "13h ago", "1d ago", and the UTC date from 60 days on ("Jun 6, 2025" in English): the web page's `ago`. */
 @Composable
 internal fun agoLabel(createdAt: Long): String {
     val seconds = System.currentTimeMillis() / 1000 - createdAt
@@ -369,7 +371,8 @@ internal fun agoLabel(createdAt: Long): String {
         seconds < 3_600 -> stringResource(R.string.activity_ago_minutes, seconds / 60)
         seconds < 24 * 3_600 -> stringResource(R.string.activity_ago_hours, seconds / 3_600)
         seconds < 60 * 86_400 -> stringResource(R.string.activity_ago_days, seconds / 86_400)
-        else -> Instant.ofEpochSecond(createdAt).atZone(ZoneOffset.UTC).toLocalDate().toString()
+        else -> DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(Locale.getDefault())
+            .format(Instant.ofEpochSecond(createdAt).atZone(ZoneOffset.UTC))
     }
 }
 
@@ -388,10 +391,11 @@ internal fun LoadMoreNearEnd(position: () -> Pair<Int?, Int>, canLoadMore: Boole
 
 private const val PREFETCH = 6
 /** The avatars and app or stack icons inside a line. */
-private val ACTIVITY_ICON = 20.dp
-private val RELEASE_BYLINE_AVATAR = 18.dp
-/** The app's icon leading a release row. */
-private val ACTIVITY_APP_ICON = ZapSize.control
+/** Icons and avatars inside a line: 5% over the earlier 20 and 18 dp. */
+private val ACTIVITY_ICON = 21.dp
+private val RELEASE_BYLINE_AVATAR = 19.dp
+/** The app's icon leading a release row: 5% over the control height (44 dp). */
+private val ACTIVITY_APP_ICON = 46.dp
 private val ACTIVITY_APP_ICON_GAP = 10.dp
 /** Between the parts of a line, and between a row's two lines. */
 private val ACTIVITY_GAP = 6.dp

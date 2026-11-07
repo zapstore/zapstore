@@ -1,5 +1,7 @@
 package dev.zapstore.app.screens
 
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.layout.layout
 import dev.zapstore.app.components.shortDisplayName
 import dev.zapstore.app.components.animationsEnabled
 import androidx.compose.ui.graphics.TransformOrigin
@@ -109,7 +111,6 @@ fun AppDetailScreen(
     focusComment: String? = null,
 ) {
     var selectedScreenshot by remember { mutableStateOf<Int?>(null) }
-    var releasing by remember { mutableStateOf(false) }
     var reporting by remember { mutableStateOf(false) }
     var stacking by remember { mutableStateOf(false) }
     var zapping by remember { mutableStateOf(false) }
@@ -140,8 +141,9 @@ fun AppDetailScreen(
     val showShots = app?.screenshots?.isNotEmpty() == true
     val showZaps = state.social.zappable || state.zaps.zappers.isNotEmpty()
     val showStackedBy = state.stackedBy.stacks.isNotEmpty()
-    // The head, about, release, security card, header and composer are always there.
-    val leadingItems = 6 + listOf(showSigned, showShots, showZaps, showStackedBy).count { it }
+    // The head, about, the Security and Releases panels and the composer are always there; the header only with a feed.
+    val showActivity = feed.isNotEmpty()
+    val leadingItems = 4 + listOf(showSigned, showShots, showZaps, showStackedBy, showActivity).count { it }
     val feedItems = if (feed.isEmpty() && (comments.error != null || comments.loading)) 1 else feed.size
     var pendingComment by rememberSaveable(focusComment) { mutableStateOf(focusComment) }
     val focusIndex = remember(pendingComment, feed, other, leadingItems, feedItems) {
@@ -201,6 +203,8 @@ fun AppDetailScreen(
                     indexed = app.byline == AppByline.Indexed,
                     onAuthorClick = onProfileClick,
                     onMarkClick = { authorSheet = true },
+                    source = (app.downloadUrl ?: app.repository)?.takeIf { it.isNotBlank() },
+                    onSourceClick = app.repository?.takeIf(::isHttpUrl)?.let { repo -> { onOpenUrl(repo) } },
                     more = { moreMenu("appMore") },
                     modifier = Modifier.scrollParallax(listState),
                 )
@@ -214,7 +218,11 @@ fun AppDetailScreen(
             if (showShots) {
                 item(key = "screenshots", contentType = "screenshots") {
                     val shots = rememberLazyListState()
-                    LazyRow(state = shots, horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2)) {
+                    LazyRow(
+                        state = shots,
+                        horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+                        modifier = Modifier.padding(vertical = ZapSpacing.space1),
+                    ) {
                         items(app.screenshots.take(5), key = { it }) { url ->
                             Box(
                                 Modifier
@@ -281,30 +289,26 @@ fun AppDetailScreen(
 
             if (showStackedBy) {
                 item(key = "stackedBy", contentType = "stackedBy") {
-                    StackedByRow(state.stackedBy, onStackClick, Modifier.padding(vertical = ZapSpacing.space2))
+                    // Sits closer to the zap row above than the list's spacing puts it; the gap to the card below stays.
+                    StackedByRow(state.stackedBy, onStackClick, Modifier.pullUp(ZapSpacing.space2))
                 }
             }
 
-            item(key = "release", contentType = "card") {
-                ReleaseCard(app, onOpen = { releasing = true }, versionStatus = state.install.versionStatus)
-            }
-            if (app.hasSecurityCard()) {
-                item(key = "security", contentType = "card") {
-                    SecurityReportCard(
-                        app = app,
-                        onOpenUrl = onOpenUrl,
-                        onSeeFull = { report = true },
-                    )
-                }
-            } else {
-                item(key = "security", contentType = "card") {
-                    PackageCard(onOpen = { report = true })
-                }
+            item(key = "status", contentType = "card") {
+                ReleaseAndSecurityCard(
+                    app = app,
+                    versionStatus = state.install.versionStatus,
+                    onOpenUrl = onOpenUrl,
+                    onOpen = { report = true },
+                )
             }
 
-            item(key = "commentsHeader", contentType = "header") {
-                // "Activity": the list below is the app's comments, and the zaps that came with a note.
-                GroupHeader(stringResource(R.string.activity), count = feed.sumOf { it.size }.takeIf { it > 0 })
+            // "Comments" heads a list; with nothing in it, the Add Comment button stands alone.
+            if (showActivity) {
+                item(key = "commentsHeader", contentType = "header") {
+                    // The list below is the app's comments, and the zaps that came with a note.
+                    GroupHeader(stringResource(R.string.comments), count = feed.sumOf { it.size }.takeIf { it > 0 })
+                }
             }
             item(key = "commentComposer", contentType = "composer") {
                 AddCommentButton({ commenting = true })
@@ -394,15 +398,8 @@ fun AppDetailScreen(
                 onOpenUrl = onOpenUrl,
             )
         }
-        if (releasing) {
-            ReleaseSheet(app, onOpenUrl) { releasing = false }
-        }
         if (report) {
-            SecurityReportSheet(
-                app = app,
-                onOpenUrl = onOpenUrl,
-                onDismiss = { report = false },
-            )
+            ReleaseSheet(app, onOpenUrl) { report = false }
         }
         if (authorSheet) {
             PublisherSheet(
@@ -580,5 +577,12 @@ private const val COMPACT_START = 0.45f
 
 private val COMPACT_BAR_HEIGHT = 52.dp
 
-/** Head icon (56 dp) over bar icon (28 dp): where the morph starts. */
-private const val HEAD_ICON_RATIO = 56f / 28f
+/** Head icon (64 dp) over bar icon (28 dp): where the morph starts. */
+private const val HEAD_ICON_RATIO = 64f / 28f
+
+/** Moves a list item up by [by], taking that much off its height, so the item before it is closer and the one after is not. */
+private fun Modifier.pullUp(by: Dp): Modifier = layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints)
+    val pull = by.roundToPx().coerceAtMost(placeable.height)
+    layout(placeable.width, placeable.height - pull) { placeable.placeRelative(0, -pull) }
+}

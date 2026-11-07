@@ -95,6 +95,12 @@
     <string name="developer_key">Developer key</string>
     <string name="signing_certificate">Signing certificate</string>
     <string name="proof_published">Proof published</string>
+    <string name="proof_verified_title">C1 proof verified</string>
+    <string name="proof_verified_body">The developer proved they hold this app\'s signing key.</string>
+    <string name="proof_missing_title">No C1 proof</string>
+    <string name="proof_missing_body">Whoever published this has not proved the app is theirs.</string>
+    <string name="proof_indexed_title">No C1 proof</string>
+    <string name="proof_indexed_body">The catalog indexed this app; the developer has not claimed it.</string>
     <string name="valid_until">Valid until</string>
     <string name="stacks">Stacks</string>
     <string name="curated_stacks">Curated stacks</string>
@@ -110,12 +116,13 @@
     <string name="unsave">Remove from saved</string>
     <string name="activity">Activity</string>
     <string name="recent_activity">Recent activity</string>
-    <string name="load_more">Load more</string>
     <string name="activity_by">by</string>
     <string name="activity_updated">updated</string>
     <string name="activity_stack_comment">Comment on a stack</string>
     <string name="activity_to">to</string>
     <string name="activity_on">on</string>
+    <string name="activity_commented_on">Commented on</string>
+    <string name="activity_updated_lead">Updated</string>
     <string name="activity_the_catalog">The catalog</string>
     <string name="activity_filter_social">Social</string>
     <string name="stacked_by">Stacked in</string>
@@ -165,7 +172,6 @@
     <string name="license">License</string>
     <string name="app_id">Package ID</string>
     <string name="author">Author</string>
-    <string name="see_full_report">See full report</string>
     <string name="copied">Copied</string>
     <string name="release_title">Latest release</string>
     <string name="version_code">Version code</string>
@@ -192,6 +198,10 @@
     <string name="not_available">Not available</string>
     <string name="copy">Copy</string>
     <string name="privacy_and_security">Privacy and security report</string>
+    <string name="security_title">Privacy &amp; Security</string>
+    <string name="card_full_report">Full report and release details</string>
+    <string name="card_details">Details</string>
+    <string name="release_no_notes_short">No notes</string>
     <string name="app_icon_description">%1$s icon</string>
     <string name="screenshot_description">%1$s screenshot</string>
     <string name="profile_avatar_description">%1$s avatar</string>
@@ -343,7 +353,7 @@
     <string name="assure_unverified">%1$s has not proved this app is theirs</string>
     <string name="assure_permissions">Asks for %1$s</string>
     <string name="assure_more">%1$s +%2$d</string>
-    <string name="permissions_show_all">Show all %1$d</string>
+    <string name="permissions_show_all">What they allow</string>
     <string name="permissions_show_less">Show less</string>
     <string name="trust_you_zapped">You zapped this app.</string>
     <string name="trust_leaked">The publisher\'s key has leaked</string>
@@ -353,6 +363,8 @@
     <string name="catalog_indexed_body">%1$s is tracked by the Zapstore indexer and its releases are signed with the catalog key.</string>
     <string name="catalog_indexed_from_lead">%1$s is tracked by the Zapstore indexer from\u0020</string>
     <string name="catalog_indexed_from_tail">\u0020and its releases are signed with the catalog key.</string>
+    <string name="install_from">Installs from</string>
+    <string name="source_from">From</string>
     <string name="downloads_from">Downloads from its original release location:</string>
     <string name="install_cancel">Cancel</string>
     <string name="install_blocked_platform">This APK targets an Android version this device cannot install.</string>
@@ -433,7 +445,6 @@
         <item quantity="other">%s sats</item>
     </plurals>
     <string name="zap_from">from</string>
-    <string name="zap_and_more">…</string>
     <string name="zap_support">Support %1$s with a zap</string>
     <string name="zap_support_catalog">Support the catalog with a zap</string>
     <string name="zappers_title">Top zappers</string>

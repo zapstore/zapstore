@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Codeberg's mountain mark, redrawn: a white peak and its shoulder on the forge's blue disc. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#2185D0"
+        android:pathData="M12,12m-12,0a12,12 0,1 1,24 0a12,12 0,1 1,-24 0" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M12,4.6L19.6,17.4L4.4,17.4Z" />
+    <path
+        android:fillColor="#2185D0"
+        android:fillAlpha="0.55"
+        android:pathData="M12,4.6L15.2,10.2L12,10.2L9.6,14.6L7.6,17.4L12,17.4Z" />
+</vector>

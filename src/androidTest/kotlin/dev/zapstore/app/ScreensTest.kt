@@ -32,7 +32,7 @@ import dev.zapstore.app.screens.ZapRecipient
 import dev.zapstore.app.screens.InstallUi
 import dev.zapstore.app.screens.TrustPerson
 import dev.zapstore.app.screens.TrustUi
-import dev.zapstore.app.ZapDanger
+import dev.zapstore.app.ZapWarning
 import dev.zapstore.app.ZapVerified
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.hasAnyAncestor
@@ -42,6 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -377,12 +378,13 @@ class ScreensTest {
         composeRule.onNodeWithText("Works great").assertIsDisplayed()
         composeRule.onNodeWithText("on").assertIsDisplayed()
         composeRule.onNodeWithText("2.1k sats").assertIsDisplayed()
-        // Nobody names the author, so the line starts at the verb rather than say "Someone".
-        composeRule.onNodeWithText("Someone").assertDoesNotExist()
+        // The comment opens with "Someone on <app>", never "on <app>"; the zap opens with its amount and names nobody.
+        composeRule.onAllNodesWithText("Someone").assertCountEquals(1)
         composeRule.onNodeWithTag("activity:${"d".repeat(64)}").performClick()
         assertEquals("dev.zap", opened)
-        composeRule.onNodeWithTag("homeList").performScrollToNode(hasTestTag("activityLoadMore"))
-        composeRule.onNodeWithText("Load more").performClick()
+        // No button: reaching the end of the list asks for the next page.
+        composeRule.onNodeWithTag("homeList").performScrollToNode(hasTestTag("activityLoadingMore"))
+        composeRule.onNodeWithText("Load more").assertDoesNotExist()
         composeRule.waitUntil { moreActivity > 0 }
         composeRule.onNodeWithTag("searchField").performImeAction()
         assertTrue(submitted)
@@ -680,7 +682,7 @@ class ScreensTest {
             }
         }
 
-        composeRule.onNodeWithTag("appDetail").performScrollToKey("security")
+        composeRule.onNodeWithTag("appDetail").performScrollToKey("status")
         composeRule.onNodeWithText("No Google services").assertIsDisplayed()
         composeRule.onNodeWithText("Works offline").assertIsDisplayed()
         composeRule.onNodeWithText("No source").assertIsDisplayed()
@@ -688,18 +690,17 @@ class ScreensTest {
         assertTrue(composeRule.onAllNodesWithText("Account required").fetchSemanticsNodes().isEmpty())
         assertPillColor("fact_google_services", ZapVerified)
         assertPillColor("fact_offline_capable", ZapVerified)
-        assertPillColor("fact_source_available", ZapDanger)
+        assertPillColor("fact_source_available", ZapWarning)
 
         // Permissions are not on the page; the full report lists them.
         assertTrue(composeRule.onAllNodesWithText("Camera").fetchSemanticsNodes().isEmpty())
-        composeRule.onNodeWithTag("seeFullReport").performClick()
-        // Collapsed, the report names the known permissions as pills; expanding lists them all.
-        composeRule.onNodeWithTag("permissionPills").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("permissionsExpand").performScrollTo().performClick()
+        composeRule.onNodeWithTag("releaseLink").performClick()
+        // Two permissions are just listed: no "Show all", the detail is already there.
+        composeRule.onNodeWithTag("permissionsExpand").assertDoesNotExist()
         composeRule.onNodeWithText("Take photos and record video").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("CAMERA").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("otherPermissions").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("ACCESS_NETWORK_STATE").assertIsDisplayed()
+        // A routine id with no plain words is not listed.
+        assertTrue(composeRule.onAllNodesWithText("ACCESS_NETWORK_STATE").fetchSemanticsNodes().isEmpty())
     }
 
     @Test
@@ -720,10 +721,10 @@ class ScreensTest {
                 )
             }
         }
-        composeRule.onNodeWithTag("appDetail").performScrollToKey("security")
+        composeRule.onNodeWithTag("appDetail").performScrollToKey("status")
         // Neither the hash nor the package id is on the page.
         assertTrue(composeRule.onAllNodesWithText(apk).fetchSemanticsNodes().isEmpty())
-        composeRule.onNodeWithTag("seeFullReport").performClick()
+        composeRule.onNodeWithTag("releaseLink").performClick()
         composeRule.onNodeWithText("a".repeat(64)).performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText(apk).performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("dev.zap").performScrollTo().assertIsDisplayed()
@@ -746,12 +747,12 @@ class ScreensTest {
                 )
             }
         }
-        composeRule.onNodeWithTag("appDetail").performScrollToKey("release")
-        composeRule.onNodeWithTag("releaseCard").assertIsDisplayed()
+        composeRule.onNodeWithTag("appDetail").performScrollToKey("status")
+        composeRule.onNodeWithTag("releaseLink").assertIsDisplayed()
         composeRule.onNodeWithTag("releaseLink").performClick()
         composeRule.onNodeWithTag("releaseSheet").assertIsDisplayed()
-        composeRule.onNodeWithText("Fixes the crash.").assertIsDisplayed()
-        composeRule.onNodeWithText("Version code").assertIsDisplayed()
+        composeRule.onNodeWithText("Fixes the crash.").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Version code").performScrollTo().assertIsDisplayed()
     }
 
     @Test
@@ -861,7 +862,7 @@ class ScreensTest {
             }
         }
 
-        composeRule.onNodeWithTag("appDetail").performScrollToKey("security")
+        composeRule.onNodeWithTag("appDetail").performScrollToKey("status")
         composeRule.onNodeWithText("Contacts leave the phone.").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Installs other apps.").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("The address book is read on the share screen.").performScrollTo().assertIsDisplayed()
@@ -869,7 +870,7 @@ class ScreensTest {
     }
 
     private fun assertPillColor(tag: String, expected: Color) {
-        val pixels = composeRule.onNodeWithTag(tag).captureToImage().toPixelMap()
+        val pixels = composeRule.onNodeWithTag(tag, useUnmergedTree = true).captureToImage().toPixelMap()
         val hit = (0 until pixels.width).any { x ->
             (0 until pixels.height).any { y -> pixels[x, y].matches(expected) }
         }
@@ -1095,7 +1096,8 @@ class ScreensTest {
         }
         // The head names nobody: no "by" and no catalog avatar, the mark and a line that says so.
         assertTrue(composeRule.onAllNodesWithTag("profile:$AUTHOR").fetchSemanticsNodes().isEmpty())
-        composeRule.onNodeWithTag("headIndexed").assertTextEquals("Published by the catalog")
+        // As in the Flutter app: the forge's logo and repository, not "Published by the catalog".
+        composeRule.onNodeWithTag("headIndexed").assertTextEquals("From", "zap/indexed")
         composeRule.onNodeWithTag("indexedAuthor").performClick()
         composeRule.onNodeWithTag("authorSheet").assertIsDisplayed()
         composeRule.onNodeWithText("Developer information").assertIsDisplayed()
@@ -1107,8 +1109,8 @@ class ScreensTest {
         assertTrue(composeRule.onAllNodesWithText("Refresh with your web of trust").fetchSemanticsNodes().isEmpty())
         assertTrue(composeRule.onAllNodesWithText("Check reputation in your network").fetchSemanticsNodes().isEmpty())
         pressBack()
-        composeRule.onNodeWithTag("appDetail").performScrollToKey("security")
-        composeRule.onNodeWithTag("seeFullReport").performClick()
+        composeRule.onNodeWithTag("appDetail").performScrollToKey("status")
+        composeRule.onNodeWithTag("releaseLink").performClick()
         assertTrue(composeRule.onAllNodesWithTag("reportDeveloper").fetchSemanticsNodes().isEmpty())
         assertTrue(composeRule.onAllNodesWithText("Developer").fetchSemanticsNodes().isEmpty())
     }
@@ -1614,9 +1616,9 @@ class ScreensTest {
             }
         }
 
-        // No security data, so the page offers the report through a plain card.
-        composeRule.onNodeWithTag("appDetail").performScrollToKey("security")
-        composeRule.onNodeWithTag("seeFullReport").performClick()
+        // No security data, so the card says so and still opens the sheet with the package and source.
+        composeRule.onNodeWithTag("appDetail").performScrollToKey("status")
+        composeRule.onNodeWithTag("releaseLink").performClick()
         composeRule.onNodeWithText("https://example.com/repo").performScrollTo().performClick()
 
         assertEquals("https://example.com/repo", openedUrl)

@@ -32,6 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.platform.testTag
@@ -111,7 +112,8 @@ val LocalInstalledVersions = compositionLocalOf<Map<String, String>> { emptyMap(
  * or that another store signed it) takes the author's place on line 1.
  *
  * **Everywhere else** (search, a stack, a profile, Saved): line 1 the name, then "by" the verified author;
- * line 2 the tagline. No version. An app installed on this phone carries a check after the name.
+ * line 2 the tagline. No version. An app installed on this phone carries a tick on its icon, a clock when
+ * an update is listed.
  *
  * Nothing overflows the row. The name ellipsizes. The author's name is shown in full or not at all: when
  * it does not fit, the row keeps "by" and the avatar. An indexed or unverified listing names nobody.
@@ -145,12 +147,18 @@ fun AppRow(
             .clickable(interactionSource = interaction, indication = LocalIndication.current, onClick = onClick)
             .padding(vertical = ZapSpacing.space3),
     ) {
-        AppIcon(title = app.name, iconUrl = app.iconUrl, iconFile = app.iconFile, size = ROW_TILE)
+        Box {
+            AppIcon(title = app.name, iconUrl = app.iconUrl, iconFile = app.iconFile, size = ROW_TILE)
+            if (!onDevice && (installed != null || pendingFrom != null)) {
+                InstalledBadge(
+                    updateAvailable = updating,
+                    modifier = Modifier.align(Alignment.BottomEnd).offset(x = ROW_BADGE_OUT, y = ROW_BADGE_OUT).testTag("installedMark"),
+                )
+            }
+        }
         Column(Modifier.weight(1f).height(ROW_TILE), verticalArrangement = Arrangement.SpaceBetween) {
             RowTitleLine(
                 title = app.name,
-                installed = !onDevice && (installed != null || pendingFrom != null),
-                updateAvailable = !onDevice && updating,
                 authorPubkey = authorPubkey,
                 author = author,
                 note = note,
@@ -163,11 +171,10 @@ fun AppRow(
                                 it,
                                 next = listed,
                                 modifier = Modifier.testTag("updatePill:${app.appId}"),
-                                scale = ROW_PILL_SCALE,
                                 status = VersionStatus.Update,
                             )
                         } else {
-                            VersionPill(it, scale = ROW_PILL_SCALE, status = VersionStatus.Current)
+                            VersionPill(it, status = VersionStatus.Current)
                         }
                     }
                 } else if (tagline != null) {
@@ -186,17 +193,15 @@ fun AppRow(
 }
 
 /**
- * Line 1: the name, then the installed mark, then "by" the author or a note. The mark is a tick
- * when the phone has the listed version, a clock when a newer one is listed. Nothing draws past the row.
+ * Line 1: the name, then "by" the author or a note. Nothing draws past the row. An installed app's tick or
+ * clock is a badge on its icon, not part of this line.
  */
 @Composable
 private fun RowTitleLine(
     title: String,
-    installed: Boolean,
     authorPubkey: String?,
     author: ProfileRecord?,
     note: String?,
-    updateAvailable: Boolean = false,
 ) {
     val titleStyle = MaterialTheme.typography.titleSmall.copy(fontSize = 17.5.sp, lineHeight = 23.25.sp)
     val asideStyle = MaterialTheme.typography.bodySmall
@@ -206,7 +211,6 @@ private fun RowTitleLine(
         modifier = Modifier.fillMaxWidth().height(ROW_TITLE_LINE),
         content = {
             Text(title, color = ZapText, style = titleStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (installed) InstalledPill(Modifier.testTag("installedMark"), updateAvailable = updateAvailable)
             if (note != null) {
                 Text(note, color = ZapText3, style = asideStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
             } else if (authorPubkey != null) {
@@ -235,7 +239,6 @@ private fun RowTitleLine(
         val gap = 8.dp.roundToPx()
         val inner = 6.dp.roundToPx()
         var cursor = 1
-        val mark = if (installed) measurables[cursor++].measure(loose) else null
         val noteMeasurable = if (note != null) measurables[cursor++] else null
         val by = if (authorPubkey != null) measurables[cursor++].measure(loose) else null
         val avatar = if (authorPubkey != null) measurables[cursor++].measure(loose) else null
@@ -246,11 +249,8 @@ private fun RowTitleLine(
 
         // Width of everything after the title, including the gap that separates it from the title.
         fun tail(noteShown: Int, withName: Boolean): Int = when {
-            noteWidth != null && mark != null -> gap + mark.width + gap + noteShown
             noteWidth != null -> gap + noteShown
-            by != null && avatar != null && mark != null -> gap + mark.width + gap + by.width + inner + avatar.width + if (withName) inner + nameNatural!!.width else 0
             by != null && avatar != null -> gap + by.width + inner + avatar.width + if (withName) inner + nameNatural!!.width else 0
-            mark != null -> gap + mark.width
             else -> 0
         }
         val showName = nameNatural != null && by != null && titleWidth + tail(0, true) <= width
@@ -271,7 +271,6 @@ private fun RowTitleLine(
                 x += item.width
             }
             place(titlePlaceable, 0)
-            if (mark != null) place(mark, gap)
             if (noteDrawn != null) place(noteDrawn, gap)
             else if (by != null && avatar != null) {
                 place(by, gap)
@@ -282,11 +281,22 @@ private fun RowTitleLine(
     }
 }
 
-/** The detail head tile. */
-private val HEAD_ICON = 56.dp
+/** The detail head tile: the 64 dp step of the app tile scale (28, 40, 48, 56, 64, 88). */
+private val HEAD_ICON = 64.dp
+
+/** How far the byline sits above the icon's bottom edge. */
+private val HEAD_BYLINE_LIFT = 6.dp
 
 /** Tall enough for the verification mark, which is a 28 dp target. */
-private val HEAD_TITLE_LINE = 28.dp
+private val HEAD_TITLE_LINE = 30.dp
+
+/** Lets a child take [extra] more width than its parent offers, to the right. */
+private fun Modifier.reachRight(extra: Dp): Modifier = layout { measurable, constraints ->
+    val more = extra.roundToPx()
+    val wide = constraints.maxWidth + more
+    val placeable = measurable.measure(constraints.copy(minWidth = wide, maxWidth = wide))
+    layout(constraints.maxWidth, placeable.height) { placeable.place(0, 0) }
+}
 
 /**
  * App page head. The name and its verification mark top-align with the icon, "by" the author
@@ -306,6 +316,9 @@ fun AppDetailHead(
     indexed: Boolean = false,
     onAuthorClick: (String) -> Unit = {},
     onMarkClick: () -> Unit = {},
+    /** Where an indexed app's file is released, shown in place of an author the catalog does not have. */
+    source: String? = null,
+    onSourceClick: (() -> Unit)? = null,
     /** The "..." menu, drawn at the head's top right. */
     more: (@Composable () -> Unit)? = null,
 ) {
@@ -329,7 +342,8 @@ fun AppDetailHead(
                 Text(
                     name,
                     color = ZapText,
-                    style = MaterialTheme.typography.titleLarge,
+                    // 5% over the sheet-title size, so the name leads the page.
+                    style = MaterialTheme.typography.titleLarge.copy(fontSize = 24.4.sp, lineHeight = 30.sp),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
@@ -340,20 +354,35 @@ fun AppDetailHead(
                     authorPubkey != null -> UnverifiedMark(onMarkClick)
                 }
             }
-            when {
-                authorPubkey != null -> AuthorByline(
-                    pubkey = authorPubkey,
-                    profile = author,
-                    lead = stringResource(R.string.row_by),
-                    onClick = { onAuthorClick(authorPubkey) },
-                )
-                indexed -> Text(
-                    stringResource(R.string.indexed_author),
-                    color = ZapText2,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1,
-                    modifier = Modifier.testTag("headIndexed"),
-                )
+            // Lifted a little off the icon's bottom edge, which left the two lines far apart.
+            Box(Modifier.padding(bottom = HEAD_BYLINE_LIFT)) {
+                when {
+                    authorPubkey != null -> AuthorByline(
+                        pubkey = authorPubkey,
+                        profile = author,
+                        lead = stringResource(R.string.row_by),
+                        onClick = { onAuthorClick(authorPubkey) },
+                    )
+                    // As the Flutter app did: "From", the known host's logo and short name, or the host; tapping opens the repository.
+                    indexed && source != null -> SourceLine(
+                        source,
+                        lead = stringResource(R.string.source_from),
+                        // The "..." menu sits above this line's right end, so the line may run under its lower edge.
+                        modifier = Modifier.testTag("headIndexed").reachRight(ZapSpacing.space10),
+                        whole = false,
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.5.sp),
+                        leadColor = ZapText3,
+                        color = ZapText2,
+                        onClick = onSourceClick,
+                    )
+                    indexed -> Text(
+                        stringResource(R.string.indexed_author),
+                        color = ZapText2,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        modifier = Modifier.testTag("headIndexed"),
+                    )
+                }
             }
         }
         // Nudged up and right so the dots sit level with the name and the icon's edge lines up with the page margin.
@@ -364,8 +393,8 @@ fun AppDetailHead(
 /** Title line. titleSmall is 15/20; the row's title is 10% larger, so 16.5/22. */
 private val ROW_TITLE_LINE = 23.25.dp
 
-/** Tagline, or the version pill. The pill is slightly shorter and is centered in this line. */
-private val ROW_SECOND_LINE = 21.25.dp
+/** Tagline, or the version pill, centered in this line. Tall enough for the pill, which is the same size everywhere. */
+private val ROW_SECOND_LINE = 23.dp
 
 /** The app-row tile from the tokens (48). The two lines are 42, so the column leaves 6 dp between them and the text still meets the icon. */
 private val ROW_TILE = 48.dp
@@ -373,8 +402,8 @@ private val ROW_TILE = 48.dp
 /** The author avatar. */
 private val ROW_MARK = 16.dp
 
-/** The row's pill is 20% smaller than the page-level pill, the same as in Activity. */
-private const val ROW_PILL_SCALE = 0.8f
+/** How far the installed badge hangs past the icon's bottom right corner. */
+private val ROW_BADGE_OUT = 4.dp
 
 /** Never blank: the tagline, else where the source lives, else the package id. */
 internal fun AppRecord.rowLine(): String =

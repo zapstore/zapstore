@@ -1,5 +1,9 @@
 package dev.zapstore.app.screens
 
+import dev.zapstore.app.components.SourceLine
+import androidx.compose.foundation.Image
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.offset
 import dev.zapstore.app.components.ZapTextLink
 import dev.zapstore.app.components.shortDisplayName
@@ -35,6 +39,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.runtime.remember
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.clickable
@@ -115,6 +120,9 @@ import dev.zapstore.app.components.EvidenceField
 import dev.zapstore.iolite.AppByline
 import dev.zapstore.iolite.ProfileRecord
 import dev.zapstore.app.ZapLine
+import dev.zapstore.app.ZapSurface1
+import dev.zapstore.app.isHttpUrl
+import dev.zapstore.app.components.rememberCopier
 
 /** False while a [ZapSheet] is still sliding in. A field that opens the keyboard waits for true, so the two never animate at once. */
 internal val LocalSheetSettled = compositionLocalOf { true }
@@ -406,7 +414,7 @@ internal fun InstallSheet(
                 if (app.byline == AppByline.Verified) {
                     VerifiedStandingLine(app.bylinePubkey?.let { shortDisplayName(it, author) }.orEmpty(), app.bylinePubkey, null)
                 }
-                if (app.isCatalogSigned) CatalogSignedNote(app.name, app.downloadUrl, Modifier.testTag("installCatalogSigned"), source = app.repository)
+                if (app.isCatalogSigned) CatalogSignedNote(app.name, null, Modifier.testTag("installCatalogSigned"), source = app.repository)
                 Text(
                     if (switching) {
                         stringResource(R.string.install_takeover_store, otherStore.orEmpty())
@@ -417,6 +425,7 @@ internal fun InstallSheet(
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
+            app.downloadUrl?.takeIf { it.isNotBlank() }?.let { SourceLine(it, stringResource(R.string.install_from), tag = "downloadUrl") }
             ZapButton(
                 text = stringResource(if (switching) R.string.update_with_zapstore else R.string.install_confirm),
                 onClick = onConfirm,
@@ -486,50 +495,6 @@ internal fun CatalogSignedNote(
 internal fun downloadLabel(url: String): String = url.trim().substringAfter("://")
 
 /**
- * The full report. The verdict first (flags, pills, prose) and the permissions, then the exact package
- * and file, and where the source is. Each identifier has a copy icon. Who published the app is the
- * author sheet, opened from the mark beside the name.
- */
-@Composable
-internal fun SecurityReportSheet(
-    app: AppRecord,
-    onOpenUrl: (String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.8f).dp
-    ZapSheet(onDismiss) {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(ZapSpacing.space5),
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = maxHeight)
-                .verticalScroll(rememberScrollState())
-                .padding(start = ZapSpacing.space5, end = ZapSpacing.space5, bottom = ZapSpacing.space5)
-                .testTag("securityReportSheet"),
-        ) {
-            Text(stringResource(R.string.privacy_and_security), color = Color.White, style = MaterialTheme.typography.titleLarge)
-            if (app.hasVerdict()) SecurityVerdict(app, onOpenUrl)
-            if (app.hasPermissions()) {
-                ReportSection(stringResource(R.string.report_permissions)) { PermissionsList(app) }
-            }
-            ReportSection(stringResource(R.string.report_package), Modifier.testTag("reportPackage")) {
-                EvidenceField(stringResource(R.string.app_id), app.appId)
-                app.apkHash?.let { EvidenceField(stringResource(R.string.apk_sha256), it) }
-                app.certificateHash?.let { EvidenceField(stringResource(R.string.signing_certificate), it) }
-                app.certificateChain().drop(1).forEach { EvidenceField(stringResource(R.string.previous_certificates), it) }
-                app.downloadUrl?.let { EvidenceField(stringResource(R.string.download_url), it) }
-            }
-            if (app.repository != null || app.license != null) {
-                ReportSection(stringResource(R.string.report_source), Modifier.testTag("reportSource")) {
-                    app.repository?.let { EvidenceField(stringResource(R.string.repository), it, link = it, onOpenUrl = onOpenUrl) }
-                    app.license?.let { EvidenceField(stringResource(R.string.license), it, copyable = false) }
-                }
-            }
-        }
-    }
-}
-
-/**
  * What the mark beside the app's name opens (the blue seal, the unverified mark or the indexed mark):
  * who published the app and whether they proved it is theirs, with their standing among people when they
  * did, or an invitation to claim the app when nobody has. Nothing about the app's privacy or security;
@@ -582,13 +547,19 @@ private fun ReportSection(title: String, modifier: Modifier = Modifier, content:
     }
 }
 
-/** The latest release: the fixed facts first, then the notes, which can run long. */
+/**
+ * The one sheet behind the Latest release card, in the order someone deciding to install reads it: the privacy
+ * and security report (flags, pills, prose, permissions), then the release notes, cut to 300 dp with a Read
+ * more, then one table of what can be checked: the release, the package and the source. Hashes and links are
+ * cut in the middle to fit a line, and each keeps a tiny copy icon that copies the whole value. Who published
+ * the app is the author sheet, opened from the mark beside the name.
+ */
 @Composable
 internal fun ReleaseSheet(app: AppRecord, onOpenUrl: (String) -> Unit, onDismiss: () -> Unit) {
     val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.8f).dp
     ZapSheet(onDismiss) {
         Column(
-            verticalArrangement = Arrangement.spacedBy(ZapSpacing.space3),
+            verticalArrangement = Arrangement.spacedBy(ZapSpacing.space5),
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(max = maxHeight)
@@ -607,16 +578,127 @@ internal fun ReleaseSheet(app: AppRecord, onOpenUrl: (String) -> Unit, onDismiss
                 )
                 app.version.takeIf { it.isNotBlank() }?.let { VersionPill(it) }
             }
-            InfoRow(stringResource(R.string.release_date), formatDate(app.releasedAt), verticalPadding = ZapSpacing.space1)
-            app.sizeLabel.takeIf { it.isNotBlank() }?.let { InfoRow(stringResource(R.string.size), it, verticalPadding = ZapSpacing.space1) }
-            app.versionCode.takeIf { it > 0 }?.let { InfoRow(stringResource(R.string.version_code), it.toString(), verticalPadding = ZapSpacing.space1) }
-            app.channel?.takeIf { it.isNotBlank() }?.let { InfoRow(stringResource(R.string.channel), it, verticalPadding = ZapSpacing.space1) }
-            HorizontalDivider(color = ZapLine)
-            SectionLabel(stringResource(R.string.release_notes))
+
+            Column(
+                verticalArrangement = Arrangement.spacedBy(ZapSpacing.space3),
+                modifier = Modifier.testTag("securityReportSheet"),
+            ) {
+                ProofState(app)
+                if (app.hasVerdict()) {
+                    SecurityVerdict(app, onOpenUrl)
+                } else {
+                    Text(stringResource(R.string.no_security_report), color = ZapText2, style = MaterialTheme.typography.bodyMedium)
+                }
+                if (app.hasPermissions()) {
+                    ReportSection(stringResource(R.string.report_permissions)) { PermissionsList(app) }
+                }
+            }
+
             if (app.releaseNotes.isNotBlank()) {
-                MarkdownText(value = app.releaseNotes, color = ZapText2, style = MaterialTheme.typography.bodyLarge, onOpenUrl = onOpenUrl)
-            } else {
-                Text(stringResource(R.string.no_release_notes), color = ZapText2, style = MaterialTheme.typography.bodyMedium)
+                ReportSection(stringResource(R.string.release_notes), Modifier.testTag("releaseNotes")) {
+                    MarkdownText(
+                        value = app.releaseNotes,
+                        color = ZapText2,
+                        style = MaterialTheme.typography.bodyLarge,
+                        onOpenUrl = onOpenUrl,
+                        collapsible = true,
+                        collapsedMaxHeight = RELEASE_NOTES_HEIGHT,
+                        fadeColor = ZapSurface2,
+                    )
+                }
+            }
+
+            ReportSection(stringResource(R.string.card_details), Modifier.testTag("releaseTable")) {
+                DetailsTable(app, onOpenUrl)
+            }
+        }
+    }
+}
+
+/** The release notes show this much before Read more. */
+private val RELEASE_NOTES_HEIGHT = 300.dp
+
+private class TableLine(
+    val label: String,
+    val value: String,
+    val link: String? = null,
+    val copyable: Boolean = true,
+)
+
+/**
+ * One table for the release, the package and the source: a row each, label on the left and the value on the
+ * right on one line, cut in the middle when it is long (hashes, links), with a tiny copy icon that copies the
+ * whole value. A link opens on tap.
+ */
+@Composable
+private fun DetailsTable(app: AppRecord, onOpenUrl: (String) -> Unit) {
+    val lines = buildList {
+        add(TableLine(stringResource(R.string.release_date), formatDate(app.releasedAt), copyable = false))
+        app.sizeLabel.takeIf { it.isNotBlank() }?.let { add(TableLine(stringResource(R.string.size), it, copyable = false)) }
+        app.versionCode.takeIf { it > 0 }?.let { add(TableLine(stringResource(R.string.version_code), it.toString(), copyable = false)) }
+        app.channel?.takeIf { it.isNotBlank() }?.let { add(TableLine(stringResource(R.string.channel), it, copyable = false)) }
+        add(TableLine(stringResource(R.string.app_id), app.appId))
+        app.apkHash?.let { add(TableLine(stringResource(R.string.apk_sha256), it)) }
+        app.certificateHash?.let { add(TableLine(stringResource(R.string.signing_certificate), it)) }
+        app.certificateChain().drop(1).forEach { add(TableLine(stringResource(R.string.previous_certificates), it)) }
+        app.downloadUrl?.let { add(TableLine(stringResource(R.string.download_url), it)) }
+        app.repository?.let { add(TableLine(stringResource(R.string.repository), it, link = it)) }
+        app.license?.let { add(TableLine(stringResource(R.string.license), it, copyable = false)) }
+    }
+    val copy = rememberCopier()
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(ZapRadius.md))
+            .background(ZapSurface1),
+    ) {
+        lines.forEachIndexed { index, line ->
+            if (index > 0) HorizontalDivider(color = ZapLine)
+            val open = line.link?.takeIf(::isHttpUrl)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 44.dp)
+                    .padding(horizontal = ZapSpacing.space3),
+            ) {
+                Text(line.label, color = ZapText3, style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.sp), maxLines = 1)
+                // The copy icon follows the value, so the two read as one.
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space1, Alignment.End),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(
+                        text = line.value,
+                        color = if (open != null) ZapActionText else ZapText,
+                        style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
+                        textAlign = TextAlign.End,
+                        maxLines = 1,
+                        overflow = TextOverflow.MiddleEllipsis,
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .then(if (open != null) Modifier.clickable { onOpenUrl(open) } else Modifier),
+                    )
+                    if (line.copyable) {
+                        val description = "${stringResource(R.string.copy)} ${line.label}"
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(24.dp)
+                                .clip(CircleShape)
+                                .clickable(role = Role.Button, onClickLabel = description) { copy(line.label, line.value) },
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_copy),
+                                contentDescription = description,
+                                tint = ZapText3,
+                                modifier = Modifier.size(12.dp),
+                            )
+                        }
+                    }
+                }
             }
         }
     }

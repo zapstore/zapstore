@@ -1,5 +1,7 @@
 package dev.zapstore.app.screens
 
+import dev.zapstore.app.components.ZapButtonStyle
+import dev.zapstore.app.components.ZapButton
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -8,7 +10,6 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
@@ -40,7 +41,6 @@ import dev.zapstore.app.ZapText2
 import dev.zapstore.app.ZapWarning
 import dev.zapstore.app.components.InfoRow
 import dev.zapstore.app.components.ProfileImage
-import dev.zapstore.app.components.ZapTextLink
 import dev.zapstore.app.components.EvidenceLine
 import dev.zapstore.app.components.shortDisplayName
 import dev.zapstore.app.facts.FactCatalog
@@ -81,15 +81,17 @@ internal fun AssuranceSummary(
         app.flagLabels().forEach { (label, note) ->
             EvidenceLine(label, checked = false, warning = true, detail = note)
         }
-        PublisherStanding(app, author, trust, onPersonalizeTrust, onOpenUrl, downloadUrl = app.downloadUrl)
+        PublisherStanding(app, author, trust, onPersonalizeTrust, onOpenUrl)
         // Bad news leads, then neutral facts, then the good ones.
         val facts = app.factPills().sortedBy { if (it.tone == FactCatalog.Tone.Bad) 0 else if (it.tone == FactCatalog.Tone.Neutral) 1 else 2 }
         FactPills(facts.take(SUMMARY_FACTS))
         permissionSummary(app)?.let { EvidenceLine(it, checked = false, modifier = Modifier.testTag("assurePermissions")) }
-        ZapTextLink(
-            stringResource(R.string.see_full_report),
+        // The same button the Latest release card ends in.
+        ZapButton(
+            stringResource(R.string.card_full_report),
             onOpenReport,
-            Modifier.offset(x = -ZapSpacing.space2).testTag("seeFullReport"),
+            Modifier.fillMaxWidth().testTag("seeFullReport"),
+            style = ZapButtonStyle.Tonal,
         )
     }
 }
