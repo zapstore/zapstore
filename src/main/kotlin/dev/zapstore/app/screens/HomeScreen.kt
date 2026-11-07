@@ -115,7 +115,13 @@ fun HomeScreen(
         onLoadMoreStacks,
     )
     // Results are inserted above the stacks, which the list would otherwise stay anchored to.
-    LaunchedEffect(state.submittedQuery, state.searchResults == null) { listState.scrollToItem(0) }
+    // Skip the first run: re-entering Home from the back stack must keep the restored position.
+    var scrollKey by rememberSaveable { mutableStateOf<Pair<String?, Boolean>?>(null) }
+    val queryKey = state.submittedQuery to (state.searchResults == null)
+    LaunchedEffect(queryKey) {
+        if (scrollKey != null && scrollKey != queryKey) listState.scrollToItem(0)
+        scrollKey = queryKey
+    }
     LaunchedEffect(reselected) {
         reselected.collect { route -> if (route == Routes.HOME) listState.animateScrollToItem(0) }
     }
