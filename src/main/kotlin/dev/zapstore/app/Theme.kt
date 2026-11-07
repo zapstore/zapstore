@@ -6,7 +6,11 @@ import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
@@ -31,6 +35,25 @@ object ZapSize {
     val controlLarge = 48.dp
     val touchTarget = 48.dp
 }
+
+/**
+ * Screen width over Android's font size, in dp, under which a row cannot hold its text and a button
+ * side by side. A 360 dp phone crosses it one step above the default size; a 411 dp one a step later.
+ */
+private const val ROOMY_TEXT_WIDTH = 360
+
+/** The person's font size leaves too little width for text beside a button; stack them instead. */
+@Composable
+@ReadOnlyComposable
+fun largeFont(): Boolean {
+    val scale = LocalDensity.current.fontScale
+    return scale > 1f && LocalConfiguration.current.screenWidthDp / scale < ROOMY_TEXT_WIDTH
+}
+
+/** This height at the person's font size, for a box that must hold one line of text. */
+@Composable
+@ReadOnlyComposable
+fun Dp.withFontScale(): Dp = with(LocalDensity.current) { value.sp.toDp() }.coerceAtLeast(this)
 
 // ---- Type ----
 // DM Sans, variable wght + opsz. Android does not apply optical sizing on its own,

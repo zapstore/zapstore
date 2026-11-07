@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
@@ -53,6 +54,7 @@ import dev.zapstore.app.ZapText3
 import dev.zapstore.app.ZapVerified
 import dev.zapstore.app.cdnImageUrl
 import dev.zapstore.app.isHttpUrl
+import dev.zapstore.app.withFontScale
 import dev.zapstore.iolite.AppRecord
 import dev.zapstore.iolite.ProfileRecord
 import java.io.File
@@ -156,14 +158,15 @@ fun AppRow(
                 )
             }
         }
-        Column(Modifier.weight(1f).height(ROW_TILE), verticalArrangement = Arrangement.SpaceBetween) {
+        // At a large font the two lines outgrow the tile, and the row grows with them.
+        Column(Modifier.weight(1f).heightIn(min = ROW_TILE), verticalArrangement = Arrangement.SpaceBetween) {
             RowTitleLine(
                 title = app.name,
                 authorPubkey = authorPubkey,
                 author = author,
                 note = note,
             )
-            Box(Modifier.fillMaxWidth().height(ROW_SECOND_LINE), contentAlignment = Alignment.CenterStart) {
+            Box(Modifier.fillMaxWidth().height(ROW_SECOND_LINE.withFontScale()), contentAlignment = Alignment.CenterStart) {
                 if (onDevice) {
                     current?.let {
                         if (updating && listed != null) {
@@ -208,7 +211,7 @@ private fun RowTitleLine(
     val name = authorPubkey?.let { shortDisplayName(it, author) }
     val byWord = stringResource(R.string.row_by)
     Layout(
-        modifier = Modifier.fillMaxWidth().height(ROW_TITLE_LINE),
+        modifier = Modifier.fillMaxWidth().height(ROW_TITLE_LINE.withFontScale()),
         content = {
             Text(title, color = ZapText, style = titleStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (note != null) {

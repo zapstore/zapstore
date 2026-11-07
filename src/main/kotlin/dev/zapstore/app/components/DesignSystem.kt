@@ -91,6 +91,7 @@ import dev.zapstore.app.ZapVerified
 import dev.zapstore.app.ZapVerifiedTint
 import dev.zapstore.app.ZapWarning
 import dev.zapstore.app.ZapWarningTint
+import dev.zapstore.app.withFontScale
 
 // ---- Buttons ----
 // 12 dp rectangles, 40 dp visual inside Material's 48 dp target. Disabled is a surface-2 fill with
@@ -366,11 +367,16 @@ fun InstalledBadge(modifier: Modifier = Modifier, updateAvailable: Boolean = fal
     }
 }
 
-/** The one version pill: 23 dp tall, 8.8 dp of padding each side, 11 dp icons. Never scaled; every screen draws the same pill. */
+/**
+ * The one version pill: 23 dp tall, 8.8 dp of padding each side, 11 dp icons; every screen draws the same
+ * pill. Its height and icon grow only with Android's font size. The status icon sits tighter than the text.
+ */
 private val PillHeight = 23.dp
 private val PillPadding = 8.8.dp
 private val PillGap = ZapSpacing.space1
 private val PillIcon = 11.dp
+private val PillIconGap = 2.5.dp
+private val PillIconEnd = 6.dp
 /** About 10% under the label size (12.75sp). */
 private val PillFontSize = 11.5.sp
 
@@ -398,21 +404,30 @@ fun VersionPill(
                 Text(next.pillText(), color = Color.White, style = style, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             if (status != null) {
-                Icon(painterResource(status.icon), contentDescription = null, tint = Color.White, modifier = Modifier.size(PillIcon))
+                Icon(painterResource(status.icon), contentDescription = null, tint = Color.White, modifier = Modifier.size(PillIcon.withFontScale()))
             }
         },
         modifier = modifier
-            .height(PillHeight)
+            .height(PillHeight.withFontScale())
             .clip(RoundedCornerShape(ZapRadius.full))
             .background(ZapBrand)
             .semantics(mergeDescendants = true) { contentDescription = spoken }
-            .padding(horizontal = PillPadding),
+            .padding(start = PillPadding, end = if (status != null) PillIconEnd else PillPadding),
     ) { measurables, constraints ->
         val gap = PillGap.roundToPx()
+        val iconGap = PillIconGap.roundToPx()
         val loose = constraints.copy(minWidth = 0, minHeight = 0, maxWidth = Constraints.Infinity)
         // A measurable is measured once, so the fit is worked out from intrinsic widths first.
         val natural = measurables.map { it.maxIntrinsicWidth(constraints.maxHeight) }
-        val gaps = gap * (natural.size - 1).coerceAtLeast(0)
+        // The gap before each item after the first; the status icon, always last, gets the tighter one.
+        val before = List(natural.size) { index ->
+            when {
+                index == 0 -> 0
+                status != null && index == natural.lastIndex -> iconGap
+                else -> gap
+            }
+        }
+        val gaps = before.sum()
         val max = constraints.maxWidth
         val textSlots = if (next != null) setOf(0, 2) else setOf(0)
         val fits = max == Constraints.Infinity || natural.sum() + gaps <= max
@@ -427,9 +442,10 @@ fun VersionPill(
         val height = if (constraints.maxHeight == Constraints.Infinity) placeables.maxOf { it.height } else constraints.maxHeight
         layout(width, height) {
             var x = 0
-            placeables.forEach { item ->
+            placeables.forEachIndexed { index, item ->
+                x += before[index]
                 item.placeRelative(x, (height - item.height) / 2)
-                x += item.width + gap
+                x += item.width
             }
         }
     }
