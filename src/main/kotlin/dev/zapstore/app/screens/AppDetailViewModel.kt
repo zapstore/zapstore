@@ -156,6 +156,8 @@ data class InstallUi(
     val silent: Boolean = true,
     /** What went wrong, while [InstallPhase.Failed]. */
     val error: String? = null,
+    /** The failure was the installed copy's key; only an uninstall and a fresh install get past it. */
+    val needsReinstall: Boolean = false,
     /** The name of the store that keeps this app current, when it is not Zapstore. */
     val otherStore: String? = null,
     /** The installed copy shares no certificate with the listing, so no update is offered. */
@@ -830,4 +832,5 @@ private fun installUi(task: InstallTask?, dialog: InstallPlan?, blocked: String?
     total = task?.total,
     silent = task?.silent ?: true,
     error = blocked ?: task?.error,
+    needsReinstall = blocked == null && task?.phase == TaskPhase.Failed && task.needsReinstall,
 )

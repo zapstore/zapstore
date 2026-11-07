@@ -50,6 +50,15 @@ internal fun installFailureText(status: Int, manufacturer: String, detail: Strin
     return listOfNotNull(hint, extra).joinToString(". ").ifBlank { "Install failed" }
 }
 
+/**
+ * Android refused the update because the installed copy has another signing key. It reports that as
+ * a conflict whose detail names `INSTALL_FAILED_UPDATE_INCOMPATIBLE` or says the signatures differ.
+ */
+internal fun isSignatureConflict(status: Int, detail: String?): Boolean {
+    if (status != PackageInstaller.STATUS_FAILURE_CONFLICT || detail == null) return false
+    return detail.contains("UPDATE_INCOMPATIBLE") || detail.contains("signatures do not match", ignoreCase = true)
+}
+
 @Suppress("DEPRECATION")
 private fun confirmationIntent(intent: Intent): Intent? =
     intent.getParcelableExtra(Intent.EXTRA_INTENT)

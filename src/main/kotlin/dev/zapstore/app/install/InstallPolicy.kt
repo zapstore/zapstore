@@ -15,6 +15,7 @@ data class InstallOrigin(
 
 enum class BlockReason {
     Platform,
+    /** The installed copy shares no key with the listing or the listed APK; only a reinstall takes it. */
     Signer,
     Downgrade,
     MissingFile,
@@ -78,9 +79,8 @@ fun installPlan(
         val listed = ListedApk(packageId, listedHash, listedCertificate)
         val sameFile = apk.packageId == packageId && apk.sha256.equals(listedHash, ignoreCase = true)
         val sameCert = listedCertificate.lowercase() in apk.currentCertificates.map { it.lowercase() }
-        if (!sameFile || !sameCert) {
-            return InstallPlan.Blocked(if (sameFile) BlockReason.Signer else BlockReason.NotListed)
-        }
+        // A file the listed key did not sign is not the listed app, whatever its hash says.
+        if (!sameFile || !sameCert) return InstallPlan.Blocked(BlockReason.NotListed)
         if (!ApkVerifier.isInstallable(apk, listed, origin.certificates, origin.installed)) {
             return InstallPlan.Blocked(BlockReason.Signer)
         }

@@ -91,6 +91,7 @@ import dev.zapstore.app.screens.DiagnosticsViewModel
 import dev.zapstore.app.screens.StackDetailViewModel
 import dev.zapstore.app.screens.StacksScreen
 import dev.zapstore.app.screens.StacksViewModel
+import dev.zapstore.app.screens.ReinstallDialog
 import dev.zapstore.app.screens.UninstallProfilesDialog
 import dev.zapstore.app.screens.UpdatesScreen
 import dev.zapstore.app.screens.UpdatesViewModel
@@ -215,12 +216,22 @@ class MainActivity : ComponentActivity() {
         val openComment = { app: AppRecord, commentId: String -> navController.navigate(Routes.app(app.appId, commentId)) }
         val openProfile = { pubkey: String -> navController.navigate(Routes.profile(pubkey)) }
         var uninstallPrompt by remember { mutableStateOf<Pair<String, String>?>(null) }
+        var reinstallPrompt by remember { mutableStateOf<AppRecord?>(null) }
+        // Uninstalled for a reinstall: once Android's dialog is gone and so is the package, install the listed build.
+        var reinstalling by remember { mutableStateOf<AppRecord?>(null) }
         val uninstallLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
             zapstore.catalogSync.refreshInstalled()
+            val app = reinstalling ?: return@rememberLauncherForActivityResult
+            reinstalling = null
+            val gone = runCatching { packageManager.getPackageInfo(app.appId, 0) }.isFailure
+            if (gone) zapstore.installer.install(app)
         }
         val requestUninstall = { packageId: String, name: String ->
             if (hasOtherProfiles()) uninstallPrompt = packageId to name
             else uninstallLauncher.launch(uninstallIntent(packageId))
+        }
+        val requestReinstall = { app: AppRecord ->
+            if (packageManager.canRequestPackageInstalls()) reinstallPrompt = app else openUnknownSourcesSettings()
         }
 
         val link by pendingLink.collectAsStateWithLifecycle()
@@ -351,6 +362,7 @@ class MainActivity : ComponentActivity() {
                         else openUnknownSourcesSettings()
                     },
                     onCancelInstall = viewModel::cancelInstall,
+                    onReinstall = requestReinstall,
                     onSearchQueryChanged = viewModel::setSearchQuery,
                 )
             }
@@ -571,6 +583,7 @@ class MainActivity : ComponentActivity() {
                     onDismissInstall = viewModel::dismissInstall,
                     onPersonalizeTrust = viewModel::checkTrustPersonally,
                     onUninstall = { state.app?.let { requestUninstall(it.appId, it.name) } },
+                    onReinstall = { state.app?.let(requestReinstall) },
                     onOpenApp = { state.app?.let { app -> packageManager.getLaunchIntentForPackage(app.appId)?.let(::startActivity) } },
                 )
             }
@@ -603,6 +616,18 @@ class MainActivity : ComponentActivity() {
                     uninstallLauncher.launch(uninstallIntent(packageId))
                 },
                 onDismiss = { uninstallPrompt = null },
+            )
+        }
+        reinstallPrompt?.let { app ->
+            ReinstallDialog(
+                name = app.name,
+                otherProfiles = hasOtherProfiles(),
+                onConfirm = {
+                    reinstallPrompt = null
+                    reinstalling = app
+                    uninstallLauncher.launch(uninstallIntent(app.appId))
+                },
+                onDismiss = { reinstallPrompt = null },
             )
         }
     }

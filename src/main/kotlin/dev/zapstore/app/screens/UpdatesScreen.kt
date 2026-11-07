@@ -1,7 +1,5 @@
 package dev.zapstore.app.screens
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.animation.core.Animatable
@@ -72,9 +70,6 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import dev.zapstore.app.BuildConfig
 import dev.zapstore.app.R
-import dev.zapstore.app.Toast
-import dev.zapstore.app.ToastKind
-import dev.zapstore.app.Toasts
 import dev.zapstore.app.ZapAction
 import dev.zapstore.app.ZapCanvas
 import dev.zapstore.app.ZapDanger
@@ -92,6 +87,7 @@ import dev.zapstore.app.ZapText2
 import dev.zapstore.app.ZapText3
 import dev.zapstore.app.ZapVerified
 import dev.zapstore.app.ZapWarning
+import dev.zapstore.app.largeFont
 import dev.zapstore.app.catalog.AvailableUpdate
 import dev.zapstore.app.catalog.InstalledApp
 import dev.zapstore.app.catalog.ManualReason
@@ -138,10 +134,11 @@ fun UpdatesScreen(
     onPause: (String) -> Unit = {},
     onInstall: (AppRecord) -> Unit = {},
     onCancelInstall: (String) -> Unit = {},
+    onReinstall: (AppRecord) -> Unit = {},
     onSearchQueryChanged: (String) -> Unit = {},
 ) {
     var query by rememberSaveable { mutableStateOf("") }
-    val rowActions = RowActions(onAppClick, onUpdateOne, onPause, onIgnoreUpdates, onInstall, onCancelInstall)
+    val rowActions = RowActions(onAppClick, onUpdateOne, onPause, onIgnoreUpdates, onInstall, onCancelInstall, onReinstall)
 
     CompositionLocalProvider(LocalOpenSwipe provides remember { mutableStateOf<String?>(null) }) {
         Column(modifier = modifier.fillMaxSize()) {
@@ -362,6 +359,7 @@ private data class RowActions(
     val onIgnore: (String) -> Unit,
     val onInstall: (AppRecord) -> Unit,
     val onCancel: (String) -> Unit,
+    val onReinstall: (AppRecord) -> Unit,
 )
 
 /** Installs Zapstore is working on or that wait for a tap, so a first install can be followed here too. */
@@ -380,16 +378,20 @@ private fun LazyListScope.installingSection(
             key = "installing:${app.appId}",
             actions = listOf(ignoreAction(app.appId, actions.onIgnore), cancelAction(app.appId, onCancel)),
         ) {
-            AppRow(
+            val idle = stringResource(R.string.install)
+            InstallRow(
                 app = app,
-                onClick = { actions.onAppClick(app) },
-                onDevice = true,
-                showAuthor = false,
-                modifier = Modifier.testTag("installing:${app.appId}"),
-                trailing = {
-                    UpdateButton(app, task, stringResource(R.string.install), { actions.onInstall(app) }, actions.onPause, actions.onCancel)
-                },
-            )
+                button = { modifier -> UpdateButton(app, task, idle, { actions.onInstall(app) }, actions, modifier) },
+            ) { trailing ->
+                AppRow(
+                    app = app,
+                    onClick = { actions.onAppClick(app) },
+                    onDevice = true,
+                    showAuthor = false,
+                    modifier = Modifier.testTag("installing:${app.appId}"),
+                    trailing = trailing,
+                )
+            }
         }
     }
 }
@@ -806,20 +808,54 @@ private fun UpdateRow(
         modifier = if (own) Modifier.padding(bottom = ZapSpacing.space1) else Modifier,
         plate = own,
     ) {
-        AppRow(
+        val idle = stringResource(R.string.update_app)
+        InstallRow(
             app = update.app,
-            onClick = { actions.onAppClick(update.app) },
-            onDevice = true,
-            pendingFrom = update.installedVersion,
-            showAuthor = false,
-            modifier = (if (own) Modifier.padding(horizontal = ZapSpacing.space3) else Modifier).testTag("update:$id"),
-            trailing = {
+            why = why,
+            button = { modifier -> UpdateButton(update.app, current, idle, { actions.onUpdate(update) }, actions, modifier) },
+            modifier = if (own) Modifier.padding(horizontal = ZapSpacing.space3) else Modifier,
+        ) { trailing ->
+            AppRow(
+                app = update.app,
+                onClick = { actions.onAppClick(update.app) },
+                onDevice = true,
+                pendingFrom = update.installedVersion,
+                showAuthor = false,
+                modifier = Modifier.testTag("update:$id"),
+                trailing = trailing,
+            )
+        }
+    }
+}
+
+/**
+ * An app [row] and its install [button]: beside the text, or at a large font on a full-width line of
+ * its own under it, so the name and versions keep the row. Failures are told in a toast, not here.
+ */
+@Composable
+private fun InstallRow(
+    app: AppRecord,
+    button: @Composable (Modifier) -> Unit,
+    modifier: Modifier = Modifier,
+    why: UpdateWhy? = null,
+    row: @Composable (trailing: (@Composable () -> Unit)?) -> Unit,
+) {
+    val large = largeFont()
+    Column(modifier) {
+        if (large) {
+            row(null)
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = ZapSpacing.space2)) {
+                why?.let { WhyButton(app.appId, it) }
+                button(Modifier.weight(1f))
+            }
+        } else {
+            row {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    why?.let { WhyButton(id, it) }
-                    UpdateButton(update.app, current, stringResource(R.string.update_app), { actions.onUpdate(update) }, actions.onPause, actions.onCancel)
+                    why?.let { WhyButton(app.appId, it) }
+                    button(Modifier.width(UpdateButtonWidth))
                 }
-            },
-        )
+            }
+        }
     }
 }
 
@@ -875,11 +911,11 @@ private fun WhySheet(why: UpdateWhy, onDismiss: () -> Unit) {
 }
 
 /**
- * One pill per install or update, always [UpdateButtonWidth] wide, carrying its progress:
+ * One pill per install or update, [UpdateButtonWidth] wide beside a row, carrying its progress:
  * [idleLabel], Queued, a fill with the percent while downloading (tap to pause), Paused over the
  * same fill (tap to resume), a spinner while Zapstore verifies or installs, Confirm while Android's
- * dialog waits, and Retry after a failure (tap shows the error and starts again). Anything in
- * progress carries a ✕ segment that cancels at any stage.
+ * dialog waits, and Retry after a failure. A failure only an uninstall can clear reads Reinstall and
+ * asks first. Anything in progress carries a ✕ segment that cancels at any stage.
  */
 @Composable
 private fun UpdateButton(
@@ -887,17 +923,19 @@ private fun UpdateButton(
     task: InstallTask?,
     idleLabel: String,
     onStart: () -> Unit,
-    onPause: (String) -> Unit,
-    onCancel: (String) -> Unit,
+    actions: RowActions,
+    modifier: Modifier = Modifier,
 ) {
-    val context = LocalContext.current
     val id = app.appId
+    val onPause = actions.onPause
+    val onCancel = actions.onCancel
     val phase = task?.phase
     val cancellable = phase != null && phase != TaskPhase.Ready && phase != TaskPhase.Failed
     val working = phase == TaskPhase.Verifying || phase == TaskPhase.Installing
     val transferring = phase == TaskPhase.Downloading || phase == TaskPhase.Queued
     val paused = phase == TaskPhase.Paused
     val failed = phase == TaskPhase.Failed
+    val reinstall = failed && task?.needsReinstall == true
     val fraction = task?.total?.takeIf { it > 0 }?.let { (task.received.toFloat() / it).coerceIn(0f, 1f) }
     val base = when {
         paused -> ZapSurface4
@@ -909,11 +947,8 @@ private fun UpdateButton(
         failed -> ZapOnDangerFill
         else -> ZapOnAction
     }
-    val error = task?.error ?: stringResource(R.string.install_failed)
-    val copy = stringResource(R.string.copy)
     Row(
-        modifier = Modifier
-            .width(UpdateButtonWidth)
+        modifier = modifier
             .height(ZapSize.control)
             .clip(UpdateButtonShape)
             .background(base),
@@ -926,19 +961,11 @@ private fun UpdateButton(
             .clickable(enabled = !working, role = Role.Button) {
                 when {
                     transferring -> onPause(id)
-                    failed -> {
-                        Toasts.show(
-                            Toast(error, ToastKind.Error, copy) {
-                                context.getSystemService(ClipboardManager::class.java)
-                                    ?.setPrimaryClip(ClipData.newPlainText(app.name, error))
-                            },
-                        )
-                        onStart()
-                    }
+                    reinstall -> actions.onReinstall(app)
                     else -> onStart()
                 }
             }
-            .testTag("updateOne:$id"),
+            .testTag(if (reinstall) "reinstall:$id" else "updateOne:$id"),
     ) {
         if ((transferring || paused) && fraction != null) {
             Box(
@@ -962,11 +989,12 @@ private fun UpdateButton(
                 transferring && fraction != null -> stringResource(R.string.install_progress_percent, (fraction * 100).toInt())
                 paused -> stringResource(R.string.paused)
                 phase == TaskPhase.Confirm -> stringResource(R.string.confirm)
+                reinstall -> stringResource(R.string.reinstall)
                 failed -> stringResource(R.string.retry)
                 working || transferring -> null
                 else -> idleLabel
             }
-            label?.let { Text(it, color = content, style = MaterialTheme.typography.labelLarge, maxLines = 1) }
+            label?.let { Text(it, color = content, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         }
     }
     if (cancellable) {

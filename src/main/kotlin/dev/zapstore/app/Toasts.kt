@@ -6,11 +6,15 @@ import kotlinx.coroutines.flow.asSharedFlow
 
 enum class ToastKind { Success, Info, Warning, Error }
 
-/** One short message; [action] is a single text button, such as Copy on an error. */
+/**
+ * One short message; [action] is a single text button, such as Copy on an error. A [sticky] one
+ * stays until it is closed or replaced: an error should not vanish before it is read.
+ */
 data class Toast(
     val message: String,
     val kind: ToastKind = ToastKind.Success,
     val actionLabel: String? = null,
+    val sticky: Boolean = kind == ToastKind.Error,
     val action: (() -> Unit)? = null,
 )
 

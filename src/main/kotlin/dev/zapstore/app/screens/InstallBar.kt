@@ -59,6 +59,8 @@ data class InstallActions(
     val onDismissError: () -> Unit = {},
     val onOpen: () -> Unit = {},
     val onUninstall: () -> Unit = {},
+    /** Asks, then uninstalls the copy signed by another key and installs the listed one. */
+    val onReinstall: () -> Unit = {},
 )
 
 /**
@@ -147,7 +149,9 @@ private fun InstallUi.button(
             actions.onStart,
             tag = "confirmInstall",
         )
-        InstallPhase.Failed -> {
+        InstallPhase.Failed -> if (needsReinstall) {
+            BarButton.Simple(stringResource(R.string.reinstall), actions.onReinstall, Tone.Error, tag = "reinstall")
+        } else {
             val error = error.orEmpty()
             BarButton.Simple(
                 stringResource(R.string.install_error_details),

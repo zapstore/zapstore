@@ -121,6 +121,14 @@ class InstallPolicyTest {
     }
 
     @Test
+    fun aFileTheListedKeyDidNotSignIsNotListedRatherThanASignerChange() {
+        val resigned = apk.copy(currentCertificates = setOf("other"), lineage = listOf("other"))
+        val origin = InstallOrigin(installed = true, versionCode = 1, installingPackage = ours, certificates = setOf("cert"))
+        val plan = installPlan(34, ours, "com.example.app", origin, 2, "aa", "cert", apk = resigned)
+        assertEquals(InstallPlan.Blocked(BlockReason.NotListed), plan)
+    }
+
+    @Test
     fun blocksAFileThatIsNotTheListing() {
         val other = apk.copy(packageId = "com.other")
         val plan = installPlan(34, ours, "com.example.app", InstallOrigin(installed = false), 2, "aa", "cert", apk = other)

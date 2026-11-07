@@ -384,6 +384,13 @@
     <string name="pause">Pause</string>
     <string name="paused">Paused</string>
     <string name="install_signed_differently">The installed copy is signed by a different key, so Zapstore cannot update it.</string>
+    <string name="install_needs_reinstall">Signed with a different key than the installed copy. Reinstall to update.</string>
+    <string name="install_failed_app">%1$s did not install. %2$s</string>
+    <string name="reinstall">Reinstall</string>
+    <string name="reinstall_title">Reinstall %1$s?</string>
+    <string name="reinstall_body">This version is signed with a different key than the copy on your phone. Android only installs it after that copy is removed.</string>
+    <string name="reinstall_data">Uninstalling deletes %1$s\'s data on this phone, such as accounts and settings. Back up anything you need first. Zapstore installs the new version right after.</string>
+    <string name="reinstall_confirm">Uninstall and reinstall</string>
     <plurals name="confirm_waiting">
         <item quantity="one">%1$d app waiting for you to confirm</item>
         <item quantity="other">%1$d apps waiting for you to confirm</item>

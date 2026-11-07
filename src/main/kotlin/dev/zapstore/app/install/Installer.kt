@@ -1,5 +1,7 @@
 package dev.zapstore.app.install
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -7,6 +9,9 @@ import android.os.Handler
 import android.os.Looper
 import dev.zapstore.app.AppLog
 import dev.zapstore.app.R
+import dev.zapstore.app.Toast
+import dev.zapstore.app.ToastKind
+import dev.zapstore.app.Toasts
 import dev.zapstore.app.apk.ApkVerifier
 import dev.zapstore.iolite.AppRecord
 import dev.zapstore.iolite.CertificateProof
@@ -52,6 +57,11 @@ data class InstallTask(
     /** Android installs it without a dialog, or its dialog was already accepted. */
     val silent: Boolean = false,
     val error: String? = null,
+    /**
+     * Failed because the installed copy is signed by another key. The listed APK checked out, but
+     * Android only takes it after the old copy is uninstalled, so Retry cannot help.
+     */
+    val needsReinstall: Boolean = false,
 ) {
     /** Zapstore is working on it or Android is waiting on the user; a new tap must not start another. */
     val busy: Boolean get() = phase in BUSY
@@ -281,7 +291,10 @@ class Installer(
             }
             // A cancelled install has no task left to put back.
             STATUS_FAILURE_ABORTED -> if (packageId in _tasks.value) set(packageId) { it.copy(phase = TaskPhase.Ready, error = null) }
-            else -> {
+            else -> if (isSignatureConflict(status, message)) {
+                // The APK verified against the listing; keep it for the reinstall.
+                fail(packageId, context.getString(R.string.install_blocked_signer), needsReinstall = true)
+            } else {
                 scope.launch(Dispatchers.IO) { InstallCache.delete(context, packageId) }
                 fail(packageId, message ?: context.getString(R.string.install_failed))
             }
@@ -323,13 +336,15 @@ class Installer(
             throw e
         } catch (e: Exception) {
             AppLog.w(TAG, "install $id failed", e)
+            val reinstall = e is BlockedInstall && e.reason == BlockReason.Signer
             withContext(NonCancellable + Dispatchers.IO) {
                 SessionInstaller.abandon(context, id)
-                if (e.isTransient()) {
+                when {
                     // A dropped connection keeps the partial for a Range resume; a verified APK does not outlive a failed commit.
-                    app.apkHash?.let { InstallCache.apk(context, id, it).delete() }
-                } else {
-                    InstallCache.delete(context, id)
+                    e.isTransient() -> app.apkHash?.let { InstallCache.apk(context, id, it).delete() }
+                    // Only the installed copy's key is wrong; the reinstall uses this file.
+                    reinstall -> Unit
+                    else -> InstallCache.delete(context, id)
                 }
             }
             if (background) {
@@ -337,7 +352,7 @@ class Installer(
                 _tasks.update { it - id }
                 return
             }
-            fail(id, context.installFailure(e))
+            fail(id, context.installFailure(e), needsReinstall = reinstall)
         }
     }
 
@@ -402,11 +417,20 @@ class Installer(
         }
     }
 
-    private fun fail(appId: String, message: String) {
+    /** Marks [appId] failed and says why in a toast that stays until closed, with Copy for a bug report. */
+    private fun fail(appId: String, message: String, needsReinstall: Boolean = false) {
         _tasks.update { tasks ->
             val task = tasks[appId] ?: InstallTask(appId, "", phase = TaskPhase.Failed)
-            tasks + (appId to task.copy(phase = TaskPhase.Failed, error = message))
+            tasks + (appId to task.copy(phase = TaskPhase.Failed, error = message, needsReinstall = needsReinstall))
         }
+        val reason = if (needsReinstall) context.getString(R.string.install_needs_reinstall) else message
+        val text = context.getString(R.string.install_failed_app, nameOf(appId), reason)
+        val copied = if (reason == message) text else "$text\n$message"
+        Toasts.show(
+            Toast(text, ToastKind.Error, context.getString(R.string.copy)) {
+                context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText(nameOf(appId), copied))
+            },
+        )
     }
 
     /** Updates [appId]'s task, or makes one for a session that outlived the process. */

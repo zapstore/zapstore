@@ -70,6 +70,8 @@ import dev.zapstore.app.components.EmptyRow
 import dev.zapstore.app.components.GroupHeader
 import dev.zapstore.app.components.LoadingIndicator
 import dev.zapstore.app.components.StatusText
+import dev.zapstore.app.components.ZapButton
+import dev.zapstore.app.components.ZapButtonStyle
 import dev.zapstore.iolite.AppByline
 import dev.zapstore.iolite.AppRecord
 import dev.zapstore.iolite.CommentRecord
@@ -88,6 +90,7 @@ fun AppDetailScreen(
     onDismissInstall: () -> Unit = {},
     onPersonalizeTrust: () -> Unit = {},
     onUninstall: () -> Unit = {},
+    onReinstall: () -> Unit = {},
     onOpenApp: () -> Unit = {},
     onPauseInstall: () -> Unit = {},
     onCancelInstall: () -> Unit = {},
@@ -211,7 +214,15 @@ fun AppDetailScreen(
             }
             if (showSigned) {
                 item(key = "signedDifferently", contentType = "status") {
-                    StatusText(stringResource(R.string.install_signed_differently), Modifier.testTag("signedDifferently"))
+                    Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2)) {
+                        StatusText(stringResource(R.string.install_signed_differently), Modifier.testTag("signedDifferently"))
+                        ZapButton(
+                            text = stringResource(R.string.reinstall),
+                            onClick = onReinstall,
+                            style = ZapButtonStyle.Outline,
+                            modifier = Modifier.testTag("reinstallSigned"),
+                        )
+                    }
                 }
             }
 
@@ -374,6 +385,7 @@ fun AppDetailScreen(
                     onDismissError = onDismissInstallError,
                     onOpen = onOpenApp,
                     onUninstall = onUninstall,
+                    onReinstall = onReinstall,
                 ),
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
