@@ -66,7 +66,7 @@ data class HomeUiState(
     /** The apps the tiles of the stacks in [activity] show. */
     val activityStackApps: Map<String, AppRecord> = emptyMap(),
     val activityCanLoadMore: Boolean = false,
-    val activityFilter: ActivityFilter = ActivityFilter.All,
+    val activityFilter: ActivityFilter = ActivityFilter.Releases,
     val profiles: Map<String, ProfileRecord> = emptyMap(),
     /** Keys of the active catalogs, and the one they signed with before the rotation. */
     val catalogKeys: Set<String> = emptySet(),
@@ -366,7 +366,7 @@ class HomeViewModel(
         private const val SHELF_READ = 200
         /** The shelf order changes once an hour, with the web shelf, and holds still in between. */
         private const val SHELF_ROTATE_MS = 60L * 60L * 1000L
-        /** Activity entries per page; the next page waits for a tap on Load more. */
+        /** Activity entries per page; the next page loads as the list scrolls near its end. */
         private const val ACTIVITY_PAGE = 50
         /** Latest releases whose zaps the activity feed asks for. */
         private const val ACTIVITY_APPS = 100

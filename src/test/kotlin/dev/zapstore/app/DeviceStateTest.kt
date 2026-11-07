@@ -42,12 +42,12 @@ class DeviceStateTest {
     }
 
     @Test
-    fun activityFilterRoundTripsAndDefaultsToAll() {
-        assertEquals(ActivityFilter.All, DeviceState.fromJson(JSONObject("""{"backgroundAutoUpdatesEnabled": true}""")).activityFilter)
-        assertEquals(ActivityFilter.All, DeviceState.fromJson(JSONObject("""{"activityFilter": "nonsense"}""")).activityFilter)
-        val releasesOnly = DeviceState(activityFilter = ActivityFilter.Releases)
-        assertEquals("releases", releasesOnly.toJson().getString("activityFilter"))
-        assertEquals(releasesOnly, DeviceState.fromJson(JSONObject(releasesOnly.toJson().toString())))
+    fun activityFilterRoundTripsAndDefaultsToReleases() {
+        assertEquals(ActivityFilter.Releases, DeviceState.fromJson(JSONObject("""{"backgroundAutoUpdatesEnabled": true}""")).activityFilter)
+        assertEquals(ActivityFilter.Releases, DeviceState.fromJson(JSONObject("""{"activityFilter": "nonsense"}""")).activityFilter)
+        val social = DeviceState(activityFilter = ActivityFilter.All)
+        assertEquals("all", social.toJson().getString("activityFilter"))
+        assertEquals(social, DeviceState.fromJson(JSONObject(social.toJson().toString())))
     }
 
     @Test

@@ -52,7 +52,7 @@ data class DeviceState(
     val bugReports: Boolean = false,
     val syncInterval: SyncInterval = SyncInterval.Hourly,
     /** Which entries Home's Recent activity lists. */
-    val activityFilter: ActivityFilter = ActivityFilter.All,
+    val activityFilter: ActivityFilter = ActivityFilter.Releases,
 ) {
     val backgroundAutoUpdates: Boolean get() = backgroundUpdateInterval != UpdateInterval.Never
 
@@ -161,7 +161,7 @@ class DeviceSettings(
         networkMode = NetworkMode.fromStored(prefs.getString(KEY_MODE, defaultMode.name)),
         bugReports = prefs.getBoolean(KEY_REPORTS, false),
         syncInterval = SyncInterval.fromMinutes(prefs.getInt(KEY_SYNC, SyncInterval.Hourly.minutes)),
-        activityFilter = ActivityFilter.entries.firstOrNull { it.name == prefs.getString(KEY_ACTIVITY, null) } ?: ActivityFilter.All,
+        activityFilter = ActivityFilter.entries.firstOrNull { it.name == prefs.getString(KEY_ACTIVITY, null) } ?: ActivityFilter.Releases,
     )
 
     private companion object {
