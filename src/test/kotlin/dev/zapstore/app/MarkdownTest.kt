@@ -165,7 +165,12 @@ class MarkdownTest {
             ),
             result.urls(),
         )
-        assertTrue(result.text.contains("nostr:$npub"))
+        // Never the raw token: a short npub, then words for what the rest point to.
+        assertEquals(
+            "see @${npub.take(12)}…${npub.takeLast(4)} @${nprofile.take(12)}…${nprofile.takeLast(4)} app stack note note #Nostr and `$npub` but not $nsec".replace("`$npub`", npub),
+            result.text,
+        )
+        assertTrue(!result.text.contains("nostr:"))
         assertTrue(result.text.contains("#Nostr"))
         assertTrue(result.text.contains(nsec))
     }
@@ -188,7 +193,7 @@ class MarkdownTest {
         assertEquals("thanks @Alice", named.text)
         assertEquals(listOf("https://zapstore.dev/profile/$npub"), named.urls())
         assertEquals("thanks @${npub.take(12)}…${npub.takeLast(4)}", ZapMarkdown.parse(bio, mentions = emptyMap()).text)
-        assertEquals(bio, ZapMarkdown.parse(bio).text)
+        assertEquals("thanks @${npub.take(12)}…${npub.takeLast(4)}", ZapMarkdown.plain(bio))
     }
 
     private fun AnnotatedString.urls(): List<String> =

@@ -1,5 +1,6 @@
 package dev.zapstore.app.screens
 
+import dev.zapstore.app.ZapMarkdown
 import dev.zapstore.app.Toasts
 import dev.zapstore.iolite.Social
 import dev.zapstore.iolite.Kinds
@@ -365,9 +366,13 @@ class AppDetailViewModel(
         else iolite.query(Query.comments(reach.anchors, reach.lists, limit = COMMENT_LIMIT), AppConfig.commentQuery)
     }.onStart { emit(null) }
 
-    /** Names and pictures for everyone in the feed: comment authors and zap senders. */
+    /** Names and pictures for everyone in the feed: comment authors, zap senders and whoever their text mentions. */
     private val commentProfiles: Flow<Map<String, ProfileRecord>> = combine(comments, zaps) { comments, zaps ->
-        comments?.items.orEmpty().map(CommentRecord::pubkey).toSet() + zaps?.items.orEmpty().map(ZapRecord::pubkey)
+        comments?.items.orEmpty().map(CommentRecord::pubkey).toSet() +
+            zaps?.items.orEmpty().map(ZapRecord::pubkey) +
+            // Whoever a comment or a zap note mentions, so `@name` can replace the key.
+            comments?.items.orEmpty().flatMap { ZapMarkdown.mentionedPubkeys(it.content) } +
+            zaps?.items.orEmpty().flatMap { ZapMarkdown.mentionedPubkeys(it.note) }
     }
         .distinctUntilChanged()
         .flatMapLatest { pubkeys ->

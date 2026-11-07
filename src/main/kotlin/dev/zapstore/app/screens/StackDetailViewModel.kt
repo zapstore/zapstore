@@ -1,5 +1,6 @@
 package dev.zapstore.app.screens
 
+import dev.zapstore.app.ZapMarkdown
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.flowOf
@@ -104,7 +105,7 @@ class StackDetailViewModel(
     }.onStart { emit(QueryState(emptyList(), settled = false)) }
 
     private val commentProfiles: Flow<Map<String, ProfileRecord>> = comments
-        .map { state -> state.items.map(CommentRecord::pubkey).toSet() }
+        .map { state -> state.items.flatMap { listOf(it.pubkey) + ZapMarkdown.mentionedPubkeys(it.content) }.toSet() }
         .distinctUntilChanged()
         .flatMapLatest(iolite::observeProfiles)
 

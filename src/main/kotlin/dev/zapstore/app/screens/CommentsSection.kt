@@ -2,6 +2,7 @@ package dev.zapstore.app.screens
 
 import dev.zapstore.app.ZapSurface2
 import dev.zapstore.app.components.rememberSharer
+import dev.zapstore.app.components.resolvedName
 import dev.zapstore.app.components.rememberCopier
 import dev.zapstore.iolite.neventOf
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -116,6 +117,7 @@ internal fun FeedBlock(
     focusComment: String? = null,
     onFocused: () -> Unit = {},
 ) {
+    val mentions = remember(profiles) { profiles.mapNotNull { (key, record) -> resolvedName(record)?.let { key to it } }.toMap() }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         block.forEach { entry ->
             when (entry) {
@@ -133,10 +135,11 @@ internal fun FeedBlock(
                         onOpenUrl = onOpenUrl,
                         onAuthorClick = onAuthorClick,
                         onReply = if (replyable) ({ onReply(entry.comment) }) else null,
+                        mentions = mentions,
                         modifier = Modifier.bringIntoViewRequester(bringIntoView),
                     )
                 }
-                is FeedEntry.Zap -> ZapNoteCard(entry.zap, profiles[entry.zap.pubkey], onOpenUrl, onAuthorClick)
+                is FeedEntry.Zap -> ZapNoteCard(entry.zap, profiles[entry.zap.pubkey], onOpenUrl, onAuthorClick, mentions = mentions)
             }
         }
     }
@@ -275,6 +278,8 @@ internal fun CommentCard(
     modifier: Modifier = Modifier,
     depth: Int = 0,
     onReply: (() -> Unit)? = null,
+    /** Profile names by hex pubkey, for `@name` where the text mentions someone. */
+    mentions: Map<String, String>? = null,
 ) {
     val reply = depth > 0
     val thread = ThreadColors[(depth - 1).coerceAtLeast(0) % ThreadColors.size]
@@ -319,13 +324,13 @@ internal fun CommentCard(
                         if (!reply) {
                             comment.version?.let { version ->
                                 Text(stringResource(R.string.comment_on_version), color = ZapText3, style = MaterialTheme.typography.bodySmall)
-                                VersionPill(version, Modifier.testTag("commentVersion:${comment.eventId}"), scale = 0.85f)
+                                VersionPill(version, Modifier.testTag("commentVersion:${comment.eventId}"))
                             }
                         }
                     }
                     Text(agoLabel(comment.createdAt), color = ZapText3, style = MaterialTheme.typography.bodySmall, maxLines = 1)
                 }
-                MarkdownText(value = comment.content, color = ZapText2, style = MaterialTheme.typography.bodyMedium, onOpenUrl = onOpenUrl)
+                MarkdownText(value = comment.content, color = ZapText2, style = MaterialTheme.typography.bodyMedium, onOpenUrl = onOpenUrl, mentions = mentions)
                 onReply?.let { ReplyLink(it, Modifier.testTag("reply:${comment.eventId}")) }
             }
         }
@@ -371,6 +376,7 @@ internal fun ZapNoteCard(
     onOpenUrl: (String) -> Unit,
     onAuthorClick: (String) -> Unit,
     modifier: Modifier = Modifier,
+    mentions: Map<String, String>? = null,
 ) {
     val name = shortDisplayName(zap.pubkey, author)
     Row(
@@ -408,7 +414,7 @@ internal fun ZapNoteCard(
                 }
                 Text(agoLabel(zap.createdAt), color = ZapText3, style = MaterialTheme.typography.bodySmall, maxLines = 1)
             }
-            MarkdownText(value = zap.note, color = ZapText2, style = MaterialTheme.typography.bodyMedium, onOpenUrl = onOpenUrl)
+            MarkdownText(value = zap.note, color = ZapText2, style = MaterialTheme.typography.bodyMedium, onOpenUrl = onOpenUrl, mentions = mentions)
         }
     }
 }

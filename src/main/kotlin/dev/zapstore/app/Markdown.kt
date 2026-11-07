@@ -56,6 +56,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import dev.zapstore.iolite.Kinds
+import dev.zapstore.iolite.decodeNaddr
+import dev.zapstore.iolite.decodeNevent
+import dev.zapstore.iolite.decodeNote
 import dev.zapstore.iolite.decodeNpub
 import dev.zapstore.iolite.decodeNprofile
 import org.commonmark.ext.autolink.AutolinkExtension
@@ -146,9 +150,10 @@ object ZapMarkdown {
     )
 
     /**
-     * Blocks for [value]. Link taps go to [onOpenUrl]. With [mentions], a `npub` or `nprofile` reads as
-     * `@name` (profile names by hex pubkey) instead of the raw token, and `@npub1abc…wxyz` until the name
-     * is known. Results with neither a callback nor [mentions] are cached.
+     * Blocks for [value]. Link taps go to [onOpenUrl]. A `npub` or `nprofile` reads as `@name` (profile
+     * names by hex pubkey in [mentions]), or `@npub1abc…wxyz` until the name is known; a note, app, stack
+     * or other address reads as that word, so a raw token never shows. Results with neither a callback nor
+     * [mentions] are cached.
      */
     fun blocks(value: String, onOpenUrl: ((String) -> Unit)? = null, mentions: Map<String, String>? = null): List<MdBlock> {
         val cacheable = onOpenUrl == null && mentions == null
@@ -163,6 +168,9 @@ object ZapMarkdown {
     fun mentionedPubkeys(value: String): Set<String> = inlineEntity.findAll(value)
         .mapNotNull { match -> match.groups[1]?.value?.lowercase()?.let { it.decodeNpub() ?: it.decodeNprofile() } }
         .toSet()
+
+    /** [value] as plain text on one string, for a preview line: links read as their label, nothing opens. */
+    fun plain(value: String, mentions: Map<String, String>? = null): String = parse(value, mentions = mentions).text
 
     /** The whole document as one string: blocks separated by a blank line, list items by a line break. */
     fun parse(value: String, onOpenUrl: ((String) -> Unit)? = null, mentions: Map<String, String>? = null): AnnotatedString = buildAnnotatedString {
@@ -363,13 +371,25 @@ object ZapMarkdown {
             if (cursor < literal.length) append(Emoji.replace(literal.substring(cursor)))
         }
 
-        /** `@name` for a profile token when [mentions] is on, else null so the text stays as written. */
+        /**
+         * What a NIP-19 token reads as: `@name` for a profile (`@npub1abc…wxyz` until the name is known),
+         * and a plain word for a note, an app, a stack or any other address. Never the raw token.
+         */
         fun mentionLabel(token: String): String? {
-            if (mentions == null) return null
             val lower = token.lowercase()
-            val pubkey = lower.decodeNpub() ?: lower.decodeNprofile() ?: return null
-            val name = mentions[pubkey]?.trim()?.takeIf { it.isNotEmpty() }
-            return "@" + (name ?: "${lower.take(12)}…${lower.takeLast(4)}")
+            val pubkey = lower.decodeNpub() ?: lower.decodeNprofile()
+            if (pubkey != null) {
+                val name = mentions?.get(pubkey)?.trim()?.takeIf { it.isNotEmpty() }
+                return "@" + (name ?: "${lower.take(12)}…${lower.takeLast(4)}")
+            }
+            lower.decodeNaddr()?.let { addr ->
+                return when (addr.kind) {
+                    Kinds.App -> "app"
+                    Kinds.AppStack -> "stack"
+                    else -> "post"
+                }
+            }
+            return if (lower.decodeNote() != null || lower.decodeNevent() != null) "note" else null
         }
 
         fun AnnotatedString.Builder.link(url: String, content: AnnotatedString.Builder.() -> Unit) {
