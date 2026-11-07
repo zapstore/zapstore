@@ -35,6 +35,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -49,7 +50,6 @@ import dev.zapstore.app.OnboardingStep
 import dev.zapstore.app.R
 import dev.zapstore.app.ZapAction
 import dev.zapstore.app.ZapActionTint
-import dev.zapstore.app.ZapBrand
 import dev.zapstore.app.ZapCanvas
 import dev.zapstore.app.ZapLine
 import dev.zapstore.app.ZapRadius
@@ -217,7 +217,7 @@ private fun StepIcon(icon: Int, logo: Boolean = false) {
         modifier = Modifier
             .size(56.dp)
             .clip(RoundedCornerShape(ZapRadius.md))
-            .background(if (logo) ZapBrand else ZapActionTint),
+            .background(if (logo) Color.Transparent else ZapActionTint),
     ) {
         if (logo) {
             Image(
