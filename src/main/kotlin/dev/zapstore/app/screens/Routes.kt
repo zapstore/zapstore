@@ -13,7 +13,9 @@ object Routes {
     const val UPDATES = "updates"
     const val ME = "me"
     const val SETTINGS = "settings"
-    const val APP = "app/{$APP_ID_ARG}"
+    /** Optional on the app route: the event id of a comment the page scrolls to once it is listed. */
+    const val COMMENT_ARG = "comment"
+    const val APP = "app/{$APP_ID_ARG}?$COMMENT_ARG={$COMMENT_ARG}"
     const val STACKS = "stacks"
     const val DIAGNOSTICS = "diagnostics"
     const val SAVED = "saved"
@@ -23,7 +25,8 @@ object Routes {
     /** Bottom-bar destinations, in bar order. */
     val TABS = listOf(HOME, UPDATES, ME)
 
-    fun app(appId: String): String = "app/${Uri.encode(appId)}"
+    fun app(appId: String, commentId: String? = null): String =
+        "app/${Uri.encode(appId)}" + commentId?.let { "?$COMMENT_ARG=${Uri.encode(it)}" }.orEmpty()
     fun stack(author: String, identifier: String): String = "stack/${Uri.encode(author)}/${Uri.encode(identifier)}"
     fun profile(pubkey: String): String = "profile/${Uri.encode(pubkey)}"
 }

@@ -212,6 +212,7 @@ class MainActivity : ComponentActivity() {
     private fun ZapstoreNavHost(navController: NavHostController) {
         val iolite = zapstore.iolite
         val openApp = { app: AppRecord -> navController.navigate(Routes.app(app.appId)) }
+        val openComment = { app: AppRecord, commentId: String -> navController.navigate(Routes.app(app.appId, commentId)) }
         val openProfile = { pubkey: String -> navController.navigate(Routes.profile(pubkey)) }
         var uninstallPrompt by remember { mutableStateOf<Pair<String, String>?>(null) }
         val uninstallLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
@@ -300,6 +301,7 @@ class MainActivity : ComponentActivity() {
                     onSearchSubmitted = viewModel::submitSearch,
                     onSearchCleared = viewModel::clearSearch,
                     onAppClick = openApp,
+                    onCommentClick = openComment,
                     onStackClick = { navController.navigate(Routes.stack(it.pubkey, it.identifier)) },
                     onDeveloperClick = openProfile,
                     onSeeAllStacks = { navController.navigate(Routes.STACKS) },
@@ -425,6 +427,7 @@ class MainActivity : ComponentActivity() {
                         state = state,
                         onOpenUrl = ::openUrl,
                         onAppClick = openApp,
+                        onCommentClick = openComment,
                         onStackClick = { navController.navigate(Routes.stack(it.pubkey, it.identifier)) },
                         onSettings = openSettings,
                         saved = saved,
@@ -515,14 +518,18 @@ class MainActivity : ComponentActivity() {
 
             composable(
                 route = Routes.APP,
-                arguments = listOf(navArgument(Routes.APP_ID_ARG) { type = NavType.StringType }),
-            ) {
+                arguments = listOf(
+                    navArgument(Routes.APP_ID_ARG) { type = NavType.StringType },
+                    navArgument(Routes.COMMENT_ARG) { type = NavType.StringType; nullable = true; defaultValue = null },
+                ),
+            ) { entry ->
                 val viewModel: AppDetailViewModel = viewModel(factory = AppDetailViewModel.factory(zapstore))
                 val state by viewModel.uiState.collectAsStateWithLifecycle()
                 val saved by zapstore.lists.saved.collectAsStateWithLifecycle()
                 val appId = state.app?.appId
                 AppDetailScreen(
                     state = state,
+                    focusComment = entry.arguments?.getString(Routes.COMMENT_ARG),
                     onStackClick = { navController.navigate(Routes.stack(it.pubkey, it.identifier)) },
                     saved = appId != null && appId in saved,
                     onSave = { on ->
@@ -578,6 +585,7 @@ class MainActivity : ComponentActivity() {
                     state = state,
                     onOpenUrl = ::openUrl,
                     onAppClick = openApp,
+                    onCommentClick = openComment,
                     onStackClick = { navController.navigate(Routes.stack(it.pubkey, it.identifier)) },
                     onLoadMoreActivity = viewModel::loadMoreActivity,
                     onShare = { shareProfile(state.pubkey) },

@@ -14,6 +14,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -110,18 +112,30 @@ internal fun FeedBlock(
     onOpenUrl: (String) -> Unit,
     onAuthorClick: (String) -> Unit,
     modifier: Modifier = Modifier,
+    /** The event id of a comment to bring into view when it is in this block; [onFocused] follows. */
+    focusComment: String? = null,
+    onFocused: () -> Unit = {},
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         block.forEach { entry ->
             when (entry) {
-                is FeedEntry.Comment -> CommentCard(
-                    comment = entry.comment,
-                    author = profiles[entry.comment.pubkey],
-                    depth = entry.depth,
-                    onOpenUrl = onOpenUrl,
-                    onAuthorClick = onAuthorClick,
-                    onReply = if (replyable) ({ onReply(entry.comment) }) else null,
-                )
+                is FeedEntry.Comment -> {
+                    val bringIntoView = remember { BringIntoViewRequester() }
+                    val focused = focusComment != null && entry.comment.eventId == focusComment
+                    if (focused) LaunchedEffect(focusComment) {
+                        bringIntoView.bringIntoView()
+                        onFocused()
+                    }
+                    CommentCard(
+                        comment = entry.comment,
+                        author = profiles[entry.comment.pubkey],
+                        depth = entry.depth,
+                        onOpenUrl = onOpenUrl,
+                        onAuthorClick = onAuthorClick,
+                        onReply = if (replyable) ({ onReply(entry.comment) }) else null,
+                        modifier = Modifier.bringIntoViewRequester(bringIntoView),
+                    )
+                }
                 is FeedEntry.Zap -> ZapNoteCard(entry.zap, profiles[entry.zap.pubkey], onOpenUrl, onAuthorClick)
             }
         }

@@ -49,6 +49,8 @@ fun ProfileScreen(
     onAppClick: (AppRecord) -> Unit,
     modifier: Modifier = Modifier,
     onStackClick: (StackRecord) -> Unit = {},
+    /** A comment in the activity list: opens its app at that comment. */
+    onCommentClick: (AppRecord, String) -> Unit = { app, _ -> onAppClick(app) },
     /** Set on the Profile tab: opens the device's settings. This page is then the same shape as anyone else's. */
     onSettings: (() -> Unit)? = null,
     /** The device's saved apps, pinned first among the stacks on the Profile tab. */
@@ -175,7 +177,9 @@ fun ProfileScreen(
             profiles = emptyMap(),
             stackApps = emptyMap(),
             emptyText = noActivity,
-            onOpen = { item -> item.app?.let(onAppClick) },
+            onOpen = { item ->
+                item.app?.let { app -> if (item.comment != null) onCommentClick(app, item.eventId) else onAppClick(app) }
+            },
             showWho = false,
             modifier = Modifier.padding(horizontal = ZapSpacing.space4),
         )

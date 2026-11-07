@@ -36,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.LinkAnnotation
@@ -104,6 +105,8 @@ fun AppDetailScreen(
     onToggleStack: (StackRecord) -> Unit = {},
     onCreateStack: (String) -> Unit = {},
     onStackClick: (StackRecord) -> Unit = {},
+    /** The event id of a comment to scroll to once the feed lists it; the jump happens once per visit. */
+    focusComment: String? = null,
 ) {
     var selectedScreenshot by remember { mutableStateOf<Int?>(null) }
     var releasing by remember { mutableStateOf(false) }
@@ -131,6 +134,29 @@ fun AppDetailScreen(
     val feed = remember(comments.threads, comments.zaps) { feedBlocks(comments.threads, comments.zaps.filter { it.note.isNotBlank() }) }
     val other = remember(comments.other) { feedBlocks(comments.other, emptyList()) }
     val replyable = state.social.signedIn
+
+    // Which optional items sit above the feed, so a comment's item index can be told.
+    val showSigned = state.install.signedDifferently
+    val showShots = app?.screenshots?.isNotEmpty() == true
+    val showZaps = state.social.zappable || state.zaps.zappers.isNotEmpty()
+    val showStackedBy = state.stackedBy.stacks.isNotEmpty()
+    // The head, about, release, security card, header and composer are always there.
+    val leadingItems = 6 + listOf(showSigned, showShots, showZaps, showStackedBy).count { it }
+    val feedItems = if (feed.isEmpty() && (comments.error != null || comments.loading)) 1 else feed.size
+    var pendingComment by rememberSaveable(focusComment) { mutableStateOf(focusComment) }
+    val focusIndex = remember(pendingComment, feed, other, leadingItems, feedItems) {
+        val id = pendingComment ?: return@remember -1
+        fun List<List<FeedEntry>>.indexOfComment() =
+            indexOfFirst { block -> block.any { it is FeedEntry.Comment && it.comment.eventId == id } }
+        val inFeed = feed.indexOfComment()
+        if (inFeed >= 0) leadingItems + inFeed
+        else other.indexOfComment().takeIf { it >= 0 }?.let { leadingItems + feedItems + 1 + it } ?: -1
+    }
+    val clearOfHeader = with(LocalDensity.current) { (COMPACT_BAR_HEIGHT + ZapSpacing.space2).roundToPx() }
+    LaunchedEffect(focusIndex) {
+        // The block is composed after this, and brings the comment itself into view from there.
+        if (focusIndex >= 0) listState.scrollToItem(focusIndex, -clearOfHeader)
+    }
     val moreMenu: @Composable (String) -> Unit = { tag ->
         if (app != null) {
             AppMoreMenu(
@@ -179,13 +205,13 @@ fun AppDetailScreen(
                     modifier = Modifier.scrollParallax(listState),
                 )
             }
-            if (state.install.signedDifferently) {
+            if (showSigned) {
                 item(key = "signedDifferently", contentType = "status") {
                     StatusText(stringResource(R.string.install_signed_differently), Modifier.testTag("signedDifferently"))
                 }
             }
 
-            if (app.screenshots.isNotEmpty()) {
+            if (showShots) {
                 item(key = "screenshots", contentType = "screenshots") {
                     val shots = rememberLazyListState()
                     LazyRow(state = shots, horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2)) {
@@ -243,7 +269,7 @@ fun AppDetailScreen(
                 }
             }
 
-            if (state.social.zappable || state.zaps.zappers.isNotEmpty()) {
+            if (showZaps) {
                 item(key = "zaps", contentType = "zaps") {
                     ZapRow(
                         state.zaps,
@@ -253,7 +279,7 @@ fun AppDetailScreen(
                 }
             }
 
-            if (state.stackedBy.stacks.isNotEmpty()) {
+            if (showStackedBy) {
                 item(key = "stackedBy", contentType = "stackedBy") {
                     StackedByRow(state.stackedBy, onStackClick, Modifier.padding(vertical = ZapSpacing.space2))
                 }
@@ -298,6 +324,8 @@ fun AppDetailScreen(
                         onReply = { replyingTo = it },
                         onOpenUrl = onOpenUrl,
                         onAuthorClick = onProfileClick,
+                        focusComment = pendingComment,
+                        onFocused = { pendingComment = null },
                     )
                 }
             }
@@ -317,6 +345,8 @@ fun AppDetailScreen(
                         onReply = {},
                         onOpenUrl = onOpenUrl,
                         onAuthorClick = onProfileClick,
+                        focusComment = pendingComment,
+                        onFocused = { pendingComment = null },
                     )
                 }
             }

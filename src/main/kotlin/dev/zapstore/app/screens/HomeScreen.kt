@@ -81,6 +81,8 @@ fun HomeScreen(
     onAppClick: (AppRecord) -> Unit,
     onStackClick: (StackRecord) -> Unit,
     modifier: Modifier = Modifier,
+    /** A comment in Recent activity: opens its app at that comment. */
+    onCommentClick: (AppRecord, String) -> Unit = { app, _ -> onAppClick(app) },
     onDeveloperClick: (String) -> Unit = {},
     onActivityFilter: (ActivityFilter) -> Unit = {},
     onLoadMoreStacks: () -> Unit = {},
@@ -224,7 +226,10 @@ fun HomeScreen(
                     profiles = state.profiles,
                     stackApps = state.activityStackApps,
                     emptyText = activityEmptyText,
-                    onOpen = { item -> item.stack?.let(onStackClick) ?: item.app?.let(onAppClick) },
+                    onOpen = { item ->
+                        item.stack?.let(onStackClick)
+                            ?: item.app?.let { app -> if (item.comment != null) onCommentClick(app, item.eventId) else onAppClick(app) }
+                    },
                     catalogKeys = state.catalogKeys,
                     onLoadMore = onLoadMoreActivity,
                 )
