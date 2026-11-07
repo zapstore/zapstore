@@ -254,13 +254,11 @@ class HomeViewModel(
         val pool = when (filter) {
             ActivityFilter.All -> social + releases
             ActivityFilter.Releases -> releases
-            ActivityFilter.Social -> social
         }.sortedByDescending { it.createdAt }
         ActivityPage(
             QueryState(pool.take(limit)),
             canLoadMore = when (filter) {
                 ActivityFilter.Releases -> releases.size >= limit
-                ActivityFilter.Social -> page.canLoadMore
                 ActivityFilter.All -> page.canLoadMore || releases.size >= limit || pool.size > limit
             },
             stackApps = apps,

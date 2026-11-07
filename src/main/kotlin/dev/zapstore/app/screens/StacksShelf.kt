@@ -16,7 +16,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import dev.zapstore.app.ZapSpacing
-import dev.zapstore.app.components.SeeAllStackCard
 import dev.zapstore.app.components.StackCard
 import dev.zapstore.app.components.StackCardHeight
 import dev.zapstore.app.components.StackShelfGap
@@ -39,19 +38,18 @@ fun StacksShelf(
     modifier: Modifier = Modifier,
     saved: SavedApps? = null,
     onSavedClick: () -> Unit = {},
-    seeAll: (() -> Unit)? = null,
     horizontalPadding: Dp = ZapSpacing.space4,
     gridState: LazyGridState = rememberLazyGridState(),
 ) {
     BoxWithConstraints(modifier.fillMaxWidth()) {
         val contentWidth = maxWidth - horizontalPadding * 2
         val shelfWidth = contentWidth * stackShelfFraction(contentWidth)
-        val cards = (if (saved != null && saved.ids.isNotEmpty()) 1 else 0) + stacks.size + (if (seeAll != null) 1 else 0)
+        val cards = (if (saved != null && saved.ids.isNotEmpty()) 1 else 0) + stacks.size
         val rows = cards.coerceIn(1, StacksShelfRows)
         LazyHorizontalGrid(
             rows = GridCells.Fixed(rows),
             state = gridState,
-            horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+            horizontalArrangement = Arrangement.spacedBy(StackShelfGap),
             verticalArrangement = Arrangement.spacedBy(StackShelfGap),
             contentPadding = PaddingValues(horizontal = horizontalPadding),
             modifier = Modifier
@@ -61,7 +59,7 @@ fun StacksShelf(
         ) {
             if (saved != null && saved.ids.isNotEmpty()) {
                 item(key = "saved") {
-                    SavedStackCard(saved, onSavedClick, Modifier.width(shelfWidth), flushStart = true)
+                    SavedStackCard(saved, onSavedClick, Modifier.width(shelfWidth), flushStart = true, plate = true)
                 }
             }
             items(stacks, key = { it.eventId }) { stack ->
@@ -71,18 +69,9 @@ fun StacksShelf(
                     onClick = { onStackClick(stack) },
                     verticalPadding = StackShelfPadding,
                     flushStart = true,
+                    plate = true,
                     modifier = Modifier.width(shelfWidth).testTag("stack:${stack.identifier}"),
                 )
-            }
-            seeAll?.let { onSeeAll ->
-                item(key = "see-all") {
-                    SeeAllStackCard(
-                        onClick = onSeeAll,
-                        verticalPadding = StackShelfPadding,
-                        flushStart = true,
-                        modifier = Modifier.width(shelfWidth).testTag("seeAllStacks"),
-                    )
-                }
             }
         }
     }

@@ -36,12 +36,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import dev.zapstore.app.ZapActionText
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.SubcomposeLayout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -64,6 +67,7 @@ import dev.zapstore.app.components.ZapBadge
 import dev.zapstore.app.components.ZapButton
 import dev.zapstore.app.components.ZapButtonStyle
 import dev.zapstore.app.components.shortDisplayName
+import dev.zapstore.app.isHttpUrl
 import dev.zapstore.app.facts.FactCatalog
 import dev.zapstore.iolite.AppRecord
 import dev.zapstore.iolite.CommentRecord
@@ -74,9 +78,6 @@ import java.text.NumberFormat
 import java.util.Date
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.ui.zIndex
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import dev.zapstore.app.ZapCanvas
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.HorizontalDivider
@@ -410,61 +411,164 @@ internal fun ZapRow(
     }
 }
 
-/** How many faces [ZappersSummary] stacks; the rest are in [ZappersSheet]. */
-private const val STACKED_ZAPPERS = 3
+/** Face diameter, a tenth under the 28dp circle. The ring scales with it. */
+private val stackedFace = 28.dp * 0.9f
+
+/** Overlap of space2, plus a quarter, plus a tenth of that. */
+private val stackedOverlap = -(ZapSpacing.space2 * 1.25f * 1.1f)
 
 /**
- * The biggest zappers' faces stacked, the top one ringed in bolt yellow, then `21k sats received`
- * with the total in bold. One target: it opens the full list.
+ * How wide a face stack is when [count] circles of [face] px show [step] px of each next face.
+ * [step] never exceeds the preferred gap, and drops (then the circle shrinks) so the stack
+ * stays within [maxWidth].
+ */
+internal fun packFaces(count: Int, face: Int, preferredStep: Int, maxWidth: Int): FacePack {
+    if (count <= 0 || face <= 0 || maxWidth <= 0) return FacePack(0, 0, 0)
+    val stepCap = preferredStep.coerceIn(0, face)
+    val natural = face + (count - 1) * stepCap
+    if (natural <= maxWidth) return FacePack(face, stepCap, natural)
+    val tight = if (count == 1) 0 else ((maxWidth - face) / (count - 1)).coerceIn(0, stepCap)
+    val tightWidth = face + (count - 1) * tight
+    if (tightWidth <= maxWidth) return FacePack(face, tight, tightWidth)
+    val shrunk = maxWidth.coerceAtMost(face)
+    return FacePack(shrunk, 0, shrunk)
+}
+
+internal data class FacePack(val face: Int, val step: Int, val width: Int)
+
+/**
+ * How many of [candidates] fit in [maxWidth] at [preferredStep]. A leftover that is most of
+ * another step buys one more face, overlapped a little tighter.
+ */
+internal fun facesThatFit(candidates: Int, face: Int, preferredStep: Int, maxWidth: Int): Int {
+    if (candidates <= 0 || face <= 0 || maxWidth < face) return 0
+    val step = preferredStep.coerceIn(1, face)
+    val comfortable = (1 + (maxWidth - face) / step).coerceAtMost(candidates)
+    if (comfortable >= candidates) return comfortable
+    val slack = maxWidth - (face + (comfortable - 1) * step)
+    return if (slack * 2 >= step) comfortable + 1 else comfortable
+}
+
+/**
+ * Faces for the summary, biggest first. A zapper with no picture URL stays in [ZappersSheet]
+ * and off this stack, including a named person whose face would be a key avatar.
+ * How many show is chosen later, from the width left on the line.
+ */
+internal fun stackedZappers(zappers: List<Zapper>, profiles: Map<String, ProfileRecord>): List<Zapper> =
+    zappers.filter { stacksZapperFace(profiles[it.pubkey]) }
+
+private fun stacksZapperFace(profile: ProfileRecord?): Boolean =
+    isHttpUrl(profile?.picture?.trim().orEmpty())
+
+/**
+ * `21k sats` on one line, then `from` the faces and `…` in caption, sharing the amount's baseline.
+ * One target: it opens the full list.
  */
 @Composable
 private fun ZappersSummary(summary: ZapSummary, onClick: () -> Unit) {
     val total = pluralStringResource(R.plurals.zap_total, summary.totalSats.coerceIn(0, Int.MAX_VALUE.toLong()).toInt(), compactSats(summary.totalSats))
-    val line = stringResource(R.string.zap_received, total)
+    val stacked = stackedZappers(summary.zappers, summary.profiles)
+    var shown by remember(stacked) { mutableIntStateOf(stacked.size) }
+    val aside = MaterialTheme.typography.bodySmall
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3),
+        horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space1),
         modifier = Modifier
+            .fillMaxWidth()
             .heightIn(min = ZapSpacing.space12)
             .clip(RoundedCornerShape(ZapRadius.md))
             .clickable(role = Role.Button, onClick = onClick)
             .testTag("zappers"),
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(-ZapSpacing.space2)) {
-            val stacked = summary.zappers.take(STACKED_ZAPPERS)
-            stacked.forEachIndexed { i, zapper ->
-                val profile = summary.profiles[zapper.pubkey]
-                Box(
-                    Modifier
-                        .zIndex((stacked.size - i).toFloat())
-                        .size(28.dp)
-                        .background(if (i == 0) ZapWarning else ZapCanvas, CircleShape)
-                        .padding(2.dp)
-                        .clip(CircleShape)
-                        .background(ZapSurface3),
-                ) {
-                    ProfileImage(
-                        pubkey = zapper.pubkey,
-                        pictureUrl = profile?.picture,
-                        profileVersion = profile?.eventId,
-                        contentDescription = null,
-                        modifier = Modifier.matchParentSize(),
-                    )
+        Row(horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space1)) {
+            Text(
+                total,
+                color = ZapText,
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold, fontFeatureSettings = "tnum"),
+                maxLines = 1,
+                softWrap = false,
+                modifier = Modifier.alignByBaseline().testTag("zapTotal"),
+            )
+            if (stacked.isNotEmpty()) {
+                Text(
+                    stringResource(R.string.zap_from),
+                    color = ZapText2,
+                    style = aside,
+                    maxLines = 1,
+                    softWrap = false,
+                    modifier = Modifier.alignByBaseline(),
+                )
+            }
+        }
+        if (stacked.isNotEmpty()) {
+            StackedFaces(
+                stacked,
+                summary.profiles,
+                Modifier.weight(1f, fill = false).align(Alignment.CenterVertically),
+                onShown = { shown = it },
+            )
+        }
+        if (summary.zapperCount > shown) {
+            Text(
+                stringResource(R.string.zap_and_more),
+                color = ZapText2,
+                style = aside,
+                maxLines = 1,
+                softWrap = false,
+            )
+        }
+    }
+}
+
+/**
+ * As many pictured zappers as the leftover width holds. Preferred overlap when they fit;
+ * a little tighter when the slack on the right is enough for one more. `from` and `…` are
+ * outside this and keep their width.
+ */
+@Composable
+private fun StackedFaces(
+    stacked: List<Zapper>,
+    profiles: Map<String, ProfileRecord>,
+    modifier: Modifier = Modifier,
+    onShown: (Int) -> Unit = {},
+) {
+    SubcomposeLayout(modifier) { constraints ->
+        val face = stackedFace.roundToPx()
+        val preferredStep = (stackedFace + stackedOverlap).roundToPx().coerceAtLeast(1)
+        val maxWidth = if (constraints.hasBoundedWidth) constraints.maxWidth else Int.MAX_VALUE
+        val count = facesThatFit(stacked.size, face, preferredStep, maxWidth)
+        onShown(count)
+        val pack = packFaces(count, face, preferredStep, maxWidth)
+        if (count == 0 || pack.face == 0) {
+            layout(0, 0) {}
+        } else {
+            val placeables = subcompose(count) {
+                stacked.take(count).forEachIndexed { i, zapper ->
+                    val profile = profiles[zapper.pubkey]
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .background(if (i == 0) ZapWarning else ZapCanvas, CircleShape)
+                            .padding(2.dp * 0.9f)
+                            .clip(CircleShape)
+                            .background(ZapSurface3),
+                    ) {
+                        ProfileImage(
+                            pubkey = zapper.pubkey,
+                            pictureUrl = profile?.picture,
+                            profileVersion = profile?.eventId,
+                            contentDescription = null,
+                            modifier = Modifier.matchParentSize(),
+                        )
+                    }
+                }
+            }.map { it.measure(Constraints.fixed(pack.face, pack.face)) }
+            layout(pack.width, pack.face) {
+                placeables.forEachIndexed { i, placeable ->
+                    placeable.placeRelative(i * pack.step, 0, zIndex = (count - i).toFloat())
                 }
             }
         }
-        Text(
-            buildAnnotatedString {
-                append(line)
-                val at = line.indexOf(total)
-                if (at >= 0) addStyle(SpanStyle(color = ZapText, fontWeight = FontWeight.Bold), at, at + total.length)
-            },
-            color = ZapText2,
-            style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f, fill = false).padding(end = ZapSpacing.space2).testTag("zapTotal"),
-        )
     }
 }
 

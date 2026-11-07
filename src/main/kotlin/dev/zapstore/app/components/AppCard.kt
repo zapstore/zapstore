@@ -29,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.res.stringResource
@@ -64,6 +65,7 @@ fun AppIcon(
     modifier: Modifier = Modifier,
     iconFile: File? = null,
     cornerRadius: Dp = size * ZapRadius.appTileFraction,
+    colorFilter: ColorFilter? = null,
 ) {
     val remoteReady = rememberRemoteImagesReady()
     val model = when {
@@ -88,6 +90,7 @@ fun AppIcon(
                 model = model,
                 contentDescription = stringResource(R.string.app_icon_description, title),
                 contentScale = ContentScale.Crop,
+                colorFilter = colorFilter,
                 modifier = Modifier.fillMaxSize(),
             )
         }

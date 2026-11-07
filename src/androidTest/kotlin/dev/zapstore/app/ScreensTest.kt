@@ -184,9 +184,8 @@ class ScreensTest {
         composeRule.onNodeWithTag("searchResult:dev.zap").performClick()
         results = null
         composeRule.onNodeWithTag("stack:privacy").performClick()
-        composeRule.onNodeWithTag("stackShelf").performScrollToNode(hasTestTag("seeAllStacks"))
+        composeRule.onNodeWithText("Curated stacks").assertIsDisplayed()
         composeRule.onNodeWithTag("seeAllStacks").performClick()
-        composeRule.onNodeWithText("Stacks").assertDoesNotExist()
 
         assertTrue(cleared)
         assertTrue(openedStacks)
@@ -376,10 +375,9 @@ class ScreensTest {
         assertTrue(composeRule.onAllNodesWithText("Search results", substring = true).fetchSemanticsNodes().isEmpty())
         composeRule.onNodeWithTag("homeList").performScrollToNode(hasTestTag("activity:${"d".repeat(64)}"))
         composeRule.onNodeWithText("Works great").assertIsDisplayed()
-        composeRule.onNodeWithText("new comment").assertIsDisplayed()
-        composeRule.onNodeWithText("received").assertIsDisplayed()
-        composeRule.onNodeWithText("2,100 sats").assertIsDisplayed()
-        // Nobody names the author, so the line skips "by" rather than say "Someone".
+        composeRule.onNodeWithText("on").assertIsDisplayed()
+        composeRule.onNodeWithText("2.1k sats").assertIsDisplayed()
+        // Nobody names the author, so the line starts at the verb rather than say "Someone".
         composeRule.onNodeWithText("Someone").assertDoesNotExist()
         composeRule.onNodeWithTag("activity:${"d".repeat(64)}").performClick()
         assertEquals("dev.zap", opened)
@@ -463,10 +461,9 @@ class ScreensTest {
                 )
             }
         }
-        composeRule.onNodeWithText("sent").assertIsDisplayed()
         composeRule.onNodeWithText("21 sats").assertIsDisplayed()
-        composeRule.onNodeWithText("commented on").assertIsDisplayed()
-        assertTrue(composeRule.onAllNodesWithText("received").fetchSemanticsNodes().isEmpty())
+        composeRule.onNodeWithText("to").assertIsDisplayed()
+        composeRule.onNodeWithText("on").assertIsDisplayed()
     }
 
     @Test
@@ -599,7 +596,7 @@ class ScreensTest {
     @Test
     fun homeActivityListsReleasesAndFiltersThem() {
         var opened: String? = null
-        var filter by mutableStateOf(ActivityFilter.All)
+        var filter by mutableStateOf(ActivityFilter.Releases)
         val zap = app("dev.zap", "Zap", version = "1.2.3")
         val indexed = app("dev.indexed", "Indexed", version = "2.0", catalogSigned = true)
         composeRule.setContent {
@@ -619,17 +616,12 @@ class ScreensTest {
             }
         }
         assertTrue(composeRule.onAllNodesWithText("Latest releases").fetchSemanticsNodes().isEmpty())
-        composeRule.onNodeWithTag("activityFilter").assertIsDisplayed()
-        composeRule.onNodeWithText("All").assertIsDisplayed()
-        composeRule.onNodeWithTag("activityFilter").performClick()
-        composeRule.onNodeWithTag("activityFilter:Social").performClick()
-        assertEquals(ActivityFilter.Social, filter)
-        composeRule.onNodeWithTag("activityFilter").performClick()
-        composeRule.onNodeWithTag("activityFilter:Releases").performClick()
+        composeRule.onNodeWithTag("activitySocialToggle").performClick()
+        assertEquals(ActivityFilter.All, filter)
+        composeRule.onNodeWithTag("activitySocialToggle").performClick()
         assertEquals(ActivityFilter.Releases, filter)
         composeRule.onNodeWithText("New release").assertDoesNotExist()
-        // A catalog-signed release says just "released", like any other; nobody is named without a profile.
-        assertEquals(2, composeRule.onAllNodesWithText("released").fetchSemanticsNodes().size)
+        // Nobody is named without a profile, and a catalog-signed release names nobody.
         composeRule.onNodeWithText("Someone").assertDoesNotExist()
         composeRule.onNodeWithText("by").assertDoesNotExist()
         composeRule.onNodeWithText("1.2.3").assertIsDisplayed()
@@ -819,7 +811,7 @@ class ScreensTest {
             }
         }
         composeRule.onNodeWithTag("appDetail").performScrollToKey("zaps")
-        composeRule.onNodeWithTag("zapTotal", useUnmergedTree = true).assertIsDisplayed().assertTextEquals("3.4k sats received")
+        composeRule.onNodeWithTag("zapTotal", useUnmergedTree = true).assertIsDisplayed().assertTextEquals("3.4k sats")
         assertTrue(composeRule.onAllNodesWithTag("zapOpen").fetchSemanticsNodes().isEmpty())
 
         composeRule.onNodeWithTag("zappers").performClick()

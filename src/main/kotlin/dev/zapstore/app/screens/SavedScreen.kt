@@ -44,13 +44,20 @@ internal fun rememberSavedApps(iolite: Iolite, saved: StateFlow<List<String>>): 
 
 /** Saved, the same card as a stack, pinned first on the Profile shelf. */
 @Composable
-internal fun SavedStackCard(saved: SavedApps, onClick: () -> Unit, modifier: Modifier = Modifier, flushStart: Boolean = false) {
+internal fun SavedStackCard(
+    saved: SavedApps,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    flushStart: Boolean = false,
+    plate: Boolean = false,
+) {
     StackFace(
         name = stringResource(R.string.saved),
         appIds = saved.ids,
         apps = saved.apps,
         onClick = onClick,
         flushStart = flushStart,
+        plate = plate,
         modifier = modifier.testTag("savedStack"),
     )
 }

@@ -628,21 +628,26 @@ fun SwitchRow(
         subtitle = subtitle,
         onClick = if (enabled) ({ onCheckedChange(!checked) }) else null,
         modifier = modifier,
-        trailing = {
-            Switch(
-                checked = checked,
-                onCheckedChange = null,
-                enabled = enabled,
-                colors = SwitchDefaults.colors(
-                    checkedTrackColor = ZapAction,
-                    checkedThumbColor = Color.White,
-                    checkedBorderColor = ZapAction,
-                    uncheckedTrackColor = ZapSurface4,
-                    uncheckedThumbColor = Color.White,
-                    uncheckedBorderColor = ZapSurface4,
-                ),
-            )
-        },
+        trailing = { ZapSwitch(checked, enabled = enabled) },
+    )
+}
+
+/** The app's switch, display only: the row around it handles the tap. */
+@Composable
+fun ZapSwitch(checked: Boolean, modifier: Modifier = Modifier, enabled: Boolean = true) {
+    Switch(
+        checked = checked,
+        onCheckedChange = null,
+        modifier = modifier,
+        enabled = enabled,
+        colors = SwitchDefaults.colors(
+            checkedTrackColor = ZapAction,
+            checkedThumbColor = Color.White,
+            checkedBorderColor = ZapAction,
+            uncheckedTrackColor = ZapSurface4,
+            uncheckedThumbColor = Color.White,
+            uncheckedBorderColor = ZapSurface4,
+        ),
     )
 }
 

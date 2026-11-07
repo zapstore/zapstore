@@ -4,14 +4,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -26,16 +23,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.zapstore.app.R
+import dev.zapstore.app.ZapSize
 import dev.zapstore.app.ZapSpacing
 import dev.zapstore.app.ZapText
 import dev.zapstore.app.ZapSurface3
@@ -56,10 +55,8 @@ import dev.zapstore.iolite.ActivityRecord
 import dev.zapstore.iolite.AppRecord
 import dev.zapstore.iolite.ProfileRecord
 import dev.zapstore.iolite.StackRecord
-import java.text.NumberFormat
 import java.time.Instant
 import java.time.ZoneOffset
-import java.util.Locale
 
 /**
  * One entry of an activity list: a comment or a zap on an [app], a [stack] its curator published or
@@ -77,8 +74,8 @@ data class ActivityItem(
     val release: Boolean = false,
 )
 
-/** Which entries Home's Activity lists. */
-enum class ActivityFilter { All, Releases, Social }
+/** Which entries Home's Activity lists: releases alone, or releases with comments, zaps and stacks. */
+enum class ActivityFilter { All, Releases }
 
 /** The app's latest release as an entry. */
 internal fun AppRecord.releaseActivity(): ActivityItem =
@@ -130,10 +127,11 @@ internal fun LazyListScope.activityRows(
         else -> {
             // No rules between entries: the padding of each row is the only gap.
             itemsIndexed(items, key = { _, item -> "activity:${item.eventId}" }, contentType = { _, _ -> "activity" }) { _, item ->
-                if (!showWho && item.app != null && item.stack == null && !item.release) {
-                    PersonActivityRow(item, item.app, onClick = { onOpen(item) }, modifier = modifier)
+                val releaseApp = item.app.takeIf { item.release }
+                if (releaseApp != null) {
+                    ReleaseRow(item, releaseApp, profiles[item.pubkey], showWho, catalogKeys, onClick = { onOpen(item) }, modifier = modifier)
                 } else {
-                    ActivityRow(item, profiles[item.pubkey], stackApps, catalogKeys, showWho, onClick = { onOpen(item) }, modifier = modifier)
+                    SocialRow(item, profiles[item.pubkey], stackApps, catalogKeys, showWho, onClick = { onOpen(item) }, modifier = modifier)
                 }
             }
             if (canLoadMore) {
@@ -157,18 +155,61 @@ internal fun LazyListScope.activityRows(
 }
 
 /**
- * One entry, led by what it is about, since apps and stacks come first here: the app's icon or the stack's
- * tile, then one line that reads "<app> [version] released by [avatar] <name>", "<app> received ⚡ N sats from
- * <name>", "<app> new comment from <name>" or "<stack> updated by <name>", with the time at the right edge.
- * A comment's text and a release's one-line about sit under the line, and a line that wraps, start where the
- * name starts, so everything lines up right of the icon. The "by <name>" part is left out when no profile
- * names the person, and on a person's own page ([showWho] false), where every entry is theirs. An entry made
- * by a catalog key says "by the catalog" in plain text, and a release by one says just "released".
- * An entry with no app or stack is on the page of the stack it belongs to.
+ * One release, led by the app's icon: "<app> [version] by [avatar] <name>" on one line with the time at the
+ * right, and the app's [tagline][AppRecord.tagline] under it. The byline is left out on a person's own page
+ * ([showWho] false), for a catalog-signed release, and when no profile names the author.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ActivityRow(
+private fun ReleaseRow(
+    item: ActivityItem,
+    app: AppRecord,
+    profile: ProfileRecord?,
+    showWho: Boolean,
+    catalogKeys: Set<String>,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val named = showWho && item.pubkey !in catalogKeys && !app.isCatalogSigned && resolvedName(profile) != null
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(ACTIVITY_APP_ICON_GAP),
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = ACTIVITY_ROW_PADDING)
+            .testTag("activity:${item.eventId}"),
+    ) {
+        AppIcon(title = app.name, iconUrl = app.iconUrl, iconFile = app.iconFile, size = ACTIVITY_APP_ICON)
+        Column(Modifier.weight(1f)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(ACTIVITY_GAP),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    // Unweighted, so the app's name keeps its width and only the author's name is cut.
+                    Strong(app.name, weight = FontWeight.Bold)
+                    if (app.version.isNotBlank()) VersionPill(app.version, scale = 0.8f)
+                    if (named) {
+                        Verb(stringResource(R.string.activity_by), style = AgoStyle)
+                        Avatar(item.pubkey, profile, size = RELEASE_BYLINE_AVATAR)
+                        Strong(shortDisplayName(item.pubkey, profile), Modifier.weight(1f, fill = false), style = AgoStyle)
+                    }
+                }
+                Ago(item.createdAt)
+            }
+            app.tagline.takeIf { it.isNotEmpty() }?.let { SecondLine(it) }
+        }
+    }
+}
+
+/**
+ * One comment, zap or stack update, led by who did it: "[avatar] <name> on [icon] <app>", "... [bolt] N sats
+ * to [icon] <app>" or "... updated [tile] <stack>" on one line, and a comment's text under it. A catalog key
+ * reads "The catalog"; anyone else with no profile name, or anyone on a person's own page ([showWho] false),
+ * is left out. With no app or stack, the entry belongs to the stack whose page lists it.
+ */
+@Composable
+private fun SocialRow(
     item: ActivityItem,
     profile: ProfileRecord?,
     stackApps: Map<String, AppRecord>,
@@ -179,216 +220,131 @@ private fun ActivityRow(
 ) {
     val app = item.app
     val stack = item.stack
-    val byCatalog = item.pubkey in catalogKeys || (item.release && app?.isCatalogSigned == true)
-    val named = showWho && !byCatalog && resolvedName(profile) != null
-    /** "by <person>" or "from <person>"; "by the catalog" for a catalog key; nothing when no one can be named. */
-    @Composable
-    fun Who(word: Int, catalogWord: Int) {
-        if (showWho && item.pubkey in catalogKeys) {
-            Verb(stringResource(catalogWord))
-        } else if (named) {
-            Attribution(word) { Person(item.pubkey, profile) }
-        }
-    }
-    val leading: (@Composable () -> Unit)? = when {
-        stack != null && !item.release -> {
-            { StackTile(stack.appIds, stackApps, size = ACTIVITY_ICON, modifier = Modifier.wrapContentSize(Alignment.Center, unbounded = true)) }
-        }
-        app != null -> {
-            { AppIcon(title = app.name, iconUrl = app.iconUrl, iconFile = app.iconFile, size = ACTIVITY_APP_ICON) }
-        }
-        else -> null
-    }
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(ACTIVITY_APP_ICON_GAP),
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 14.dp)
-            .testTag("activity:${item.eventId}"),
-    ) {
-        // A box of the icon's width, so the lines below can start where the name does.
-        if (leading != null) Box(Modifier.size(ACTIVITY_APP_ICON), contentAlignment = Alignment.Center) { leading() }
-        Column(Modifier.weight(1f)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                    itemVerticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    when {
-                        item.release && app != null -> {
-                            NameWithVersion(app.name, app.version)
-                            Verb(stringResource(R.string.activity_released))
-                            if (!byCatalog) Who(R.string.activity_by, R.string.activity_by_catalog)
-                        }
-                        stack != null -> {
-                            Strong(stack.name)
-                            Verb(stringResource(R.string.activity_updated))
-                            Who(R.string.activity_by, R.string.activity_by_catalog)
-                        }
-                        app != null -> {
-                            Strong(app.name)
-                            if (item.sats != null) {
-                                Verb(stringResource(R.string.activity_received))
-                                Sats(item.sats)
-                                Who(R.string.activity_from, R.string.activity_from_catalog)
-                            } else {
-                                Verb(stringResource(R.string.activity_new_comment))
-                                Who(R.string.activity_from, R.string.activity_from_catalog)
-                            }
-                        }
-                        item.sats != null -> {
-                            Verb(stringResource(R.string.activity_zap))
-                            Sats(item.sats)
-                            Who(R.string.activity_from, R.string.activity_from_catalog)
-                        }
-                        else -> {
-                            Verb(stringResource(R.string.activity_stack_comment))
-                            Who(R.string.activity_from, R.string.activity_from_catalog)
-                        }
-                    }
-                }
-                Text(
-                    agoLabel(item.createdAt),
-                    color = ZapText3,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1,
-                    modifier = Modifier.padding(top = 1.dp),
-                )
-            }
-            if (item.release) {
-                app?.aboutProse?.replace(Regex("\\s+"), " ")?.trim()?.takeIf { it.isNotEmpty() }?.let { about ->
-                    Text(
-                        about,
-                        color = ZapText2,
-                        style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 6.dp),
-                    )
-                }
-            }
-            item.comment?.takeIf { it.isNotBlank() }?.let {
-                Text(
-                    it,
-                    color = ZapText2,
-                    style = MaterialTheme.typography.bodyLarge,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 6.dp),
-                )
-            }
-        }
-    }
-}
-
-/**
- * One comment or zap on a person's own page, told from their side: "sent ⚡ 21 sats to <app>" or
- * "commented on <app>", the app with its small icon, the time at the right edge, and a comment's text under it.
- * The main feed says "<app> received ..." instead, which is the app's side.
- */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun PersonActivityRow(
-    item: ActivityItem,
-    app: AppRecord,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
+    val byCatalog = showWho && item.pubkey in catalogKeys
+    val hasAvatar = showWho && !byCatalog && resolvedName(profile) != null
     Column(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(vertical = 14.dp)
+            .padding(vertical = ACTIVITY_ROW_PADDING)
             .testTag("activity:${item.eventId}"),
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-                itemVerticalAlignment = Alignment.CenterVertically,
+        Row(horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(ACTIVITY_GAP),
                 modifier = Modifier.weight(1f),
             ) {
-                if (item.sats != null) {
-                    Verb(stringResource(R.string.activity_sent))
-                    Sats(item.sats)
-                    Verb(stringResource(R.string.activity_to))
-                } else {
-                    Verb(stringResource(R.string.activity_commented_on))
+                if (byCatalog) Strong(stringResource(R.string.activity_the_catalog))
+                if (hasAvatar) {
+                    Avatar(item.pubkey, profile)
+                    Strong(shortDisplayName(item.pubkey, profile))
                 }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ACTIVITY_GAP)) {
-                    AppIcon(title = app.name, iconUrl = app.iconUrl, iconFile = app.iconFile, size = ACTIVITY_ICON)
-                    Strong(app.name, Modifier.weight(1f, fill = false))
+                when {
+                    stack != null -> {
+                        Verb(stringResource(R.string.activity_updated))
+                        Target(stack.name, Modifier.weight(1f, fill = false)) {
+                            StackTile(stack.appIds, stackApps, size = ACTIVITY_ICON)
+                        }
+                    }
+                    app != null -> {
+                        if (item.sats != null) {
+                            Sats(item.sats)
+                            Verb(stringResource(R.string.activity_to))
+                        } else {
+                            Verb(stringResource(R.string.activity_on))
+                        }
+                        Target(app.name, Modifier.weight(1f, fill = false)) {
+                            AppIcon(title = app.name, iconUrl = app.iconUrl, iconFile = app.iconFile, size = ACTIVITY_ICON)
+                        }
+                    }
+                    item.sats != null -> Sats(item.sats)
+                    else -> Verb(stringResource(R.string.activity_stack_comment))
                 }
             }
-            Text(
-                agoLabel(item.createdAt),
-                color = ZapText3,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 1,
-                modifier = Modifier.padding(top = 1.dp),
-            )
+            Ago(item.createdAt)
         }
         item.comment?.takeIf { it.isNotBlank() }?.let {
-            Text(
+            SecondLine(
                 it,
-                color = ZapText2,
-                style = MaterialTheme.typography.bodyLarge,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 6.dp),
+                italic = true,
+                // Starts under the name, past the avatar.
+                modifier = Modifier.padding(start = if (hasAvatar) ACTIVITY_ICON + ACTIVITY_GAP else 0.dp),
             )
         }
     }
 }
 
-/** "by" or "from" and the one who did it, kept together so a line break never falls between them. */
 @Composable
-private fun Attribution(word: Int, who: @Composable () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Verb(stringResource(word))
-        who()
+private fun Ago(createdAt: Long) {
+    Text(agoLabel(createdAt), color = ZapText3, style = AgoStyle, maxLines = 1, modifier = Modifier.padding(top = 1.dp))
+}
+
+/** A row's about or comment, one line under the first. */
+@Composable
+private fun SecondLine(text: String, modifier: Modifier = Modifier, italic: Boolean = false) {
+    Text(
+        text,
+        color = ZapText2,
+        style = MaterialTheme.typography.bodyMedium.copy(fontStyle = if (italic) FontStyle.Italic else FontStyle.Normal),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier.padding(top = ACTIVITY_GAP),
+    )
+}
+
+/** A small circular avatar, [ACTIVITY_ICON] wide unless [size] says otherwise. */
+@Composable
+private fun Avatar(pubkey: String, profile: ProfileRecord?, size: Dp = ACTIVITY_ICON) {
+    Box(Modifier.size(size).clip(CircleShape).background(ZapSurface3)) {
+        ProfileImage(
+            pubkey = pubkey,
+            pictureUrl = profile?.picture,
+            profileVersion = profile?.eventId,
+            contentDescription = null,
+            modifier = Modifier.matchParentSize().testTag("profile:$pubkey"),
+        )
     }
 }
 
-/** A person as a small avatar and their name in bold. */
+/** A stack's or app's small icon and its name; the name is what gives way to an ellipsis. */
 @Composable
-private fun Person(pubkey: String, profile: ProfileRecord?) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Box(Modifier.size(ACTIVITY_ICON).clip(CircleShape).background(ZapSurface3)) {
-            ProfileImage(
-                pubkey = pubkey,
-                pictureUrl = profile?.picture,
-                profileVersion = profile?.eventId,
-                contentDescription = null,
-                modifier = Modifier.matchParentSize().testTag("profile:$pubkey"),
-            )
-        }
-        Strong(shortDisplayName(pubkey, profile))
-    }
-}
-
-/** A person's or app's name in the line: bold, one line, cut with an ellipsis when it is all there is room for. */
-@Composable
-private fun Strong(text: String, modifier: Modifier = Modifier) {
-    Text(text, color = ZapText, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = modifier)
-}
-
-/** What was done, in the quieter colour: "released", "received", "by", "from". */
-@Composable
-private fun Verb(text: String) {
-    Text(text, color = ZapText2, style = MaterialTheme.typography.bodyMedium)
-}
-
-/** App name and version pill as one piece, so a line break falls before the pair, not inside it. */
-@Composable
-private fun NameWithVersion(name: String, version: String) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+private fun Target(name: String, modifier: Modifier = Modifier, icon: @Composable () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ACTIVITY_GAP), modifier = modifier) {
+        Box(Modifier.size(ACTIVITY_ICON), contentAlignment = Alignment.Center) { icon() }
         Strong(name, Modifier.weight(1f, fill = false))
-        if (version.isNotBlank()) VersionPill(version, scale = 0.8f)
     }
+}
+
+/** A name in the line, cut with an ellipsis when there is no room. */
+@Composable
+private fun Strong(
+    text: String,
+    modifier: Modifier = Modifier,
+    style: TextStyle = MaterialTheme.typography.bodyMedium,
+    weight: FontWeight = FontWeight.SemiBold,
+) {
+    Text(
+        text,
+        color = ZapText,
+        style = style.copy(fontWeight = weight),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier,
+    )
+}
+
+/** Body text at the label size. */
+private val AgoStyle
+    @Composable get() = MaterialTheme.typography.bodySmall.copy(
+        fontSize = MaterialTheme.typography.labelSmall.fontSize,
+        lineHeight = MaterialTheme.typography.labelSmall.lineHeight,
+    )
+
+/** What was done, in the quieter colour: "by", "to", "on", "updated". */
+@Composable
+private fun Verb(text: String, style: TextStyle = MaterialTheme.typography.bodyMedium) {
+    Text(text, color = ZapText2, style = style)
 }
 
 @Composable
@@ -396,30 +352,12 @@ private fun Sats(sats: Long) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         Icon(painterResource(R.drawable.ic_bolt), contentDescription = null, tint = ZapWarning, modifier = Modifier.size(14.dp))
         Text(
-            pluralStringResource(R.plurals.activity_sats, sats.coerceIn(0, Int.MAX_VALUE.toLong()).toInt(), satsAmount(sats)),
+            pluralStringResource(R.plurals.activity_sats, sats.coerceIn(0, Int.MAX_VALUE.toLong()).toInt(), compactSats(sats)),
             color = ZapWarning,
             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold, fontFeatureSettings = "tnum"),
             maxLines = 1,
         )
     }
-}
-
-/** `2,100`, `1.2K`: whole up to 9,999 and compact from 10,000, as the web page writes a zap. */
-internal fun satsAmount(sats: Long): String {
-    if (sats < 10_000) return NumberFormat.getIntegerInstance(Locale.US).format(sats)
-    var scaled = sats.toDouble()
-    var unit = 0
-    while (scaled >= 1000 && unit < 3) {
-        scaled /= 1000
-        unit += 1
-    }
-    var rounded = Math.round(scaled * 10) / 10.0
-    if (rounded >= 1000 && unit < 3) {
-        rounded = 1.0
-        unit += 1
-    }
-    val digits = if (rounded % 1.0 == 0.0) rounded.toLong().toString() else rounded.toString()
-    return digits + "KMB"[unit - 1]
 }
 
 /** "just now", "5m ago", "13h ago", "1d ago", and the UTC date from 60 days on: the web page's `ago`. */
@@ -449,11 +387,12 @@ internal fun LoadMoreNearEnd(position: () -> Pair<Int?, Int>, canLoadMore: Boole
 }
 
 private const val PREFETCH = 6
-/** The person's picture and the app or stack picture in a line share one size. */
+/** The avatars and app or stack icons inside a line. */
 private val ACTIVITY_ICON = 20.dp
-/** The app's icon leading a main-feed entry: two lines of the line's text (2 x 21.25 dp, body small). */
-private val ACTIVITY_APP_ICON = 42.5.dp
-/** The gap between that icon and the text beside it. */
+private val RELEASE_BYLINE_AVATAR = 18.dp
+/** The app's icon leading a release row. */
+private val ACTIVITY_APP_ICON = ZapSize.control
 private val ACTIVITY_APP_ICON_GAP = 10.dp
-/** The gap between that picture and the name beside it. */
+/** Between the parts of a line, and between a row's two lines. */
 private val ACTIVITY_GAP = 6.dp
+private val ACTIVITY_ROW_PADDING = 14.dp
