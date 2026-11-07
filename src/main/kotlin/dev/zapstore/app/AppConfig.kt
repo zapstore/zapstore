@@ -13,7 +13,6 @@ object AppConfig {
     val supportedAbis = listOf("arm64-v8a")
 
     const val SOURCE_URL = "https://github.com/zapstore/zapstore"
-
     /** Bootstrap address for the first catalog fetch when the catalog has no stored relays. */
     val catalogRelay: RelayUrl = BuildConfig.CATALOG_RELAY.normalizeRelayUrl()
 

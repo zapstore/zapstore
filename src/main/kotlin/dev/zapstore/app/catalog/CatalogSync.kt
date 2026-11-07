@@ -241,10 +241,16 @@ class CatalogSync(
     /**
      * Adds the catalog [reference] names to the end of the list and syncs it. Throws when no relay serves
      * a kind 10067 for its key, or none gives a bundle that key signed, so a mistyped key is refused
-     * rather than listed.
+     * rather than listed. [AppConfig.catalogRelay] is always asked: a bare npub names no relay, and the
+     * Zapstore catalog's kind 10067 is served there.
      */
     suspend fun addCatalog(reference: CatalogReference): CatalogRecord {
-        val catalog = iolite.addCatalog(reference.pubkey, reference.hints, client = BuildConfig.VERSION_NAME, useOnion = useOnion())
+        val catalog = iolite.addCatalog(
+            reference.pubkey,
+            reference.hints + AppConfig.catalogRelay,
+            client = BuildConfig.VERSION_NAME,
+            useOnion = useOnion(),
+        )
         request(force = true)
         return catalog
     }
