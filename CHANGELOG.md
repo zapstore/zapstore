@@ -7,8 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.2] - 2026-11-06
+
 ### Changed
 
+- On Home, curated stacks have their own header with See all, and each stack is a filled card
+- A Social chip on Recent activity mixes comments, zaps, and stack updates in with releases. Off, the list is releases only
+- A release in Recent activity shows the app's tagline. A comment, zap, or stack update starts with who did it
+- The zap total on an app page reads "21k sats from" and the faces of its biggest zappers, and a zapper with no picture stays off the stack
+- The welcome screen logo sits on a clear tile, and the text says downloads over Tor are opt-in
 - Swiping a row in My apps slides it over to uncover buttons instead of running an action. An install in progress offers Ignore updates and Cancel, and an installed app now also offers Uninstall
 - Swipe buttons are solid color with bold white text, and span the row's full height
 - The update button on each row is wider
