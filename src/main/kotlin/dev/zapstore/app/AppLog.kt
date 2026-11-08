@@ -57,6 +57,7 @@ object AppLog {
         dir?.let { File(it, "crashes").listFiles()?.sortedBy { file -> file.name } }.orEmpty()
 
     fun clear() {
+        synchronized(seenTraces) { seenTraces.clear() }
         writer.execute { dir?.listFiles()?.forEach { it.deleteRecursively() } }
     }
 
@@ -81,7 +82,7 @@ object AppLog {
         File(logs, "app.log").appendText(text)
     }
 
-    private fun line(priority: Int, tag: String, message: String, error: Throwable?, at: Long): String {
+    internal fun line(priority: Int, tag: String, message: String, error: Throwable?, at: Long): String {
         val level = when (priority) {
             Log.INFO -> "I"
             Log.WARN -> "W"
@@ -91,6 +92,20 @@ object AppLog {
         }
         val time = synchronized(stamp) { stamp.format(Date(at)) }
         val trace = error?.let { StringWriter().also { out -> it.printStackTrace(PrintWriter(out)) }.toString() }.orEmpty()
+        if (priority != Log.ASSERT && trace.isNotEmpty() && !firstSighting(trace)) {
+            return "$time $level/$tag: $message: ${trace.substringBefore('\n').trimEnd()} (trace above)\n"
+        }
         return "$time $level/$tag: $message\n$trace"
     }
+
+    /** Traces already written by this process, so a failure repeated across many apps or runs of a loop costs a line. */
+    private val seenTraces = LinkedHashSet<Int>()
+
+    private fun firstSighting(trace: String): Boolean = synchronized(seenTraces) {
+        if (!seenTraces.add(trace.hashCode())) return false
+        if (seenTraces.size > MAX_SEEN_TRACES) seenTraces.remove(seenTraces.first())
+        true
+    }
+
+    private const val MAX_SEEN_TRACES = 256
 }

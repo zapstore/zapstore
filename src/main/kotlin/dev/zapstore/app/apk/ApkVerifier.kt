@@ -2,6 +2,8 @@ package dev.zapstore.app.apk
 
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
+import com.android.apksig.ApkVerifier as ApkSignatureVerifier
 import java.io.File
 import java.security.MessageDigest
 
@@ -30,13 +32,15 @@ object ApkVerifier {
             apk.absolutePath,
             PackageManager.GET_SIGNING_CERTIFICATES,
         ) ?: throw ApkVerificationException("file is not an installable APK")
-        val signing = info.signingInfo ?: throw ApkVerificationException("APK is unsigned")
-        if (signing.hasMultipleSigners()) {
-            throw ApkVerificationException("APK has multiple current signers")
-        }
-        val der = signing.apkContentsSigners.associate { it.toByteArray().let { bytes -> bytes.sha256Hex() to bytes } }
+        val (signers, history) = info.signingInfo?.let { signing ->
+            if (signing.hasMultipleSigners()) {
+                throw ApkVerificationException("APK has multiple current signers")
+            }
+            signing.apkContentsSigners.map { it.toByteArray() } to signing.signingCertificateHistory.map { it.toByteArray() }
+        } ?: readSigners(apk)
+        val der = signers.associateBy { it.sha256Hex() }
         val current = der.keys
-        val lineage = signing.signingCertificateHistory.map { it.toByteArray().sha256Hex() }
+        val lineage = history.map { it.sha256Hex() }
         val appInfo = info.applicationInfo
         if (appInfo != null) {
             appInfo.sourceDir = apk.absolutePath
@@ -50,6 +54,31 @@ object ApkVerifier {
             targetSdk = appInfo?.targetSdkVersion ?: 0,
             certificateDer = der,
         )
+    }
+
+    /**
+     * An Android 13 device was seen returning no signingInfo for every archive, so the signers are read
+     * from the APK itself, checked as [sdk] would check them. Returns the current signers and the
+     * lineage, oldest first, as DER.
+     */
+    internal fun readSigners(apk: File, sdk: Int = Build.VERSION.SDK_INT): Pair<List<ByteArray>, List<ByteArray>> {
+        val result = try {
+            ApkSignatureVerifier.Builder(apk).setMinCheckedPlatformVersion(sdk).setMaxCheckedPlatformVersion(sdk).build().verify()
+        } catch (e: Exception) {
+            throw ApkVerificationException("could not read the APK signature: ${e.message}")
+        } catch (e: LinkageError) {
+            // Installer only catches Exception; a class missing from the shrunk library must fail the install, not the app.
+            throw ApkVerificationException("could not read the APK signature: ${e.javaClass.simpleName} ${e.message}")
+        }
+        if (!result.isVerified) {
+            val reason = result.allErrors.firstOrNull()?.toString() ?: "no valid signature"
+            throw ApkVerificationException("APK signature is invalid: $reason")
+        }
+        val signers = result.signerCertificates.map { it.encoded }
+        if (signers.isEmpty()) throw ApkVerificationException("APK is unsigned")
+        if (signers.size > 1) throw ApkVerificationException("APK has multiple current signers")
+        val lineage = result.signingCertificateLineage?.certificatesInLineage?.map { it.encoded } ?: signers
+        return signers to lineage
     }
 
     fun isInstallable(

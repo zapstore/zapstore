@@ -7,7 +7,7 @@ import dev.zapstore.app.apk.ProofVerifier
 import dev.zapstore.iolite.AppRecord
 import dev.zapstore.iolite.CertificateProof
 
-class BlockedInstall(val reason: BlockReason) : Exception()
+class BlockedInstall(val reason: BlockReason) : Exception("blocked: ${reason.name}")
 
 /** An expired proof is inactive, not a failure. A revoked one no longer names the owner, so it fails. */
 internal fun proofHolds(

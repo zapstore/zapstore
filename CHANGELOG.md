@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.4] - 2026-11-08
+
+### Changed
+
+- Search on Home and in My apps clears with an X, and its fact filters open in a panel instead of a sheet
+- A listing says claimed or unclaimed, in place of a C1 proof: "Claimed by the developer", "Unclaimed app", and "From the catalog"
+- Comment threads fold. A thread with replies offers "Show N replies" and "Hide replies", and a comment can be copied as a nevent
+- My apps groups installed apps by the installer that put them there, and shows "Checked …" once a catalog check has run
+- Uninstall goes straight to Android's confirmation
+- After an install finishes, the row stays on that state until the device's app list catches up, instead of flashing back to Update
+- A personal trust check that Vertex will not answer uses the people you follow who follow that key
+
+### Fixed
+
+- A database created by 2.0.0, which is missing the comments.root column, is rebuilt on open instead of crashing. A database that already matches is left as it is, and a failure to build the reference schema skips the check
+- On a device where Android reports every APK as unsigned, the signature is read from the file and checked as that device would check it
+- When Android's dataSync time limit runs out, the download service stops instead of crashing the app. Downloads continue without it
+- A failure repeated in one run of the diagnostic log keeps its first stack trace and then one line
+
 ## [2.0.3] - 2026-11-07
 
 ### Changed

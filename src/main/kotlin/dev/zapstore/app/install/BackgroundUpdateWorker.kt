@@ -47,8 +47,8 @@ class BackgroundUpdateWorker(context: Context, params: WorkerParameters) : Corou
                 result.onSuccess { phase ->
                     if (phase == TaskPhase.Ready) ready["${update.app.appId}@${update.app.apkHash}"] = update.app.name else committed++
                 }.onFailure {
+                    // Installer already logged it.
                     if (it.isTransient()) transient++
-                    AppLog.w(TAG, "background update ${update.app.appId} failed", it)
                 }
             }
             AppLog.i(TAG, "background updates: ${updates.size} available, $committed committed, ${ready.size} ready, $transient to retry")
@@ -72,7 +72,7 @@ class BackgroundUpdateWorker(context: Context, params: WorkerParameters) : Corou
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
                 ),
             )
-        }.onFailure { AppLog.w(TAG, "foreground", it) }
+        }.onFailure { AppLog.w(TAG, "foreground refused; downloads run unprotected", it) }
     }
 
     /** A periodic run retries a few times with backoff; after that it waits for the next period. */

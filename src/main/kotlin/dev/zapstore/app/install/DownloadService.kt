@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.IBinder
+import dev.zapstore.app.AppLog
 import dev.zapstore.app.R
 import dev.zapstore.app.ZapstoreApplication
 import kotlinx.coroutines.FlowPreview
@@ -32,7 +33,14 @@ class DownloadService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val installer = (application as ZapstoreApplication).installer
         val active = installer.tasks.value.values.filter { it.transferring }
-        startForeground(ID, notification(active), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        try {
+            startForeground(ID, notification(active), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        } catch (e: Exception) {
+            // Refused, for one when the day's dataSync time is used up. Downloads go on unprotected.
+            AppLog.w(TAG, "foreground refused", e)
+            stopSelf()
+            return START_NOT_STICKY
+        }
         if (watch == null) {
             watch = scope.launch {
                 installer.tasks
@@ -49,6 +57,16 @@ class DownloadService : Service() {
             }
         }
         return START_NOT_STICKY
+    }
+
+    /**
+     * Android 15+ caps dataSync services at six hours a day, shared with background update runs,
+     * and kills the app unless the service stops within seconds. Downloads go on unprotected.
+     */
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        AppLog.w(TAG, "dataSync time limit reached; stopping")
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
 
     override fun onDestroy() {
@@ -73,6 +91,7 @@ class DownloadService : Service() {
     }
 
     companion object {
+        private const val TAG = "DownloadService"
         private const val CHANNEL = "downloads"
         const val ID = 0x5552
         private const val UPDATE_MS = 1_000L
