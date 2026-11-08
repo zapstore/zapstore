@@ -1267,6 +1267,16 @@ class IoliteStore internal constructor(
                 connection = openConnection(path)
                 version = connection.userVersion()
             }
+            if (version != 0) {
+                val missing = missingColumns(connection, openConnection, log)
+                if (missing.isNotEmpty()) {
+                    connection.close()
+                    log.log("database lacks $missing; moved aside as .mismatch and starting empty", null)
+                    moveAside(path, "mismatch")
+                    connection = openConnection(path)
+                    version = connection.userVersion()
+                }
+            }
             connection.execSQL("PRAGMA foreign_keys = ON")
             connection.execSQL("PRAGMA journal_mode = WAL")
             connection.execSQL("PRAGMA busy_timeout = $BUSY_TIMEOUT_MS")
@@ -1303,6 +1313,50 @@ class IoliteStore internal constructor(
                 val kept = File("$path.$label$suffix")
                 kept.delete()
                 if (!file.renameTo(kept)) file.delete()
+            }
+        }
+
+        /**
+         * Columns of [Schema.statements] the database lacks, as table.column. 2.0.0 wrote the current
+         * version without comments.root, so the version alone cannot be trusted. An unreadable database
+         * counts as lacking; a failure to build the reference schema skips the check, since the data is not at fault.
+         */
+        private fun missingColumns(
+            connection: SQLiteConnection,
+            openConnection: (String) -> SQLiteConnection,
+            log: IoliteLog,
+        ): List<String> {
+            val expected = try {
+                openConnection(":memory:").let { memory ->
+                    try {
+                        Schema.statements.forEach(memory::execSQL)
+                        memory.columns()
+                    } finally {
+                        memory.close()
+                    }
+                }
+            } catch (failure: Exception) {
+                log.log("reference schema unavailable; column check skipped", failure)
+                return emptyList()
+            }
+            val actual = try {
+                connection.columns()
+            } catch (failure: Exception) {
+                log.log("database schema unreadable", failure)
+                return listOf("a readable schema")
+            }
+            return expected.flatMap { (table, columns) -> (columns - actual[table].orEmpty()).map { "$table.$it" } }
+        }
+
+        private fun SQLiteConnection.columns(): Map<String, Set<String>> {
+            val tables = prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").use { statement ->
+                buildList { while (statement.step()) add(statement.getText(0)) }
+            }
+            return tables.associateWith { table ->
+                prepare("SELECT name FROM pragma_table_info(?)").use { statement ->
+                    statement.bindText(1, table)
+                    buildSet { while (statement.step()) add(statement.getText(0)) }
+                }
             }
         }
 

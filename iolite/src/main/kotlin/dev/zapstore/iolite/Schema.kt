@@ -1,6 +1,7 @@
 package dev.zapstore.iolite
 
 internal object Schema {
+    /** A database lacking any column of [statements] is rebuilt on open regardless, so adding columns needs no bump. */
     const val USER_VERSION = 1
 
     const val APPS_SEARCH = """
