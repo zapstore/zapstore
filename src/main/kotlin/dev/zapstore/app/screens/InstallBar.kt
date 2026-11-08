@@ -83,7 +83,7 @@ fun InstallBar(app: AppRecord, install: InstallUi, actions: InstallActions, modi
         },
         actions = actions,
     ) ?: return
-    val atRest = install.phase == InstallPhase.Idle && (install.installed || install.updating)
+    val atRest = (install.phase == InstallPhase.Idle || install.phase == InstallPhase.Ready) && (install.installed || install.updating)
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -161,6 +161,15 @@ private fun InstallUi.button(
                 },
                 Tone.Error,
             )
+        }
+        InstallPhase.Ready -> when {
+            offer -> BarButton.Simple(
+                stringResource(if (updating) R.string.confirm_update else R.string.confirm),
+                actions.onInstall,
+                tag = "installApp",
+            )
+            installed -> BarButton.Simple(stringResource(R.string.open_app), actions.onOpen, tag = "openApp")
+            else -> null
         }
         InstallPhase.Idle -> when {
             installed -> BarButton.Simple(stringResource(R.string.open_app), actions.onOpen, tag = "openApp")

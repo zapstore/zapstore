@@ -47,6 +47,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Scaffold
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import dev.zapstore.app.components.LocalInstalledCodes
 import dev.zapstore.app.components.LocalInstalledVersions
 import dev.zapstore.app.components.LocalPendingUpdates
 import dev.zapstore.app.components.ZapNavigationBar
@@ -92,7 +93,6 @@ import dev.zapstore.app.screens.StackDetailViewModel
 import dev.zapstore.app.screens.StacksScreen
 import dev.zapstore.app.screens.StacksViewModel
 import dev.zapstore.app.screens.ReinstallDialog
-import dev.zapstore.app.screens.UninstallProfilesDialog
 import dev.zapstore.app.screens.UpdatesScreen
 import dev.zapstore.app.screens.UpdatesViewModel
 import dev.zapstore.iolite.AppRecord
@@ -215,7 +215,6 @@ class MainActivity : ComponentActivity() {
         val openApp = { app: AppRecord -> navController.navigate(Routes.app(app.appId)) }
         val openComment = { app: AppRecord, commentId: String -> navController.navigate(Routes.app(app.appId, commentId)) }
         val openProfile = { pubkey: String -> navController.navigate(Routes.profile(pubkey)) }
-        var uninstallPrompt by remember { mutableStateOf<Pair<String, String>?>(null) }
         var reinstallPrompt by remember { mutableStateOf<AppRecord?>(null) }
         // Uninstalled for a reinstall: once Android's dialog is gone and so is the package, install the listed build.
         var reinstalling by remember { mutableStateOf<AppRecord?>(null) }
@@ -226,10 +225,8 @@ class MainActivity : ComponentActivity() {
             val gone = runCatching { packageManager.getPackageInfo(app.appId, 0) }.isFailure
             if (gone) zapstore.installer.install(app)
         }
-        val requestUninstall = { packageId: String, name: String ->
-            if (hasOtherProfiles()) uninstallPrompt = packageId to name
-            else uninstallLauncher.launch(uninstallIntent(packageId))
-        }
+        // Android asks before it removes anything, so there is no question of ours first.
+        val requestUninstall = { packageId: String, _: String -> uninstallLauncher.launch(uninstallIntent(packageId)) }
         val requestReinstall = { app: AppRecord ->
             if (packageManager.canRequestPackageInstalls()) reinstallPrompt = app else openUnknownSourcesSettings()
         }
@@ -261,6 +258,7 @@ class MainActivity : ComponentActivity() {
         val pendingUpdates = remember(updates) { updates.associate { it.app.appId to it.installedVersion } }
         val installedApps by zapstore.catalogSync.installedApps.collectAsStateWithLifecycle()
         val installedVersions = remember(installedApps) { installedApps.associate { it.packageId to it.versionName } }
+        val installedCodes = remember(installedApps) { installedApps.associate { it.packageId to it.versionCode } }
         val selectTab: (String) -> Unit = { route ->
             if (route == currentTab && backStack.lastOrNull()?.destination?.route == route) {
                 reselected.tryEmit(route)
@@ -288,7 +286,7 @@ class MainActivity : ComponentActivity() {
         }.collectAsStateWithLifecycle(null)
 
         ToastHost()
-        CompositionLocalProvider(LocalPendingUpdates provides pendingUpdates, LocalInstalledVersions provides installedVersions) {
+        CompositionLocalProvider(LocalPendingUpdates provides pendingUpdates, LocalInstalledVersions provides installedVersions, LocalInstalledCodes provides installedCodes) {
         Scaffold(
             containerColor = ZapCanvas,
             bottomBar = { ZapNavigationBar(currentTab, updateCount, selectTab, avatar = navAvatar) },
@@ -363,7 +361,11 @@ class MainActivity : ComponentActivity() {
                     },
                     onCancelInstall = viewModel::cancelInstall,
                     onReinstall = requestReinstall,
-                    onSearchQueryChanged = viewModel::setSearchQuery,
+                    onSearchQueryChanged = viewModel::onSearchQueryChanged,
+                    onSearchSubmitted = viewModel::submitSearch,
+                    onSearchCleared = viewModel::clearSearch,
+                    onRemoveFilter = viewModel::removeFilter,
+                    onToggleFilter = viewModel::toggleFilter,
                 )
             }
 
@@ -433,7 +435,7 @@ class MainActivity : ComponentActivity() {
                 val openSaved = { navController.navigate(Routes.SAVED) }
                 val pubkey = account?.pubkey
                 if (pubkey != null) {
-                    val viewModel: ProfileViewModel = viewModel(key = "me:$pubkey", factory = ProfileViewModel.factory(iolite, pubkey))
+                    val viewModel: ProfileViewModel = viewModel(key = "me:$pubkey", factory = ProfileViewModel.factory(zapstore, pubkey))
                     val state by viewModel.uiState.collectAsStateWithLifecycle()
                     ProfileScreen(
                         state = state,
@@ -592,7 +594,7 @@ class MainActivity : ComponentActivity() {
                 route = Routes.PROFILE,
                 arguments = listOf(navArgument(Routes.PUBKEY_ARG) { type = NavType.StringType }),
             ) {
-                val viewModel: ProfileViewModel = viewModel(factory = ProfileViewModel.factory(iolite))
+                val viewModel: ProfileViewModel = viewModel(factory = ProfileViewModel.factory(zapstore))
                 val state by viewModel.uiState.collectAsStateWithLifecycle()
                 ProfileScreen(
                     state = state,
@@ -602,22 +604,14 @@ class MainActivity : ComponentActivity() {
                     onStackClick = { navController.navigate(Routes.stack(it.pubkey, it.identifier)) },
                     onLoadMoreActivity = viewModel::loadMoreActivity,
                     onShare = { shareProfile(state.pubkey) },
+                    // Signed out, the check starts from the Profile tab, where signing in lives.
+                    onPersonalizeTrust = { if (zapstore.account.signer() != null) viewModel.checkTrustPersonally() else selectTab(Routes.ME) },
                 )
             }
         }
         }
         }
 
-        uninstallPrompt?.let { (packageId, name) ->
-            UninstallProfilesDialog(
-                name = name,
-                onConfirm = {
-                    uninstallPrompt = null
-                    uninstallLauncher.launch(uninstallIntent(packageId))
-                },
-                onDismiss = { uninstallPrompt = null },
-            )
-        }
         reinstallPrompt?.let { app ->
             ReinstallDialog(
                 name = app.name,

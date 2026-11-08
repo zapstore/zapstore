@@ -11,6 +11,11 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -74,7 +79,6 @@ import dev.zapstore.app.components.shortDisplayName
 import dev.zapstore.iolite.CommentRecord
 import dev.zapstore.iolite.ProfileRecord
 import dev.zapstore.iolite.ZapRecord
-import java.text.NumberFormat
 
 /*
  * The comments of an app or a stack, laid out as the Flutter app (master) lays them out: one wide
@@ -118,10 +122,26 @@ internal fun FeedBlock(
     onFocused: () -> Unit = {},
 ) {
     val mentions = remember(profiles) { profiles.mapNotNull { (key, record) -> resolvedName(record)?.let { key to it } }.toMap() }
+    // Comments whose replies are folded away; the thread stays as the person left it through scrolling and rotation.
+    var folded by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
+    // A comment to bring into view is never left under a fold.
+    if (focusComment != null && block.any { it is FeedEntry.Comment && it.comment.eventId == focusComment }) {
+        LaunchedEffect(focusComment) { folded = emptyList() }
+    }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        block.forEach { entry ->
+        var hiddenBelow: Int? = null
+        block.forEachIndexed { index, entry ->
+            // Everything deeper than a folded comment, up to the next one level with it or above, is not drawn.
+            val cut = hiddenBelow
+            if (entry is FeedEntry.Comment) {
+                if (cut != null && entry.depth > cut) return@forEachIndexed
+                hiddenBelow = null
+            }
             when (entry) {
                 is FeedEntry.Comment -> {
+                    val replies = block.drop(index + 1).takeWhile { it is FeedEntry.Comment && it.depth > entry.depth }.size
+                    val isFolded = replies > 0 && entry.comment.eventId in folded
+                    if (isFolded) hiddenBelow = entry.depth
                     val bringIntoView = remember { BringIntoViewRequester() }
                     val focused = focusComment != null && entry.comment.eventId == focusComment
                     if (focused) LaunchedEffect(focusComment) {
@@ -136,6 +156,12 @@ internal fun FeedBlock(
                         onAuthorClick = onAuthorClick,
                         onReply = if (replyable) ({ onReply(entry.comment) }) else null,
                         mentions = mentions,
+                        replies = replies,
+                        folded = isFolded,
+                        onToggleFold = {
+                            val id = entry.comment.eventId
+                            folded = if (id in folded) folded - id else folded + id
+                        },
                         modifier = Modifier.bringIntoViewRequester(bringIntoView),
                     )
                 }
@@ -280,6 +306,10 @@ internal fun CommentCard(
     onReply: (() -> Unit)? = null,
     /** Profile names by hex pubkey, for `@name` where the text mentions someone. */
     mentions: Map<String, String>? = null,
+    /** How many comments sit under this one, at any depth; the card offers to fold them when there are some. */
+    replies: Int = 0,
+    folded: Boolean = false,
+    onToggleFold: () -> Unit = {},
 ) {
     val reply = depth > 0
     val thread = ThreadColors[(depth - 1).coerceAtLeast(0) % ThreadColors.size]
@@ -288,7 +318,8 @@ internal fun CommentCard(
     val copy = rememberCopier()
     val share = rememberSharer()
     val haptics = LocalHapticFeedback.current
-    val link = remember(comment.eventId, comment.pubkey) { neventOf(comment.eventId, comment.pubkey)?.let { "https://njump.me/$it" } }
+    val nevent = remember(comment.eventId, comment.pubkey) { neventOf(comment.eventId, comment.pubkey) }
+    val link = remember(nevent) { nevent?.let { "https://njump.me/$it" } }
     Box(modifier.fillMaxWidth().padding(start = 12.dp * depth).testTag("commentDepth:${comment.eventId}:$depth")) {
         Row(
             horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
@@ -331,7 +362,13 @@ internal fun CommentCard(
                     Text(agoLabel(comment.createdAt), color = ZapText3, style = MaterialTheme.typography.bodySmall, maxLines = 1)
                 }
                 MarkdownText(value = comment.content, color = ZapText2, style = MaterialTheme.typography.bodyMedium, onOpenUrl = onOpenUrl, mentions = mentions)
-                onReply?.let { ReplyLink(it, Modifier.testTag("reply:${comment.eventId}")) }
+                if (onReply != null || replies > 0) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        onReply?.let { ReplyLink(it, Modifier.testTag("reply:${comment.eventId}")) }
+                        Spacer(Modifier.weight(1f))
+                        if (replies > 0) FoldLink(replies, folded, onToggleFold, Modifier.testTag("fold:${comment.eventId}"))
+                    }
+                }
             }
         }
         // Long press: the text, a link to the comment, or the share sheet.
@@ -344,6 +381,16 @@ internal fun CommentCard(
                 },
                 modifier = Modifier.testTag("commentCopyText"),
             )
+            nevent?.let {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.comment_copy_nevent)) },
+                    onClick = {
+                        menu = false
+                        copy(name, it)
+                    },
+                    modifier = Modifier.testTag("commentCopyNeventItem"),
+                )
+            }
             link?.let {
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.comment_copy_link)) },
@@ -406,7 +453,7 @@ internal fun ZapNoteCard(
                     )
                     Icon(painterResource(R.drawable.ic_bolt), contentDescription = null, tint = ZapWarning, modifier = Modifier.size(14.dp))
                     Text(
-                        remember(zap.amountSats) { NumberFormat.getInstance().format(zap.amountSats) },
+                        remember(zap.amountSats) { compactSats(zap.amountSats) },
                         color = ZapWarning,
                         style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"),
                         modifier = Modifier.testTag("zapSats:${zap.eventId}"),
@@ -442,6 +489,32 @@ private fun CommentAvatar(
             profileVersion = author?.eventId,
             contentDescription = stringResource(R.string.profile_avatar_description, name),
             modifier = Modifier.matchParentSize(),
+        )
+    }
+}
+
+/** "Show 3 replies" while the thread is folded, "Hide replies" while it is open, with a chevron that turns over. */
+@Composable
+private fun FoldLink(replies: Int, folded: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = modifier
+            .clip(RoundedCornerShape(ZapRadius.xs))
+            .clickable(role = Role.Button, onClick = onClick)
+            .heightIn(min = 48.dp)
+            .padding(start = ZapSpacing.space2),
+    ) {
+        Text(
+            if (folded) pluralStringResource(R.plurals.comment_show_replies, replies, replies) else stringResource(R.string.comment_hide_replies),
+            color = ZapText3,
+            style = MaterialTheme.typography.labelMedium,
+        )
+        Icon(
+            painterResource(R.drawable.ic_chevron_down),
+            contentDescription = null,
+            tint = ZapText3,
+            modifier = Modifier.size(14.dp).rotate(if (folded) 0f else 180f),
         )
     }
 }

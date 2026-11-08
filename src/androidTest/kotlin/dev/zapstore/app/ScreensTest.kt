@@ -378,8 +378,8 @@ class ScreensTest {
         composeRule.onNodeWithText("Works great").assertIsDisplayed()
         composeRule.onNodeWithText("on").assertIsDisplayed()
         composeRule.onNodeWithText("2.1k sats").assertIsDisplayed()
-        // The comment opens with "Someone on <app>", never "on <app>"; the zap opens with its amount and names nobody.
-        composeRule.onAllNodesWithText("Someone").assertCountEquals(1)
+        // An author with no profile reads as a short npub, never as "Someone".
+        composeRule.onAllNodesWithText("Someone").assertCountEquals(0)
         composeRule.onNodeWithTag("activity:${"d".repeat(64)}").performClick()
         assertEquals("dev.zap", opened)
         // No button: reaching the end of the list asks for the next page.
@@ -650,7 +650,7 @@ class ScreensTest {
             }
         }
         composeRule.onNodeWithTag("updatePill:dev.pair", useUnmergedTree = true).assertIsDisplayed()
-            .assertContentDescriptionContains("Update available", substring = true)
+            .assertContentDescriptionContains("Needs update", substring = true)
         composeRule.onNode(hasContentDescription("1.0, Up to date"), useUnmergedTree = true).assertIsDisplayed()
         composeRule.onNodeWithText("Plain", useUnmergedTree = true).assertIsDisplayed()
         composeRule.onNodeWithText("Updated by F-Droid", useUnmergedTree = true).assertIsDisplayed()
@@ -1097,13 +1097,13 @@ class ScreensTest {
         // The head names nobody: no "by" and no catalog avatar, the mark and a line that says so.
         assertTrue(composeRule.onAllNodesWithTag("profile:$AUTHOR").fetchSemanticsNodes().isEmpty())
         // As in the Flutter app: the forge's logo and repository, not "Published by the catalog".
-        composeRule.onNodeWithTag("headIndexed").assertTextEquals("From", "zap/indexed")
+        composeRule.onNode(hasText("zap/indexed") and hasAnyAncestor(hasTestTag("headIndexed"))).assertExists()
         composeRule.onNodeWithTag("indexedAuthor").performClick()
         composeRule.onNodeWithTag("authorSheet").assertIsDisplayed()
-        composeRule.onNodeWithText("Developer information").assertIsDisplayed()
+        composeRule.onNodeWithText("Developer claim").assertIsDisplayed()
         composeRule.onNodeWithTag("catalogSigned").assertIsDisplayed()
-        composeRule.onNodeWithText("tracked by the Zapstore indexer", substring = true).assertIsDisplayed()
-        composeRule.onNodeWithText("github.com/zap/indexed", substring = true).assertIsDisplayed()
+        // Where it comes from sits inside the sentence, never as a line after it.
+        composeRule.onNodeWithText("The catalog lists Indexed from zap/indexed and signs its releases", substring = true).assertIsDisplayed()
         composeRule.onNodeWithTag("claimInvite").assertIsDisplayed()
         assertTrue(composeRule.onAllNodesWithTag("trustSignals").fetchSemanticsNodes().isEmpty())
         assertTrue(composeRule.onAllNodesWithText("Refresh with your web of trust").fetchSemanticsNodes().isEmpty())
@@ -1225,17 +1225,11 @@ class ScreensTest {
         composeRule.onNodeWithTag("updateOne:dev.silent").performClick()
         composeRule.onNodeWithTag("updateAllManual").performClick()
         composeRule.onNodeWithTag("updateOne:dev.manual").performClick()
-        composeRule.onNodeWithTag("why:dev.manual").performClick()
-        composeRule.onNodeWithTag("whySheet").assertIsDisplayed()
-        composeRule.onNodeWithText("Installed from a file").assertIsDisplayed()
-        composeRule.onNodeWithText("Confirm this one", substring = true).assertIsDisplayed()
-        pressBack()
         assertEquals(listOf(UpdateGroup.Automatic, UpdateGroup.Manual), updatedAll)
         assertEquals(listOf("dev.silent", "dev.manual"), updatedOne)
         composeRule.onNodeWithTag("myAppsList").performScrollToNode(hasTestTag("updateOne:dev.play"))
-        composeRule.onNodeWithTag("why:dev.play").performClick()
-        composeRule.onNodeWithText("Google Play updates this app now", substring = true).assertIsDisplayed()
-        pressBack()
+        // Manual updates sit under the store that installed them, with no info button of their own.
+        composeRule.onNodeWithText("Installed by Google Play").assertIsDisplayed()
         composeRule.onNodeWithTag("update:dev.play").assertIsDisplayed()
         composeRule.onNodeWithTag("myAppsList").performScrollToNode(hasTestTag("ignored:dev.quiet"))
         composeRule.onNodeWithTag("ignored:dev.quiet").performTouchInput { swipeLeft() }
@@ -1266,31 +1260,37 @@ class ScreensTest {
     }
 
     @Test
-    fun myAppsSearchReplacesTheGroupsWithMatches() {
-        var typed = ""
+    fun myAppsSearchShowsMatchesAboveTheGroups() {
+        var submitted = false
         var state by mutableStateOf(UpdatesUiState(ignored = listOf(IgnoredApp(app("dev.quiet", "Quiet"), installer = null)), loaded = true))
         composeRule.setContent {
             ZapstoreTheme {
-                UpdatesScreen(state = state, onSync = {}, onAppClick = {}, onSearchQueryChanged = { typed = it })
+                UpdatesScreen(
+                    state = state,
+                    onSync = {},
+                    onAppClick = {},
+                    onSearchQueryChanged = { state = state.copy(searchQuery = it) },
+                    onSearchSubmitted = { submitted = true },
+                )
             }
         }
         composeRule.onNodeWithText("All up to date").assertIsDisplayed()
         composeRule.onNodeWithTag("sectionIgnored").assertIsDisplayed()
+        // As on Home: typing only fills the field, the keyboard's search runs it.
         composeRule.onNodeWithTag("myAppsSearch").performTextInput("music")
-        assertEquals("", typed)
+        assertEquals("music", state.searchQuery)
+        assertFalse(submitted)
         composeRule.onNodeWithTag("myAppsSearch").performImeAction()
-        assertEquals("music", typed)
+        assertTrue(submitted)
         state = state.copy(searchResults = listOf(app("dev.music", "Music Player")))
         composeRule.onNodeWithTag("mine:dev.music").assertIsDisplayed()
-        composeRule.onNodeWithTag("sectionIgnored").assertDoesNotExist()
-        composeRule.onNodeWithTag("sectionUpdates").assertDoesNotExist()
         state = state.copy(
             searchResults = emptyList(),
             otherSearchResults = listOf(InstalledApp("dev.tune", 1, "1.0", emptySet(), label = "Tune Box")),
         )
         composeRule.onNodeWithText("Tune Box").assertIsDisplayed()
         state = state.copy(otherSearchResults = emptyList())
-        composeRule.onNodeWithTag("myAppsNoMatches").assertIsDisplayed()
+        composeRule.onNodeWithTag("noResults").assertIsDisplayed()
     }
 
     @Test
@@ -1311,7 +1311,7 @@ class ScreensTest {
             }
         }
         composeRule.onNodeWithTag("installCatalogSigned").assertExists()
-        composeRule.onNodeWithText("github.com/zap/zap/releases/download/v1/zap.apk").assertExists()
+        composeRule.onNodeWithText("The catalog lists Zap from zap/zap and signs its releases", substring = true).assertExists()
         composeRule.onNodeWithTag("alwaysTrust").assertDoesNotExist()
         composeRule.onNodeWithTag("installConfirm").performScrollTo().performClick()
         composeRule.runOnIdle { assertTrue(confirmed) }

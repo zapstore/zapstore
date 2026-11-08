@@ -30,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -76,6 +77,9 @@ import dev.zapstore.iolite.AppByline
 import dev.zapstore.iolite.AppRecord
 import dev.zapstore.iolite.CommentRecord
 import dev.zapstore.iolite.StackRecord
+
+/** How many top comments, each with its replies, the app page shows before Load more. */
+private const val COMMENTS_PAGE = 10
 
 @Composable
 fun AppDetailScreen(
@@ -138,6 +142,10 @@ fun AppDetailScreen(
     val feed = remember(comments.threads, comments.zaps) { feedBlocks(comments.threads, comments.zaps.filter { it.note.isNotBlank() }) }
     val other = remember(comments.other) { feedBlocks(comments.other, emptyList()) }
     val replyable = state.social.signedIn
+    // The top comments come ten at a time, each with all of its replies; the rest wait behind Load more.
+    var commentsShown by rememberSaveable(app?.appId) { mutableIntStateOf(COMMENTS_PAGE) }
+    val visibleFeed = remember(feed, commentsShown) { feed.take(commentsShown) }
+    val moreComments = feed.size > visibleFeed.size
 
     // Which optional items sit above the feed, so a comment's item index can be told.
     val showSigned = state.install.signedDifferently
@@ -147,13 +155,19 @@ fun AppDetailScreen(
     // The head, about, the Security and Releases panels and the composer are always there; the header only with a feed.
     val showActivity = feed.isNotEmpty()
     val leadingItems = 4 + listOf(showSigned, showShots, showZaps, showStackedBy, showActivity).count { it }
-    val feedItems = if (feed.isEmpty() && (comments.error != null || comments.loading)) 1 else feed.size
+    val feedItems = if (feed.isEmpty() && (comments.error != null || comments.loading)) 1 else visibleFeed.size + if (moreComments) 1 else 0
     var pendingComment by rememberSaveable(focusComment) { mutableStateOf(focusComment) }
-    val focusIndex = remember(pendingComment, feed, other, leadingItems, feedItems) {
+    // A comment to jump to may sit past the ones shown; show up to it.
+    LaunchedEffect(pendingComment, feed) {
+        val id = pendingComment ?: return@LaunchedEffect
+        val at = feed.indexOfFirst { block -> block.any { it is FeedEntry.Comment && it.comment.eventId == id } }
+        if (at >= commentsShown) commentsShown = at + 1
+    }
+    val focusIndex = remember(pendingComment, visibleFeed, other, leadingItems, feedItems) {
         val id = pendingComment ?: return@remember -1
         fun List<List<FeedEntry>>.indexOfComment() =
             indexOfFirst { block -> block.any { it is FeedEntry.Comment && it.comment.eventId == id } }
-        val inFeed = feed.indexOfComment()
+        val inFeed = visibleFeed.indexOfComment()
         if (inFeed >= 0) leadingItems + inFeed
         else other.indexOfComment().takeIf { it >= 0 }?.let { leadingItems + feedItems + 1 + it } ?: -1
     }
@@ -207,7 +221,6 @@ fun AppDetailScreen(
                     onAuthorClick = onProfileClick,
                     onMarkClick = { authorSheet = true },
                     source = (app.downloadUrl ?: app.repository)?.takeIf { it.isNotBlank() },
-                    onSourceClick = app.repository?.takeIf(::isHttpUrl)?.let { repo -> { onOpenUrl(repo) } },
                     more = { moreMenu("appMore") },
                     modifier = Modifier.scrollParallax(listState),
                 )
@@ -331,17 +344,29 @@ fun AppDetailScreen(
                 comments.loading && feed.isEmpty() -> item(key = "commentsLoading", contentType = "loading") {
                     LoadingIndicator(Modifier.padding(vertical = ZapSpacing.space3).testTag("commentsLoading"))
                 }
-                else -> items(feed, key = { it.first().key }, contentType = { "thread" }) { block ->
-                    FeedBlock(
-                        block = block,
-                        profiles = comments.profiles,
-                        replyable = replyable,
-                        onReply = { replyingTo = it },
-                        onOpenUrl = onOpenUrl,
-                        onAuthorClick = onProfileClick,
-                        focusComment = pendingComment,
-                        onFocused = { pendingComment = null },
-                    )
+                else -> {
+                    items(visibleFeed, key = { it.first().key }, contentType = { "thread" }) { block ->
+                        FeedBlock(
+                            block = block,
+                            profiles = comments.profiles,
+                            replyable = replyable,
+                            onReply = { replyingTo = it },
+                            onOpenUrl = onOpenUrl,
+                            onAuthorClick = onProfileClick,
+                            focusComment = pendingComment,
+                            onFocused = { pendingComment = null },
+                        )
+                    }
+                    if (moreComments) {
+                        item(key = "commentsMore", contentType = "more") {
+                            ZapButton(
+                                text = stringResource(R.string.comments_load_more),
+                                onClick = { commentsShown += COMMENTS_PAGE },
+                                style = ZapButtonStyle.Tonal,
+                                modifier = Modifier.fillMaxWidth().testTag("commentsLoadMore"),
+                            )
+                        }
+                    }
                 }
             }
             if (other.isNotEmpty()) {

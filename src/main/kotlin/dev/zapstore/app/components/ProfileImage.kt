@@ -13,7 +13,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import coil3.SingletonImageLoader
@@ -93,8 +93,9 @@ fun ProfileImage(
 }
 
 /**
- * The picture for a person with no profile picture: a mirrored 5 x 5 pattern and a hue, both drawn
- * from the key, so the same person looks the same everywhere. No text, so no one is named by it.
+ * The picture for a person with no profile picture: a soft gradient between two hues, with a lighter glow
+ * off to one side, all drawn from the key, so the same person looks the same everywhere. No text, so no one
+ * is named by it.
  */
 @Composable
 fun KeyAvatar(pubkey: String, modifier: Modifier = Modifier) {
@@ -102,14 +103,25 @@ fun KeyAvatar(pubkey: String, modifier: Modifier = Modifier) {
     Canvas(modifier.background(ZapSurface3)) {
         if (bytes.size < 8) return@Canvas
         val hue = (bytes[0] * 256 + bytes[1]) % 360
-        val color = Color.hsv(hue.toFloat(), 0.42f, 0.78f)
-        val cell = Size(size.width / 5f, size.height / 5f)
-        for (row in 0 until 5) for (col in 0 until 3) {
-            if ((bytes[2 + row] shr col) and 1 == 0) continue
-            for (x in if (col == 2) listOf(2) else listOf(col, 4 - col)) {
-                drawRect(color, Offset(x * cell.width, row * cell.height), cell)
-            }
-        }
+        // The second hue sits 40 to 100 degrees away: near enough to blend, far enough to read as a gradient.
+        val other = (hue + 40 + bytes[2] % 60) % 360
+        val angle = Math.toRadians((bytes[3] * 360.0) / 256.0)
+        val half = Offset(size.width / 2f, size.height / 2f)
+        val reach = Offset((kotlin.math.cos(angle) * size.width / 2f).toFloat(), (kotlin.math.sin(angle) * size.height / 2f).toFloat())
+        drawRect(
+            Brush.linearGradient(
+                listOf(Color.hsv(hue.toFloat(), 0.55f, 0.88f), Color.hsv(other.toFloat(), 0.62f, 0.62f)),
+                start = half - reach,
+                end = half + reach,
+            ),
+        )
+        // A pale glow on the side the gradient starts from, so two people with near hues still differ.
+        val glow = Offset(size.width * (0.2f + 0.6f * bytes[4] / 255f), size.height * (0.2f + 0.6f * bytes[5] / 255f))
+        drawCircle(
+            Brush.radialGradient(listOf(Color.White.copy(alpha = 0.32f), Color.Transparent), center = glow, radius = size.minDimension * 0.7f),
+            radius = size.minDimension * 0.7f,
+            center = glow,
+        )
     }
 }
 

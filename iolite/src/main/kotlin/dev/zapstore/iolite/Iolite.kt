@@ -636,6 +636,29 @@ class Iolite private constructor(
             .take(limit)
     }
 
+    /**
+     * Which of [among] follow [target]: the authors of kind 3 lists that tag [target] with a `p`, kept when they
+     * are in [among]. This is the check [reputation] cannot make for most people: Vertex bills the key that
+     * asks, and a reader's own key has no credits. Relays cap one answer (purplepag.es at 500), so on a very
+     * popular key this sees a sample of its followers. Nothing is stored.
+     */
+    suspend fun followersAmong(
+        target: String,
+        among: Set<String>,
+        relays: Set<RelayUrl>,
+        limit: Int,
+        timeout: Duration = config.oneShotTimeout,
+    ): List<String> {
+        if (among.isEmpty()) return emptyList()
+        val lists = fetch(listOf(Filter(kinds = listOf(Kinds.ContactList), tags = mapOf("p" to listOf(target)), limit = 500)), relays, timeout)
+        return lists.asSequence()
+            .map(Event::pubkey)
+            .distinct()
+            .filter { it != target && it in among }
+            .take(limit)
+            .toList()
+    }
+
     /** The pubkeys [pubkey] follows, from the newest kind 3 on [relays]; empty when none was found. */
     suspend fun follows(pubkey: String, relays: Set<RelayUrl>, timeout: Duration = config.oneShotTimeout): Set<String> {
         val list = fetch(listOf(Filter(authors = listOf(pubkey), kinds = listOf(Kinds.ContactList), limit = 1)), relays, timeout)

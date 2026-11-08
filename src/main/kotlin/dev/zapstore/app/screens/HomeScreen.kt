@@ -97,10 +97,10 @@ fun HomeScreen(
     if (filtersOpen) {
         FilterSheet(
             active = state.searchFacts,
-            hideInstalled = hideInstalled,
             onToggle = onToggleFilter,
-            onToggleHideInstalled = { hideInstalled = !hideInstalled },
             onDismiss = { filtersOpen = false },
+            hideInstalled = hideInstalled,
+            onToggleHideInstalled = { hideInstalled = !hideInstalled },
         )
     }
     val listState = rememberLazyListState()
@@ -135,41 +135,16 @@ fun HomeScreen(
     }
 
     Column(modifier = modifier.fillMaxSize()) {
-        ZapSearchField(
+        AppSearchField(
             value = state.searchQuery,
             onValueChange = onSearchQueryChanged,
             onSearch = onSearchSubmitted,
+            onClear = {
+                onSearchCleared()
+                searchFocusRequester.requestFocus()
+            },
             placeholder = stringResource(R.string.search_apps),
-            leadingIcon = {
-                Icon(
-                    painter = painterResource(R.drawable.ic_search),
-                    contentDescription = null,
-                    tint = ZapText3,
-                    modifier = Modifier.size(18.dp),
-                )
-            },
-            trailingIcon = {
-                if (state.searchQuery.isNotEmpty() || state.searchResults != null) {
-                    val clearDescription = stringResource(R.string.clear_search)
-                    IconButton(
-                        onClick = {
-                            onSearchCleared()
-                            searchFocusRequester.requestFocus()
-                        },
-                        modifier = Modifier
-                            .size(ZapSize.control)
-                            .semantics { contentDescription = clearDescription }
-                            .testTag("clearSearch"),
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_close),
-                            contentDescription = null,
-                            tint = ZapText3,
-                            modifier = Modifier.size(16.dp),
-                        )
-                    }
-                }
-            },
+            hasResults = state.searchResults != null,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(start = ZapSpacing.space4, end = ZapSpacing.space4, top = ZapSpacing.space1, bottom = ZapSpacing.space2)
@@ -258,89 +233,18 @@ private fun LazyListScope.searchResults(
     onShowInstalled: () -> Unit,
     onOpenFilters: () -> Unit,
 ) {
-    // One gray panel, as on the web: filters, then the rows. Clearing is the field's X, so the panel has no link for it.
     item(key = "searchPanel", contentType = "searchPanel") {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = ZapSpacing.space4)
-                .clip(RoundedCornerShape(ZapRadius.lg))
-                .background(ZapSurface1)
-                .padding(horizontal = ZapSpacing.space4, vertical = ZapSpacing.space3)
-                .testTag("searchPanel"),
+        val installedIds = LocalInstalledVersions.current.keys
+        val shown = if (hideInstalled) results.filter { it.appId !in installedIds } else results
+        SearchPanel(
+            facts = state.searchFacts,
+            shown = shown,
+            hasOthers = state.searchStacks.isNotEmpty() || state.searchDevelopers.isNotEmpty(),
+            onRemoveFilter = onRemoveFilter,
+            onOpenFilters = onOpenFilters,
+            hideInstalled = hideInstalled,
+            onShowInstalled = onShowInstalled,
         ) {
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
-                verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
-                modifier = Modifier.padding(bottom = ZapSpacing.space1).testTag("searchFacts"),
-            ) {
-                state.searchFacts.forEach { fact ->
-                    val label = fact.label()
-                    val remove = stringResource(R.string.remove_filter, label)
-                    ZapChip(
-                        text = label,
-                        onClick = { onRemoveFilter(fact) },
-                        selected = true,
-                        trailingIcon = R.drawable.ic_close,
-                        modifier = Modifier
-                            .semantics { contentDescription = remove }
-                            .testTag("filter:${fact.name}"),
-                    )
-                }
-                if (hideInstalled) {
-                    val label = stringResource(R.string.hide_installed)
-                    val removeInstalled = stringResource(R.string.remove_filter, label)
-                    ZapChip(
-                        text = label,
-                        onClick = onShowInstalled,
-                        selected = true,
-                        trailingIcon = R.drawable.ic_close,
-                        modifier = Modifier
-                            .semantics { contentDescription = removeInstalled }
-                            .testTag("filter:installed"),
-                    )
-                }
-                ZapChip(
-                    text = stringResource(R.string.filters),
-                    onClick = onOpenFilters,
-                    trailingIcon = R.drawable.ic_chevron_down,
-                    modifier = Modifier.testTag("openFilters"),
-                )
-            }
-            val installedIds = LocalInstalledVersions.current.keys
-            val shown = if (hideInstalled) results.filter { it.appId !in installedIds } else results
-            val others = state.searchStacks.isNotEmpty() || state.searchDevelopers.isNotEmpty()
-            val narrowed = state.searchFacts.isNotEmpty() || hideInstalled
-            if (shown.isEmpty() && (narrowed || !others)) {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(ZapSpacing.space3),
-                    modifier = Modifier.padding(top = ZapSpacing.space2).testTag("noResults"),
-                ) {
-                    val message = if (narrowed) R.string.no_filtered_results else R.string.no_search_results
-                    EmptyRow(stringResource(message), icon = R.drawable.ic_search)
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
-                        verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
-                    ) {
-                        state.searchFacts.forEach { fact ->
-                            ZapButton(
-                                text = stringResource(R.string.remove_filter, fact.label()),
-                                onClick = { onRemoveFilter(fact) },
-                                style = ZapButtonStyle.Tonal,
-                                modifier = Modifier.testTag("relax:${fact.name}"),
-                            )
-                        }
-                        if (hideInstalled) {
-                            ZapButton(
-                                text = stringResource(R.string.remove_filter, stringResource(R.string.hide_installed)),
-                                onClick = onShowInstalled,
-                                style = ZapButtonStyle.Tonal,
-                                modifier = Modifier.testTag("relax:installed"),
-                            )
-                        }
-                    }
-                }
-            }
             shown.forEach { app ->
                 key("search:${app.appId}") {
                     AppRow(
@@ -370,43 +274,6 @@ private fun LazyListScope.searchResults(
                         modifier = Modifier.testTag("searchDeveloper:$pubkey"),
                     )
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun FilterSheet(
-    active: List<SearchFact>,
-    hideInstalled: Boolean,
-    onToggle: (SearchFact) -> Unit,
-    onToggleHideInstalled: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    ZapSheet(onDismiss = onDismiss) {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
-            modifier = Modifier.padding(start = ZapSpacing.space4, end = ZapSpacing.space4, bottom = ZapSpacing.space6),
-        ) {
-            Text(stringResource(R.string.filters), style = ZapTitle3Style)
-            Text(stringResource(R.string.filters_hint), color = ZapText2, style = MaterialTheme.typography.bodyMedium)
-            SettingsGroup(Modifier.padding(top = ZapSpacing.space2)) {
-                SearchFact.entries.forEachIndexed { index, fact ->
-                    if (index > 0) HorizontalDivider(color = ZapLine)
-                    SwitchRow(
-                        title = fact.label(),
-                        checked = fact in active,
-                        onCheckedChange = { onToggle(fact) },
-                        modifier = Modifier.testTag("sheetFilter:${fact.name}"),
-                    )
-                }
-                HorizontalDivider(color = ZapLine)
-                SwitchRow(
-                    title = stringResource(R.string.hide_installed),
-                    checked = hideInstalled,
-                    onCheckedChange = { onToggleHideInstalled() },
-                    modifier = Modifier.testTag("sheetFilter:installed"),
-                )
             }
         }
     }

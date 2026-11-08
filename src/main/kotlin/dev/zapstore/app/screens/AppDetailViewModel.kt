@@ -98,6 +98,10 @@ private const val TRUST_FOLLOWERS = 5
 /** Vertex answers in a few seconds; a person waiting on a sheet should not wait for the library's 30. */
 private val TRUST_TIMEOUT = 15.seconds
 
+/** Vertex's error comes back in a second or two; waiting longer on a key it will not serve only delays the fallback. */
+private val VERTEX_TIMEOUT = 8.seconds
+
+
 /** Comments and zaps as the page shows them: one feed, built from [threads] and [zaps] by [feedEntries]. */
 data class CommentsState(
     /** Comments on a coordinate of a known pubkey, threaded. */
@@ -111,7 +115,8 @@ data class CommentsState(
 )
 
 /** Where an install started from the app page is, as the bottom button shows it. */
-enum class InstallPhase { Idle, Queued, Downloading, Paused, Verifying, Installing, Confirm, Failed }
+/** [Ready]: downloaded and verified, waiting for the tap that opens Android's dialog. */
+enum class InstallPhase { Idle, Ready, Queued, Downloading, Paused, Verifying, Installing, Confirm, Failed }
 
 /** An account named on the first-install sheet. [name] is what the catalog knew, often blank. */
 data class TrustPerson(val pubkey: String, val name: String = "")
@@ -162,18 +167,20 @@ data class InstallUi(
     val otherStore: String? = null,
     /** The installed copy shares no certificate with the listing, so no update is offered. */
     val signedDifferently: Boolean = false,
+    /** The installed version is newer than the listed one. */
+    val downgrade: Boolean = false,
 ) {
     val busy: Boolean get() = phase in BUSY_PHASES
 
     /** There is an install to end: anything in progress, including a paused download. */
     val cancellable: Boolean get() = busy || phase == InstallPhase.Paused
 
-    /** Icon inside the Latest release version pill: install, update, or up to date. */
+    /** Icon inside the Latest release version pill: update, up to date or older than what is installed. None when not installed. */
     val versionStatus: VersionStatus?
         get() = when {
             updating -> VersionStatus.Update
+            downgrade -> VersionStatus.Downgrade
             installed && !signedDifferently -> VersionStatus.Current
-            offer -> VersionStatus.Install
             else -> null
         }
 }
@@ -317,7 +324,7 @@ class AppDetailViewModel(
         }
     }
 
-    /** The signed-in user's own check: Vertex ranks the publisher's followers from their point of view. */
+    /** The signed-in user's own check: Vertex's ranking of the publisher's followers from their point of view, else the people they follow who follow it. */
     fun checkTrustPersonally() {
         val author = uiState.value.app?.authorPubkey ?: return
         val signer = appContext.account.signer() ?: return
@@ -325,10 +332,22 @@ class AppDetailViewModel(
         check.value = Check.Running
         checkJob = viewModelScope.launch {
             try {
+                // Vertex ranks them from your point of view, but bills the key that asks, and a reader's key often has
+                // no credits. It answers with an error within seconds then, so the people you follow who follow them,
+                // from their kind 3 lists, stand in.
                 val (ranked, follows) = coroutineScope {
-                    val ranked = async { iolite.reputation(AppConfig.vertexRelays, signer.publicKey, author, signer, limit = TRUST_FOLLOWERS + 2, timeout = TRUST_TIMEOUT, responder = AppConfig.VERTEX_PUBKEY) }
-                    val follows = async { runCatching { iolite.follows(signer.publicKey, AppConfig.indexerRelays, TRUST_TIMEOUT) }.getOrDefault(emptySet()) }
-                    ranked.await() to follows.await()
+                    val vertex = async {
+                        try {
+                            iolite.reputation(AppConfig.vertexRelays, signer.publicKey, author, signer, TRUST_FOLLOWERS, VERTEX_TIMEOUT, AppConfig.VERTEX_PUBKEY)
+                        } catch (error: CancellationException) {
+                            throw error
+                        } catch (error: Exception) {
+                            null
+                        }
+                    }
+                    val mine = async { iolite.follows(signer.publicKey, AppConfig.indexerRelays, TRUST_TIMEOUT) }
+                    val follows = mine.await()
+                    (vertex.await() ?: iolite.followersAmong(author, follows, AppConfig.followerRelays, TRUST_FOLLOWERS, TRUST_TIMEOUT)) to follows
                 }
                 personal.value = author to Personal(ranked.take(TRUST_FOLLOWERS), follows, signer.publicKey)
                 check.value = Check.Idle
@@ -484,6 +503,7 @@ class AppDetailViewModel(
                 updating = installed && newer && !foreign,
                 installed = installed && (!newer || foreign),
                 signedDifferently = foreign,
+                downgrade = installed && record != null && record.versionCode < origin.versionCode,
                 otherStore = origin?.let { storeLabel(otherStore(it.installingPackage, it.updateOwner, appContext.packageName)) },
             ),
         )
@@ -822,9 +842,9 @@ private fun installUi(task: InstallTask?, dialog: InstallPlan?, blocked: String?
             TaskPhase.Downloading -> InstallPhase.Downloading
             TaskPhase.Paused -> InstallPhase.Paused
             TaskPhase.Verifying -> InstallPhase.Verifying
-            TaskPhase.Installing -> InstallPhase.Installing
+            TaskPhase.Installing, TaskPhase.Done -> InstallPhase.Installing
             TaskPhase.Confirm -> InstallPhase.Confirm
-            TaskPhase.Ready -> InstallPhase.Idle
+            TaskPhase.Ready -> InstallPhase.Ready
             TaskPhase.Failed -> InstallPhase.Failed
         }
     },

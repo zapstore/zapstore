@@ -1,5 +1,6 @@
 package dev.zapstore.app.screens
 
+import dev.zapstore.app.components.catalogSource
 import dev.zapstore.app.components.ZapButtonStyle
 import dev.zapstore.app.components.ZapButton
 import androidx.compose.foundation.Image
@@ -42,6 +43,7 @@ import dev.zapstore.app.ZapWarning
 import dev.zapstore.app.components.InfoRow
 import dev.zapstore.app.components.ProfileImage
 import dev.zapstore.app.components.EvidenceLine
+import dev.zapstore.app.components.resolvedName
 import dev.zapstore.app.components.shortDisplayName
 import dev.zapstore.app.facts.FactCatalog
 import dev.zapstore.iolite.AppByline
@@ -104,7 +106,7 @@ internal fun AssuranceSummary(
  *
  * [full] is the sheet: the proof dates, the longer unverified sentence, and the invitation to claim an
  * app that is not yet claimed. The install sheet leaves those out. [onProfileClick] makes the developer's
- * name a link; [downloadUrl] says where the file comes from for an indexed listing.
+ * name a link.
  */
 @Composable
 internal fun PublisherStanding(
@@ -117,7 +119,6 @@ internal fun PublisherStanding(
     full: Boolean = false,
     proof: CertificateProof? = null,
     onProfileClick: ((String) -> Unit)? = null,
-    downloadUrl: String? = null,
 ) {
     val pubkey = app.bylinePubkey
     val developer = pubkey?.let { shortDisplayName(it, author) }.orEmpty()
@@ -148,9 +149,9 @@ internal fun PublisherStanding(
         if (app.isCatalogSigned) {
             CatalogSignedNote(
                 app.name,
-                downloadUrl,
+                resolvedName(author),
+                app.catalogSource(),
                 Modifier.testTag(if (full) "catalogSigned" else "installCatalogSigned"),
-                source = app.repository,
             )
         }
         if (full && app.byline != AppByline.Verified) ClaimInvite(onOpenUrl)

@@ -106,6 +106,9 @@ val LocalPendingUpdates = compositionLocalOf<Map<String, String>> { emptyMap() }
 /** Version name by app id, for every catalog app installed on this device. */
 val LocalInstalledVersions = compositionLocalOf<Map<String, String>> { emptyMap() }
 
+/** Version code by app id, for every catalog app installed on this device. */
+val LocalInstalledCodes = compositionLocalOf<Map<String, Long>> { emptyMap() }
+
 /**
  * One catalog listing. Always two lines, and the icon is exactly as tall as those two lines.
  *
@@ -177,7 +180,7 @@ fun AppRow(
                                 status = VersionStatus.Update,
                             )
                         } else {
-                            VersionPill(it, status = VersionStatus.Current)
+                            VersionPill(it, status = versionStatusOf(app) ?: VersionStatus.Current)
                         }
                     }
                 } else if (tagline != null) {
@@ -284,14 +287,14 @@ private fun RowTitleLine(
     }
 }
 
-/** The detail head tile: the 64 dp step of the app tile scale (28, 40, 48, 56, 64, 88). */
-private val HEAD_ICON = 64.dp
+/** The detail head tile: the 56 dp step of the app tile scale (28, 40, 48, 56, 64, 88). */
+private val HEAD_ICON = 56.dp
 
-/** How far the byline sits above the icon's bottom edge. */
-private val HEAD_BYLINE_LIFT = 6.dp
+/** The byline's height: the 16 dp mark with a little air. The line ends at the icon's bottom edge. */
+private val HEAD_BYLINE_LINE = 20.dp
 
 /** Tall enough for the verification mark, which is a 28 dp target. */
-private val HEAD_TITLE_LINE = 30.dp
+private val HEAD_TITLE_LINE = 32.dp
 
 /** Lets a child take [extra] more width than its parent offers, to the right. */
 private fun Modifier.reachRight(extra: Dp): Modifier = layout { measurable, constraints ->
@@ -302,10 +305,11 @@ private fun Modifier.reachRight(extra: Dp): Modifier = layout { measurable, cons
 }
 
 /**
- * App page head. The name and its verification mark top-align with the icon, "by" the author
- * bottom-aligns with it, so the two lines span the same height as the icon. A catalog-signed app
- * has no author: the indexed mark, and a line that says so. The version lives in the Latest
- * release card.
+ * App page head. The name top-aligns with the icon, and may run to just before the "..." menu; "by" the author
+ * bottom-aligns with it, so the two lines span the same height as the icon. The author's mark (verified seal
+ * or unclaimed warning) sits right after the author. A catalog-listed app has no author: the line reads
+ * "from" and where its file comes from, then an info mark that opens the same sheet. The version lives in
+ * the Latest release card.
  */
 @Composable
 fun AppDetailHead(
@@ -319,9 +323,8 @@ fun AppDetailHead(
     indexed: Boolean = false,
     onAuthorClick: (String) -> Unit = {},
     onMarkClick: () -> Unit = {},
-    /** Where an indexed app's file is released, shown in place of an author the catalog does not have. */
+    /** Where an indexed app's file comes from, shown in place of an author the catalog does not have. Not a link. */
     source: String? = null,
-    onSourceClick: (() -> Unit)? = null,
     /** The "..." menu, drawn at the head's top right. */
     more: (@Composable () -> Unit)? = null,
 ) {
@@ -339,52 +342,51 @@ fun AppDetailHead(
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
-                modifier = Modifier.fillMaxWidth().height(HEAD_TITLE_LINE),
+                // Past the column's edge, up to the dots: the menu button has empty room on its left.
+                modifier = Modifier.fillMaxWidth().height(HEAD_TITLE_LINE).reachRight(ZapSpacing.space4),
             ) {
                 Text(
                     name,
                     color = ZapText,
-                    // 5% over the sheet-title size, so the name leads the page.
-                    style = MaterialTheme.typography.titleLarge.copy(fontSize = 24.4.sp, lineHeight = 30.sp),
+                    // Well over the sheet-title size, so the name leads the page.
+                    style = MaterialTheme.typography.titleLarge.copy(fontSize = 27.sp, lineHeight = 32.sp),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
                 )
-                when {
-                    indexed -> IndexedMark(onMarkClick)
-                    verified -> VerifiedSeal(onMarkClick)
-                    authorPubkey != null -> UnverifiedMark(onMarkClick)
-                }
             }
-            // Lifted a little off the icon's bottom edge, which left the two lines far apart.
-            Box(Modifier.padding(bottom = HEAD_BYLINE_LIFT)) {
+            // Its own line height, flush with the icon's bottom edge: the marks are bigger than the text, and
+            // letting them set the row's height lifted the line well above the icon.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                // Out to the page margin: the dots hang above this line, so it may run under them (the button's 48 dp and the gap).
+                modifier = Modifier.fillMaxWidth().height(HEAD_BYLINE_LINE).reachRight(ZapSpacing.space4 + 48.dp),
+            ) {
                 when {
-                    authorPubkey != null -> AuthorByline(
-                        pubkey = authorPubkey,
-                        profile = author,
-                        lead = stringResource(R.string.row_by),
-                        onClick = { onAuthorClick(authorPubkey) },
-                    )
-                    // As the Flutter app did: "From", the known host's logo and short name, or the host; tapping opens the repository.
-                    indexed && source != null -> SourceLine(
-                        source,
-                        lead = stringResource(R.string.source_from),
-                        // The "..." menu sits above this line's right end, so the line may run under its lower edge.
-                        modifier = Modifier.testTag("headIndexed").reachRight(ZapSpacing.space10),
-                        whole = false,
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.5.sp),
-                        leadColor = ZapText3,
-                        color = ZapText2,
-                        onClick = onSourceClick,
-                    )
-                    indexed -> Text(
-                        stringResource(R.string.indexed_author),
-                        color = ZapText2,
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 1,
-                        modifier = Modifier.testTag("headIndexed"),
-                    )
+                    authorPubkey != null -> {
+                        AuthorByline(
+                            pubkey = authorPubkey,
+                            profile = author,
+                            lead = stringResource(R.string.row_by),
+                            onClick = { onAuthorClick(authorPubkey) },
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        if (verified) VerifiedSeal(onMarkClick, size = HEAD_MARK + 4.dp) else UnverifiedMark(onMarkClick, size = HEAD_MARK)
+                    }
+                    // As the Flutter app did: "from", the known host's logo and short name, or the host. Not a link.
+                    indexed && source != null -> {
+                        CatalogFrom(source, Modifier.weight(1f, fill = false).testTag("headIndexed"), lead = false)
+                        InfoMark(onMarkClick, size = HEAD_MARK)
+                    }
+                    indexed -> {
+                        Text(
+                            stringResource(R.string.indexed_author),
+                            color = ZapText2,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                            modifier = Modifier.weight(1f, fill = false).testTag("headIndexed"),
+                        )
+                        InfoMark(onMarkClick, size = HEAD_MARK)
+                    }
                 }
             }
         }
@@ -392,6 +394,9 @@ fun AppDetailHead(
         more?.let { Box(Modifier.offset(x = ZapSpacing.space2, y = -ZapSpacing.space2)) { it() } }
     }
 }
+
+/** The size of the mark after the author: the seal, the warning or the info mark, in a 28 dp target. */
+private val HEAD_MARK = 16.dp
 
 /** Title line. titleSmall is 15/20; the row's title is 10% larger, so 16.5/22. */
 private val ROW_TITLE_LINE = 23.25.dp

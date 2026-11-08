@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.ui.res.painterResource
@@ -15,9 +16,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.ColorMatrix
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -27,10 +25,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import dev.zapstore.app.R
 import dev.zapstore.app.ZapSurface3
 import dev.zapstore.app.ZapText2
+import dev.zapstore.app.ZapText3
 import dev.zapstore.iolite.ProfileRecord
 import dev.zapstore.iolite.toNpub
 
@@ -99,32 +97,21 @@ fun UnverifiedMark(onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp 
     }
 }
 
-/** The mark for a listing the indexer tracks: card index dividers, a catalog entry. Change it here only. */
-const val INDEXED_GLYPH = "🗂️"
-
-/** Emoji keep their own colors, so the indexed mark is drawn with the saturation taken out. */
-internal fun Modifier.grayscale(): Modifier = graphicsLayer {
-    colorFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) })
-}
-
-/** Catalog-signed listing: the indexer published it. Tapping it opens that explanation. */
+/** The info mark beside the source of a catalog-listed app: tapping it opens the same sheet as the author marks. */
 @Composable
-fun IndexedMark(onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val label = stringResource(R.string.indexed_author)
+fun InfoMark(onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 16.dp) {
+    val label = stringResource(R.string.info_about_listing)
+    // The same 28 dp box as the other marks, so every kind takes the same room on the line.
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier
-            .size(28.dp)
+            .size(size + 12.dp)
             .clip(CircleShape)
             .clickable(role = Role.Button, onClick = onClick)
-            .semantics(mergeDescendants = true) { contentDescription = label }
+            .semantics { contentDescription = label }
             .testTag("indexedAuthor"),
     ) {
-        Text(
-            INDEXED_GLYPH,
-            modifier = Modifier.grayscale(),
-            style = MaterialTheme.typography.bodyLarge.copy(fontSize = 12.sp, lineHeight = 12.sp),
-        )
+        Icon(painterResource(R.drawable.ic_info), contentDescription = null, tint = ZapText3, modifier = Modifier.size(size + 2.dp))
     }
 }
 
@@ -151,14 +138,16 @@ fun VerifiedSeal(onClick: (() -> Unit)? = null, modifier: Modifier = Modifier, s
     }
 }
 
-/** Whom a person is called when no kind 0 names them. The npub is for a person's own page and evidence fields only. */
-const val UNKNOWN_PERSON = "Someone"
+/** The key as `npub1...z6g`: what a person with no kind 0 name is called. The whole key is for evidence fields. */
+fun shortNpub(pubkey: String): String {
+    val npub = pubkey.toNpub()
+    return if (npub.length > 12) npub.take(5) + "..." + npub.takeLast(3) else npub
+}
 
-/** The profile's name, or null while no kind 0 names them. For lines that read better without a person than with "Someone". */
+/** The profile's name, or null while no kind 0 names them. For lines that read better without a person. */
 fun resolvedName(profile: ProfileRecord?): String? =
     (profile?.displayName ?: profile?.name)?.trim()?.takeIf { it.isNotEmpty() }
 
-/** The profile's name, or [UNKNOWN_PERSON]: a raw key in a row tells no one anything. */
-@Suppress("UNUSED_PARAMETER")
+/** The profile's name, or the short npub (`npub1...z6g`) while no kind 0 names them. */
 fun shortDisplayName(pubkey: String, profile: ProfileRecord?): String =
-    (profile?.displayName ?: profile?.name)?.trim()?.takeIf { it.isNotEmpty() } ?: UNKNOWN_PERSON
+    resolvedName(profile) ?: shortNpub(pubkey)

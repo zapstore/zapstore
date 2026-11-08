@@ -1,3 +1,4 @@
+<!-- A filled bolt: a thin round stroke of the same color softens its corners. Tinted with ZapWarning wherever it is a zap. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
@@ -5,9 +6,9 @@
     android:viewportHeight="24">
     <path
         android:pathData="M13.5 3 5.5 13.5h6l-1 7.5 8-10.5h-6z"
+        android:fillColor="#FF000000"
         android:strokeColor="#FF000000"
-        android:strokeWidth="1.75"
+        android:strokeWidth="1.5"
         android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:fillColor="@android:color/transparent" />
+        android:strokeLineJoin="round" />
 </vector>

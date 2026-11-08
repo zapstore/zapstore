@@ -46,6 +46,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.zapstore.app.R
+import dev.zapstore.app.ZapWarning
 import dev.zapstore.app.ZapAction
 import dev.zapstore.app.ZapActionText
 import dev.zapstore.app.ZapLine
@@ -63,7 +64,6 @@ import dev.zapstore.app.components.ZapChip
 import dev.zapstore.app.components.ZapTextLink
 import dev.zapstore.iolite.Social
 import kotlinx.coroutines.launch
-import java.text.NumberFormat
 
 @Composable
 internal fun ZapTextArea(
@@ -213,7 +213,6 @@ internal fun ZapAppSheet(
     var pastingWallet by rememberSaveable { mutableStateOf(false) }
     var walletText by rememberSaveable { mutableStateOf("") }
     var walletError by remember { mutableStateOf<String?>(null) }
-    val format = remember { NumberFormat.getInstance() }
     val invalidWallet = stringResource(R.string.wallet_invalid)
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
@@ -232,7 +231,7 @@ internal fun ZapAppSheet(
                 askSignIn -> SignInPanel(social, onSignIn)
                 social.zapped != null -> {
                     Text(
-                        stringResource(R.string.zap_sent, format.format(social.zapped), recipientName),
+                        stringResource(R.string.zap_sent, compactSats(social.zapped), recipientName),
                         color = ZapText2,
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.testTag("zapSent"),
@@ -322,7 +321,7 @@ internal fun ZapAppSheet(
                             )
                         }
                         ZapChip(
-                            text = if (customAmount && sats > 0) "\uD83D\uDC8E ${format.format(sats)}" else stringResource(R.string.zap_custom),
+                            text = if (customAmount && sats > 0) "\uD83D\uDC8E ${compactSats(sats)}" else stringResource(R.string.zap_custom),
                             onClick = { customAmount = true },
                             selected = customAmount,
                             modifier = Modifier.testTag("zapAmountCustom"),
@@ -345,11 +344,12 @@ internal fun ZapAppSheet(
                     ZapTextArea(note, { note = it }, stringResource(R.string.zap_note), Modifier.fillMaxWidth().testTag("zapNote"))
                     social.zapError?.let { StatusText(it, Modifier.testTag("zapError")) }
                     ZapButton(
-                        text = stringResource(R.string.zap_send, format.format(sats)),
+                        text = stringResource(R.string.zap_send, compactSats(sats)),
                         onClick = { onZap(sats, note) },
                         loading = social.zapping,
                         enabled = !social.zapping && sats > 0,
                         icon = R.drawable.ic_bolt,
+                        iconTint = ZapWarning,
                         modifier = Modifier.fillMaxWidth().height(ZapSize.controlLarge).testTag("zapSend"),
                     )
                 }

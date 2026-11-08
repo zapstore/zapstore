@@ -44,6 +44,11 @@ enum class TaskPhase {
     /** A verified APK waits for a tap: the dialog was declined, or a background run could not prompt. */
     Ready,
     Failed,
+    /**
+     * Android installed it. The task stays, spinning, until the device's package list shows the new version
+     * (see [Installer.prune]), so a row never falls back to "Update" in the moment between the two.
+     */
+    Done,
 }
 
 /** One app's install, from the tap to Android's answer. A success removes it. */
@@ -68,6 +73,9 @@ data class InstallTask(
 
     /** Holds the download service up. */
     val transferring: Boolean get() = phase in TRANSFERRING
+
+    /** There is something to stop or drop: work in progress, a paused download, or a verified file waiting for a tap. */
+    val cancellable: Boolean get() = busy || phase == TaskPhase.Paused || phase == TaskPhase.Ready
 }
 
 private val BUSY = setOf(TaskPhase.Queued, TaskPhase.Downloading, TaskPhase.Verifying, TaskPhase.Installing, TaskPhase.Confirm)
@@ -287,7 +295,13 @@ class Installer(
             }
             STATUS_SUCCESS -> {
                 scope.launch(Dispatchers.IO) { InstallCache.delete(context, packageId) }
-                _tasks.update { it - packageId }
+                if (packageId in _tasks.value) {
+                    // Kept until the package list catches up; the delay only covers a list that never does.
+                    set(packageId) { it.copy(phase = TaskPhase.Done, error = null, silent = true) }
+                    main.postDelayed({
+                        _tasks.update { tasks -> if (tasks[packageId]?.phase == TaskPhase.Done) tasks - packageId else tasks }
+                    }, DONE_HOLD_MS)
+                }
             }
             // A cancelled install has no task left to put back.
             STATUS_FAILURE_ABORTED -> if (packageId in _tasks.value) set(packageId) { it.copy(phase = TaskPhase.Ready, error = null) }
@@ -305,7 +319,8 @@ class Installer(
     }
 
     private fun claim(app: AppRecord, bulk: Boolean, background: Boolean): Boolean = synchronized(jobs) {
-        if (jobs[app.appId]?.isActive == true || _tasks.value[app.appId]?.busy == true) return false
+        // Done: Android just installed this build; another tap before the package list catches up would fetch it again.
+        if (jobs[app.appId]?.isActive == true || _tasks.value[app.appId]?.let { it.busy || it.phase == TaskPhase.Done } == true) return false
         val hash = app.apkHash.orEmpty()
         val previous = _tasks.value[app.appId]?.takeIf { it.hash == hash }
         _tasks.update {
@@ -446,6 +461,7 @@ class Installer(
         private const val PROGRESS_STEP = 256L * 1024
         private const val CONFIRMED_GRACE_MS = 60_000L
         private const val CANCEL_JOIN_MS = 10_000L
+        private const val DONE_HOLD_MS = 5_000L
         private const val STATUS_PENDING_USER_ACTION = android.content.pm.PackageInstaller.STATUS_PENDING_USER_ACTION
         private const val STATUS_SUCCESS = android.content.pm.PackageInstaller.STATUS_SUCCESS
         private const val STATUS_FAILURE_ABORTED = android.content.pm.PackageInstaller.STATUS_FAILURE_ABORTED

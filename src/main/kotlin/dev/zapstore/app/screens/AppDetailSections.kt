@@ -8,6 +8,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
+import dev.zapstore.app.components.SentenceWithSource
+import dev.zapstore.app.components.catalogSource
 import dev.zapstore.app.components.ZapTextLink
 import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.CircularProgressIndicator
@@ -160,6 +162,15 @@ internal fun ReleaseAndSecurityCard(
         modifier.fillMaxWidth(),
         onClick = onOpen,
         actionTag = "releaseLink",
+        // Not a chevron, which would say "go to another page": this opens the report and details in a sheet.
+        trailing = {
+            Icon(
+                painterResource(R.drawable.ic_unfold_more),
+                contentDescription = stringResource(R.string.card_more_details),
+                tint = ZapText3,
+                modifier = Modifier.size(22.dp),
+            )
+        },
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -167,11 +178,10 @@ internal fun ReleaseAndSecurityCard(
             modifier = Modifier.fillMaxWidth(),
         ) {
             if (app.version.isNotBlank()) VersionPill(app.version, status = versionStatus, modifier = Modifier.testTag("releaseVersion"))
+            // The date, then what the pill's tiny icon says in words; nothing more once the phone's state is unknown.
+            val status = versionStatus?.let { stringResource(it.label) }
             Text(
-                buildString {
-                    append(formatDate(app.releasedAt))
-                    if (app.releaseNotes.isBlank()) append(" · ").append(stringResource(R.string.release_no_notes_short))
-                },
+                listOfNotNull(formatDate(app.releasedAt), status).joinToString(" · "),
                 color = ZapText2,
                 style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
                 maxLines = 1,
@@ -181,28 +191,28 @@ internal fun ReleaseAndSecurityCard(
         }
         HorizontalDivider(color = ZapLine, modifier = Modifier.padding(vertical = ZapSpacing.space1))
         Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space3), modifier = Modifier.fillMaxWidth()) {
-            if (app.hasSecurityCard()) {
-                val flags = app.flagLabels()
-                if (flags.isNotEmpty()) {
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
-                        verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
-                        modifier = Modifier.testTag("cardFlags"),
-                    ) { flags.forEach { (label, _) -> ZapBadge(label, BadgeTone.Warning, emoji = WARNING_SIGN) } }
+            val flags = if (app.hasSecurityCard()) app.flagLabels() else emptyList()
+            val unclaimed = app.byline != AppByline.Verified
+            // Always one of the two: the developer proved the app is theirs, or nobody has.
+            run {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+                    verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+                    modifier = Modifier.testTag("cardFlags"),
+                ) {
+                    if (!unclaimed) ZapBadge(stringResource(R.string.claimed_pill), BadgeTone.Verified, Modifier.testTag("claimedPill"), R.drawable.ic_check)
+                    // A warning like the security ones: nobody has claimed the app as theirs.
+                    if (unclaimed) ZapBadge(stringResource(R.string.unclaimed_pill), BadgeTone.Warning, Modifier.testTag("unclaimedPill"), emoji = WARNING_SIGN)
+                    flags.forEach { (label, _) -> ZapBadge(label, BadgeTone.Warning, emoji = WARNING_SIGN) }
                 }
+            }
+            if (app.hasSecurityCard()) {
                 FactPills(app.factPills())
                 SecurityProse(app, onOpenUrl, brief = true)
             } else {
                 Text(stringResource(R.string.no_security_report), color = ZapText2, style = MaterialTheme.typography.bodyMedium)
             }
         }
-        // Said as a button, so it is plain there is more behind the card.
-        ZapButton(
-            stringResource(R.string.card_full_report),
-            onOpen,
-            Modifier.fillMaxWidth().padding(top = ZapSpacing.space2).testTag("releaseOpen"),
-            style = ZapButtonStyle.Tonal,
-        )
     }
 }
 
@@ -220,6 +230,11 @@ internal fun ProofState(app: AppRecord, modifier: Modifier = Modifier) {
         warning = app.byline != AppByline.Verified,
         detail = stringResource(body),
         modifier = modifier.testTag("proofState"),
+        detailContent = if (app.byline == AppByline.Indexed) {
+            app.catalogSource()?.let { address -> { SentenceWithSource(stringResource(R.string.proof_indexed_body_from), address) } }
+        } else {
+            null
+        },
     )
 }
 
@@ -691,7 +706,7 @@ internal fun compactSats(sats: Long): String {
 internal data class ZapAmountOption(val emoji: String, val label: String, val sats: Long)
 
 internal val ZAP_AMOUNTS = listOf(
-    ZapAmountOption("\uD83E\uDD19", "2100", 2_100L),
+    ZapAmountOption("\uD83E\uDD19", "2.1k", 2_100L),
     ZapAmountOption("\uD83D\uDC9C", "10k", 10_000L),
     ZapAmountOption("\uD83E\uDD29", "21k", 21_000L),
     ZapAmountOption("\uD83C\uDFC3", "42k", 42_000L),

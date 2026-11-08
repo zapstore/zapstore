@@ -61,6 +61,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.zapstore.app.R
+import dev.zapstore.iolite.AppRecord
 import dev.zapstore.app.ZapAction
 import dev.zapstore.app.ZapActionPressed
 import dev.zapstore.app.ZapActionText
@@ -335,13 +336,29 @@ fun ZapCountBadge(count: Int, modifier: Modifier = Modifier) {
 }
 
 /**
- * What a version pill says about the app on this phone, as a tiny icon inside the pill. The same three
- * states, and the same glyphs, as the Flutter app: can install, can update, already up to date.
+ * What a version pill says about the app on this phone, as a tiny icon inside the pill, as in the Flutter
+ * app: a clock when an update is listed, a tick when up to date, a forbidden sign when the phone has a newer
+ * version than the one listed. An app that is not installed has no status and the pill has no icon.
  */
 enum class VersionStatus(val icon: Int, val label: Int) {
-    Install(R.drawable.ic_pill_install, R.string.version_status_install),
-    Update(R.drawable.ic_update, R.string.version_status_update),
+    Update(R.drawable.ic_clock, R.string.version_status_update),
     Current(R.drawable.ic_pill_current, R.string.version_status_current),
+    Downgrade(R.drawable.ic_forbidden, R.string.version_status_downgrade),
+}
+
+/**
+ * The status of listing [app] on this phone. [LocalInstalledCodes] holds what is installed; an update counts
+ * only when the catalog sync found one ([LocalPendingUpdates]), so another store's or signer's copy shows a tick.
+ */
+@Composable
+fun versionStatusOf(app: AppRecord): VersionStatus? {
+    val installedCode = LocalInstalledCodes.current[app.appId] ?: return null
+    val pending = LocalPendingUpdates.current.containsKey(app.appId)
+    return when {
+        app.versionCode > 0 && installedCode > app.versionCode -> VersionStatus.Downgrade
+        pending && app.versionCode > installedCode -> VersionStatus.Update
+        else -> VersionStatus.Current
+    }
 }
 
 /**
@@ -476,6 +493,8 @@ fun EvidenceCard(
     /** Makes the whole card one button; [actionTag] tags it. */
     onClick: (() -> Unit)? = null,
     actionTag: String = "evidenceAction",
+    /** At the right of the title: for a tappable card, the mark that says there is more behind it. */
+    trailing: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Column(
@@ -487,14 +506,25 @@ fun EvidenceCard(
             .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick).testTag(actionTag) else Modifier)
             .padding(contentPadding),
     ) {
-        Text(title, style = MaterialTheme.typography.titleSmall.copy(fontSize = 18.sp, lineHeight = 23.25.sp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(title, style = MaterialTheme.typography.titleSmall.copy(fontSize = 18.sp, lineHeight = 23.25.sp), modifier = Modifier.weight(1f))
+            trailing?.invoke()
+        }
         content()
     }
 }
 
 /** A row in an evidence card: a green check when the claim holds, a plain dot when it is only a fact. */
 @Composable
-fun EvidenceLine(text: String, checked: Boolean, modifier: Modifier = Modifier, detail: String? = null, warning: Boolean = false) {
+fun EvidenceLine(
+    text: String,
+    checked: Boolean,
+    modifier: Modifier = Modifier,
+    detail: String? = null,
+    warning: Boolean = false,
+    /** Replaces [detail] when the sentence holds something that is not text, such as where the app comes from. */
+    detailContent: (@Composable () -> Unit)? = null,
+) {
     Row(horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2), modifier = modifier) {
         Icon(
             painterResource(if (checked) R.drawable.ic_check else if (warning) R.drawable.ic_unverified else R.drawable.ic_info),
@@ -504,8 +534,12 @@ fun EvidenceLine(text: String, checked: Boolean, modifier: Modifier = Modifier, 
         )
         Column(Modifier.weight(1f)) {
             Text(text, style = MaterialTheme.typography.bodyMedium, color = ZapText)
-            detail?.takeIf { it.isNotBlank() }?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall, color = ZapText2)
+            if (detailContent != null) {
+                detailContent()
+            } else {
+                detail?.takeIf { it.isNotBlank() }?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = ZapText2)
+                }
             }
         }
     }

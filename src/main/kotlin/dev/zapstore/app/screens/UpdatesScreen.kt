@@ -1,6 +1,12 @@
 package dev.zapstore.app.screens
 
 import android.os.Build
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.key
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import dev.zapstore.iolite.SearchFact
 import androidx.compose.foundation.background
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -113,9 +119,10 @@ import kotlinx.coroutines.launch
 /**
  * My apps as one list of sections: installs in progress, updates Zapstore installs alone, updates
  * Android asks about (including ones another store owned), apps that are current, apps another
- * store keeps current, packages the catalog lacks, and ignored apps. A submitted search replaces
- * them all. Row actions live behind a swipe to the left: Cancel on installs, Ignore on catalog
- * apps, Uninstall on packages the catalog lacks, Resume on ignored apps.
+ * store keeps current, packages the catalog lacks, and ignored apps. A submitted search puts its
+ * results in the same panel as Home's, above them. Row actions live behind a swipe to the left: Cancel
+ * while an install is in progress, Ignore on catalog apps, Uninstall on packages the catalog lacks,
+ * Resume on ignored apps.
  */
 @Composable
 fun UpdatesScreen(
@@ -136,8 +143,27 @@ fun UpdatesScreen(
     onCancelInstall: (String) -> Unit = {},
     onReinstall: (AppRecord) -> Unit = {},
     onSearchQueryChanged: (String) -> Unit = {},
+    onSearchSubmitted: () -> Unit = {},
+    onSearchCleared: () -> Unit = {},
+    onRemoveFilter: (SearchFact) -> Unit = {},
+    onToggleFilter: (SearchFact) -> Unit = {},
 ) {
-    var query by rememberSaveable { mutableStateOf("") }
+    var filtersOpen by rememberSaveable { mutableStateOf(false) }
+    if (filtersOpen) {
+        FilterSheet(active = state.searchFacts, onToggle = onToggleFilter, onDismiss = { filtersOpen = false })
+    }
+    val listState = rememberLazyListState()
+    // The first Back empties the search; only the next one leaves the screen.
+    BackHandler(enabled = state.searchQuery.isNotEmpty() || state.searchResults != null, onBack = onSearchCleared)
+    // Results are inserted above the sections, which the list would otherwise stay anchored to.
+    // Skip the first run: coming back to this tab must keep the restored position.
+    var scrollKey by rememberSaveable { mutableStateOf<Pair<String, Boolean>?>(null) }
+    val queryKey = state.submittedQuery to (state.searchResults == null)
+    LaunchedEffect(queryKey) {
+        if (scrollKey != null && scrollKey != queryKey) listState.scrollToItem(0)
+        scrollKey = queryKey
+    }
+    val searchFocusRequester = remember { FocusRequester() }
     val rowActions = RowActions(onAppClick, onUpdateOne, onPause, onIgnoreUpdates, onInstall, onCancelInstall, onReinstall)
 
     CompositionLocalProvider(LocalOpenSwipe provides remember { mutableStateOf<String?>(null) }) {
@@ -166,54 +192,32 @@ fun UpdatesScreen(
             state.status.error?.let {
                 StatusText(it, Modifier.padding(horizontal = ZapSpacing.space4).testTag("updatesError"))
             }
-            ZapSearchField(
-                value = query,
-                onValueChange = {
-                    query = it
-                    if (it.isEmpty()) onSearchQueryChanged("")
+            AppSearchField(
+                value = state.searchQuery,
+                onValueChange = onSearchQueryChanged,
+                onSearch = onSearchSubmitted,
+                onClear = {
+                    onSearchCleared()
+                    searchFocusRequester.requestFocus()
                 },
-                onSearch = { onSearchQueryChanged(query) },
                 placeholder = stringResource(R.string.search_my_apps),
-                trailingIcon = {
-                    if (query.isNotEmpty() || state.searchResults != null) {
-                        val clearDescription = stringResource(R.string.clear_search)
-                        IconButton(
-                            onClick = {
-                                query = ""
-                                onSearchQueryChanged("")
-                            },
-                            modifier = Modifier
-                                .size(ZapSize.control)
-                                .semantics { contentDescription = clearDescription }
-                                .testTag("clearMyAppsSearch"),
-                        ) {
-                            Icon(painterResource(R.drawable.ic_close), contentDescription = null, tint = ZapText3, modifier = Modifier.size(16.dp))
-                        }
-                    }
-                },
-                leadingIcon = {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_search),
-                        contentDescription = null,
-                        tint = ZapText3,
-                        modifier = Modifier.size(18.dp),
-                    )
-                },
+                hasResults = state.searchResults != null,
+                clearTag = "clearMyAppsSearch",
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = ZapSpacing.space4, vertical = ZapSpacing.space2)
+                    .focusRequester(searchFocusRequester)
                     .testTag("myAppsSearch"),
             )
             LazyColumn(
+                state = listState,
                 modifier = Modifier.weight(1f).testTag("myAppsList"),
                 contentPadding = PaddingValues(start = ZapSpacing.space4, end = ZapSpacing.space4, bottom = ZapSpacing.space8),
             ) {
                 // Nothing until the local read lands; a spinner for a database read is only a flash.
                 if (!state.loaded) return@LazyColumn
                 state.searchResults?.let { results ->
-                    searchSection(state, results, onAppClick, onUninstallInstalled)
-                    catalogEpochsItem(state.catalogEpochs)
-                    return@LazyColumn
+                    searchSection(state, results, rowActions, onUninstallInstalled, onRemoveFilter) { filtersOpen = true }
                 }
                 installingSection(state, rowActions, onCancelInstall)
                 updatesSection(state, rowActions, onUpdateAll)
@@ -235,22 +239,9 @@ fun UpdatesScreen(
     }
 }
 
-/**
- * `Checked 5 minutes ago` for the catalog check. Hidden while a sync is running, since the
- * section already says Syncing, and hidden before the first sync.
- */
+/** The check, then "All up to date". */
 @Composable
-private fun catalogUpdated(state: UpdatesUiState): String? {
-    if (state.status.syncing) return null
-    return state.status.lastSyncedAtMillis?.let { checkedText(it) }
-}
-
-/**
- * The check and "All up to date", with the catalog time on a second line. The check stays centered
- * against both lines.
- */
-@Composable
-private fun UpToDateRow(updated: String?) {
+private fun UpToDateRow() {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3),
@@ -262,18 +253,8 @@ private fun UpToDateRow(updated: String?) {
             .testTag("noUpdates"),
     ) {
         Icon(painterResource(R.drawable.ic_check), contentDescription = null, tint = ZapVerified, modifier = Modifier.size(20.dp))
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.weight(1f)) {
-            Text(stringResource(R.string.all_up_to_date), color = ZapText2, style = MaterialTheme.typography.bodyMedium)
-            updated?.let { CatalogUpdatedText(it) }
-        }
+        Text(stringResource(R.string.all_up_to_date), color = ZapText2, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
     }
-}
-
-/** The catalog check time, on the right of the top updates header. */
-@Composable
-private fun CatalogUpdated(state: UpdatesUiState, modifier: Modifier = Modifier) {
-    val text = catalogUpdated(state) ?: return
-    CatalogUpdatedText(text, modifier)
 }
 
 @Composable
@@ -299,9 +280,9 @@ private fun CatalogEpochs(epochs: List<Long>) {
     if (shown.isEmpty()) return
     Row(
         horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
+        // The list already pads its sides, so the first pill starts where the rows do.
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = ZapSpacing.space4)
             .padding(top = ZapSpacing.space2, bottom = ZapSpacing.space4),
     ) {
         shown.forEach { EpochPill(it) }
@@ -376,7 +357,10 @@ private fun LazyListScope.installingSection(
         val task = state.tasks[app.appId]
         SwipeActions(
             key = "installing:${app.appId}",
-            actions = listOf(ignoreAction(app.appId, actions.onIgnore), cancelAction(app.appId, onCancel)),
+            actions = buildList {
+                add(ignoreAction(app.appId, actions.onIgnore))
+                if (task != null && (task.cancellable || task.phase == TaskPhase.Failed)) add(cancelAction(app.appId, onCancel))
+            },
         ) {
             val idle = stringResource(R.string.install)
             InstallRow(
@@ -410,9 +394,6 @@ private fun LazyListScope.updatesSection(
                 stringResource(R.string.updates_section_updates),
                 Modifier.testTag("sectionUpdates"),
                 count = updates.size.takeIf { it > 0 },
-                aside = if (updates.isEmpty()) null else {
-                    { CatalogUpdated(state) }
-                },
                 action = stringResource(R.string.update_all).takeIf { idle(updates) > 1 },
                 onAction = { onUpdateAll(UpdateGroup.Automatic) },
                 actionTag = "updateAll",
@@ -424,9 +405,10 @@ private fun LazyListScope.updatesSection(
             if (state.status.syncing) {
                 EmptyRow(stringResource(R.string.syncing), modifier = Modifier.testTag("noUpdates"))
             } else {
-                UpToDateRow(catalogUpdated(state))
+                UpToDateRow()
             }
         }
+        checkedItem(state)
         return
     }
     items(updates, key = { "update:${it.app.appId}" }, contentType = { "update" }) { update ->
@@ -438,51 +420,124 @@ private fun LazyListScope.updatesSection(
                 stringResource(R.string.updates_section_manual),
                 Modifier.testTag("sectionManual"),
                 count = manual.size,
-                aside = if (updates.isNotEmpty()) null else {
-                    { CatalogUpdated(state) }
-                },
                 action = stringResource(R.string.update_all).takeIf { idle(manual) > 1 },
                 onAction = { onUpdateAll(UpdateGroup.Manual) },
                 actionTag = "updateAllManual",
             )
         }
     }
-    items(manual, key = { "manual:${it.app.appId}" }, contentType = { "update" }) { update ->
-        val id = update.app.appId
-        val why = state.manualStores[id]?.let(UpdateWhy::Store) ?: state.manualReasons[id]?.let(UpdateWhy::Manual)
-        UpdateRow(update, state.tasks[id], actions, why = why)
+    // Updates whose installer is unknown come first, as they are; the rest sit under the store that installed them.
+    val (named, unnamed) = manual.partition { state.manualStores[it.app.appId] != null }
+    items(unnamed, key = { "manual:${it.app.appId}" }, contentType = { "update" }) { update ->
+        UpdateRow(update, state.tasks[update.app.appId], actions)
+    }
+    named.groupBy { state.manualStores.getValue(it.app.appId) }
+        .entries
+        .sortedBy { it.key.lowercase() }
+        .forEach { (store, group) ->
+            item(key = "manualStore:$store", contentType = "installerLabel") { InstallerLabel(store) }
+            items(group, key = { "manual:${it.app.appId}" }, contentType = { "update" }) { update ->
+                UpdateRow(update, state.tasks[update.app.appId], actions)
+            }
+        }
+    checkedItem(state)
+}
+
+/** The installer that put the apps below it on the phone: a small label, not a section. */
+@Composable
+private fun InstallerLabel(name: String) {
+    Text(
+        stringResource(R.string.installed_by, name),
+        color = ZapText3,
+        style = MaterialTheme.typography.labelMedium,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.fillMaxWidth().padding(top = ZapSpacing.space3, bottom = ZapSpacing.space1).testTag("installerLabel"),
+    )
+}
+
+/** "Checked 5 minutes ago", under the updates, once a catalog check has run. */
+private fun LazyListScope.checkedItem(state: UpdatesUiState) {
+    val text = if (state.status.syncing) null else state.status.lastSyncedAtMillis
+    if (text == null) return
+    item(key = "catalogChecked", contentType = "checked") { CatalogChecked(checkedText(text)) }
+}
+
+/** A tiny sync mark, then the time of the last catalog check. */
+@Composable
+private fun CatalogChecked(text: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space1),
+        modifier = Modifier.padding(top = ZapSpacing.space2, bottom = ZapSpacing.space1),
+    ) {
+        Icon(painterResource(R.drawable.ic_refresh), contentDescription = null, tint = ZapText3, modifier = Modifier.size(12.dp))
+        CatalogUpdatedText(text)
     }
 }
 
-/** Why an update in the manual section needs Android's dialog. */
-private sealed interface UpdateWhy {
-    data class Manual(val reason: ManualReason) : UpdateWhy
-    data class Store(val name: String) : UpdateWhy
-}
-
+/**
+ * Submitted results above the sections: Home's gray panel with its filter chips, then the rows. An app
+ * with an update, or an install under way, carries the same button as in its section. Packages outside the
+ * catalog that match stay swipeable, to uninstall.
+ */
 private fun LazyListScope.searchSection(
     state: UpdatesUiState,
     results: List<AppRecord>,
-    onAppClick: (AppRecord) -> Unit,
+    actions: RowActions,
     onUninstallInstalled: (packageId: String, name: String) -> Unit,
+    onRemoveFilter: (SearchFact) -> Unit,
+    onOpenFilters: () -> Unit,
 ) {
-    if (results.isEmpty() && state.otherSearchResults.isEmpty()) {
-        item(key = "noMatches", contentType = "empty") {
-            EmptyRow(stringResource(R.string.my_apps_no_matches), modifier = Modifier.testTag("myAppsNoMatches"))
+    item(key = "searchPanel", contentType = "searchPanel") {
+        val updates = remember(state.updates, state.manualUpdates) { (state.updates + state.manualUpdates).associateBy { it.app.appId } }
+        SearchPanel(
+            facts = state.searchFacts,
+            shown = results,
+            hasOthers = state.otherSearchResults.isNotEmpty(),
+            onRemoveFilter = onRemoveFilter,
+            onOpenFilters = onOpenFilters,
+        ) {
+            results.forEach { app ->
+                key("mine:${app.appId}") {
+                    val id = app.appId
+                    val task = state.tasks[id]
+                    val update = updates[id]
+                    val installing = state.installing.any { it.appId == id }
+                    val author = state.profiles.authorOf(app)
+                    if (update != null || installing) {
+                        val idle = stringResource(if (update != null) R.string.update_app else R.string.install)
+                        val current = task?.takeIf { it.busy || it.phase == TaskPhase.Failed || it.phase == TaskPhase.Done || it.hash.equals(app.apkHash, ignoreCase = true) }
+                        InstallRow(
+                            app = app,
+                            button = { modifier ->
+                                UpdateButton(app, current, idle, { if (update != null) actions.onUpdate(update) else actions.onInstall(app) }, actions, modifier)
+                            },
+                        ) { trailing ->
+                            AppRow(
+                                app = app,
+                                onClick = { actions.onAppClick(app) },
+                                author = author,
+                                trailing = trailing,
+                                modifier = Modifier.testTag("mine:$id"),
+                            )
+                        }
+                    } else {
+                        AppRow(
+                            app = app,
+                            onClick = { actions.onAppClick(app) },
+                            author = author,
+                            modifier = Modifier.testTag("mine:$id"),
+                        )
+                    }
+                }
+            }
+            state.otherSearchResults.forEach { installed ->
+                key("mineOther:${installed.packageId}") {
+                    OtherInstalledRow(installed) { onUninstallInstalled(installed.packageId, installed.label) }
+                }
+            }
         }
-        return
-    }
-    items(results, key = { "mine:${it.appId}" }, contentType = { "installed" }) { app ->
-        AppRow(
-            app = app,
-            onClick = { onAppClick(app) },
-            onDevice = true,
-            author = state.profiles.authorOf(app),
-            modifier = Modifier.testTag("mine:${app.appId}"),
-        )
-    }
-    items(state.otherSearchResults, key = { "mineOther:${it.packageId}" }, contentType = { "other" }) { installed ->
-        OtherInstalledRow(installed) { onUninstallInstalled(installed.packageId, installed.label) }
     }
 }
 
@@ -644,6 +699,13 @@ private class RowAction(
 private val LocalOpenSwipe = compositionLocalOf<MutableState<String?>> { mutableStateOf(null) }
 
 private val ActionWidth = 84.dp
+
+/** Space between the sliding row and the buttons it uncovers. */
+private val SwipeGap = ZapSpacing.space2
+
+// Darker than the tokens' amber and red, which are made for dark surfaces: white text must read on them.
+private val SwipeIgnore = Color(0xFF9A6200)
+private val SwipeDanger = Color(0xFFB83532)
 private const val FLING_VELOCITY = 800f
 
 /**
@@ -662,7 +724,7 @@ private fun SwipeActions(
     val open = LocalOpenSwipe.current
     val scope = rememberCoroutineScope()
     val offset = remember { Animatable(0f) }
-    val reveal = with(LocalDensity.current) { (ActionWidth * actions.size).toPx() }
+    val reveal = with(LocalDensity.current) { (ActionWidth * actions.size + SwipeGap).toPx() }
     val showing by remember { derivedStateOf { offset.value < 0f } }
     val opened = offset.targetValue < 0f
 
@@ -687,39 +749,39 @@ private fun SwipeActions(
         },
     ) {
         if (showing) {
-            // Flush with the row's full height, edge to edge; only the outer corners follow its shape.
+            // Flush with the row's full height, right edge to the buttons' own left edge; only the outer right corners are rounded; the left edge is square.
             Row(
                 horizontalArrangement = Arrangement.End,
-                modifier = Modifier
-                    .matchParentSize()
-                    .clip(RoundedCornerShape(ZapRadius.md)),
+                modifier = Modifier.matchParentSize(),
             ) {
-                actions.forEach { action ->
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                        modifier = Modifier
-                            .width(ActionWidth)
-                            .fillMaxHeight()
-                            .background(action.background)
-                            .clickable(role = Role.Button) {
-                                settle(0f)
-                                action.onClick()
-                            }
-                            .padding(horizontal = ZapSpacing.space1)
-                            .testTag(action.tag),
-                    ) {
-                        Icon(painterResource(action.icon), contentDescription = null, tint = action.foreground, modifier = Modifier.size(20.dp))
-                        Text(
-                            action.label,
-                            color = action.foreground,
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = (-0.02).em,
-                            ),
-                            textAlign = TextAlign.Center,
-                            maxLines = 2,
-                        )
+                Row(Modifier.fillMaxHeight().clip(RoundedCornerShape(topEnd = ZapRadius.md, bottomEnd = ZapRadius.md))) {
+                    actions.forEach { action ->
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                            modifier = Modifier
+                                .width(ActionWidth)
+                                .fillMaxHeight()
+                                .background(action.background)
+                                .clickable(role = Role.Button) {
+                                    settle(0f)
+                                    action.onClick()
+                                }
+                                .padding(horizontal = ZapSpacing.space1)
+                                .testTag(action.tag),
+                        ) {
+                            Icon(painterResource(action.icon), contentDescription = null, tint = action.foreground, modifier = Modifier.size(20.dp))
+                            Text(
+                                action.label,
+                                color = action.foreground,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = (-0.02).em,
+                                ),
+                                textAlign = TextAlign.Center,
+                                maxLines = 2,
+                            )
+                        }
                     }
                 }
             }
@@ -756,7 +818,7 @@ private fun SwipeActions(
 private fun ignoreAction(appId: String, onIgnore: (String) -> Unit) = RowAction(
     label = stringResource(R.string.action_ignore_updates),
     icon = R.drawable.ic_close,
-    background = ZapWarning,
+    background = SwipeIgnore,
     foreground = ZapOnAction,
     tag = "ignore:$appId",
     onClick = { onIgnore(appId) },
@@ -766,7 +828,7 @@ private fun ignoreAction(appId: String, onIgnore: (String) -> Unit) = RowAction(
 private fun cancelAction(appId: String, onCancel: (String) -> Unit) = RowAction(
     label = stringResource(R.string.install_cancel),
     icon = R.drawable.ic_close,
-    background = ZapDanger,
+    background = SwipeDanger,
     foreground = ZapOnAction,
     tag = "cancelInstall:$appId",
     onClick = { onCancel(appId) },
@@ -777,7 +839,7 @@ private fun cancelAction(appId: String, onCancel: (String) -> Unit) = RowAction(
 private fun uninstallAction(app: AppRecord, onUninstall: (AppRecord) -> Unit) = RowAction(
     label = stringResource(R.string.uninstall),
     icon = R.drawable.ic_trash,
-    background = ZapDanger,
+    background = SwipeDanger,
     foreground = ZapOnAction,
     tag = "uninstall:${app.appId}",
     onClick = { onUninstall(app) },
@@ -792,13 +854,13 @@ private fun UpdateRow(
     update: AvailableUpdate,
     task: InstallTask?,
     actions: RowActions,
-    why: UpdateWhy? = null,
 ) {
     val id = update.app.appId
-    val current = task?.takeIf { it.busy || it.phase == TaskPhase.Failed || it.hash.equals(update.app.apkHash, ignoreCase = true) }
+    val current = task?.takeIf { it.busy || it.phase == TaskPhase.Failed || it.phase == TaskPhase.Done || it.hash.equals(update.app.apkHash, ignoreCase = true) }
     val swipe = buildList {
         add(ignoreAction(id, actions.onIgnore))
-        if (current != null) add(cancelAction(id, actions.onCancel))
+        // A failed install is the other thing to drop: without it the Retry pill would never go away.
+        if (current != null && (current.cancellable || current.phase == TaskPhase.Failed)) add(cancelAction(id, actions.onCancel))
     }
     // Zapstore's own update is pinned first; it sits on the gray of a stack card, inset from the plate's edge.
     val own = id == LocalContext.current.packageName
@@ -811,7 +873,6 @@ private fun UpdateRow(
         val idle = stringResource(R.string.update_app)
         InstallRow(
             app = update.app,
-            why = why,
             button = { modifier -> UpdateButton(update.app, current, idle, { actions.onUpdate(update) }, actions, modifier) },
             modifier = if (own) Modifier.padding(horizontal = ZapSpacing.space3) else Modifier,
         ) { trailing ->
@@ -837,7 +898,6 @@ private fun InstallRow(
     app: AppRecord,
     button: @Composable (Modifier) -> Unit,
     modifier: Modifier = Modifier,
-    why: UpdateWhy? = null,
     row: @Composable (trailing: (@Composable () -> Unit)?) -> Unit,
 ) {
     val large = largeFont()
@@ -845,67 +905,12 @@ private fun InstallRow(
         if (large) {
             row(null)
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = ZapSpacing.space2)) {
-                why?.let { WhyButton(app.appId, it) }
                 button(Modifier.weight(1f))
             }
         } else {
             row {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    why?.let { WhyButton(app.appId, it) }
-                    button(Modifier.width(UpdateButtonWidth))
-                }
+                button(Modifier.width(UpdateButtonWidth))
             }
-        }
-    }
-}
-
-/** The info mark on a manual update. Opens the sheet that says why Android will ask. */
-@Composable
-private fun WhyButton(appId: String, why: UpdateWhy) {
-    var open by remember { mutableStateOf(false) }
-    val description = stringResource(R.string.why_manual)
-    IconButton(
-        onClick = { open = true },
-        modifier = Modifier
-            .size(ZapSize.touchTarget)
-            .semantics { contentDescription = description }
-            .testTag("why:$appId"),
-    ) {
-        Icon(painterResource(R.drawable.ic_info), contentDescription = null, tint = ZapText3, modifier = Modifier.size(18.dp))
-    }
-    if (open) WhySheet(why) { open = false }
-}
-
-@Composable
-private fun WhySheet(why: UpdateWhy, onDismiss: () -> Unit) {
-    val title = when (why) {
-        is UpdateWhy.Manual -> when (why.reason) {
-            ManualReason.OldAndroid -> stringResource(R.string.manual_reason_old_android, Build.VERSION.RELEASE)
-            ManualReason.Sideloaded -> stringResource(R.string.manual_reason_sideloaded)
-            ManualReason.Adb -> stringResource(R.string.manual_reason_adb)
-            ManualReason.UnknownInstaller -> stringResource(R.string.manual_reason_unknown)
-        }
-        is UpdateWhy.Store -> stringResource(R.string.installed_by_store, why.name)
-    }
-    val body = when (why) {
-        is UpdateWhy.Manual -> when (why.reason) {
-            ManualReason.OldAndroid -> stringResource(R.string.manual_reason_old_android_body)
-            ManualReason.Sideloaded -> stringResource(R.string.manual_reason_sideloaded_body)
-            ManualReason.Adb -> stringResource(R.string.manual_reason_adb_body)
-            ManualReason.UnknownInstaller -> stringResource(R.string.manual_reason_unknown_body)
-        }
-        is UpdateWhy.Store -> stringResource(R.string.install_takeover_store, why.name)
-    }
-    ZapSheet(onDismiss) {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(ZapSpacing.space3),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = ZapSpacing.space5, end = ZapSpacing.space5, bottom = ZapSpacing.space5)
-                .testTag("whySheet"),
-        ) {
-            Text(title, style = MaterialTheme.typography.titleLarge)
-            Text(body, color = ZapText2, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }
@@ -915,7 +920,7 @@ private fun WhySheet(why: UpdateWhy, onDismiss: () -> Unit) {
  * [idleLabel], Queued, a fill with the percent while downloading (tap to pause), Paused over the
  * same fill (tap to resume), a spinner while Zapstore verifies or installs, Confirm while Android's
  * dialog waits, and Retry after a failure. A failure only an uninstall can clear reads Reinstall and
- * asks first. Anything in progress carries a ✕ segment that cancels at any stage.
+ * asks first. Cancelling is a swipe on the row, not part of the pill.
  */
 @Composable
 private fun UpdateButton(
@@ -928,10 +933,9 @@ private fun UpdateButton(
 ) {
     val id = app.appId
     val onPause = actions.onPause
-    val onCancel = actions.onCancel
     val phase = task?.phase
-    val cancellable = phase != null && phase != TaskPhase.Ready && phase != TaskPhase.Failed
-    val working = phase == TaskPhase.Verifying || phase == TaskPhase.Installing
+    // Done is the second between Android installing it and the list noticing: still working, never Update.
+    val working = phase == TaskPhase.Verifying || phase == TaskPhase.Installing || phase == TaskPhase.Done
     val transferring = phase == TaskPhase.Downloading || phase == TaskPhase.Queued
     val paused = phase == TaskPhase.Paused
     val failed = phase == TaskPhase.Failed
@@ -988,7 +992,8 @@ private fun UpdateButton(
                 phase == TaskPhase.Queued -> stringResource(R.string.queued)
                 transferring && fraction != null -> stringResource(R.string.install_progress_percent, (fraction * 100).toInt())
                 paused -> stringResource(R.string.paused)
-                phase == TaskPhase.Confirm -> stringResource(R.string.confirm)
+                // Ready: downloaded and verified, only Android's dialog is left, so say what the tap does.
+                phase == TaskPhase.Confirm || phase == TaskPhase.Ready -> stringResource(R.string.confirm)
                 reinstall -> stringResource(R.string.reinstall)
                 failed -> stringResource(R.string.retry)
                 working || transferring -> null
@@ -997,27 +1002,11 @@ private fun UpdateButton(
             label?.let { Text(it, color = content, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         }
     }
-    if (cancellable) {
-        val cancel = stringResource(R.string.install_cancel)
-        Box(Modifier.width(1.dp).fillMaxHeight().padding(vertical = 10.dp).background(content.copy(alpha = 0.3f)))
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .width(CancelSegmentWidth)
-                .fillMaxHeight()
-                .clickable(role = Role.Button) { onCancel(id) }
-                .semantics { contentDescription = cancel }
-                .testTag("cancelOne:$id"),
-        ) {
-            Icon(painterResource(R.drawable.ic_close), contentDescription = null, tint = content, modifier = Modifier.size(18.dp))
-        }
-    }
     }
 }
 
 private val UpdateButtonShape = RoundedCornerShape(ZapRadius.full)
 private val UpdateButtonWidth = 138.dp
-private val CancelSegmentWidth = 44.dp
 
 @Composable
 private fun OtherInstalledRow(installed: InstalledApp, onUninstall: () -> Unit) {

@@ -47,10 +47,11 @@ import dev.zapstore.app.components.EmptyRow
 import dev.zapstore.app.components.LoadingIndicator
 import dev.zapstore.app.components.ProfileImage
 import dev.zapstore.app.components.shortDisplayName
+import dev.zapstore.app.components.OneLine
+import dev.zapstore.app.components.OneLineScope.shrink
 import dev.zapstore.app.components.StackTile
-import dev.zapstore.app.components.UNKNOWN_PERSON
-import dev.zapstore.app.components.resolvedName
 import dev.zapstore.app.components.VersionPill
+import dev.zapstore.app.components.versionStatusOf
 import dev.zapstore.iolite.ActivityRecord
 import dev.zapstore.iolite.AppRecord
 import dev.zapstore.iolite.ProfileRecord
@@ -161,7 +162,7 @@ private fun ReleaseRow(
     modifier: Modifier = Modifier,
 ) {
     // Only an author with a NIP-C1 proof is named; whoever merely signed the listing is not.
-    val named = showWho && app.authorPubkey != null && item.pubkey !in catalogKeys && resolvedName(profile) != null
+    val named = showWho && app.authorPubkey != null && item.pubkey !in catalogKeys
     Row(
         horizontalArrangement = Arrangement.spacedBy(ACTIVITY_APP_ICON_GAP),
         modifier = modifier
@@ -173,18 +174,21 @@ private fun ReleaseRow(
         AppIcon(title = app.name, iconUrl = app.iconUrl, iconFile = app.iconFile, size = ACTIVITY_APP_ICON)
         Column(Modifier.weight(1f)) {
             Row(horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(ACTIVITY_GAP),
-                    modifier = Modifier.weight(1f),
-                ) {
-                    // Unweighted, so the app's name keeps its width and only the author's name is cut.
-                    Strong(app.name, weight = FontWeight.Bold)
-                    if (app.version.isNotBlank()) VersionPill(app.version)
+                // One line, always: the app's name is abbreviated first, then the author's name is cut and
+                // finally left out. The version pill, "by" and the avatar stay whole.
+                OneLine(modifier = Modifier.weight(1f), gap = ACTIVITY_GAP) {
+                    Strong(app.name, Modifier.shrink(rank = 0, min = RELEASE_NAME_MIN), weight = FontWeight.Bold)
+                    if (app.version.isNotBlank()) {
+                        VersionPill(app.version, status = versionStatusOf(app), modifier = Modifier.shrink(rank = 2, min = 40.dp))
+                    }
                     if (named) {
                         Verb(stringResource(R.string.activity_by), style = AgoStyle)
                         Avatar(item.pubkey, profile, size = RELEASE_BYLINE_AVATAR)
-                        Strong(shortDisplayName(item.pubkey, profile), Modifier.weight(1f, fill = false), style = AgoStyle)
+                        Strong(
+                            shortDisplayName(item.pubkey, profile),
+                            Modifier.shrink(rank = 1, hideBelow = AUTHOR_NAME_HIDE_BELOW),
+                            style = AgoStyle,
+                        )
                     }
                 }
                 Ago(item.createdAt)
@@ -197,7 +201,7 @@ private fun ReleaseRow(
 /**
  * One comment, zap or stack update, led by who did it: "[avatar] <name> on [icon] <app>", "... [bolt] N sats
  * to [icon] <app>" or "... updated [tile] <stack>" on one line, and a comment's text under it. A catalog key
- * reads "The catalog"; anyone else with no profile name reads "Someone" unless a zap opens the line with its
+ * reads "The catalog"; anyone else with no profile name reads as their short npub unless a zap opens the line with its
  * amount, and on a person's own page ([showWho] false) nobody is named. With no app or stack, the entry belongs to the stack whose page lists it.
  */
 @Composable
@@ -213,7 +217,7 @@ private fun SocialRow(
     val app = item.app
     val stack = item.stack
     val byCatalog = showWho && item.pubkey in catalogKeys
-    val hasAvatar = showWho && !byCatalog && resolvedName(profile) != null
+    val hasAvatar = showWho && !byCatalog
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -222,23 +226,18 @@ private fun SocialRow(
             .testTag("activity:${item.eventId}"),
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(ACTIVITY_GAP),
-                modifier = Modifier.weight(1f),
-            ) {
+            // One line, always: the target's name is abbreviated first, then the person's.
+            OneLine(modifier = Modifier.weight(1f), gap = ACTIVITY_GAP) {
                 if (byCatalog) Strong(stringResource(R.string.activity_the_catalog))
-                // A comment or a stack update never opens on its verb: "Someone on <app>", not "on <app>". A zap
-                // opens with its amount, so it needs no name.
-                if (showWho && !byCatalog && !hasAvatar && item.sats == null) Strong(UNKNOWN_PERSON)
-                if (hasAvatar) {
+                // A zap opens with its amount, so it needs no name. Everyone else leads with theirs.
+                if (hasAvatar && item.sats == null) {
                     Avatar(item.pubkey, profile)
-                    Strong(shortDisplayName(item.pubkey, profile))
+                    Strong(shortDisplayName(item.pubkey, profile), Modifier.shrink(rank = 1, min = PERSON_NAME_MIN))
                 }
                 when {
                     stack != null -> {
                         Verb(stringResource(if (showWho) R.string.activity_updated else R.string.activity_updated_lead))
-                        Target(stack.name, Modifier.weight(1f, fill = false)) {
+                        Target(stack.name, Modifier.shrink(rank = 0, min = TARGET_MIN)) {
                             StackTile(stack.appIds, stackApps, size = ACTIVITY_ICON)
                         }
                     }
@@ -250,7 +249,7 @@ private fun SocialRow(
                             // Someone's own page has no name to lead, so the verb does.
                             Verb(stringResource(if (showWho) R.string.activity_on else R.string.activity_commented_on))
                         }
-                        Target(app.name, Modifier.weight(1f, fill = false)) {
+                        Target(app.name, Modifier.shrink(rank = 0, min = TARGET_MIN)) {
                             AppIcon(title = app.name, iconUrl = app.iconUrl, iconFile = app.iconFile, size = ACTIVITY_ICON)
                         }
                     }
@@ -304,12 +303,12 @@ private fun Avatar(pubkey: String, profile: ProfileRecord?, size: Dp = ACTIVITY_
     }
 }
 
-/** A stack's or app's small icon and its name, which breaks onto a second line before it is cut. */
+/** A stack's or app's small icon and its name, cut with an ellipsis when there is no room. */
 @Composable
 private fun Target(name: String, modifier: Modifier = Modifier, icon: @Composable () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ACTIVITY_GAP), modifier = modifier) {
         Box(Modifier.size(ACTIVITY_ICON), contentAlignment = Alignment.Center) { icon() }
-        Strong(name, Modifier.weight(1f, fill = false), maxLines = 2)
+        Strong(name, Modifier.weight(1f, fill = false))
     }
 }
 
@@ -390,6 +389,12 @@ internal fun LoadMoreNearEnd(position: () -> Pair<Int?, Int>, canLoadMore: Boole
 }
 
 private const val PREFETCH = 6
+
+/** The least an abbreviated app, stack or person name keeps; the author's name in a release goes whole or not at all. */
+private val RELEASE_NAME_MIN = 72.dp
+private val TARGET_MIN = 80.dp
+private val PERSON_NAME_MIN = 56.dp
+private val AUTHOR_NAME_HIDE_BELOW = 28.dp
 /** The avatars and app or stack icons inside a line. */
 /** Icons and avatars inside a line: 5% over the earlier 20 and 18 dp. */
 private val ACTIVITY_ICON = 21.dp

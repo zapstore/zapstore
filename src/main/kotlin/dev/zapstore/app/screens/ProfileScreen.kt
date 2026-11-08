@@ -58,6 +58,8 @@ fun ProfileScreen(
     onSavedClick: () -> Unit = {},
     onLoadMoreActivity: () -> Unit = {},
     onShare: (() -> Unit)? = null,
+    /** Starts the signed-in user's own reputation check for this person. */
+    onPersonalizeTrust: () -> Unit = {},
 ) {
     val own = onSettings != null
     val yourApps = stringResource(R.string.your_apps)
@@ -132,6 +134,20 @@ fun ProfileScreen(
                     mentions = state.mentions,
                     collapsible = true,
                     modifier = Modifier.padding(horizontal = ZapSpacing.space4),
+                )
+            }
+        }
+
+        // Who vouches for this person, when there is something to show. A developer's page also offers the check.
+        val trust = state.trust
+        if (!own && (trust.hasSignals || trust.personal || (state.apps.apps.isNotEmpty() && trust.canPersonalize))) {
+            item(key = "trust", contentType = "trust") {
+                TrustSignals(
+                    name = title,
+                    trust = trust,
+                    onPersonalize = onPersonalizeTrust,
+                    onOpenUrl = onOpenUrl,
+                    modifier = Modifier.padding(horizontal = ZapSpacing.space4).testTag("profileTrust"),
                 )
             }
         }

@@ -1,7 +1,9 @@
 package dev.zapstore.app.screens
 
 import dev.zapstore.app.Toasts
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
@@ -18,6 +20,10 @@ import dev.zapstore.app.catalog.StoreApp
 import dev.zapstore.app.catalog.SyncStatus
 import dev.zapstore.app.catalog.updateGroups
 import dev.zapstore.iolite.AppFilter
+import dev.zapstore.iolite.SearchFact
+import dev.zapstore.iolite.excludeBit
+import dev.zapstore.iolite.hardBit
+import dev.zapstore.iolite.repositoryQuery
 import dev.zapstore.iolite.AppRecord
 import dev.zapstore.iolite.normalizeSearchQuery
 import dev.zapstore.iolite.ProfileRecord
@@ -81,8 +87,14 @@ data class UpdatesUiState(
     val updateAll: UpdateAllUi = UpdateAllUi(),
     /** Installs in flight or waiting, by app id, from [dev.zapstore.app.install.Installer]. */
     val tasks: Map<String, InstallTask> = emptyMap(),
+    /** What the search field holds. */
+    val searchQuery: String = "",
+    /** The query last submitted with Enter; empty until then. */
+    val submittedQuery: String = "",
     /** Ranked matches among installed and ignored apps; null until a query is submitted. */
     val searchResults: List<AppRecord>? = null,
+    /** Active hard filters, as on Home. */
+    val searchFacts: List<SearchFact> = emptyList(),
     /** Installed apps outside the catalog whose name or package matches the query; they have no vectors. */
     val otherSearchResults: List<InstalledApp> = emptyList(),
 )
@@ -92,9 +104,13 @@ class UpdatesViewModel(
     private val zapstore: ZapstoreApplication,
     private val catalogSync: CatalogSync,
     private val encodeQuery: (String) -> ByteArray?,
+    private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
     private val batch = MutableStateFlow(UpdateAllUi())
-    private val searchQuery = MutableStateFlow("")
+    /** Kept in the saved state, as on Home: the text and the submitted search survive leaving the tab and the process. */
+    private val searchQuery = savedStateHandle.getStateFlow(SEARCH_QUERY_KEY, "")
+    private val submittedQuery = savedStateHandle.getStateFlow(SUBMITTED_QUERY_KEY, "")
+    private val chosenFilters = MutableStateFlow<Set<SearchFact>>(emptySet())
     private val installerLabels = HashMap<String, String?>()
     private val ignoredIds = zapstore.lists.ignored
 
@@ -116,15 +132,29 @@ class UpdatesViewModel(
 
     private val profiles = myApps.authorProfiles(zapstore.iolite)
 
-    /** Same ranking and vectors as Home search, over the user's apps only. */
-    private val search: Flow<List<AppRecord>?> =
-        combine(searchQuery, myAppIds, ::Pair).flatMapLatest { (typed, ids) ->
-            val query = normalizeSearchQuery(typed)
+    /** Same ranking, vectors, repository match and filters as Home search, over the user's apps only. */
+    private val search: Flow<MyAppsSearch?> =
+        combine(submittedQuery, chosenFilters, myAppIds, ::Triple).flatMapLatest { (submitted, chosen, ids) ->
+            val query = normalizeSearchQuery(submitted)
             if (query.length < MIN_SEARCH_LENGTH) return@flatMapLatest flowOf(null)
             flow {
+                val repository = repositoryQuery(query)
+                if (repository != null) {
+                    emitAll(zapstore.iolite.observeApps(AppFilter(appIds = ids, repository = repository)).map { MyAppsSearch(it, emptyList()) })
+                    return@flow
+                }
+                val facts = SearchFact.entries.filter { it in chosen }
+                val hard = facts.fold(0) { bits, fact -> bits or fact.hardBit }
                 val vector = withContext(Dispatchers.Default) { runCatching { encodeQuery(query) }.getOrNull() }
-                val filter = AppFilter(appIds = ids, search = query, queryVector = vector)
-                emitAll(zapstore.iolite.observeApps(filter))
+                val filter = AppFilter(
+                    appIds = ids,
+                    search = query,
+                    queryVector = vector,
+                    hard = hard,
+                    exclude = facts.fold(0) { bits, fact -> bits or fact.excludeBit },
+                    boost = hard,
+                )
+                emitAll(zapstore.iolite.observeApps(filter).map { MyAppsSearch(it, facts) })
             }
         }
 
@@ -135,14 +165,14 @@ class UpdatesViewModel(
         catalogSync.installedApps,
         myApps,
         ignoredIds,
-        combine(batch, search, searchQuery, zapstore.installer.tasks) { batch, search, typed, tasks -> Quad(batch, search, typed, tasks) },
+        combine(batch, search, submittedQuery, zapstore.installer.tasks) { batch, search, submitted, tasks -> Quad(batch, search, submitted, tasks) },
     ) { (status, profiles, epochs), installed, apps, ignored, (batch, search, typed, tasks) ->
         val groups = updateGroups(installed, apps, ignored.toSet(), zapstore.packageName) { update -> update.isReady() }
         val byId = apps.associateBy { it.appId }
         val installedById = installed.associateBy { it.packageId }
         val updateRows = (groups.updates + groups.manualUpdates).mapTo(HashSet()) { it.app.appId }
         // Only work in progress. A verified APK waiting for a tap stays on its update row, or on the app page.
-        val installing = tasks.values.filter { it.appId !in updateRows && it.phase != TaskPhase.Ready }
+        val installing = tasks.values.filter { it.appId !in updateRows && it.phase != TaskPhase.Ready && it.phase != TaskPhase.Done }
             .mapNotNull { byId[it.appId] }.sortedBy { it.name.lowercase() }
         val installingIds = installing.mapTo(HashSet()) { it.appId }
         UpdatesUiState(
@@ -169,16 +199,40 @@ class UpdatesViewModel(
             loaded = true,
             updateAll = batch,
             tasks = tasks,
-            searchResults = search,
+            submittedQuery = typed,
+            searchResults = search?.apps,
+            searchFacts = search?.facts.orEmpty(),
             otherSearchResults = if (search == null) emptyList() else groups.otherInstalled.matching(normalizeSearchQuery(typed)),
         )
     }.flowOn(Dispatchers.Default)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), UpdatesUiState())
+        .combine(searchQuery) { state, typed -> state.copy(searchQuery = typed) }
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
+            UpdatesUiState(searchQuery = searchQuery.value, submittedQuery = submittedQuery.value),
+        )
 
     fun sync() = catalogSync.request(force = true)
 
-    fun setSearchQuery(query: String) {
-        searchQuery.value = query
+    fun onSearchQueryChanged(value: String) {
+        savedStateHandle[SEARCH_QUERY_KEY] = value
+    }
+
+    fun submitSearch() {
+        savedStateHandle[SUBMITTED_QUERY_KEY] = searchQuery.value.trim()
+    }
+
+    fun clearSearch() {
+        savedStateHandle[SEARCH_QUERY_KEY] = ""
+        savedStateHandle[SUBMITTED_QUERY_KEY] = ""
+    }
+
+    fun removeFilter(fact: SearchFact) {
+        chosenFilters.update { it - fact }
+    }
+
+    fun toggleFilter(fact: SearchFact) {
+        chosenFilters.update { if (fact in it) it - fact else it + fact }
     }
 
     fun resumeUpdates(appId: String) {
@@ -243,9 +297,11 @@ class UpdatesViewModel(
 
     companion object {
         private const val MIN_SEARCH_LENGTH = 2
+        private const val SEARCH_QUERY_KEY = "searchQuery"
+        private const val SUBMITTED_QUERY_KEY = "submittedQuery"
 
         fun factory(app: ZapstoreApplication): ViewModelProvider.Factory = viewModelFactory {
-            initializer { UpdatesViewModel(app, app.catalogSync, app.queryEncoder::encode) }
+            initializer { UpdatesViewModel(app, app.catalogSync, app.queryEncoder::encode, createSavedStateHandle()) }
         }
     }
 }
@@ -259,3 +315,6 @@ private fun UpdatesUiState.startable(group: UpdateGroup): List<AvailableUpdate> 
 }.filter { tasks[it.app.appId]?.busy != true }
 
 private data class Quad<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
+
+/** Ranked apps and the filters that narrowed them. */
+private class MyAppsSearch(val apps: List<AppRecord>, val facts: List<SearchFact>)

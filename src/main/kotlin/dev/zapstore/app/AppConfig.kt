@@ -42,6 +42,9 @@ object AppConfig {
     /** Where the first-install web-of-trust check is asked (Vertex DVM). */
     val vertexRelays: Set<RelayUrl> = setOf("wss://relay.vertexlab.io").toRelayUrls()
 
+    /** Where who follows a key is asked: relays that answer a kind 3 query by `#p` (purplepag.es caps it at 500). */
+    val followerRelays: Set<RelayUrl> = generalRelays + "wss://purplepag.es".normalizeRelayUrl()
+
     val indexerRelays: Set<RelayUrl> = setOf("wss://relay.vertexlab.io", "wss://purplepag.es").toRelayUrls()
 
     /** NIP-66 monitors whose kind 30166 reports exclude down or paid relays: nostr.watch's Fisherman and US-East probe. */

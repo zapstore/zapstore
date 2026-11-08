@@ -1,11 +1,14 @@
 package dev.zapstore.app.screens
 
+import dev.zapstore.app.components.SentenceWithSource
+import dev.zapstore.app.components.catalogSource
 import dev.zapstore.app.components.SourceLine
 import androidx.compose.foundation.Image
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.offset
 import dev.zapstore.app.components.ZapTextLink
+import dev.zapstore.app.components.resolvedName
 import dev.zapstore.app.components.shortDisplayName
 import dev.zapstore.app.components.EvidenceLine
 import androidx.compose.foundation.background
@@ -16,8 +19,7 @@ import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.unit.em
-import dev.zapstore.app.components.INDEXED_GLYPH
-import dev.zapstore.app.components.grayscale
+import dev.zapstore.app.components.versionStatusOf
 import dev.zapstore.app.components.pressScale
 import dev.zapstore.app.components.AppIcon
 import dev.zapstore.app.ZapText
@@ -406,7 +408,7 @@ internal fun InstallSheet(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
-                VersionPill(app.version)
+                VersionPill(app.version, status = versionStatusOf(app))
             }
             if (plan is InstallPlan.FirstInstall) {
                 AssuranceSummary(app, author, trust, onPersonalizeTrust, onOpenUrl, onOpenReport)
@@ -414,7 +416,7 @@ internal fun InstallSheet(
                 if (app.byline == AppByline.Verified) {
                     VerifiedStandingLine(app.bylinePubkey?.let { shortDisplayName(it, author) }.orEmpty(), app.bylinePubkey, null)
                 }
-                if (app.isCatalogSigned) CatalogSignedNote(app.name, null, Modifier.testTag("installCatalogSigned"), source = app.repository)
+                if (app.isCatalogSigned) CatalogSignedNote(app.name, resolvedName(author), app.catalogSource(), Modifier.testTag("installCatalogSigned"))
                 Text(
                     if (switching) {
                         stringResource(R.string.install_takeover_store, otherStore.orEmpty())
@@ -435,60 +437,35 @@ internal fun InstallSheet(
     }
 }
 
-/** An indexed listing: the catalog key signed it. [source] is the repository the indexer tracks, when known. */
+/**
+ * An unclaimed listing the catalog published: a warning that says who lists it and that nobody has claimed it.
+ * [catalogName] is the name on the catalog's profile; without one the note says "the catalog". It names no
+ * repository in its text: the release source can differ, so [source] carries the one address known, as `from ...`.
+ */
 @Composable
 internal fun CatalogSignedNote(
     name: String,
-    downloadUrl: String?,
+    catalogName: String?,
+    source: String?,
     modifier: Modifier = Modifier,
-    source: String? = null,
 ) {
-    val from = source?.trim().orEmpty()
-    val glyph = mapOf(
-        "indexed" to InlineTextContent(
-            Placeholder(1.3.em, 1.em, PlaceholderVerticalAlign.TextCenter),
-        ) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(INDEXED_GLYPH, modifier = Modifier.grayscale(), style = MaterialTheme.typography.bodyMedium)
+    EvidenceLine(
+        stringResource(R.string.catalog_indexed).removeSuffix("."),
+        checked = false,
+        warning = true,
+        detail = if (catalogName.isNullOrBlank()) stringResource(R.string.catalog_indexed_body, name)
+        else stringResource(R.string.catalog_indexed_named, name, catalogName),
+        modifier = modifier,
+        detailContent = source?.let { address ->
+            {
+                SentenceWithSource(
+                    if (catalogName.isNullOrBlank()) stringResource(R.string.catalog_indexed_from, name)
+                    else stringResource(R.string.catalog_indexed_from_named, name, catalogName),
+                    address,
+                )
             }
         },
     )
-    Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space1), modifier = modifier) {
-        Text(
-            buildAnnotatedString {
-                appendInlineContent("indexed", INDEXED_GLYPH)
-                append(" ")
-                withStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = ZapText)) {
-                    append(stringResource(R.string.catalog_indexed))
-                    append(" ")
-                }
-                if (from.isEmpty()) {
-                    append(stringResource(R.string.catalog_indexed_body, name))
-                } else {
-                    append(stringResource(R.string.catalog_indexed_from_lead, name))
-                    // SpanStyle has no padding, so the spaces sit inside the highlight.
-                    withStyle(SpanStyle(color = Color.White, background = Color.Black)) { append("\u00A0$from\u00A0") }
-                    append(stringResource(R.string.catalog_indexed_from_tail))
-                }
-            },
-            inlineContent = glyph,
-            color = ZapText2,
-            style = MaterialTheme.typography.bodyMedium,
-        )
-        downloadUrl?.let { url ->
-            Text(
-                stringResource(R.string.downloads_from),
-                color = ZapText2,
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Text(
-                downloadLabel(url),
-                color = ZapText,
-                style = MaterialTheme.typography.labelMedium,
-                modifier = Modifier.testTag("downloadUrl"),
-            )
-        }
-    }
 }
 
 /** The URL without its scheme, so the host leads. */
@@ -576,7 +553,7 @@ internal fun ReleaseSheet(app: AppRecord, onOpenUrl: (String) -> Unit, onDismiss
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
-                app.version.takeIf { it.isNotBlank() }?.let { VersionPill(it) }
+                app.version.takeIf { it.isNotBlank() }?.let { VersionPill(it, status = versionStatusOf(app)) }
             }
 
             Column(
