@@ -68,14 +68,26 @@ sign_release() {
 	fi
 }
 
-has_bundle() {
-	python3 - "$1" <<'PY'
+has_asset() {
+	python3 - "$1" "$2" <<'PY'
 import sys, zipfile
-path, = sys.argv[1:]
+path, asset = sys.argv[1:]
 with zipfile.ZipFile(path) as apk:
     names = apk.namelist()
-sys.exit(0 if "assets/bundle-0-1.tar.zst" in names else 1)
+sys.exit(0 if asset in names else 1)
 PY
+}
+
+has_bundle() {
+	has_asset "$1" assets/bundle-0-1.tar.zst
+}
+
+# Both APKs carry the search model: search waits for nothing but the catalog.
+require_model() {
+	if ! has_asset "$1" assets/leaf-ir-v1/model_quantized.onnx_data; then
+		echo "$1 has no search model" >&2
+		exit 1
+	fi
 }
 
 "$GRADLE" assembleRelease "${gradle_args[@]}"
@@ -103,6 +115,8 @@ if has_bundle "$update_apk"; then
 	echo "update APK still contains the catalog bundle" >&2
 	exit 1
 fi
+require_model "$bundle_apk"
+require_model "$update_apk"
 
 echo "$bundle_apk"
 echo "$update_apk"

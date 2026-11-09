@@ -33,6 +33,12 @@ android {
     packaging {
         jniLibs {
             keepDebugSymbols += "**/libarti_android.so"
+            // Zapstore is sideloaded, so there is no Play delivery to shrink the download. Stored libraries
+            // are mapped from the APK and cost 18 MB of download; compressed ones are extracted at install.
+            useLegacyPackaging = true
+        }
+        dex {
+            useLegacyPackaging = true
         }
         resources {
             excludes += setOf(
