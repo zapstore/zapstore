@@ -37,7 +37,13 @@ class CatalogImportMemoryTest {
         val http = object : HttpTransport {
             override fun get(url: String, headers: Map<String, String>): HttpResponse = error("bundles are downloaded")
 
-            override fun download(url: String, headers: Map<String, String>, destination: File, maxBytes: Long): HttpResponse {
+            override fun download(
+                url: String,
+                headers: Map<String, String>,
+                destination: File,
+                maxBytes: Long,
+                onProgress: (received: Long, total: Long) -> Unit,
+            ): HttpResponse {
                 file!!.inputStream().use { input -> destination.outputStream().use(input::copyTo) }
                 return HttpResponse(200, emptyMap(), null)
             }

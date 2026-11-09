@@ -279,6 +279,27 @@ class Iolite private constructor(
     }
 
     /**
+     * Imports [bundled] into the catalog when it is missing or still at epoch 0. No network: this is the
+     * snapshot that ships in the APK, so a phone that has never been online can show a catalog. Returns
+     * null when the catalog already has an epoch and nothing was imported. [syncCatalog] does this first
+     * on its own; call it directly to seed a catalog before the network is allowed.
+     */
+    fun importBundledSnapshot(
+        catalogId: Long,
+        bundled: CatalogBundle,
+        endpoint: RelayUrl? = null,
+        progress: CatalogProgress = CatalogProgress.NONE,
+    ): CatalogImportResult? {
+        checkOpen()
+        val existing = store.catalog(catalogId)
+        if (existing != null && existing.epoch != 0L) return null
+        progress.importing()
+        val seeded = importCatalogUpdate(catalogId, bundled, endpoint)
+        config.log.log("catalog $catalogId seeded from the bundled snapshot, epoch ${seeded.to}", null)
+        return seeded
+    }
+
+    /**
      * Imports [bundled] when the catalog is missing or still at epoch 0, then fetches the next epoch.
      * With no bundle and no stored relays, fetches `GET /v1/bundle?from=0` from [endpoint] and imports
      * that body. Both bodies go through [importCatalogUpdate]. [CatalogSyncResult.imported] is null on
@@ -286,7 +307,8 @@ class Iolite private constructor(
      * relays. [endpoint] is stored only when that event is absent and the catalog has no relays.
      * Otherwise each stored relay is tried in turn, then [endpoint], so one dead or mistyped address in
      * the catalog's kind 10067 cannot cut the phone off. [useOnion] tries stored Tor endpoints first.
-     * [client] is the Zapstore version sent as the `v` query. Empty omits it.
+     * [client] is the Zapstore version sent as the `v` query. Empty omits it. [progress] hears the
+     * download and then the import.
      */
     fun syncCatalog(
         catalogId: Long = defaultCatalog().id,
@@ -295,26 +317,21 @@ class Iolite private constructor(
         bundled: CatalogBundle? = null,
         endpoint: RelayUrl? = null,
         client: String = "",
+        progress: CatalogProgress = CatalogProgress.NONE,
     ): CatalogSyncResult {
         checkOpen()
         val httpClient = transport ?: throw IllegalStateException("HTTP transport is required for catalog sync")
-        val existing = store.catalog(catalogId)
-        val seeded = if (bundled != null && (existing == null || existing.epoch == 0L)) {
-            importCatalogUpdate(catalogId, bundled, endpoint)
-        } else {
-            null
-        }
-        seeded?.let { config.log.log("catalog $catalogId seeded from the bundled snapshot, epoch ${it.to}", null) }
+        val seeded = bundled?.let { importBundledSnapshot(catalogId, it, endpoint, progress) }
         val catalog = store.catalog(catalogId)
         if (catalog == null || catalog.relays.isEmpty()) {
             val relay = endpoint ?: throw CatalogImportException("catalog relay is missing")
-            return fetchCatalogUpdate(catalogId, httpClient, relay.bundleUrl(0, client), seeded = null, endpoint = relay)
+            return fetchCatalogUpdate(catalogId, httpClient, relay.bundleUrl(0, client), seeded = null, endpoint = relay, progress = progress)
         }
         val candidates = (catalog.syncRelays(useOnion) + listOfNotNull(endpoint)).distinct()
         val failures = mutableListOf<Exception>()
         for (relay in candidates) {
             try {
-                val result = fetchCatalogUpdate(catalogId, httpClient, relay.bundleUrl(catalog.epoch, client), seeded = seeded, endpoint = null)
+                val result = fetchCatalogUpdate(catalogId, httpClient, relay.bundleUrl(catalog.epoch, client), seeded = seeded, endpoint = null, progress = progress)
                 val epochs = result.imported?.takeIf { it !== seeded }?.let { "epoch ${it.from} to ${it.to}" }
                     ?: "epoch ${catalog.epoch} unchanged"
                 config.log.log("catalog $catalogId $epochs from ${relay.url}${if (failures.isEmpty()) "" else " after ${failures.size} failed"}", null)
@@ -339,8 +356,9 @@ class Iolite private constructor(
         url: String,
         seeded: CatalogImportResult?,
         endpoint: RelayUrl?,
+        progress: CatalogProgress = CatalogProgress.NONE,
     ): CatalogSyncResult = withDownload { file ->
-        val response = transport.download(url, emptyMap(), file, config.maxCompressedBytes)
+        val response = transport.download(url, emptyMap(), file, config.maxCompressedBytes, progress::downloading)
         val body = response.body
         val bytes = if (response.status == 200) file.length() else (body?.size ?: 0).toLong()
         when (response.status) {
@@ -349,6 +367,7 @@ class Iolite private constructor(
                 imported = if (bytes == 0L) {
                     throw CatalogImportException("empty catalog update")
                 } else {
+                    progress.importing()
                     importCatalogUpdate(catalogId, CatalogBundle.of(file), endpoint)
                 },
                 bytes = bytes,

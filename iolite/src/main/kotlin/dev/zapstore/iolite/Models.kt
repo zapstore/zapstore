@@ -558,14 +558,28 @@ fun interface HttpTransport {
      * [get], with a 200 body written to [destination] instead of returned, and refused past [maxBytes].
      * A catalog bundle is tens of MB, so it goes to disk rather than the heap. Other statuses keep their
      * body. The default goes through [get]; a transport that can stream overrides it.
+     *
+     * [onProgress] is told the bytes written so far and the body's length, which is -1 when the server
+     * did not send one. It runs on the downloading thread, so it must return quickly.
      */
-    fun download(url: String, headers: Map<String, String>, destination: File, maxBytes: Long): HttpResponse {
+    fun download(
+        url: String,
+        headers: Map<String, String>,
+        destination: File,
+        maxBytes: Long,
+        onProgress: (received: Long, total: Long) -> Unit = NO_PROGRESS,
+    ): HttpResponse {
         val response = get(url, headers)
         if (response.status != 200) return response
         val body = response.body ?: ByteArray(0)
         if (body.size > maxBytes) throw java.io.IOException("response body exceeds $maxBytes bytes")
         destination.writeBytes(body)
+        onProgress(body.size.toLong(), body.size.toLong())
         return response.copy(body = null)
+    }
+
+    companion object {
+        val NO_PROGRESS: (Long, Long) -> Unit = { _, _ -> }
     }
 }
 

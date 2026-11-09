@@ -195,9 +195,16 @@ class OkHttpAppTransport(
      * The catalog bundle may later be served from a CDN, so [download] follows redirects. Plain [get] still
      * does not, and a redirect never changes scheme (https stays https). The bundle is signature-checked on import,
      * so the host it lands on is not trusted. Shares [client]'s connections, proxy and DNS.
+     *
+     * The read timeout is how long a download may go without a byte. It restarts with every byte, so a
+     * slow bundle that keeps arriving is never cut off, and a dead connection fails in under a minute.
      */
     private val downloadClient: OkHttpClient by lazy {
-        client.newBuilder().followRedirects(true).followSslRedirects(false).build()
+        client.newBuilder()
+            .followRedirects(true)
+            .followSslRedirects(false)
+            .readTimeout(DOWNLOAD_STALL_SECONDS, TimeUnit.SECONDS)
+            .build()
     }
 
     override fun get(url: String, headers: Map<String, String>): HttpResponse {
@@ -211,20 +218,35 @@ class OkHttpAppTransport(
     }
 
     /** Streams a 200 body to [destination] in segments; the heap never holds more than one. */
-    override fun download(url: String, headers: Map<String, String>, destination: File, maxBytes: Long): HttpResponse {
+    override fun download(
+        url: String,
+        headers: Map<String, String>,
+        destination: File,
+        maxBytes: Long,
+        onProgress: (received: Long, total: Long) -> Unit,
+    ): HttpResponse {
         downloadClient.newCall(request(url, headers)).execute().use { response ->
             if (response.code != 200) return HttpResponse(response.code, response.reasonHeaders(), null)
-            if (response.body.contentLength() > maxBytes) throw IOException("response body exceeds $maxBytes bytes")
+            val length = response.body.contentLength()
+            if (length > maxBytes) throw IOException("response body exceeds $maxBytes bytes")
             val source = response.body.source()
             destination.sink().buffer().use { sink ->
                 var total = 0L
+                var reported = 0L
+                onProgress(0, length)
                 while (true) {
                     val read = source.read(sink.buffer, DOWNLOAD_SEGMENT_BYTES)
                     if (read < 0) break
                     total += read
                     if (total > maxBytes) throw IOException("response body exceeds $maxBytes bytes")
                     sink.emitCompleteSegments()
+                    // A 20 MB bundle is a few hundred segments; tell the screen about every 256 KB, not every one.
+                    if (total - reported >= PROGRESS_STEP_BYTES) {
+                        reported = total
+                        onProgress(total, length)
+                    }
                 }
+                onProgress(total, length)
             }
             return HttpResponse(response.code, response.reasonHeaders(), null)
         }
@@ -279,6 +301,8 @@ class OkHttpAppTransport(
 
     private companion object {
         const val DOWNLOAD_SEGMENT_BYTES = 64L * 1024
+        const val PROGRESS_STEP_BYTES = 256L * 1024
+        const val DOWNLOAD_STALL_SECONDS = 45L
     }
 }
 
@@ -291,8 +315,13 @@ internal class SplitRouter(
     override fun get(url: String, headers: Map<String, String>): HttpResponse =
         route(url).http.get(url, headers)
 
-    override fun download(url: String, headers: Map<String, String>, destination: File, maxBytes: Long): HttpResponse =
-        route(url).http.download(url, headers, destination, maxBytes)
+    override fun download(
+        url: String,
+        headers: Map<String, String>,
+        destination: File,
+        maxBytes: Long,
+        onProgress: (received: Long, total: Long) -> Unit,
+    ): HttpResponse = route(url).http.download(url, headers, destination, maxBytes, onProgress)
 
     override fun open(url: String, listener: WebSocketListener): WebSocketSession =
         route(url).webSocket.open(url, listener)

@@ -19,6 +19,22 @@ data class CatalogSyncResult(
 }
 
 /**
+ * What a catalog sync is doing, for a screen that waits on it. Called on the syncing thread, so an
+ * implementation returns quickly.
+ */
+interface CatalogProgress {
+    /** Bytes of the bundle written to disk so far. [total] is -1 when the server sent no length. */
+    fun downloading(received: Long, total: Long) {}
+
+    /** The bundle is complete, in the APK or on disk, and is being verified and imported. */
+    fun importing() {}
+
+    companion object {
+        val NONE: CatalogProgress = object : CatalogProgress {}
+    }
+}
+
+/**
  * A catalog-sync bundle that can be opened more than once. Import reads it in passes and never holds
  * it decompressed, so an APK asset or a file is never loaded into memory whole.
  */
