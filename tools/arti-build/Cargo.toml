@@ -24,8 +24,7 @@ tor-rtcompat = { version = "0.46", default-features = false, features = ["tokio"
 # keeps out of the build entirely.
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 jni = "0.22"
-tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time", "macros"] }
-anyhow = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "io-util", "time", "macros", "sync"] }
 
 [profile.release]
 opt-level = "z"

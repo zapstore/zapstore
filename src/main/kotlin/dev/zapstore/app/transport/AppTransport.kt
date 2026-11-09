@@ -16,7 +16,6 @@ import okio.sink
 import java.io.File
 import java.io.IOException
 import java.net.InetAddress
-import java.net.InetSocketAddress
 import java.net.Proxy
 import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
@@ -56,9 +55,9 @@ fun remoteImagesReady(mode: NetworkMode, torState: TorRuntimeState): Boolean =
 class TorUnavailableException(message: String) : IllegalStateException(message)
 
 interface ArtiEngine : AutoCloseable {
-    val socksPort: Int
+    /** Null until [start] succeeds and after [destroy]. */
+    val streams: TorStreams?
     fun start()
-    fun stop()
     /** Drop the in-process TorClient so cache files can be deleted. */
     fun destroy()
 }
@@ -73,9 +72,9 @@ object AppTransports {
     fun create(mode: NetworkMode, arti: ArtiEngine? = null): AppTransport = when (mode) {
         NetworkMode.DirectOnly -> directTransport()
         NetworkMode.TorOnly -> {
-            val socksPort = arti?.socksPort ?: 0
+            val streams = arti?.streams
             when {
-                socksPort > 0 -> torTransport(socksPort)
+                streams != null -> torTransport(streams)
                 arti == null -> throw TorUnavailableException(
                     "Tor is selected and Arti is not available; refusing Direct fallback",
                 )
@@ -91,9 +90,9 @@ object AppTransports {
         return AppTransport(transport, transport, transport.client)
     }
 
-    fun torTransport(socksPort: Int): AppTransport {
-        val anonymous = OkHttpAppTransport(socksClient(socksPort))
-        val identity = OkHttpAppTransport(socksClient(socksPort))
+    fun torTransport(streams: TorStreams): AppTransport {
+        val anonymous = OkHttpAppTransport(torClient(streams, TorIsolation.Anonymous))
+        val identity = OkHttpAppTransport(torClient(streams, TorIsolation.Identity))
         return AppTransport(anonymous, identity, anonymous.client)
     }
 
@@ -102,8 +101,8 @@ object AppTransports {
         return AppTransport(transport, transport, transport.client)
     }
 
-    fun torImageTransport(socksPort: Int): AppTransport {
-        val transport = OkHttpAppTransport(imageSocksClient(socksPort))
+    fun torImageTransport(streams: TorStreams): AppTransport {
+        val transport = OkHttpAppTransport(imageTorClient(streams))
         return AppTransport(transport, transport, transport.client)
     }
 
@@ -144,15 +143,15 @@ object TorFakeDns : Dns {
     fun hostnameFor(address: InetAddress): String? = address.hostAddress?.let { hosts[it] }
 }
 
-/** HTTP/1.1 only: HTTP/2 over Arti's SOCKS port fails the CDN fetches Coil uses for icons. */
-internal fun socksClient(socksPort: Int): OkHttpClient = baseClient()
+/** HTTP/1.1 only: HTTP/2 over Arti streams fails the CDN fetches Coil uses for icons. */
+internal fun torClient(streams: TorStreams, isolation: TorIsolation): OkHttpClient = baseClient()
     .proxy(Proxy.NO_PROXY)
-    .socketFactory(Socks5SocketFactory(InetSocketAddress("127.0.0.1", socksPort)))
+    .socketFactory(TorSocketFactory(streams, isolation))
     .dns(TorFakeDns)
     .protocols(listOf(Protocol.HTTP_1_1))
     .build()
 
-internal fun imageSocksClient(socksPort: Int): OkHttpClient = socksClient(socksPort).newBuilder()
+internal fun imageTorClient(streams: TorStreams): OkHttpClient = torClient(streams, TorIsolation.Anonymous).newBuilder()
     .followRedirects(true)
     .followSslRedirects(true)
     .build()

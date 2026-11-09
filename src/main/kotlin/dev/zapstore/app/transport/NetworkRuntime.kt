@@ -139,8 +139,9 @@ class NetworkRuntime(
                     }
                     arti = engine
                     closeTorTransport()
-                    torTransport = AppTransports.torTransport(engine.socksPort)
-                    torImages = AppTransports.torImageTransport(engine.socksPort)
+                    val streams = engine.streams ?: throw TorUnavailableException("Arti started without streams")
+                    torTransport = AppTransports.torTransport(streams)
+                    torImages = AppTransports.torImageTransport(streams)
                     if (_mode.value.usesTor) {
                         _torState.value = TorRuntimeState.Ready
                         notifyReset()
@@ -166,7 +167,6 @@ class NetworkRuntime(
 
     private fun stopArtiLocked(clearCache: Boolean = false) {
         closeTorTransport()
-        runCatching { arti?.stop() }
         runCatching { arti?.destroy() }
         arti = null
         if (clearCache) deleteArtiCache(EmbeddedArtiEngine.cacheDir(appContext))

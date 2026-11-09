@@ -3,6 +3,8 @@
 Custom-built [Arti](https://gitlab.torproject.org/tpo/core/arti) native libraries
 for Zapstore. Adapted from [Amethyst's `tools/arti-build`](https://github.com/vitorpamplona/amethyst/tree/main/tools/arti-build):
 same size-optimized wrapper, JNI names retargeted to `dev.zapstore.app.transport.ArtiNative`.
+Unlike Amethyst's, it binds no SOCKS port: Kotlin opens streams through
+`connect`, `read`, `write`, and `closeStream`.
 
 The app ships **arm64-v8a only**. `make vendor` from the repo root runs
 `./build-arti.sh` and writes:

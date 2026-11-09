@@ -7,6 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 import java.net.Proxy
+import java.util.concurrent.TimeUnit
 import dev.zapstore.iolite.HttpResponse
 import dev.zapstore.iolite.HttpTransport
 import dev.zapstore.iolite.WebSocketFactory
@@ -48,9 +49,9 @@ class AppTransportTest {
     }
 
     @Test
-    fun torModeWithClosedSocksPortDoesNotFallBackToDirect() {
+    fun torModeWithoutStreamsDoesNotFallBackToDirect() {
         try {
-            AppTransports.create(NetworkMode.TorOnly, FakeArti(socksPort = 0))
+            AppTransports.create(NetworkMode.TorOnly, FakeArti(streams = null))
             throw AssertionError("expected TorUnavailableException")
         } catch (failure: TorUnavailableException) {
             assertTrue(failure.message!!.contains("refusing Direct fallback"))
@@ -74,21 +75,114 @@ class AppTransportTest {
     }
 
     @Test
-    fun socksClientUsesHostnameSocks5AndResolvesDnsInsideArti() {
-        val client = socksClient(9050)
+    fun torClientUsesInProcessStreamsAndResolvesDnsInsideArti() {
+        val client = torClient(TcpTorStreams(0), TorIsolation.Anonymous)
         assertEquals(Proxy.NO_PROXY, client.proxy)
-        assertTrue(client.socketFactory is Socks5SocketFactory)
+        assertTrue(client.socketFactory is TorSocketFactory)
         assertEquals(TorFakeDns, client.dns)
         assertEquals(listOf(okhttp3.Protocol.HTTP_1_1), client.protocols)
         assertTrue(!client.followRedirects)
     }
 
     @Test
-    fun imageSocksClientFollowsRedirects() {
-        val client = imageSocksClient(9050)
+    fun imageTorClientFollowsRedirects() {
+        val client = imageTorClient(TcpTorStreams(0))
         assertTrue(client.followRedirects)
         assertTrue(client.followSslRedirects)
         assertEquals(listOf(okhttp3.Protocol.HTTP_1_1), client.protocols)
+    }
+
+    @Test
+    fun torHttpSendsTheHostnameAndReusesTheStream() {
+        okhttp3.mockwebserver.MockWebServer().use { server ->
+            server.enqueue(okhttp3.mockwebserver.MockResponse().setBody("one"))
+            server.enqueue(okhttp3.mockwebserver.MockResponse().setBody("two"))
+            server.start()
+            val streams = TcpTorStreams(server.port)
+            val transport = AppTransports.torTransport(streams)
+            val url = "http://relay.zapstore.dev:${server.port}/v1/bundle"
+
+            assertEquals("one", String(transport.http.get(url, emptyMap()).body!!))
+            assertEquals("two", String(transport.http.get(url, emptyMap()).body!!))
+
+            assertEquals(listOf(Triple("relay.zapstore.dev", server.port, TorIsolation.Anonymous)), streams.connects)
+            assertEquals("relay.zapstore.dev:${server.port}", server.takeRequest().getHeader("Host"))
+        }
+    }
+
+    @Test
+    fun torReadTimesOutWithoutHanging() {
+        okhttp3.mockwebserver.MockWebServer().use { server ->
+            server.enqueue(okhttp3.mockwebserver.MockResponse().setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.NO_RESPONSE))
+            server.start()
+            val client = torClient(TcpTorStreams(server.port), TorIsolation.Anonymous).newBuilder()
+                .readTimeout(200, TimeUnit.MILLISECONDS)
+                .build()
+            val call = client.newCall(Request.Builder().url("http://relay.zapstore.dev:${server.port}/").build())
+            try {
+                call.execute()
+                throw AssertionError("expected a timeout")
+            } catch (expected: java.net.SocketTimeoutException) {
+            }
+        }
+    }
+
+    @Test
+    fun torWebSocketUsesTheIdentityCircuit() {
+        okhttp3.mockwebserver.MockWebServer().use { server ->
+            server.enqueue(
+                okhttp3.mockwebserver.MockResponse().withWebSocketUpgrade(object : okhttp3.WebSocketListener() {
+                    override fun onMessage(webSocket: okhttp3.WebSocket, text: String) {
+                        webSocket.send("echo:$text")
+                    }
+                }),
+            )
+            server.start()
+            val streams = TcpTorStreams(server.port)
+            val received = java.util.concurrent.CompletableFuture<String>()
+            val session = AppTransports.torTransport(streams).webSocket.open(
+                "ws://relay.zapstore.dev:${server.port}/",
+                object : WebSocketListener {
+                    override fun onOpen() = Unit
+                    override fun onMessage(text: String) {
+                        received.complete(text)
+                    }
+                    override fun onClosing(code: Int, reason: String) = Unit
+                    override fun onFailure(error: Throwable) {
+                        received.completeExceptionally(error)
+                    }
+                },
+            )
+            session.send("hi")
+            assertEquals("echo:hi", received.get(5, TimeUnit.SECONDS))
+            session.close()
+            assertEquals(TorIsolation.Identity, streams.connects.single().third)
+        }
+    }
+
+    @Test
+    fun torTargetHostKeepsLiteralAddressesWithoutResolving() {
+        val literal = java.net.InetSocketAddress(java.net.InetAddress.getByAddress(byteArrayOf(93, 184.toByte(), 216.toByte(), 34)), 443)
+        assertEquals("93.184.216.34", torTargetHost(literal))
+        val fake = TorFakeDns.lookup("relay.zapstore.dev").single()
+        assertEquals("relay.zapstore.dev", torTargetHost(java.net.InetSocketAddress(fake, 443)))
+    }
+
+    @Test
+    fun closedTorSocketRejectsReads() {
+        okhttp3.mockwebserver.MockWebServer().use { server ->
+            server.start()
+            val socket = TorSocketFactory(TcpTorStreams(server.port), TorIsolation.Anonymous).createSocket()
+            socket.connect(java.net.InetSocketAddress(TorFakeDns.lookup("relay.zapstore.dev").single(), server.port))
+            val input = socket.getInputStream()
+            socket.close()
+            assertTrue(socket.isClosed)
+            try {
+                input.read(ByteArray(1))
+                throw AssertionError("expected SocketException")
+            } catch (expected: java.net.SocketException) {
+            }
+        }
     }
 
     @Test
@@ -98,46 +192,6 @@ class AppTransportTest {
         assertTrue(remoteImagesReady(NetworkMode.TorOnly, TorRuntimeState.Dormant))
         assertTrue(!remoteImagesReady(NetworkMode.TorOnly, TorRuntimeState.Bootstrapping))
         assertTrue(!remoteImagesReady(NetworkMode.TorOnly, TorRuntimeState.Failed))
-    }
-
-    @Test
-    fun socks5ConnectSendsDomainNameNotIpv4Zero() {
-        val server = java.net.ServerSocket(0)
-        val port = server.localPort
-        val received = java.util.concurrent.CompletableFuture<ByteArray>()
-        Thread {
-            server.use { listener ->
-                listener.accept().use { sock ->
-                    val input = java.io.DataInputStream(sock.getInputStream())
-                    val output = sock.getOutputStream()
-                    val greeting = ByteArray(3)
-                    input.readFully(greeting)
-                    output.write(byteArrayOf(0x05, 0x00))
-                    output.flush()
-                    val header = ByteArray(5)
-                    input.readFully(header)
-                    val host = ByteArray(header[4].toInt() and 0xff)
-                    input.readFully(host)
-                    val destPort = ByteArray(2)
-                    input.readFully(destPort)
-                    received.complete(header + host + destPort)
-                    output.write(byteArrayOf(0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0))
-                    output.flush()
-                }
-            }
-        }.apply { isDaemon = true }.start()
-
-        val fake = java.net.InetAddress.getByAddress("relay.zapstore.dev", ByteArray(4))
-        Socks5SocketFactory(java.net.InetSocketAddress("127.0.0.1", port))
-            .createSocket()
-            .use { it.connect(java.net.InetSocketAddress(fake, 443), 2_000) }
-
-        val request = received.get(2, java.util.concurrent.TimeUnit.SECONDS)
-        assertEquals(0x05, request[0].toInt() and 0xff)
-        assertEquals(0x01, request[1].toInt() and 0xff)
-        assertEquals(0x03, request[3].toInt() and 0xff)
-        val hostLen = request[4].toInt() and 0xff
-        assertEquals("relay.zapstore.dev", String(request, 5, hostLen, Charsets.US_ASCII))
     }
 
     @Test
@@ -218,11 +272,39 @@ class AppTransportTest {
     }
 }
 
-private class FakeArti(override val socksPort: Int) : ArtiEngine {
+private class FakeArti(override val streams: TorStreams?) : ArtiEngine {
     override fun start() = Unit
-    override fun stop() = Unit
     override fun destroy() = Unit
     override fun close() = Unit
+}
+
+/** Stands in for Arti: every stream is a loopback TCP connection to [port], whatever host was asked for. */
+private class TcpTorStreams(private val port: Int) : TorStreams {
+    val connects = java.util.concurrent.CopyOnWriteArrayList<Triple<String, Int, TorIsolation>>()
+    private val sockets = java.util.concurrent.ConcurrentHashMap<Long, java.net.Socket>()
+    private val next = java.util.concurrent.atomic.AtomicLong(1)
+
+    override fun connect(host: String, port: Int, isolation: TorIsolation, timeoutMs: Int): Long {
+        connects += Triple(host, port, isolation)
+        val socket = java.net.Socket().apply { connect(java.net.InetSocketAddress("127.0.0.1", this@TcpTorStreams.port), timeoutMs) }
+        return next.getAndIncrement().also { sockets[it] = socket }
+    }
+
+    override fun read(handle: Long, buffer: ByteArray, offset: Int, length: Int, timeoutMs: Int): Int {
+        val socket = sockets[handle] ?: throw java.net.SocketException("Socket closed")
+        socket.soTimeout = timeoutMs
+        return socket.getInputStream().read(buffer, offset, length)
+    }
+
+    override fun write(handle: Long, buffer: ByteArray, offset: Int, length: Int) {
+        val output = (sockets[handle] ?: throw java.net.SocketException("Socket closed")).getOutputStream()
+        output.write(buffer, offset, length)
+        output.flush()
+    }
+
+    override fun close(handle: Long) {
+        sockets.remove(handle)?.close()
+    }
 }
 
 private class RecordingTransport(

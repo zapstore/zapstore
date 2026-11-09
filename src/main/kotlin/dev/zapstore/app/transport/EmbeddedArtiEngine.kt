@@ -2,53 +2,35 @@ package dev.zapstore.app.transport
 
 import android.content.Context
 import java.io.File
-import java.util.concurrent.atomic.AtomicInteger
 
 class EmbeddedArtiEngine(
     context: Context,
 ) : ArtiEngine {
     private val dataDir = File(context.applicationContext.filesDir, "arti")
-    private val port = AtomicInteger(0)
+    @Volatile private var started = false
 
-    override val socksPort: Int get() = port.get()
+    override val streams: TorStreams? get() = if (started) ArtiStreams else null
 
     @Synchronized
     override fun start() {
-        if (socksPort > 0) return
+        if (started) return
         dataDir.mkdirs()
         val initialized = ArtiNative.initialize(dataDir.absolutePath)
         if (initialized != 0) {
             throw TorUnavailableException("Arti initialize failed ($initialized)")
         }
-        var candidate = DEFAULT_SOCKS_PORT
-        repeat(MAX_PORT_RETRIES) {
-            if (ArtiNative.startSocksProxy(candidate) == 0) {
-                port.set(candidate)
-                return
-            }
-            candidate++
-        }
-        throw TorUnavailableException("Arti did not bind a SOCKS port")
-    }
-
-    @Synchronized
-    override fun stop() {
-        runCatching { ArtiNative.stopSocksProxy() }
-        port.set(0)
+        started = true
     }
 
     @Synchronized
     override fun destroy() {
-        stop()
+        started = false
         runCatching { ArtiNative.destroy() }
     }
 
     override fun close() = destroy()
 
     companion object {
-        private const val DEFAULT_SOCKS_PORT = 17392
-        private const val MAX_PORT_RETRIES = 10
-
         fun cacheDir(context: Context): File = File(context.applicationContext.filesDir, "arti/cache")
     }
 }
