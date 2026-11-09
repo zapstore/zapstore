@@ -213,6 +213,40 @@ class CatalogListTest {
     }
 
     @Test
+    fun anEmptyListFromAnotherDeviceIsNotApplied() = runBlocking {
+        withIolite(FakeRelays()) { iolite ->
+            val signer = LocalSigner(SECRET_DEVICE)
+            iolite.ingest(listOf(signer.sign(100, Kinds.CatalogRelayList, listOf(listOf("p", PUB_A)), "")))
+            // Newer, and it names nothing. The app never lets the last catalog go, so this is not believed.
+            assertEquals(0, iolite.ingest(listOf(signer.sign(200, Kinds.CatalogRelayList, emptyList(), ""))))
+            assertEquals(listOf(PUB_A), iolite.catalogs().map { it.manifestPubkey })
+        }
+    }
+
+    @Test
+    fun anEmptyListOnAFreshPhoneDoesNotDecideTheList() = runBlocking {
+        withIolite(FakeRelays()) { iolite ->
+            val empty = LocalSigner(SECRET_DEVICE).sign(100, Kinds.CatalogRelayList, emptyList(), "")
+            assertEquals(0, iolite.ingest(listOf(empty)))
+            // Still undecided, so the first sync adds Zapstore's catalog instead of leaving the app with none.
+            assertTrue(iolite.needsDefaultCatalog())
+            assertTrue(iolite.allCatalogs().isEmpty())
+        }
+    }
+
+    @Test
+    fun aListWhoseOnlyEntriesAreUnreadableCountsAsEmpty() = runBlocking {
+        withIolite(FakeRelays()) { iolite ->
+            val signer = LocalSigner(SECRET_DEVICE)
+            iolite.ingest(listOf(signer.sign(100, Kinds.CatalogRelayList, listOf(listOf("p", PUB_A)), "")))
+            // A `p` tag that is not a key, and private content that does not decrypt: nothing usable in it.
+            val junk = signer.sign(200, Kinds.CatalogRelayList, listOf(listOf("p", "not-a-key")), "not encrypted")
+            assertEquals(0, iolite.ingest(listOf(junk)))
+            assertEquals(listOf(PUB_A), iolite.catalogs().map { it.manifestPubkey })
+        }
+    }
+
+    @Test
     fun aListFromAnotherKeyIsIgnored() = runBlocking {
         withIolite(FakeRelays()) { iolite ->
             val stranger = Event.sign(SECRET_B, 100, Kinds.CatalogRelayList, listOf(listOf("p", PUB_A)), "")

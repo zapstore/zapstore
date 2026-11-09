@@ -298,12 +298,10 @@ internal object EventRows {
     private class ListedCatalog(val pubkey: String, val hint: RelayUrl?, val isPrivate: Boolean)
 
     /**
-     * Makes the stored catalogs match the list: listed catalogs are kept or added in list order, public
-     * before private, and every other catalog is deleted with its listings. An empty list leaves none.
+     * The catalogs a kind 10067 lists, public first. Private entries are `p` tags too; content that does
+     * not decrypt or parse counts as none.
      */
-    private fun upsertCatalogList(tx: Tx, event: Event, deviceSigner: LocalSigner?) {
-        val db = tx.db
-        // Private entries are `p` tags too; content that does not decrypt or parse counts as none.
+    private fun listedCatalogs(event: Event, deviceSigner: LocalSigner?): LinkedHashMap<String, ListedCatalog> {
         val private = if (event.content.isBlank() || deviceSigner == null) {
             emptyList()
         } else {
@@ -317,6 +315,24 @@ internal object EventRows {
         }
         event.tags.forEach { add(it, false) }
         private.forEach { add(it, true) }
+        return listed
+    }
+
+    /**
+     * True for a catalog list with no catalog in it. One that arrives from a relay is never applied: an
+     * app with no catalog has nothing to show, and the app does not let the last one be removed. A list
+     * this device publishes itself is applied as written.
+     */
+    fun isEmptyCatalogList(event: Event, deviceSigner: LocalSigner?): Boolean =
+        event.kind == Kinds.CatalogRelayList && listedCatalogs(event, deviceSigner).isEmpty()
+
+    /**
+     * Makes the stored catalogs match the list: listed catalogs are kept or added in list order, public
+     * before private, and every other catalog is deleted with its listings. An empty list leaves none.
+     */
+    private fun upsertCatalogList(tx: Tx, event: Event, deviceSigner: LocalSigner?) {
+        val db = tx.db
+        val listed = listedCatalogs(event, deviceSigner)
 
         CatalogRows.all(db).filter { it.manifestPubkey == null || it.manifestPubkey !in listed }
             .forEach { CatalogRows.remove(tx, it) }

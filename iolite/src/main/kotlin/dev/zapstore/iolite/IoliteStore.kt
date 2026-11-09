@@ -139,7 +139,9 @@ class IoliteStore internal constructor(
 
     /** Relay path: verified non-catalog events, one transaction. Returns how many rows changed. */
     internal fun ingest(events: List<Event>, context: IngestContext): Int {
-        val admissible = events.filter { it.kind !in ListingRows.KINDS && it.verify() }
+        val admissible = events.filter {
+            it.kind !in ListingRows.KINDS && !EventRows.isEmptyCatalogList(it, context.deviceSigner) && it.verify()
+        }
         if (admissible.isEmpty()) return 0
         var written = 0
         write { tx -> admissible.forEach { if (EventRows.persist(tx, it, context)) written++ } }
