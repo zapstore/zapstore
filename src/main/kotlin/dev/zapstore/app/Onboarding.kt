@@ -2,6 +2,10 @@ package dev.zapstore.app
 
 import android.content.Context
 
+/**
+ * Stored by name, so no value is removed or renamed. [Network] was a slide of its own; the connection choice now
+ * sits on [Privacy], the first slide, and no plan includes [Network].
+ */
 enum class OnboardingStep { Privacy, Network, BugReports, Signer, InstallPermission, Notifications }
 
 /**
@@ -16,7 +20,9 @@ class Onboarding(context: Context) {
     /** The planned steps, or a new plan from [plan] the first time. */
     fun plan(plan: () -> List<OnboardingStep>): List<OnboardingStep> {
         prefs.getString(PLAN, null)?.let { saved ->
+            // A plan saved before the connection choice moved onto the first slide still lists Network.
             return saved.split(',').mapNotNull { name -> OnboardingStep.entries.firstOrNull { it.name == name } }
+                .filter { it != OnboardingStep.Network }
         }
         return plan().also { steps -> prefs.edit().putString(PLAN, steps.joinToString(",") { it.name }).apply() }
     }
@@ -42,17 +48,18 @@ class Onboarding(context: Context) {
         /**
          * The steps this phone shows. A phone that carried a Flutter device key still starts on the
          * privacy screen, then sees network, bug reports, and notifications; signer and install
-         * permission stay skipped. Without a signer the Signer step offers Amber instead.
+         * permission stay skipped. The Signer step is there only when a signer is installed.
          */
         fun steps(
             migrated: Boolean,
             canInstall: Boolean,
             needsNotificationPermission: Boolean,
+            hasSigner: Boolean,
         ): List<OnboardingStep> = buildList {
             add(OnboardingStep.Privacy)
-            add(OnboardingStep.Network)
             add(OnboardingStep.BugReports)
-            if (!migrated) add(OnboardingStep.Signer)
+            // With no signer on the phone there is nothing to connect. Installing Amber and signing in is on the Profile screen.
+            if (!migrated && hasSigner) add(OnboardingStep.Signer)
             if (!migrated && !canInstall) add(OnboardingStep.InstallPermission)
             if (needsNotificationPermission) add(OnboardingStep.Notifications)
         }

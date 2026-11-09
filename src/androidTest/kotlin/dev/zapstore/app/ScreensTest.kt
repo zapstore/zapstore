@@ -57,7 +57,9 @@ import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.hasContentDescription
 import dev.zapstore.app.screens.Zapper
 import androidx.compose.ui.test.onNodeWithText
+import android.view.KeyEvent
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.hasText
@@ -101,6 +103,11 @@ import androidx.compose.ui.test.assertIsSelected
 import dev.zapstore.app.screens.SignerStepUi
 import dev.zapstore.app.screens.OnboardingUiState
 import dev.zapstore.app.screens.OnboardingScreen
+import dev.zapstore.app.catalog.CatalogGate
+import dev.zapstore.app.catalog.SyncPhase
+import dev.zapstore.app.screens.CatalogGateScreen
+import dev.zapstore.app.screens.CatalogGateUi
+import dev.zapstore.app.transport.NetworkMode
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.click
 import androidx.compose.ui.geometry.Offset
@@ -124,7 +131,6 @@ import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.compose.ui.graphics.asAndroidBitmap
-import androidx.compose.ui.test.onRoot
 import dev.zapstore.app.components.LocalInstalledVersions
 import dev.zapstore.app.components.LocalPendingUpdates
 import androidx.compose.runtime.CompositionLocalProvider
@@ -156,6 +162,7 @@ class ScreensTest {
             ZapstoreTheme {
                 HomeScreen(
                     state = HomeUiState(
+                        ready = true,
                         searchQuery = "zap",
                         submittedQuery = "zap",
                         searchResults = results,
@@ -199,7 +206,7 @@ class ScreensTest {
         composeRule.setContent {
             ZapstoreTheme {
                 HomeScreen(
-                    state = HomeUiState(stacks = emptyList(), activity = emptyList()),
+                    state = HomeUiState(ready = true, stacks = emptyList(), activity = emptyList()),
                     onSearchQueryChanged = {},
                     onSearchSubmitted = {},
                     onSearchCleared = {},
@@ -209,9 +216,30 @@ class ScreensTest {
             }
         }
         composeRule.onNodeWithTag("stacksEmpty").assertIsDisplayed()
-        composeRule.onNodeWithTag("noActivity").assertIsDisplayed()
         composeRule.onNodeWithText("No stacks to show.").assertIsDisplayed()
         composeRule.onNodeWithText("No recent activity.").assertIsDisplayed()
+    }
+
+    @Test
+    fun homeSaysNothingAboutEmptyBeforeItsFirstReadLands() {
+        composeRule.setContent {
+            ZapstoreTheme {
+                HomeScreen(
+                    state = HomeUiState(),
+                    onSearchQueryChanged = {},
+                    onSearchSubmitted = {},
+                    onSearchCleared = {},
+                    onAppClick = {},
+                    onStackClick = {},
+                )
+            }
+        }
+        // A phone that has the catalog must never see "No stacks" flash by while SQLite answers.
+        composeRule.onNodeWithTag("stacksEmpty").assertDoesNotExist()
+        composeRule.onNodeWithText("No stacks to show.").assertDoesNotExist()
+        composeRule.onNodeWithText("No recent activity.").assertDoesNotExist()
+        // The rest of Home is there, so this is the empty state held back, not a missing screen.
+        composeRule.onNodeWithTag("searchField").assertIsDisplayed()
     }
 
     @Test
@@ -233,6 +261,7 @@ class ScreensTest {
             ZapstoreTheme {
                 HomeScreen(
                     state = HomeUiState(
+                        ready = true,
                         searchQuery = "zap",
                         submittedQuery = "zap",
                         searchResults = listOf(app),
@@ -264,6 +293,7 @@ class ScreensTest {
             ZapstoreTheme {
                 HomeScreen(
                     state = HomeUiState(
+                        ready = true,
                         searchQuery = "tools",
                         submittedQuery = "tools",
                         searchResults = emptyList(),
@@ -288,6 +318,7 @@ class ScreensTest {
             ZapstoreTheme {
                 HomeScreen(
                     state = HomeUiState(
+                        ready = true,
                         searchQuery = "offline open source chat",
                         searchResults = emptyList(),
                         searchFacts = listOf(SearchFact.WorksOffline, SearchFact.SourceAvailable),
@@ -354,6 +385,7 @@ class ScreensTest {
             ZapstoreTheme {
                 HomeScreen(
                     state = HomeUiState(
+                        ready = true,
                         searchQuery = "zap",
                         submittedQuery = "zap",
                         searchResults = listOf(zap),
@@ -605,6 +637,7 @@ class ScreensTest {
             ZapstoreTheme {
                 HomeScreen(
                     state = HomeUiState(
+                        ready = true,
                         activityFilter = filter,
                         activity = listOf(zap.releaseActivity(), indexed.releaseActivity()),
                     ),
@@ -970,11 +1003,12 @@ class ScreensTest {
     fun onboardingCountsStepsAndPicksNetwork() {
         var state by mutableStateOf(
             OnboardingUiState(
-                steps = listOf(OnboardingStep.Privacy, OnboardingStep.Network, OnboardingStep.Signer),
-                index = 1,
+                steps = listOf(OnboardingStep.Privacy, OnboardingStep.Signer),
+                index = 0,
             ),
         )
         var next = 0
+        var back = 0
         var connected = false
         var skippedAll = false
         composeRule.setContent {
@@ -983,6 +1017,7 @@ class ScreensTest {
                     state = state,
                     onNext = { next += 1 },
                     onSkipAll = { skippedAll = true },
+                    onBack = { back += 1 },
                     onNetworkModeChange = { state = state.copy(networkMode = it) },
                     onConnectSigner = { connected = true },
                     onOpenInstallSettings = {},
@@ -990,26 +1025,176 @@ class ScreensTest {
                 )
             }
         }
-        composeRule.onNodeWithText("Step 2 of 3").assertIsDisplayed()
-        composeRule.onNodeWithTag("onboardingTor").assertIsSelected()
-        composeRule.onNodeWithTag("onboardingDirect").performClick()
+        composeRule.onNodeWithText("Step 1 of 2").assertIsDisplayed()
+        composeRule.onNodeWithTag("onboarding:Privacy").assertIsDisplayed()
+        // The choice sits under the welcome text, with the user's current mode already selected.
         composeRule.onNodeWithTag("onboardingDirect").assertIsSelected()
+        composeRule.onNodeWithTag("networkCaption").assertTextContains("Faster", substring = true)
+        composeRule.onNodeWithTag("networkCaption").assertTextContains("The servers see your IP address.", substring = true)
+        composeRule.onNodeWithTag("onboardingTor").performClick()
+        composeRule.onNodeWithTag("onboardingTor").assertIsSelected()
+        composeRule.onNodeWithTag("networkCaption").assertTextContains("Hides your IP address", substring = true)
+        // The catalog download waits for this choice, so there is no way around the slide.
+        composeRule.onNodeWithTag("onboardingSkip").assertDoesNotExist()
         composeRule.onNodeWithTag("onboardingPrimary").performClick()
         assertEquals(1, next)
-        // Skip all bypasses every remaining step; it does not just advance the current one.
-        composeRule.onNodeWithTag("onboardingSkip").performClick()
-        assertTrue(skippedAll)
-        assertEquals(1, next)
 
-        state = state.copy(index = 2)
+        state = state.copy(index = 1)
         composeRule.onNodeWithTag("onboarding:Signer").assertIsDisplayed()
+        composeRule.onNodeWithTag("onboardingTor").assertDoesNotExist()
+        // System back goes to the slide before. On the first slide it is left to Android.
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        composeRule.waitForIdle()
+        assertEquals(1, back)
         composeRule.onNodeWithTag("onboardingPrimary").performClick()
         assertTrue(connected)
         state = state.copy(signer = SignerStepUi(message = "No signer answered"))
         composeRule.onNodeWithText("No signer answered").assertIsDisplayed()
         // The Signer step keeps its own way to move on, since Skip all would otherwise skip the rest too.
+        composeRule.onNodeWithTag("onboardingCancelSigner").assertTextEquals("Not now")
         composeRule.onNodeWithTag("onboardingCancelSigner").performClick()
         assertEquals(2, next)
+        // Skip all bypasses every remaining step; it does not just advance the current one.
+        composeRule.onNodeWithTag("onboardingSkip").performClick()
+        assertTrue(skippedAll)
+        assertEquals(2, next)
+    }
+
+    @Test
+    fun installPermissionStepCanBeDeclined() {
+        var next = 0
+        var opened = false
+        composeRule.setContent {
+            ZapstoreTheme {
+                OnboardingScreen(
+                    state = OnboardingUiState(steps = listOf(OnboardingStep.Privacy, OnboardingStep.InstallPermission), index = 1),
+                    onNext = { next += 1 },
+                    onSkipAll = {},
+                    onNetworkModeChange = {},
+                    onConnectSigner = {},
+                    onOpenInstallSettings = { opened = true },
+                    onRequestNotifications = {},
+                )
+            }
+        }
+        composeRule.onNodeWithTag("onboarding:InstallPermission").assertIsDisplayed()
+        composeRule.onNodeWithTag("onboardingNotNowInstall").assertTextEquals("Not now")
+        composeRule.onNodeWithTag("onboardingNotNowInstall").performClick()
+        assertEquals(1, next)
+        assertTrue(!opened)
+    }
+
+    @Test
+    fun notificationsStepCanBeDeclined() {
+        var next = 0
+        var asked = false
+        composeRule.setContent {
+            ZapstoreTheme {
+                OnboardingScreen(
+                    state = OnboardingUiState(steps = listOf(OnboardingStep.Privacy, OnboardingStep.Notifications), index = 1),
+                    onNext = { next += 1 },
+                    onSkipAll = {},
+                    onNetworkModeChange = {},
+                    onConnectSigner = {},
+                    onOpenInstallSettings = {},
+                    onRequestNotifications = { asked = true },
+                )
+            }
+        }
+        composeRule.onNodeWithTag("onboarding:Notifications").assertIsDisplayed()
+        composeRule.onNodeWithTag("onboardingNotNow").assertTextEquals("Not now")
+        composeRule.onNodeWithTag("onboardingNotNow").performClick()
+        // Declining moves on without asking Android for the permission.
+        assertEquals(1, next)
+        assertTrue(!asked)
+    }
+
+    @Test
+    fun catalogGateShowsItsProgressAndEveryWayOut() {
+        var ui by mutableStateOf(
+            CatalogGateUi(CatalogGate.Loading(SyncPhase.Downloading, 5_000_000, 20_000_000), NetworkMode.DirectOnly),
+        )
+        var mode: NetworkMode? = null
+        var retried = false
+        var cleared = false
+        var restored = false
+        var copied = false
+        composeRule.setContent {
+            ZapstoreTheme {
+                CatalogGateScreen(
+                    ui = ui,
+                    onNetworkModeChange = { mode = it },
+                    onRetry = { retried = true },
+                    onClearAndRetry = { cleared = true },
+                    onRestore = { restored = true },
+                    onCopyDiagnostics = { copied = true },
+                )
+            }
+        }
+        composeRule.onNodeWithTag("gateStatus").assertTextEquals("Downloading the catalog")
+        composeRule.onNodeWithTag("gateDetail").assertIsDisplayed()
+        composeRule.onNodeWithTag("onboardingDirect").assertIsSelected()
+        composeRule.onNodeWithTag("onboardingTor").performClick()
+        assertEquals(NetworkMode.TorOnly, mode)
+        composeRule.onNodeWithTag("gateRetry").assertDoesNotExist()
+        composeRule.onNodeWithTag("gateClear").performClick()
+        assertTrue(cleared)
+        composeRule.onNodeWithTag("gateDiagnostics").performClick()
+        assertTrue(copied)
+
+        ui = ui.copy(gate = CatalogGate.Loading(SyncPhase.Importing, 0, -1))
+        composeRule.onNodeWithTag("gateStatus").assertTextEquals("Setting up the catalog")
+
+        ui = ui.copy(gate = CatalogGate.Loading(SyncPhase.Connecting, 0, -1), networkMode = NetworkMode.TorOnly)
+        composeRule.onNodeWithTag("gateStatus").assertTextEquals("Connecting through Tor")
+
+        ui = ui.copy(gate = CatalogGate.Failed("HTTP 502"))
+        composeRule.onNodeWithTag("gateError").assertTextEquals("HTTP 502")
+        composeRule.onNodeWithTag("gateRetry").performClick()
+        assertTrue(retried)
+
+        ui = ui.copy(gate = CatalogGate.NoCatalog)
+        // Nothing was downloaded, so there is nothing to clear.
+        composeRule.onNodeWithTag("gateClear").assertDoesNotExist()
+        composeRule.onNodeWithTag("gateRestore").performClick()
+        assertTrue(restored)
+        ui = ui.copy(restoreFailed = true)
+        composeRule.onNodeWithTag("gateRestoreFailed").assertIsDisplayed()
+    }
+
+    @Test
+    fun catalogGateOverTheApksCatalogOffersTheWayOnNotStartingOver() {
+        var ui by mutableStateOf(
+            CatalogGateUi(CatalogGate.Loading(SyncPhase.Downloading, 1_000_000, 4_000_000, catchUp = true), NetworkMode.DirectOnly),
+        )
+        var continued = false
+        var cleared = false
+        composeRule.setContent {
+            ZapstoreTheme {
+                CatalogGateScreen(
+                    ui = ui,
+                    onNetworkModeChange = {},
+                    onRetry = {},
+                    onClearAndRetry = { cleared = true },
+                    onRestore = {},
+                    onCopyDiagnostics = {},
+                    onContinue = { continued = true },
+                )
+            }
+        }
+        composeRule.onNodeWithText("Getting the latest apps").assertIsDisplayed()
+        composeRule.onNodeWithTag("gateProgress").assertIsDisplayed()
+        // The catalog on the phone is good; clearing it would throw it away.
+        composeRule.onNodeWithTag("gateClear").assertDoesNotExist()
+        composeRule.onNodeWithTag("gateContinue").assertDoesNotExist()
+
+        ui = ui.copy(gate = CatalogGate.Failed("HTTP 502", catchUp = true))
+        composeRule.onNodeWithText("Could not get the latest apps").assertIsDisplayed()
+        composeRule.onNodeWithTag("gateRetry").assertIsDisplayed()
+        composeRule.onNodeWithTag("gateClear").assertDoesNotExist()
+        composeRule.onNodeWithTag("gateContinue").performClick()
+        assertTrue(continued)
+        assertTrue(!cleared)
     }
 
     @Test

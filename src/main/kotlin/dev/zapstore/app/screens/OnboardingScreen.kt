@@ -8,9 +8,11 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.em
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,16 +20,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -35,7 +35,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -44,22 +43,19 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.fromHtml
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import dev.zapstore.app.OnboardingStep
 import dev.zapstore.app.R
 import dev.zapstore.app.ZapAction
-import dev.zapstore.app.ZapActionTint
 import dev.zapstore.app.ZapCanvas
-import dev.zapstore.app.ZapLine
 import dev.zapstore.app.ZapRadius
 import dev.zapstore.app.ZapSpacing
-import dev.zapstore.app.ZapSurface1
 import dev.zapstore.app.ZapSurface3
 import dev.zapstore.app.ZapText
 import dev.zapstore.app.ZapText2
 import dev.zapstore.app.components.StatusText
 import dev.zapstore.app.components.ZapButton
+import dev.zapstore.app.components.ZapSegmented
 import dev.zapstore.app.components.ZapButtonStyle
 import dev.zapstore.app.components.ZapMotion
 import dev.zapstore.app.components.ZapTextLink
@@ -81,11 +77,14 @@ fun OnboardingScreen(
     onOpenInstallSettings: () -> Unit,
     onRequestNotifications: () -> Unit,
     modifier: Modifier = Modifier,
-    onGetAmber: () -> Unit = onNext,
     onBugReportsChange: (Boolean) -> Unit = {},
+    onBack: () -> Unit = {},
 ) {
-    val step = state.step ?: return
+    // Past the last step the last slide stays up, so finishing never blanks the screen before what follows.
+    val step = state.step ?: state.steps.lastOrNull() ?: return
     val animate = animationsEnabled()
+    // System back goes to the slide before. Not while signing in: that moves on by itself when it lands.
+    BackHandler(enabled = state.index > 0 && !state.signer.busy, onBack = onBack)
     Column(
         modifier
             .fillMaxSize()
@@ -94,9 +93,22 @@ fun OnboardingScreen(
             .padding(horizontal = ZapSpacing.space6, vertical = ZapSpacing.space4)
             .testTag("onboarding"),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            StepIndicator(state.index, state.steps.size, Modifier.weight(1f))
-            ZapTextLink(stringResource(R.string.onboarding_skip_all), onSkipAll, Modifier.testTag("onboardingSkip"))
+        // The mark and the steps on the left, Skip all on the right.
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+            Image(
+                painterResource(R.drawable.ic_mark),
+                contentDescription = null,
+                modifier = Modifier.size(width = 20.dp, height = 34.dp).testTag("onboardingLogo"),
+            )
+            StepIndicator(
+                state.index.coerceAtMost(state.steps.lastIndex),
+                state.steps.size,
+                Modifier.padding(start = ZapSpacing.space4).weight(1f),
+            )
+            // Not on the first slide: the catalog download waits for the connection choice made there.
+            if (step != OnboardingStep.Privacy) {
+                ZapTextLink(stringResource(R.string.onboarding_skip_all), onSkipAll, Modifier.testTag("onboardingSkip"))
+            }
         }
         AnimatedContent(
             targetState = step,
@@ -119,13 +131,10 @@ fun OnboardingScreen(
                     .padding(top = ZapSpacing.space8, bottom = ZapSpacing.space4)
                     .testTag("onboarding:${shown.name}"),
             ) {
-                val noSigner = shown == OnboardingStep.Signer && !state.hasSigner
                 val returning = shown == OnboardingStep.Privacy && state.upgradedFromFlutter
-                StepIcon(shown.icon(), logo = shown == OnboardingStep.Privacy)
                 Text(
                     stringResource(
                         when {
-                            noSigner -> R.string.onboarding_get_signer_title
                             returning -> R.string.onboarding_upgraded_title
                             else -> shown.title()
                         },
@@ -135,14 +144,18 @@ fun OnboardingScreen(
                 StepBody(
                     stringResource(
                         when {
-                            noSigner -> R.string.onboarding_get_signer_body
                             returning -> R.string.onboarding_upgraded_body
                             else -> shown.body()
                         },
                     ),
                 )
-                if (shown == OnboardingStep.Network) {
-                    NetworkChoice(state.networkMode, onNetworkModeChange)
+                if (shown == OnboardingStep.Privacy) {
+                    NetworkPicker(
+                        stringResource(R.string.onboarding_network_title),
+                        state.networkMode,
+                        onNetworkModeChange,
+                        Modifier.padding(top = ZapSpacing.space2),
+                    )
                 }
                 if (shown == OnboardingStep.Signer) {
                     state.signer.message?.let { StatusText(it, Modifier.testTag("signerStatus")) }
@@ -152,7 +165,7 @@ fun OnboardingScreen(
         val (label, action) = when (step) {
             OnboardingStep.Privacy, OnboardingStep.Network -> R.string.onboarding_continue to onNext
             OnboardingStep.BugReports -> R.string.onboarding_send_bug_reports to { onBugReportsChange(true); onNext() }
-            OnboardingStep.Signer -> if (state.hasSigner) R.string.onboarding_connect_signer to onConnectSigner else R.string.onboarding_get_amber to onGetAmber
+            OnboardingStep.Signer -> R.string.onboarding_connect_signer to onConnectSigner
             OnboardingStep.InstallPermission -> R.string.onboarding_open_settings to onOpenInstallSettings
             OnboardingStep.Notifications -> R.string.onboarding_allow_notifications to onRequestNotifications
         }
@@ -164,10 +177,26 @@ fun OnboardingScreen(
         )
         if (step == OnboardingStep.Signer) {
             ZapButton(
-                text = stringResource(R.string.onboarding_cancel),
+                text = stringResource(R.string.onboarding_not_now),
                 onClick = onNext,
                 style = ZapButtonStyle.Ghost,
                 modifier = Modifier.fillMaxWidth().padding(top = ZapSpacing.space1).testTag("onboardingCancelSigner"),
+            )
+        }
+        if (step == OnboardingStep.InstallPermission) {
+            ZapButton(
+                text = stringResource(R.string.onboarding_not_now),
+                onClick = onNext,
+                style = ZapButtonStyle.Ghost,
+                modifier = Modifier.fillMaxWidth().padding(top = ZapSpacing.space1).testTag("onboardingNotNowInstall"),
+            )
+        }
+        if (step == OnboardingStep.Notifications) {
+            ZapButton(
+                text = stringResource(R.string.onboarding_not_now),
+                onClick = onNext,
+                style = ZapButtonStyle.Ghost,
+                modifier = Modifier.fillMaxWidth().padding(top = ZapSpacing.space1).testTag("onboardingNotNow"),
             )
         }
         if (step == OnboardingStep.BugReports) {
@@ -210,112 +239,64 @@ private fun StepIndicator(index: Int, count: Int, modifier: Modifier = Modifier)
     }
 }
 
-@Composable
-private fun StepIcon(icon: Int, logo: Boolean = false) {
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier
-            .size(56.dp)
-            .clip(RoundedCornerShape(ZapRadius.md))
-            .background(if (logo) Color.Transparent else ZapActionTint),
-    ) {
-        if (logo) {
-            Image(
-                painterResource(icon),
-                contentDescription = null,
-                modifier = Modifier.size(width = 20.dp, height = 34.dp),
-            )
-        } else {
-            Icon(painterResource(icon), contentDescription = null, tint = ZapAction, modifier = Modifier.size(28.dp))
-        }
-    }
-}
-
 /** Paragraphs split on blank lines; `<b>` in the string is bold, in the primary text color. */
 @Composable
-private fun StepBody(text: String) {
+internal fun StepBody(text: String) {
     Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space4)) {
         text.split("\n\n").forEach { paragraph ->
             Text(
                 AnnotatedString.fromHtml(paragraph.trim()).let { html ->
                     buildAnnotatedString {
                         append(html)
+                        // Emphasis is the title weight with the title's tracking. DM Sans at 700 and a text opsz sets wide.
                         html.spanStyles.filter { it.item.fontWeight == FontWeight.Bold }
-                            .forEach { addStyle(SpanStyle(color = ZapText), it.start, it.end) }
+                            .forEach { addStyle(SpanStyle(color = ZapText, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.015).em), it.start, it.end) }
                     }
                 },
-                style = MaterialTheme.typography.bodyLarge,
+                // 10% under Body: these are short paragraphs on a screen of their own, not running text.
+                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.3.sp, lineHeight = 23.sp),
                 color = ZapText2,
             )
         }
     }
 }
 
+/**
+ * How Zapstore connects: Tor or Direct in one small control, and one line on what the chosen one means.
+ * Small enough to sit under a paragraph, so it never takes a slide or a screen of its own.
+ */
 @Composable
-private fun NetworkChoice(selected: NetworkMode, onSelect: (NetworkMode) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space3), modifier = Modifier.selectableGroup()) {
-        NetworkOption(
-            title = stringResource(R.string.network_direct),
-            body = stringResource(R.string.onboarding_direct_body),
-            selected = selected == NetworkMode.DirectOnly,
-            onClick = { onSelect(NetworkMode.DirectOnly) },
-            tag = "onboardingDirect",
+internal fun NetworkPicker(
+    title: String,
+    selected: NetworkMode,
+    onSelect: (NetworkMode) -> Unit,
+    modifier: Modifier = Modifier,
+    quiet: Boolean = false,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space2), modifier = modifier.fillMaxWidth()) {
+        Text(
+            title,
+            style = if (quiet) MaterialTheme.typography.bodySmall else MaterialTheme.typography.titleSmall,
+            color = if (quiet) ZapText2 else ZapText,
         )
-        NetworkOption(
-            title = stringResource(R.string.network_tor),
-            body = stringResource(R.string.onboarding_tor_body),
-            selected = selected == NetworkMode.TorOnly,
-            onClick = { onSelect(NetworkMode.TorOnly) },
-            tag = "onboardingTor",
+        ZapSegmented(
+            options = listOf(NetworkMode.TorOnly, NetworkMode.DirectOnly),
+            selected = selected,
+            onSelect = onSelect,
+            label = { stringResource(if (it == NetworkMode.TorOnly) R.string.network_tor else R.string.network_direct) },
+            tag = { if (it == NetworkMode.TorOnly) "onboardingTor" else "onboardingDirect" },
+        )
+        Text(
+            stringResource(if (selected == NetworkMode.TorOnly) R.string.onboarding_tor_body else R.string.onboarding_direct_body),
+            style = MaterialTheme.typography.bodySmall,
+            color = ZapText2,
+            modifier = Modifier.testTag("networkCaption"),
         )
     }
-}
-
-@Composable
-private fun NetworkOption(title: String, body: String, selected: Boolean, onClick: () -> Unit, tag: String) {
-    val animate = animationsEnabled()
-    val border by animateColorAsState(if (selected) ZapAction else ZapLine, if (animate) ZapMotion.base() else snap(), label = "optionBorder")
-    val shape = RoundedCornerShape(ZapRadius.md)
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(if (selected) ZapActionTint else ZapSurface1)
-            .border(1.dp, border, shape)
-            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
-            .padding(ZapSpacing.space4)
-            .testTag(tag),
-    ) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .padding(top = 2.dp)
-                .size(20.dp)
-                .clip(RoundedCornerShape(ZapRadius.full))
-                .border(2.dp, if (selected) ZapAction else ZapText2, RoundedCornerShape(ZapRadius.full)),
-        ) {
-            if (selected) Box(Modifier.size(10.dp).clip(RoundedCornerShape(ZapRadius.full)).background(ZapAction))
-        }
-        Column(verticalArrangement = Arrangement.spacedBy(ZapSpacing.space1), modifier = Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleSmall, color = ZapText)
-            Text(body, style = MaterialTheme.typography.bodyMedium, color = ZapText2)
-        }
-    }
-}
-
-private fun OnboardingStep.icon(): Int = when (this) {
-    OnboardingStep.Privacy -> R.drawable.ic_mark
-    OnboardingStep.Network -> R.drawable.ic_shield
-    OnboardingStep.BugReports -> R.drawable.ic_info
-    OnboardingStep.Signer -> R.drawable.ic_key
-    OnboardingStep.InstallPermission -> R.drawable.ic_download
-    OnboardingStep.Notifications -> R.drawable.ic_update
 }
 
 private fun OnboardingStep.title(): Int = when (this) {
-    OnboardingStep.Privacy -> R.string.onboarding_privacy_title
-    OnboardingStep.Network -> R.string.onboarding_network_title
+    OnboardingStep.Privacy, OnboardingStep.Network -> R.string.onboarding_privacy_title
     OnboardingStep.BugReports -> R.string.onboarding_bug_reports_title
     OnboardingStep.Signer -> R.string.onboarding_signer_title
     OnboardingStep.InstallPermission -> R.string.onboarding_install_title
@@ -323,8 +304,7 @@ private fun OnboardingStep.title(): Int = when (this) {
 }
 
 private fun OnboardingStep.body(): Int = when (this) {
-    OnboardingStep.Privacy -> R.string.onboarding_privacy_body
-    OnboardingStep.Network -> R.string.onboarding_network_body
+    OnboardingStep.Privacy, OnboardingStep.Network -> R.string.onboarding_privacy_body
     OnboardingStep.BugReports -> R.string.onboarding_bug_reports_body
     OnboardingStep.Signer -> R.string.onboarding_signer_body
     OnboardingStep.InstallPermission -> R.string.onboarding_install_body

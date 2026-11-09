@@ -6,6 +6,7 @@ import dev.zapstore.app.AppConfig
 import dev.zapstore.app.BuildConfig
 import dev.zapstore.iolite.AppFilter
 import dev.zapstore.iolite.CatalogBundle
+import dev.zapstore.iolite.CatalogProgress
 import dev.zapstore.iolite.CatalogRecord
 import dev.zapstore.iolite.CatalogReference
 import dev.zapstore.iolite.CatalogSyncResult
@@ -15,7 +16,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.Dispatchers
@@ -36,13 +39,35 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
+/** Where a running sync is. Idle outside a sync, and while it works on something with no progress to show. */
+enum class SyncPhase {
+    Idle,
+
+    /** Waiting for the network to be usable: Tor is still starting. */
+    Connecting,
+    Downloading,
+
+    /** The bundle is complete and is being verified and written to the database. */
+    Importing,
+}
+
 data class SyncStatus(
     val syncing: Boolean = false,
+    val phase: SyncPhase = SyncPhase.Idle,
+    /** Bytes of the bundle on disk so far, while [phase] is [SyncPhase.Downloading]. */
+    val receivedBytes: Long = 0,
+    /** The bundle's length, or -1 when the server did not say. */
+    val totalBytes: Long = -1,
     val lastSyncedAtMillis: Long? = null,
     val lastSyncDurationMillis: Long? = null,
     val lastSyncBytes: Long? = null,
     val lastSyncNotModified: Boolean = false,
     val error: String? = null,
+    /**
+     * The phone holds only the catalog the APK came with, and no sync has succeeded since. It ends with the
+     * first clean sync, or when the user chooses to go on without one.
+     */
+    val catchingUp: Boolean = false,
 )
 
 /**
@@ -62,14 +87,33 @@ class CatalogSync(
     private val awaitRemote: suspend () -> Unit = {},
     /** The key the default catalog must be signed by; null trusts the first signer seen. */
     private val pinnedKey: String? = null,
+    /**
+     * False while something must happen before Zapstore may use the network: the user has not yet chosen
+     * how to connect. A sync then imports the APK's snapshot, which needs no network, and stops.
+     */
+    private val remoteAllowed: () -> Boolean = { true },
+    /** Ends a download in flight. A blocked read does not see a coroutine cancel, so [wipe] cuts the connection too. */
+    private val abortTransfers: () -> Unit = {},
+    /** Whether the phone is still on the APK's snapshot, kept across launches. See [SyncStatus.catchingUp]. */
+    private val catchUpMark: CatchUpMark = CatchUpMark.InMemory(),
     private val now: () -> Long = System::currentTimeMillis,
 ) {
     private val mutex = Mutex()
     /** Set by [wipe]: the next sync fetches the full bundle from the relay instead of the APK's snapshot. */
     @Volatile private var skipBundled = false
-    private val _status = MutableStateFlow(SyncStatus())
+    /** A sync stopped at [remoteAllowed], so [resumeIfHeld] has something to resume. */
+    @Volatile private var heldBack = false
+    private val _status = MutableStateFlow(SyncStatus(catchingUp = catchUpMark.pending))
     private var requested: Job? = null
     val status: StateFlow<SyncStatus> = _status.asStateFlow()
+
+    /** Hands a download's and an import's progress to [status]. */
+    private val progress = object : CatalogProgress {
+        override fun downloading(received: Long, total: Long) =
+            _status.update { it.copy(phase = SyncPhase.Downloading, receivedBytes = received, totalBytes = total) }
+
+        override fun importing() = _status.update { it.copy(phase = SyncPhase.Importing) }
+    }
 
     private val installed = MutableStateFlow<List<InstalledApp>>(emptyList())
 
@@ -118,6 +162,41 @@ class CatalogSync(
     }
 
     /**
+     * Cuts the running sync short and starts a new one. For a change the running sync cannot see: a
+     * download that began on Direct must not finish there after the user chose Tor. The caller has already
+     * dropped the old connections, which is what ends a blocked download.
+     */
+    @Synchronized
+    fun restart() {
+        val old = requested
+        old?.cancel()
+        requested = scope.launch {
+            old?.join()
+            sync()
+        }
+    }
+
+    /** [restart], only if a sync is running; with none, the next one reads the new setting on its own. */
+    @Synchronized
+    fun restartIfRunning() {
+        if (requested?.isActive == true) restart()
+    }
+
+    /**
+     * The user goes on with the catalog the APK came with. A sync in flight keeps running; the next
+     * launch asks the relay again like any other.
+     */
+    fun finishCatchUp() {
+        catchUpMark.pending = false
+        _status.update { it.copy(catchingUp = false) }
+    }
+
+    /** Whatever [remoteAllowed] waited for is done: a sync that stopped there starts again. */
+    fun resumeIfHeld() {
+        if (heldBack) restart()
+    }
+
+    /**
      * The key that signed the bundled snapshot. A catalog with this key is the only one the snapshot is
      * imported into. A snapshot signed by anything but [pinnedKey] is not used.
      */
@@ -147,37 +226,92 @@ class CatalogSync(
      */
     suspend fun sync() {
         mutex.withLock {
-            _status.update { it.copy(syncing = true, error = null) }
-            awaitRemote()
-            var elapsedMs: Long? = null
-            val pass = Pass()
-            val failure = runCatching {
-                withContext(Dispatchers.IO) {
-                    val started = SystemClock.elapsedRealtime()
-                    syncAll(pass)
-                    elapsedMs = SystemClock.elapsedRealtime() - started
-                    AppLog.i(
-                        TAG,
-                        "catalog sync ${elapsedMs}ms changed=${pass.changed} bytes=${pass.bytes} catalogs=${iolite.catalogs().size} apps=${iolite.appCount()}",
-                    )
-                }
-            }.exceptionOrNull()
-            if (failure is CancellationException) throw failure
-            failure?.let { AppLog.w(TAG, "catalog sync failed", it) }
-            refreshInstalledApps()
-            val error = failure?.let { it.message ?: it::class.simpleName } ?: pass.errors.firstOrNull()
-            val succeeded = error == null
-            if (succeeded) skipBundled = false
-            _status.update {
-                it.copy(
-                    syncing = false,
-                    lastSyncedAtMillis = if (succeeded) now() else it.lastSyncedAtMillis,
-                    lastSyncDurationMillis = if (succeeded) elapsedMs else it.lastSyncDurationMillis,
-                    lastSyncBytes = if (failure == null) pass.bytes else it.lastSyncBytes,
-                    lastSyncNotModified = if (failure == null) !pass.changed else it.lastSyncNotModified,
-                    error = error,
+            _status.update { it.copy(syncing = true, phase = SyncPhase.Idle, error = null) }
+            try {
+                runPass()
+            } catch (cancelled: CancellationException) {
+                // A restart or a network change cut this pass short. The pass that replaces it reports.
+                _status.update { it.copy(syncing = false, phase = SyncPhase.Idle) }
+                throw cancelled
+            }
+        }
+    }
+
+    private suspend fun runPass() {
+        // The snapshot in the APK needs no network, so it comes first and does not wait for a connection choice.
+        withContext(Dispatchers.IO) { importSnapshot() }
+        if (!remoteAllowed()) {
+            heldBack = true
+            // The choice may have been made between the two reads, after which nobody would resume this.
+            if (!remoteAllowed()) {
+                refreshInstalledApps()
+                _status.update { it.copy(syncing = false, phase = SyncPhase.Idle) }
+                return
+            }
+        }
+        heldBack = false
+        _status.update { it.copy(phase = SyncPhase.Connecting) }
+        awaitRemote()
+        _status.update { it.copy(phase = SyncPhase.Idle) }
+        var elapsedMs: Long? = null
+        val pass = Pass()
+        val failure = runCatching {
+            withContext(Dispatchers.IO) {
+                val started = SystemClock.elapsedRealtime()
+                syncAll(pass)
+                elapsedMs = SystemClock.elapsedRealtime() - started
+                AppLog.i(
+                    TAG,
+                    "catalog sync ${elapsedMs}ms changed=${pass.changed} bytes=${pass.bytes} catalogs=${iolite.catalogs().size} apps=${iolite.appCount()}",
                 )
             }
+        }.exceptionOrNull()
+        if (failure is CancellationException) throw failure
+        failure?.let { AppLog.w(TAG, "catalog sync failed", it) }
+        refreshInstalledApps()
+        val error = failure?.let { it.message ?: it::class.simpleName } ?: pass.errors.firstOrNull()
+        val succeeded = error == null
+        if (succeeded) {
+            skipBundled = false
+            catchUpMark.pending = false
+        }
+        _status.update {
+            it.copy(
+                catchingUp = it.catchingUp && !succeeded,
+                syncing = false,
+                phase = SyncPhase.Idle,
+                receivedBytes = 0,
+                totalBytes = -1,
+                lastSyncedAtMillis = if (succeeded) now() else it.lastSyncedAtMillis,
+                lastSyncDurationMillis = if (succeeded) elapsedMs else it.lastSyncDurationMillis,
+                lastSyncBytes = if (failure == null) pass.bytes else it.lastSyncBytes,
+                lastSyncNotModified = if (failure == null) !pass.changed else it.lastSyncNotModified,
+                error = error,
+            )
+        }
+    }
+
+    /**
+     * Makes the snapshot in the APK the first catalog's data, with no network. A build without a snapshot,
+     * or a [wipe] that asked for the relay's bundle instead, skips it. One that does not import is logged
+     * and left to the relay: the user is not stopped by a bad asset.
+     */
+    private fun importSnapshot() {
+        val snapshot = bundledSnapshot ?: return
+        if (skipBundled) return
+        val key = snapshotKey ?: return
+        if (iolite.needsDefaultCatalog()) iolite.seedDefaultCatalog(key, AppConfig.catalogRelay)
+        val catalog = iolite.catalogs().firstOrNull { it.manifestPubkey == key } ?: return
+        try {
+            // Imported only into a catalog with no data. From then until a sync succeeds, the phone is a build date behind.
+            if (iolite.importBundledSnapshot(catalog.id, snapshot, AppConfig.catalogRelay, progress) != null) {
+                catchUpMark.pending = true
+                _status.update { it.copy(catchingUp = true) }
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            AppLog.w(TAG, "bundled catalog was not imported", failure)
         }
     }
 
@@ -189,6 +323,9 @@ class CatalogSync(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
+                // A restart cancels the call under the pass, and OkHttp reports that as an IOException.
+                // It is the restart, not a catalog that failed.
+                currentCoroutineContext().ensureActive()
                 AppLog.w(TAG, "catalog ${label(catalog)} failed", failure)
                 pass.errors += "${label(catalog)}: ${failure.message ?: failure::class.simpleName}"
             }
@@ -207,7 +344,16 @@ class CatalogSync(
             return
         }
         try {
-            record(pass, iolite.syncCatalog(catalogId = 1L, useOnion = useOnion(), endpoint = AppConfig.catalogRelay, client = BuildConfig.VERSION_NAME))
+            record(
+                pass,
+                iolite.syncCatalog(
+                    catalogId = 1L,
+                    useOnion = useOnion(),
+                    endpoint = AppConfig.catalogRelay,
+                    client = BuildConfig.VERSION_NAME,
+                    progress = progress,
+                ),
+            )
         } catch (failure: Exception) {
             AppLog.w(TAG, "default catalog failed", failure)
             pass.errors += "${AppConfig.catalogRelay.url}: ${failure.message ?: failure::class.simpleName}"
@@ -218,12 +364,13 @@ class CatalogSync(
         val catalog = iolite.ensureCatalogRelays(listed)
         val key = catalog.manifestPubkey
         val isDefault = key != null && key == (pinnedKey ?: snapshotKey)
+        // The snapshot was imported by importSnapshot, before the network was allowed.
         return iolite.syncCatalog(
             catalogId = catalog.id,
             useOnion = useOnion(),
-            bundled = if (!skipBundled && key != null && key == snapshotKey) bundledSnapshot else null,
             endpoint = if (isDefault) AppConfig.catalogRelay else null,
             client = BuildConfig.VERSION_NAME,
+            progress = progress,
         )
     }
 
@@ -255,25 +402,43 @@ class CatalogSync(
         return catalog
     }
 
-    /** Removes the catalog and what was downloaded from it. The last one can go too, which empties the app. */
+    /** Removes the catalog and what was downloaded from it. The last one stays: an app with no catalog has nothing to show. */
     suspend fun removeCatalog(id: Long) {
-        mutex.withLock { withContext(Dispatchers.IO) { iolite.removeCatalog(id) } }
+        mutex.withLock {
+            if (iolite.catalogs().size <= 1) return
+            withContext(Dispatchers.IO) { iolite.removeCatalog(id) }
+        }
         refreshInstalledApps()
     }
 
     /**
      * Clears what was downloaded and syncs again from the relay's latest full bundle. The snapshot in the
      * APK is skipped until that sync succeeds, since it may be what went wrong.
+     *
+     * Runs on the process scope. With nothing left to show, the catalog screen replaces the Settings
+     * screen that asked for this, and a clear that was cancelled halfway would leave the app empty.
      */
     suspend fun wipe() {
+        // A stalled download holds the sync lock until its read times out. Start over means now.
+        synchronized(this) { requested?.cancel() }
+        abortTransfers()
+        scope.launch { wipeNow() }.join()
+    }
+
+    private suspend fun wipeNow() {
         mutex.withLock {
             _status.update { it.copy(syncing = true, error = null) }
             val result = runCatching { withContext(Dispatchers.IO) { iolite.wipeLocalData() } }
             result.exceptionOrNull()?.let { AppLog.e(TAG, "clear local storage failed", it) }
                 ?: AppLog.i(TAG, "local storage cleared; resyncing without the bundled snapshot")
-            if (result.isSuccess) skipBundled = true
+            if (result.isSuccess) {
+                skipBundled = true
+                // The snapshot was cleared with the rest; the screen for an empty catalog takes over from here.
+                catchUpMark.pending = false
+            }
             _status.update {
                 it.copy(
+                    catchingUp = it.catchingUp && !result.isSuccess,
                     syncing = false,
                     lastSyncedAtMillis = null,
                     lastSyncDurationMillis = null,

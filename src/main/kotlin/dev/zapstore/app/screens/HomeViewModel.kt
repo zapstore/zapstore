@@ -71,8 +71,10 @@ data class HomeUiState(
     /** Keys of the active catalogs, and the one they signed with before the rotation. */
     val catalogKeys: Set<String> = emptySet(),
     /**
-     * Every local read behind the first screen has landed: stacks and the apps their tiles show, the activity feed, and
-     * the profiles of the people in both. The launch splash stays up until this is true, so nothing fills in after it.
+     * The catalog data behind the first screen has landed, all of it read from SQLite: the stacks, the apps their tiles
+     * show, the newest releases, and the names and faces that came with the catalog. The launch splash, or the screen
+     * Home follows, stays up until this is true. Nothing social is waited for: comments, zaps and other people's
+     * stacks start empty and fill in when the relays answer.
      */
     val ready: Boolean = false,
 )

@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- On a first install, or after Clear local storage, a catalog screen replaces the app until the catalog is in. It shows the connection, the download and the import, offers Tor or Direct, "Clear and start over", and "Copy diagnostics". It opens when the phone holds no app data, and on a first install of the APK that carries the catalog, until the first sync has brought that catalog up to date
+- A catalog screen with "Restore Zapstore's catalog" when no catalog is left
+
+### Changed
+
+- Two kinds of APK: the one on the website carries the catalog, and the one on Zapstore does not. Native libraries and dex are compressed, which makes both smaller
+- The welcome flow opens on one slide: what Zapstore keeps on your phone, with a Tor or Direct choice under it. The Network slide is gone, and so is "Skip all" on that first slide
+- The first catalog download starts when you continue from that slide, instead of when the app opens
+- The Amber step, the install-permission step and the notifications step each offer "Not now". A phone with no signer app has no Amber step at all: installing Amber and signing in is on the Profile screen
+- The APK that carries the catalog opens on the latest apps: the first sync after install runs behind the same catalog screen, with "Continue for now" if it fails, instead of Home showing the apps of the day the APK was built
+- A catalog download that stops sending data for 45 seconds fails, instead of waiting
+- Changing between Tor and Direct restarts a catalog sync in progress
+
+### Fixed
+
+- Home no longer flashes "No stacks to show" or a blank screen while it reads the catalog from the phone. The last welcome slide, or the catalog screen, stays up until Home has its data, and a regular launch keeps the splash
+- The last catalog can no longer be removed in Settings
+- An empty catalog list arriving from another device no longer removes the catalogs on this one
+
 ## [2.0.4] - 2026-11-08
 
 ### Changed

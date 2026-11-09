@@ -29,8 +29,6 @@ data class OnboardingUiState(
     val index: Int = 0,
     val networkMode: NetworkMode = NetworkMode.DirectOnly,
     val signer: SignerStepUi = SignerStepUi(),
-    /** False when no NIP-55 signer is installed; the Signer step then offers Amber. */
-    val hasSigner: Boolean = true,
     /** The phone had the Flutter app; the welcome step greets an existing user. */
     val upgradedFromFlutter: Boolean = false,
     val finished: Boolean = false,
@@ -48,38 +46,50 @@ class OnboardingViewModel(private val zapstore: ZapstoreApplication) : ViewModel
     }.stateIn(viewModelScope, SharingStarted.Eagerly, progress.value)
 
     private fun initial(): OnboardingUiState {
+        val hasSigner = zapstore.account.bridge.installedSigners().isNotEmpty()
         val steps = onboarding.plan {
             Onboarding.steps(
                 migrated = zapstore.migratedFromFlutter,
                 canInstall = zapstore.packageManager.canRequestPackageInstalls(),
                 needsNotificationPermission = needsNotificationPermission(),
+                hasSigner = hasSigner,
             )
-        }
+            // A plan saved when Get Amber was a step still lists Signer on a phone with none.
+        }.filter { it != OnboardingStep.Signer || hasSigner }
         val completed = onboarding.completed()
         val index = steps.indexOfFirst { it !in completed }
         if (index < 0) onboarding.finish()
         return OnboardingUiState(
             steps = steps,
             index = index.coerceAtLeast(0),
-            hasSigner = zapstore.account.bridge.installedSigners().isNotEmpty(),
             upgradedFromFlutter = zapstore.upgradedFromFlutter,
             finished = index < 0,
         )
     }
 
-    /** Continue and the Signer step's Cancel both move on; neither changes any setting already made. */
+    /** Continue and the Signer step's Not now both move on; neither changes any setting already made. */
     fun next() {
         val state = progress.value
         state.step?.let(onboarding::complete)
+        // The first slide holds the connection choice, and the catalog download was waiting on it.
+        // Completed above, so the sync sees it.
+        if (state.step == OnboardingStep.Privacy) zapstore.catalogSync.resumeIfHeld()
         val index = state.index + 1
         if (index >= state.steps.size) onboarding.finish()
         progress.update { it.copy(index = index, finished = index >= it.steps.size) }
         signer.value = SignerStepUi()
     }
 
+    /** Back one slide, from the step bars. Nothing already chosen is undone. */
+    fun back() {
+        progress.update { if (it.index > 0) it.copy(index = it.index - 1) else it }
+        signer.value = SignerStepUi()
+    }
+
     /** Ends onboarding right away, leaving any remaining steps (and their settings) untouched. */
     fun skipAll() {
         onboarding.finish()
+        zapstore.catalogSync.resumeIfHeld()
         progress.update { it.copy(finished = true) }
     }
 

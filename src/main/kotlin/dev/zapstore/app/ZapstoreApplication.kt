@@ -22,8 +22,11 @@ import coil3.network.ConnectivityChecker
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import dev.zapstore.app.account.AccountStore
 import dev.zapstore.app.account.Nip55Bridge
+import dev.zapstore.app.catalog.CatalogGate
 import dev.zapstore.app.catalog.CatalogSync
 import dev.zapstore.app.catalog.CatalogSyncWorker
+import dev.zapstore.app.catalog.PrefsCatchUpMark
+import dev.zapstore.app.catalog.catalogGateFlow
 import dev.zapstore.app.install.BackgroundUpdateWorker
 import dev.zapstore.app.install.Installer
 import dev.zapstore.app.catalog.installedApps
@@ -51,6 +54,7 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
@@ -73,6 +77,10 @@ class ZapstoreApplication : Application() {
     lateinit var queryEncoder: QueryEncoder
         private set
     lateinit var catalogSync: CatalogSync
+        private set
+
+    /** Whether there is app data to show; the app opens only when there is. */
+    lateinit var catalogGate: StateFlow<CatalogGate>
         private set
     lateinit var lists: DeviceLists
         private set
@@ -160,7 +168,12 @@ class ZapstoreApplication : Application() {
             useOnion = { network.mode.value.usesTor },
             awaitRemote = { network.awaitRemoteReady(TOR_WAIT_MS) },
             pinnedKey = AppConfig.catalogPubkey,
+            // Nothing leaves the phone until the user has chosen Direct or Tor on the first welcome slide and continued.
+            remoteAllowed = { onboarding.done || OnboardingStep.Privacy in onboarding.completed() },
+            abortTransfers = { network.abortTransfers() },
+            catchUpMark = PrefsCatchUpMark(this),
         )
+        catalogGate = catalogGateFlow(iolite, catalogSync, scope)
         catalogSync.request()
         installer = Installer(this, scope, { network.transport.callFactory }, iolite::proof)
         scope.launch {
@@ -173,7 +186,14 @@ class ZapstoreApplication : Application() {
         }
         watchPackages()
         settings.attach(iolite)
-        scope.launch { settings.state.map { it.networkMode }.distinctUntilChanged().collect(network::setMode) }
+        scope.launch {
+            settings.state.map { it.networkMode }.distinctUntilChanged().collect { mode ->
+                val changed = mode != network.mode.value
+                network.setMode(mode)
+                // A catalog download already under way used the old mode; it must not finish there.
+                if (changed) catalogSync.restartIfRunning()
+            }
+        }
         network.onConnectionsReset {
             iolite.refreshConnections()
             SingletonImageLoader.get(this).memoryCache?.clear()

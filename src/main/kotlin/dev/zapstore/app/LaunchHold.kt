@@ -11,6 +11,8 @@ import android.view.ViewTreeObserver
 internal class LaunchHold(
     private val view: View,
     private val limitMillis: Long,
+    /** Called once, as the hold lets go and the first frame is about to draw. */
+    private val onRelease: () -> Unit = {},
     private val ready: () -> Boolean,
 ) : ViewTreeObserver.OnPreDrawListener {
     private val started = SystemClock.uptimeMillis()
@@ -22,6 +24,7 @@ internal class LaunchHold(
     override fun onPreDraw(): Boolean {
         if (!ready() && SystemClock.uptimeMillis() - started < limitMillis) return false
         view.viewTreeObserver.removeOnPreDrawListener(this)
+        onRelease()
         return true
     }
 }

@@ -14,15 +14,23 @@ class MainActivityTest {
 
     @Test
     fun skippingOnboardingLandsAtHome() {
-        repeat(MAX_STEPS) {
-            if (composeRule.onAllNodesWithTag("onboardingSkip").fetchSemanticsNodes().isEmpty()) return@repeat
-            composeRule.onNodeWithTag("onboardingSkip").performClick()
+        // The welcome slide has no Skip all: the catalog download waits for the connection choice made on it.
+        // A phone that already finished onboarding opens on Home, and there is nothing to click through.
+        if (composeRule.onAllNodesWithTag("onboardingPrimary").fetchSemanticsNodes().isNotEmpty()) {
+            composeRule.onNodeWithTag("onboardingPrimary").performClick()
             composeRule.waitForIdle()
+        }
+        if (composeRule.onAllNodesWithTag("onboardingSkip").fetchSemanticsNodes().isNotEmpty()) {
+            composeRule.onNodeWithTag("onboardingSkip").performClick()
+        }
+        // A first install opens on the catalog screen until the catalog is in; Home follows by itself.
+        composeRule.waitUntil(CATALOG_WAIT_MILLIS) {
+            composeRule.onAllNodesWithTag("searchField").fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithTag("searchField").assertIsDisplayed()
     }
 
     private companion object {
-        const val MAX_STEPS = 5
+        const val CATALOG_WAIT_MILLIS = 120_000L
     }
 }

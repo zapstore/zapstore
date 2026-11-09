@@ -17,6 +17,12 @@ import dev.zapstore.app.install.UpdateNotifier
 import android.content.ClipData
 import dev.zapstore.app.screens.OnboardingViewModel
 import dev.zapstore.app.screens.OnboardingScreen
+import dev.zapstore.app.screens.CatalogGateScreen
+import dev.zapstore.app.screens.CatalogGateUi
+import dev.zapstore.app.screens.CatalogGateViewModel
+import dev.zapstore.app.catalog.CatalogGate
+import androidx.compose.foundation.layout.Box
+import kotlinx.coroutines.delay
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import android.os.Build
@@ -37,6 +43,11 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.first
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
@@ -106,8 +117,17 @@ class MainActivity : ComponentActivity() {
     /** A link the app was opened with, until the nav host has shown it. */
     private val pendingLink = MutableStateFlow<DeepLink?>(null)
 
-    /** Home has been composed with all of its local data. Read by [LaunchHold]. */
-    private var homeShown = false
+    /**
+     * Home has been composed with all of its local data. Set by Home, and cleared by [CatalogGated] when the app
+     * leaves for the catalog screen, so the next time Home returns it is covered again until it has its data.
+     */
+    private var homeShown by mutableStateOf(false)
+
+    /** The catalog screen is on screen, so Home is not composing and nothing is left to wait for. */
+    private var gateShowing by mutableStateOf(false)
+
+    /** The launch splash is still holding the first frame for Home, so nothing else needs to cover it. */
+    @Volatile private var splashCovers = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -124,8 +144,22 @@ class MainActivity : ComponentActivity() {
                     contentColor = MaterialTheme.colorScheme.onBackground,
                 ) {
                     var onboarding by remember { mutableStateOf(!zapstore.onboarding.done) }
-                    if (onboarding) OnboardingFlow(onFinished = { onboarding = false })
-                    else ZapstoreNavHost(rememberNavController())
+                    // The last slide stays on screen, touches blocked, until what follows is ready to be seen: Home
+                    // with its data, or the catalog screen. A blank screen between the two would be a loading state.
+                    var leaving by remember { mutableStateOf(false) }
+                    LaunchedEffect(leaving) {
+                        if (leaving) {
+                            withTimeoutOrNull(LAUNCH_HOLD_MILLIS) { snapshotFlow { homeShown || gateShowing }.first { it } }
+                            leaving = false
+                        }
+                    }
+                    Box(Modifier.fillMaxSize()) {
+                        if (!onboarding) CatalogGated { ZapstoreNavHost(rememberNavController()) }
+                        if (onboarding || leaving) {
+                            OnboardingFlow(onFinished = { onboarding = false; leaving = true })
+                            if (leaving) Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { } })
+                        }
+                    }
                 }
             }
         }
@@ -142,7 +176,11 @@ class MainActivity : ComponentActivity() {
      * the first frame, and with it the system splash, until Home has them. Onboarding has nothing to wait for.
      */
     private fun holdForFirstScreen() {
-        if (zapstore.onboarding.done) LaunchHold(findViewById(android.R.id.content), LAUNCH_HOLD_MILLIS) { homeShown }.attach()
+        if (!zapstore.onboarding.done) return
+        splashCovers = true
+        LaunchHold(findViewById(android.R.id.content), LAUNCH_HOLD_MILLIS, onRelease = { splashCovers = false }) {
+            homeShown || gateShowing
+        }.attach()
     }
 
     private fun Intent.deepLink(): DeepLink? =
@@ -190,18 +228,94 @@ class MainActivity : ComponentActivity() {
             state = state,
             onNext = viewModel::next,
             onSkipAll = viewModel::skipAll,
+            onBack = viewModel::back,
             onNetworkModeChange = viewModel::setNetworkMode,
             onBugReportsChange = viewModel::setBugReports,
             onConnectSigner = viewModel::connectSigner,
-            onGetAmber = {
-                pendingLink.value = DeepLink.App(Nip55Bridge.AMBER)
-                viewModel.next()
-            },
             onOpenInstallSettings = ::openUnknownSourcesSettings,
             onRequestNotifications = {
                 if (Build.VERSION.SDK_INT >= 33) notifications.launch(Manifest.permission.POST_NOTIFICATIONS) else viewModel.next()
             },
         )
+    }
+
+    /**
+     * Opens [content] once there is app data, and shows the catalog screen while there is none. A first
+     * install that has not finished onboarding reaches this screen as its last step: if the download is
+     * already in, it never appears. After "Clear local storage" it takes the place of the app until the
+     * catalog is back.
+     */
+    @androidx.compose.runtime.Composable
+    private fun CatalogGated(content: @androidx.compose.runtime.Composable () -> Unit) {
+        val viewModel: CatalogGateViewModel = viewModel(factory = CatalogGateViewModel.factory(zapstore))
+        val ui by viewModel.uiState.collectAsStateWithLifecycle()
+        val gate = ui.gate
+        val blocking = gate is CatalogGate.Loading || gate is CatalogGate.Failed || gate is CatalogGate.NoCatalog
+        // An import that is over in a blink does not deserve a screen. Failure and a missing catalog show at once.
+        var graceOver by remember { mutableStateOf(false) }
+        LaunchedEffect(blocking) {
+            if (blocking) {
+                delay(GATE_GRACE_MILLIS)
+                graceOver = true
+            } else {
+                graceOver = false
+            }
+        }
+        var opened by remember { mutableStateOf(false) }
+        LaunchedEffect(gate) { if (gate is CatalogGate.Ready) opened = true }
+        val visible = blocking && (graceOver || gate !is CatalogGate.Loading)
+        // The app is open, or was open when the data went away and the wait has not outlasted the grace.
+        val contentShown = !visible && (gate is CatalogGate.Ready || (blocking && opened))
+        // While the catalog screen is up Home is not composing, so the launch splash has nothing to wait for.
+        SideEffect { gateShowing = visible }
+        // Home comes back covered each time the app leaves for the catalog screen.
+        LaunchedEffect(contentShown) { if (!contentShown) homeShown = false }
+        // A read that stalls must not trap anyone behind the cover.
+        var coverExpired by remember { mutableStateOf(false) }
+        LaunchedEffect(contentShown) {
+            coverExpired = false
+            if (contentShown) {
+                delay(LAUNCH_HOLD_MILLIS)
+                coverExpired = true
+            }
+        }
+        // The catalog screen as it was last drawn: what covers Home when it is the screen the app is coming from.
+        var lastGate by remember { mutableStateOf<CatalogGateUi?>(null) }
+        LaunchedEffect(ui, visible) { if (visible) lastGate = ui }
+        LaunchedEffect(homeShown) { if (homeShown) lastGate = null }
+        when {
+            visible -> {
+                ToastHost()
+                val scope = rememberCoroutineScope()
+                CatalogGateScreen(
+                    ui = ui,
+                    onNetworkModeChange = viewModel::setNetworkMode,
+                    onRetry = viewModel::retry,
+                    onClearAndRetry = viewModel::clearAndRetry,
+                    onRestore = viewModel::restoreDefault,
+                    onContinue = viewModel::continueWithBundled,
+                    onCopyDiagnostics = {
+                        scope.launch {
+                            getSystemService(ClipboardManager::class.java)
+                                .setPrimaryClip(ClipData.newPlainText(getString(R.string.diagnostics), viewModel.diagnostics()))
+                            Toasts.show(getString(R.string.gate_diagnostics_copied))
+                        }
+                    },
+                )
+            }
+            contentShown -> Box(Modifier.fillMaxSize()) {
+                // Home composes under the cover and is shown once it has its stacks, apps and activity: on a regular
+                // launch the system splash is that cover. Coming from onboarding or the catalog screen, it is the
+                // last thing on screen: the catalog screen as it was, or the plain canvas.
+                content()
+                if (!homeShown && !coverExpired && !splashCovers) {
+                    Box(Modifier.fillMaxSize().background(ZapCanvas).pointerInput(Unit) { detectTapGestures { } }) {
+                        lastGate?.let { CatalogGateScreen(it, {}, {}, {}, {}, {}) }
+                    }
+                }
+            }
+            else -> Box(Modifier.fillMaxSize().background(ZapCanvas))
+        }
     }
 
     private fun openUnknownSourcesSettings() {
@@ -303,7 +417,8 @@ class MainActivity : ComponentActivity() {
             composable(Routes.HOME) {
                 val viewModel: HomeViewModel = viewModel(factory = HomeViewModel.factory(iolite, zapstore.settings, zapstore.queryEncoder::encode))
                 val state by viewModel.uiState.collectAsStateWithLifecycle()
-                SideEffect { homeShown = state.ready }
+                // Only ever set here: going deeper and coming back must not cover Home again.
+                SideEffect { if (state.ready) homeShown = true }
                 HomeScreen(
                     state = state,
                     onSearchQueryChanged = viewModel::onSearchQueryChanged,
@@ -693,6 +808,7 @@ class MainActivity : ComponentActivity() {
 
         /** The longest the splash waits for the first screen; a stalled read must not trap the user behind it. */
         const val LAUNCH_HOLD_MILLIS = 2_000L
+        const val GATE_GRACE_MILLIS = 500L
         const val WEB_URL = "https://zapstore.dev/"
     }
 }

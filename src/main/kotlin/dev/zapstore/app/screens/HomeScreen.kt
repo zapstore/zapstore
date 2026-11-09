@@ -31,6 +31,7 @@ import dev.zapstore.app.components.ZapButton
 import dev.zapstore.iolite.SearchFact
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -167,13 +168,14 @@ fun HomeScreen(
                 }
 
                 item(key = "stacks", contentType = "stacks") {
-                    if (state.stacks.isEmpty()) {
-                        EmptyRow(
+                    // A read that has not landed is not "no stacks": show nothing until it has.
+                    when {
+                        !state.ready -> Spacer(Modifier)
+                        state.stacks.isEmpty() -> EmptyRow(
                             stringResource(R.string.stacks_empty),
                             modifier = Modifier.padding(top = ZapSpacing.space2).testTag("stacksEmpty"),
                         )
-                    } else {
-                        Column {
+                        else -> Column {
                             GroupHeader(
                                 stringResource(R.string.curated_stacks),
                                 action = stringResource(R.string.see_all),
@@ -202,7 +204,7 @@ fun HomeScreen(
                 }
                 activityRows(
                     items = state.activity,
-                    loading = false,
+                    loading = !state.ready,
                     canLoadMore = state.activityCanLoadMore,
                     profiles = state.profiles,
                     stackApps = state.activityStackApps,

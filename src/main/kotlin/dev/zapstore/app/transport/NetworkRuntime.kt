@@ -86,10 +86,17 @@ class NetworkRuntime(
                 notifyReset()
             }
         } else if (!wasUsingTor) {
+            // What is still open went out on Direct. Cutting it is what stops a catalog download that started there.
+            (direct.http as? OkHttpAppTransport)?.closeConnections()
             startArti()
         } else {
             notifyReset()
         }
+    }
+
+    /** Ends every transfer in flight. Each fails at once; whoever started it decides whether to try again. */
+    fun abortTransfers() {
+        closeConnections()
     }
 
     fun setForeground(foreground: Boolean) {

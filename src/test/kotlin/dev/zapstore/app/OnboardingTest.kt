@@ -14,29 +14,47 @@ class OnboardingTest {
     @Test
     fun newPhoneSeesEveryStepItNeeds() {
         assertEquals(
-            listOf(Privacy, Network, BugReports, Signer, InstallPermission, Notifications),
-            Onboarding.steps(migrated = false, canInstall = false, needsNotificationPermission = true),
+            listOf(Privacy, BugReports, Signer, InstallPermission, Notifications),
+            Onboarding.steps(migrated = false, canInstall = false, needsNotificationPermission = true, hasSigner = true),
         )
     }
 
     @Test
     fun grantedPermissionsDropTheirStepsAndTheSignerStepStays() {
         assertEquals(
-            listOf(Privacy, Network, BugReports, Signer),
-            Onboarding.steps(migrated = false, canInstall = true, needsNotificationPermission = false),
+            listOf(Privacy, BugReports, Signer),
+            Onboarding.steps(migrated = false, canInstall = true, needsNotificationPermission = false, hasSigner = true),
         )
     }
 
     @Test
-    fun flutterPhoneStartsOnPrivacyThenNetworkBugReportsAndNotifications() {
+    fun flutterPhoneStartsOnPrivacyThenBugReportsAndNotifications() {
         assertEquals(
-            listOf(Privacy, Network, BugReports, Notifications),
-            Onboarding.steps(migrated = true, canInstall = false, needsNotificationPermission = true),
+            listOf(Privacy, BugReports, Notifications),
+            Onboarding.steps(migrated = true, canInstall = false, needsNotificationPermission = true, hasSigner = true),
         )
+    }
+
+    @Test
+    fun theConnectionChoiceHasNoSlideOfItsOwn() {
+        // It sits on the first slide, so the plan never lists Network, whatever the phone.
+        listOf(false, true).forEach { migrated ->
+            assertFalse(
+                Network in Onboarding.steps(migrated = migrated, canInstall = false, needsNotificationPermission = true, hasSigner = true),
+            )
+        }
     }
 
     @Test
     fun bugReportsStayOffUntilChosen() {
         assertFalse(DeviceState().bugReports)
+    }
+
+    @Test
+    fun aPhoneWithNoSignerHasNoSignerStep() {
+        assertEquals(
+            listOf(Privacy, BugReports, InstallPermission, Notifications),
+            Onboarding.steps(migrated = false, canInstall = false, needsNotificationPermission = true, hasSigner = false),
+        )
     }
 }
