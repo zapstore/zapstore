@@ -199,10 +199,11 @@ private fun ReleaseRow(
 }
 
 /**
- * One comment, zap or stack update, led by who did it: "[avatar] <name> on [icon] <app>", "... [bolt] N sats
- * to [icon] <app>" or "... updated [tile] <stack>" on one line, and a comment's text under it. A catalog key
- * reads "The catalog"; anyone else with no profile name reads as their short npub unless a zap opens the line with its
- * amount, and on a person's own page ([showWho] false) nobody is named. With no app or stack, the entry belongs to the stack whose page lists it.
+ * One comment, zap or stack update, led by who did it: "[avatar] <name> on [icon] <app>",
+ * "[avatar] <name> zapped [bolt] N sats to [icon] <app>" or "... updated [tile] <stack>" on one line, and a
+ * comment's text under it. A catalog key reads "The catalog"; anyone else with no profile name reads as their
+ * short npub. On a person's own page ([showWho] false) nobody is named and the verb leads. With no app or
+ * stack, the entry belongs to the stack whose page lists it.
  */
 @Composable
 private fun SocialRow(
@@ -229,8 +230,7 @@ private fun SocialRow(
             // One line, always: the target's name is abbreviated first, then the person's.
             OneLine(modifier = Modifier.weight(1f), gap = ACTIVITY_GAP) {
                 if (byCatalog) Strong(stringResource(R.string.activity_the_catalog))
-                // A zap opens with its amount, so it needs no name. Everyone else leads with theirs.
-                if (hasAvatar && item.sats == null) {
+                if (hasAvatar) {
                     Avatar(item.pubkey, profile)
                     Strong(shortDisplayName(item.pubkey, profile), Modifier.shrink(rank = 1, min = PERSON_NAME_MIN))
                 }
@@ -243,17 +243,21 @@ private fun SocialRow(
                     }
                     app != null -> {
                         if (item.sats != null) {
+                            // Someone's own page has no name to lead, so the verb does.
+                            Verb(stringResource(if (showWho) R.string.activity_zapped else R.string.activity_zapped_lead))
                             Sats(item.sats)
                             Verb(stringResource(R.string.activity_to))
                         } else {
-                            // Someone's own page has no name to lead, so the verb does.
                             Verb(stringResource(if (showWho) R.string.activity_on else R.string.activity_commented_on))
                         }
                         Target(app.name, Modifier.shrink(rank = 0, min = TARGET_MIN)) {
                             AppIcon(title = app.name, iconUrl = app.iconUrl, iconFile = app.iconFile, size = ACTIVITY_ICON)
                         }
                     }
-                    item.sats != null -> Sats(item.sats)
+                    item.sats != null -> {
+                        Verb(stringResource(if (showWho) R.string.activity_zapped else R.string.activity_zapped_lead))
+                        Sats(item.sats)
+                    }
                     else -> Verb(stringResource(R.string.activity_stack_comment))
                 }
             }
@@ -399,8 +403,8 @@ private val AUTHOR_NAME_HIDE_BELOW = 28.dp
 /** Icons and avatars inside a line: 5% over the earlier 20 and 18 dp. */
 private val ACTIVITY_ICON = 21.dp
 private val RELEASE_BYLINE_AVATAR = 19.dp
-/** The app's icon leading a release row: 5% over the control height (44 dp). */
-private val ACTIVITY_APP_ICON = 46.dp
+/** The app's icon leading a release row: 5% over the earlier 46 dp. It grows down; its top edge stays. */
+private val ACTIVITY_APP_ICON = 48.dp
 private val ACTIVITY_APP_ICON_GAP = 10.dp
 /** Between the parts of a line, and between a row's two lines. */
 private val ACTIVITY_GAP = 6.dp

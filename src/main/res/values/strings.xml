@@ -125,6 +125,8 @@
     <string name="activity_updated">updated</string>
     <string name="activity_stack_comment">Comment on a stack</string>
     <string name="activity_to">to</string>
+    <string name="activity_zapped">zapped</string>
+    <string name="activity_zapped_lead">Zapped</string>
     <string name="activity_on">on</string>
     <string name="activity_commented_on">Commented on</string>
     <string name="activity_updated_lead">Updated</string>

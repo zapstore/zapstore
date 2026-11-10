@@ -495,6 +495,7 @@ class ScreensTest {
                 )
             }
         }
+        composeRule.onNodeWithText("Zapped").assertIsDisplayed()
         composeRule.onNodeWithText("21 sats").assertIsDisplayed()
         composeRule.onNodeWithText("to").assertIsDisplayed()
         composeRule.onNodeWithText("on").assertIsDisplayed()
