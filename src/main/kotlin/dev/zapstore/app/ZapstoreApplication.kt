@@ -25,7 +25,9 @@ import dev.zapstore.app.account.Nip55Bridge
 import dev.zapstore.app.catalog.CatalogGate
 import dev.zapstore.app.catalog.CatalogSync
 import dev.zapstore.app.catalog.CatalogSyncWorker
+import dev.zapstore.app.catalog.AwayUpdates
 import dev.zapstore.app.catalog.PrefsCatchUpMark
+import dev.zapstore.app.catalog.PrefsSeenMark
 import dev.zapstore.app.catalog.catalogGateFlow
 import dev.zapstore.app.install.BackgroundUpdateWorker
 import dev.zapstore.app.install.Installer
@@ -94,6 +96,8 @@ class ZapstoreApplication : Application() {
     lateinit var bugReports: BugReports
         private set
     lateinit var installer: Installer
+        private set
+    lateinit var awayUpdates: AwayUpdates
         private set
     private var reportsSent = false
     private var foregroundSync: Job? = null
@@ -179,6 +183,7 @@ class ZapstoreApplication : Application() {
         catalogGate = catalogGateFlow(iolite, catalogSync, scope)
         catalogSync.request()
         installer = Installer(this, scope, { network.transport.callFactory }, iolite::proof)
+        awayUpdates = AwayUpdates(PrefsSeenMark(this))
         scope.launch {
             // Prune reads only the listings of apps with a task; the whole catalog is tens of MB.
             val taskListings = installer.tasks.map { it.keys }.distinctUntilChanged()
@@ -226,6 +231,7 @@ class ZapstoreApplication : Application() {
         }
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {
+                awayUpdates.enteredForeground()
                 network.setForeground(true)
                 iolite.setRelayTrafficEnabled(true)
                 catalogSync.request()

@@ -11,6 +11,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import dev.zapstore.app.R
 import dev.zapstore.app.ZapstoreApplication
 import dev.zapstore.app.catalog.AvailableUpdate
+import dev.zapstore.app.catalog.awayUpdates
 import dev.zapstore.app.catalog.CatalogSync
 import dev.zapstore.app.catalog.InstalledApp
 import dev.zapstore.app.catalog.ManualReason
@@ -85,6 +86,8 @@ data class UpdatesUiState(
     val profiles: Map<String, ProfileRecord> = emptyMap(),
     val loaded: Boolean = false,
     val updateAll: UpdateAllUi = UpdateAllUi(),
+    /** Names of apps Zapstore updated while the user was away; empty once the notice is dismissed. */
+    val awayUpdated: List<String> = emptyList(),
     /** Installs in flight or waiting, by app id, from [dev.zapstore.app.install.Installer]. */
     val tasks: Map<String, InstallTask> = emptyMap(),
     /** What the search field holds. */
@@ -158,6 +161,11 @@ class UpdatesViewModel(
             }
         }
 
+    private val awayUpdated: Flow<List<String>> =
+        combine(catalogSync.installedApps, zapstore.awayUpdates.window) { installed, window ->
+            awayUpdates(installed, zapstore.packageName, window).map { it.label }
+        }.distinctUntilChanged()
+
     val uiState: StateFlow<UpdatesUiState> = combine(
         combine(catalogSync.status, catalogSync.updates, profiles, zapstore.iolite.observeCatalogs()) { status, _, profiles, catalogs ->
             Triple(status, profiles, catalogs.map { it.epoch })
@@ -206,6 +214,7 @@ class UpdatesViewModel(
         )
     }.flowOn(Dispatchers.Default)
         .combine(searchQuery) { state, typed -> state.copy(searchQuery = typed) }
+        .combine(awayUpdated) { state, away -> state.copy(awayUpdated = away) }
         .stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
@@ -248,6 +257,8 @@ class UpdatesViewModel(
     }
 
     fun pause(appId: String) = zapstore.installer.pause(appId)
+
+    fun dismissAwayUpdates() = zapstore.awayUpdates.dismiss()
 
     private fun installerLabel(packageName: String?): String? {
         if (packageName.isNullOrBlank()) return null

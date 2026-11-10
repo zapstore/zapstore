@@ -134,6 +134,7 @@ fun UpdatesScreen(
     onUninstallInstalled: (packageId: String, name: String) -> Unit = { _, _ -> },
     onUpdateAll: (UpdateGroup) -> Unit = {},
     onUpdateOne: (AvailableUpdate) -> Unit = {},
+    onDismissAwayUpdates: () -> Unit = {},
     onConfirmUpdateAll: () -> Unit = {},
     onDismissUpdateAll: () -> Unit = {},
     onResumeUpdates: (String) -> Unit = {},
@@ -220,6 +221,7 @@ fun UpdatesScreen(
                     searchSection(state, results, rowActions, onUninstallInstalled, onRemoveFilter) { filtersOpen = true }
                 }
                 installingSection(state, rowActions, onCancelInstall)
+                awayUpdatedItem(state.awayUpdated, onDismissAwayUpdates)
                 updatesSection(state, rowActions, onUpdateAll)
                 installedSection(state, onAppClick, onIgnoreUpdates, onUninstall)
                 otherStoresSection(state, rowActions)
@@ -377,6 +379,14 @@ private fun LazyListScope.installingSection(
                 )
             }
         }
+    }
+}
+
+/** The notice of background updates, just above the Updates section; absent when there is none. */
+private fun LazyListScope.awayUpdatedItem(names: List<String>, onDismiss: () -> Unit) {
+    if (names.isEmpty()) return
+    item(key = "awayUpdated", contentType = "awayUpdated") {
+        AwayUpdatedNotice(names, onDismiss, Modifier.padding(vertical = ZapSpacing.space2))
     }
 }
 

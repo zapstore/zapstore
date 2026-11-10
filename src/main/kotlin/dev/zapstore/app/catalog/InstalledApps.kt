@@ -16,6 +16,10 @@ data class InstalledApp(
     val installingPackage: String? = null,
     val updateOwner: String? = null,
     val label: String = packageId,
+    /** When Android first put the package on the phone, epoch millis. Equal to [updatedMillis] until its first update. */
+    val firstInstalledMillis: Long = 0,
+    /** When Android last installed or updated the package, epoch millis. */
+    val updatedMillis: Long = 0,
 )
 
 data class AvailableUpdate(
@@ -42,6 +46,8 @@ fun Context.installedApps(): List<InstalledApp> =
             installingPackage = source.installer,
             updateOwner = source.updateOwner,
             label = label,
+            firstInstalledMillis = info.firstInstallTime,
+            updatedMillis = info.lastUpdateTime,
         )
     }
 

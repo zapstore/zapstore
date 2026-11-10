@@ -14,6 +14,10 @@
     <string name="catalog">Catalog</string>
     <string name="no_updates">No apps installed yet.</string>
     <string name="updates_section_installing">Installing</string>
+    <plurals name="away_updated_title">
+        <item quantity="one">%1$d app updated while away</item>
+        <item quantity="other">%1$d apps updated while away</item>
+    </plurals>
     <string name="updates_section_updates">Updates</string>
     <string name="updates_section_manual">Manual updates</string>
     <string name="updates_section_installed">Installed</string>

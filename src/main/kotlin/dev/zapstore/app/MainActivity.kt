@@ -482,6 +482,7 @@ class MainActivity : ComponentActivity() {
                         if (packageManager.canRequestPackageInstalls()) viewModel.updateOne(update)
                         else openUnknownSourcesSettings()
                     },
+                    onDismissAwayUpdates = viewModel::dismissAwayUpdates,
                     onConfirmUpdateAll = viewModel::confirmUpdateAll,
                     onDismissUpdateAll = viewModel::dismissUpdateAll,
                     onResumeUpdates = viewModel::resumeUpdates,
