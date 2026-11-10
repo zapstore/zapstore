@@ -38,6 +38,12 @@ data class IoliteConfig(
     val monitorRelays: Set<RelayUrl> = emptySet(),
     /** A relay no trusted monitor has reported for this long is skipped. */
     val relayReportMaxAge: Duration = 12.hours,
+    /** Whether social reads start on. [Iolite.setSocial] changes it while open. See `SPEC.md#social-off`. */
+    val social: Boolean = true,
+    /** Where profiles a read stored are copied, while social is on. Null copies nothing. */
+    val profileMirror: RelayUrl? = null,
+    /** How long a copied profile waits for the relay's answer. */
+    val profileMirrorTimeout: Duration = 10.seconds,
     /** A NIP-47 wallet reply; paying can wait on a route. */
     val walletTimeout: Duration = 60.seconds,
     /**
@@ -85,6 +91,9 @@ data class IoliteConfig(
         }
         require(relayReportMaxAge.isFinite() && relayReportMaxAge.isPositive()) {
             "relayReportMaxAge must be finite and positive"
+        }
+        require(profileMirrorTimeout.isFinite() && profileMirrorTimeout.isPositive()) {
+            "profileMirrorTimeout must be finite and positive"
         }
         require(relayMonitors.all { Hex.isHex(it, 64) }) { "relayMonitors must be lowercase hex pubkeys" }
         liveness.validate()

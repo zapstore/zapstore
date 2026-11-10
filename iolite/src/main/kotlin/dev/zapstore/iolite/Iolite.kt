@@ -11,6 +11,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -25,6 +26,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
@@ -60,6 +62,13 @@ class Iolite private constructor(
     private val closed = AtomicBoolean(false)
     private val ingestContext = IngestContext(device, deviceSigner, config.relayMonitors)
     private val pendingIngest = ArrayList<Event>()
+    private val socialGate = SocialGate(config.social)
+    private val profileMirror: ProfileMirror? = pool?.let { relays ->
+        config.profileMirror?.let { ProfileMirror(it, relays, config.profileMirrorTimeout, config.log) }
+    }
+
+    /** Whether social reads are on. See [setSocial]. */
+    val socialEnabled: StateFlow<Boolean> get() = socialGate.enabled
 
     // Publish queue routing, in memory: rows survive restarts, these are rebuilt from them.
     private val requestedRelays = ConcurrentHashMap<String, Set<RelayUrl>>()
@@ -395,6 +404,30 @@ class Iolite private constructor(
     /** Avatar WebP from the catalog bundle, keyed by hex pubkey. Absent until that profile is sealed. */
     fun avatarFile(pubkey: String): File = store.avatarFile(pubkey)
 
+    /**
+     * Turns social reads on or off, at once and for sessions already open. Off, no query routes by NIP-65,
+     * no relay list or report is fetched, no publish goes to anyone's inbox, and comments, zaps, other
+     * people's stacks, relay lists and reports are dropped as they arrive. Stored rows are not touched;
+     * see [wipeSocial]. Profiles are copied to `profileMirror` only while on.
+     */
+    fun setSocial(enabled: Boolean) {
+        checkOpen()
+        socialGate.set(enabled)
+    }
+
+    /**
+     * Deletes what social reads stored, and queued events the device key did not sign. Call after
+     * `setSocial(false)` so nothing refills the tables. Stacks signed by [keepStackAuthors] (the catalogs)
+     * and by the device key stay, as do all profiles.
+     */
+    fun wipeSocial(keepStackAuthors: Collection<String>) {
+        checkOpen()
+        val devicePubkey = deviceSigner?.publicKey
+        store.wipeSocial(keepStackAuthors + listOfNotNull(devicePubkey), devicePubkey)
+        val queued = store.pendingPublishes().mapTo(HashSet()) { it.id }
+        requestedRelays.keys.retainAll(queued)
+    }
+
     fun wipeLocalData() {
         checkOpen()
         store.wipe()
@@ -410,9 +443,17 @@ class Iolite private constructor(
 
     /**
      * Runs [query] under [options]. The flow re-emits after every commit touching the query's tables and
-     * completes only when the collector cancels, so scope it to the screen that shows it.
+     * completes only when the collector cancels, so scope it to the screen that shows it. While social is
+     * off, [QueryOptions.whenSocialOff] decides what the read does, and it follows the switch as it flips.
      */
-    fun <T> query(query: Query<T>, options: QueryOptions = QueryOptions.local()): Flow<QueryState<T>> = channelFlow {
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun <T> query(query: Query<T>, options: QueryOptions = QueryOptions.local()): Flow<QueryState<T>> {
+        val off = options.whenSocialOff
+        if (off == WhenSocialOff.Unchanged) return read(query, options)
+        return socialGate.enabled.flatMapLatest { on -> read(query, if (on) options else off.appliedTo(options)) }
+    }
+
+    private fun <T> read(query: Query<T>, options: QueryOptions): Flow<QueryState<T>> = channelFlow {
         if (closed.get()) return@channelFlow
         val status = if (options.isRemote) relayWork(query, options) else MutableStateFlow(SessionStatus(settled = true))
         // Remote-only shows [Query.empty] until a commit lands after the query starts.
@@ -433,8 +474,10 @@ class Iolite private constructor(
     /** Relay path for events obtained outside the pool (push, share sheet, tests). Returns rows changed. */
     fun ingest(events: List<Event>): Int {
         checkOpen()
-        return store.ingest(events, ingestContext)
+        return store.ingest(events.filter(::admitted), ingestContext)
     }
+
+    private fun admitted(event: Event): Boolean = socialGate.admits(event, deviceSigner?.publicKey)
 
     // --- publishing --------------------------------------------------------------------------------
 
@@ -811,7 +854,7 @@ class Iolite private constructor(
             eoseGrace = config.eoseGrace,
             firstResponseTimeout = config.firstResponseTimeout,
             oneShotTimeout = oneShot?.let { it.timeout ?: config.oneShotTimeout },
-            onEvent = { _, event -> if (event.verify()) enqueueIngest(event) },
+            onEvent = { relay, event -> if (event.verify()) enqueueIngest(event, relay) },
             onSettled = { answered ->
                 flushIngest()
                 if (answered && oneShot != null) store.recordRefresh(fingerprint, nowMillis())
@@ -827,13 +870,22 @@ class Iolite private constructor(
         return session.state
     }
 
+    /** A routed read follows the social switch: off, it falls back to the query's own relays. */
+    @OptIn(ExperimentalCoroutinesApi::class)
     private fun readPlan(query: Query<*>, options: QueryOptions, liveness: RelayLiveness): Flow<ReadPlan> {
         val routed = options.useAuthorRelays && (query.outboxAuthors.isNotEmpty() || query.inboxAuthors.isNotEmpty())
-        if (!routed) {
-            return liveness.unhealthy.map { unhealthy ->
-                ReadPlan(RelayRouting.read(query.filters, options.relays, emptyList(), emptyList(), emptyMap(), { it in unhealthy }, config.maxConnections, config.maxRelaysPerUser))
-            }.distinctUntilChanged()
+        if (!routed) return ownRelaysPlan(query, options, liveness)
+        return socialGate.enabled.flatMapLatest { on ->
+            if (on) routedPlan(query, options, liveness) else ownRelaysPlan(query, options, liveness)
         }
+    }
+
+    private fun ownRelaysPlan(query: Query<*>, options: QueryOptions, liveness: RelayLiveness): Flow<ReadPlan> =
+        liveness.unhealthy.map { unhealthy ->
+            ReadPlan(RelayRouting.read(query.filters, options.relays, emptyList(), emptyList(), emptyMap(), { it in unhealthy }, config.maxConnections, config.maxRelaysPerUser))
+        }.distinctUntilChanged()
+
+    private fun routedPlan(query: Query<*>, options: QueryOptions, liveness: RelayLiveness): Flow<ReadPlan> {
         val pubkeys = (query.outboxAuthors + query.inboxAuthors).distinct()
         requestRelayLists(pubkeys, options.relays)
         val profiles = store.changes(setOf(Table.Profiles))
@@ -880,7 +932,7 @@ class Iolite private constructor(
 
     /** Fetches NIP-66 reports for relays not asked about within half of `relayReportMaxAge`. */
     private fun requestRelayReports(candidates: Set<RelayUrl>) {
-        if (config.relayMonitors.isEmpty() || config.monitorRelays.isEmpty()) return
+        if (config.relayMonitors.isEmpty() || config.monitorRelays.isEmpty() || !socialGate.enabled.value) return
         val now = nowMillis()
         val interval = config.relayReportMaxAge.inWholeMilliseconds / 2
         val due = candidates.filter { relay ->
@@ -909,7 +961,7 @@ class Iolite private constructor(
             eoseGrace = config.eoseGrace,
             firstResponseTimeout = config.firstResponseTimeout,
             oneShotTimeout = timeout,
-            onEvent = { _, event -> if (event.verify()) enqueueIngest(event) },
+            onEvent = { relay, event -> if (event.verify()) enqueueIngest(event, relay) },
             onSettled = { answered ->
                 flushIngest()
                 onSettled(answered)
@@ -917,7 +969,8 @@ class Iolite private constructor(
         ).reconcile(plan)
     }
 
-    private fun enqueueIngest(event: Event) {
+    private fun enqueueIngest(event: Event, from: RelayUrl) {
+        profileMirror?.heard(event, from)
         val flushNow = synchronized(pendingIngest) {
             pendingIngest += event
             pendingIngest.size >= config.ingestBatchSize
@@ -930,7 +983,8 @@ class Iolite private constructor(
             if (pendingIngest.isEmpty()) return
             pendingIngest.toList().also { pendingIngest.clear() }
         }
-        runCatching { store.ingest(batch, ingestContext) }
+        val written = runCatching { store.ingestWritten(batch.filter(::admitted), ingestContext) }.getOrDefault(emptyList())
+        profileMirror?.flushed(batch, written, enabled = socialGate.enabled.value)
     }
 
     private fun start() {
@@ -991,7 +1045,12 @@ class Iolite private constructor(
         publishAcks.keys.retainAll(ids)
         if (pending.isEmpty()) return
         val catalogRelays = store.selectedCatalogs().mapNotNull { it.relayUrl }.toSet()
-        val mailboxes = store.mailboxes(pending.flatMap { listOf(it.pubkey) + RelayRouting.recipients(it) })
+        // Social off: nothing goes to an author's outboxes or a recipient's inboxes, only to the relays asked for.
+        val mailboxes = if (socialGate.enabled.value) {
+            store.mailboxes(pending.flatMap { listOf(it.pubkey) + RelayRouting.recipients(it) })
+        } else {
+            emptyMap()
+        }
         for (event in pending) {
             val work = Pow.required(event.kind, event.content)
             if (work > 0 && !Pow.meets(event, work)) {

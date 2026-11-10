@@ -138,13 +138,19 @@ class IoliteStore internal constructor(
     // --- ingest ------------------------------------------------------------------------------------
 
     /** Relay path: verified non-catalog events, one transaction. Returns how many rows changed. */
-    internal fun ingest(events: List<Event>, context: IngestContext): Int {
+    internal fun ingest(events: List<Event>, context: IngestContext): Int = ingestWritten(events, context).size
+
+    /** [ingest], returning the events whose rows changed: the ones newer than what was stored. */
+    internal fun ingestWritten(events: List<Event>, context: IngestContext): List<Event> {
         val admissible = events.filter {
             it.kind !in ListingRows.KINDS && !EventRows.isEmptyCatalogList(it, context.deviceSigner) && it.verify()
         }
-        if (admissible.isEmpty()) return 0
-        var written = 0
-        write { tx -> admissible.forEach { if (EventRows.persist(tx, it, context)) written++ } }
+        if (admissible.isEmpty()) return emptyList()
+        val written = ArrayList<Event>()
+        write { tx ->
+            written.clear()
+            admissible.forEach { if (EventRows.persist(tx, it, context)) written += it }
+        }
         if (admissible.any { it.kind == Kinds.CatalogRelayList }) pruneIconDirs()
         return written
     }
@@ -498,6 +504,67 @@ class IoliteStore internal constructor(
             tx.touch(*Table.values())
         }
         checkpointWal()
+    }
+
+    /**
+     * Drops what social reads brought in, in one transaction: comments, zaps, relay reports, every stack
+     * whose author is not in [keepStackAuthors], the NIP-65 lists on stored profiles, and queued events not
+     * signed by [devicePubkey]. Profiles stay, as do the catalog and everything the device signed.
+     * The refresh marks go too, so a later read asks the relays again.
+     */
+    fun wipeSocial(keepStackAuthors: Collection<String>, devicePubkey: String?) {
+        write { tx ->
+            val db = tx.db
+            listOf("comments", "zaps", "relay_reports", "query_refresh").forEach { db.execSQL("DELETE FROM $it") }
+            deleteStacksExcept(db, keepStackAuthors)
+            dropRelayLists(db)
+            dropQueuedExcept(db, devicePubkey)
+            tx.touch(Table.Comments, Table.Zaps, Table.Stacks, Table.Profiles, Table.RelayReports, Table.PublishQueue)
+        }
+        checkpointWal()
+    }
+
+    private fun deleteStacksExcept(db: SQLiteConnection, keep: Collection<String>) {
+        val authors = keep.distinct()
+        val where = if (authors.isEmpty()) "" else " WHERE pubkey NOT IN (${authors.joinToString(",") { "?" }})"
+        db.prepare("DELETE FROM stacks$where").use { statement ->
+            authors.forEachIndexed { index, pubkey -> statement.bindBlob(index + 1, Hex.decode(pubkey)) }
+            statement.step()
+        }
+    }
+
+    /** The kind 10002 fields live in a profile's metadata. A row that held nothing else goes with them. */
+    private fun dropRelayLists(db: SQLiteConnection) {
+        val rows = db.prepare("SELECT pubkey, metadata FROM profiles WHERE metadata LIKE '%nip65_id%'").use { statement ->
+            statement.rows { getBlob(0) to getText(1) }
+        }
+        for ((pubkey, text) in rows) {
+            val metadata = JSONObject(text)
+            RELAY_LIST_FIELDS.forEach(metadata::remove)
+            val sql = if (metadata.length() == 0) "DELETE FROM profiles WHERE pubkey = ?" else "UPDATE profiles SET metadata = ? WHERE pubkey = ?"
+            db.prepare(sql).use { statement ->
+                if (metadata.length() == 0) {
+                    statement.bindBlob(1, pubkey)
+                } else {
+                    statement.bindText(1, metadata.toString())
+                    statement.bindBlob(2, pubkey)
+                }
+                statement.step()
+            }
+        }
+    }
+
+    private fun dropQueuedExcept(db: SQLiteConnection, devicePubkey: String?) {
+        val queued = db.prepare("SELECT event_id, event_json FROM publish_queue").use { statement ->
+            statement.rows { getBlob(0) to getText(1) }
+        }
+        for ((id, json) in queued) {
+            if (Event.parse(json).pubkey == devicePubkey) continue
+            db.prepare("DELETE FROM publish_queue WHERE event_id = ?").use { statement ->
+                statement.bindBlob(1, id)
+                statement.step()
+            }
+        }
     }
 
     fun pruneOlderThan(kind: Int, createdBefore: Long) {
@@ -1204,6 +1271,9 @@ class IoliteStore internal constructor(
 
     companion object {
         private const val SELECT_CATALOG = CatalogRows.SELECT
+
+        /** The keys `EventRows.upsertRelayList` adds to a profile's metadata. */
+        private val RELAY_LIST_FIELDS = listOf("nip65_id", "nip65_created_at", "nip65_tags")
 
         /** A listing is shown once it has a name and the asset's certificate hash. */
         private const val MIN_DEVELOPER_QUERY = 2

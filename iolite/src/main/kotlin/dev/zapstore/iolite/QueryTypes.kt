@@ -25,6 +25,28 @@ sealed interface RemoteMode {
     data object Stream : RemoteMode
 }
 
+/**
+ * What a read does while social is off (`Iolite.setSocial`). It is applied live: an open read switches
+ * as the user flips the setting.
+ */
+sealed interface WhenSocialOff {
+    /** The read runs as written. */
+    data object Unchanged : WhenSocialOff
+
+    /** SQLite only: no relay is asked and no author is routed. What social reads stored is wiped, so this finds nothing social. */
+    data object LocalOnly : WhenSocialOff
+
+    /** The same read, asked only of [relays] and never routed by NIP-65. */
+    data class Only(val relays: Set<RelayUrl>) : WhenSocialOff
+}
+
+/** [options] as they run while social is off. */
+internal fun WhenSocialOff.appliedTo(options: QueryOptions): QueryOptions = when (this) {
+    WhenSocialOff.Unchanged -> options
+    WhenSocialOff.LocalOnly -> QueryOptions.local()
+    is WhenSocialOff.Only -> options.copy(relays = relays, useAuthorRelays = false, whenSocialOff = WhenSocialOff.Unchanged)
+}
+
 data class QueryOptions(
     val sourceMode: SourceMode = SourceMode.Local,
     val remoteMode: RemoteMode? = null,
@@ -36,6 +58,7 @@ data class QueryOptions(
      * recipients from their inboxes. [relays] are always asked too.
      */
     val useAuthorRelays: Boolean = false,
+    val whenSocialOff: WhenSocialOff = WhenSocialOff.Unchanged,
 ) {
     init {
         when (sourceMode) {
@@ -51,6 +74,12 @@ data class QueryOptions(
                 require(remoteMode != null) { "Remote-enabled queries require a remote mode" }
                 require(relays.isNotEmpty()) { "Remote-enabled queries require at least one relay" }
             }
+        }
+        require(whenSocialOff == WhenSocialOff.Unchanged || sourceMode != SourceMode.Local) {
+            "Local queries have nothing to change while social is off"
+        }
+        require(whenSocialOff !is WhenSocialOff.Only || whenSocialOff.relays.isNotEmpty()) {
+            "A read that stays on some relays while social is off needs at least one"
         }
         require(sourceMode == SourceMode.LocalAndRemote || cachedFor == null) {
             "cachedFor is supported only for local-and-remote queries"
@@ -70,13 +99,15 @@ data class QueryOptions(
             remoteMode: RemoteMode,
             cachedFor: Duration? = null,
             useAuthorRelays: Boolean = false,
-        ): QueryOptions = QueryOptions(SourceMode.LocalAndRemote, remoteMode, relays, cachedFor, useAuthorRelays)
+            whenSocialOff: WhenSocialOff = WhenSocialOff.Unchanged,
+        ): QueryOptions = QueryOptions(SourceMode.LocalAndRemote, remoteMode, relays, cachedFor, useAuthorRelays, whenSocialOff)
 
         fun remote(
             relays: Set<RelayUrl>,
             remoteMode: RemoteMode,
             useAuthorRelays: Boolean = false,
-        ): QueryOptions = QueryOptions(SourceMode.Remote, remoteMode, relays, useAuthorRelays = useAuthorRelays)
+            whenSocialOff: WhenSocialOff = WhenSocialOff.Unchanged,
+        ): QueryOptions = QueryOptions(SourceMode.Remote, remoteMode, relays, useAuthorRelays = useAuthorRelays, whenSocialOff = whenSocialOff)
     }
 }
 
