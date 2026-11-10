@@ -50,7 +50,8 @@ fun OneLine(
         }
         allocate()
         while (true) {
-            val drop = visible.indices.filter { visible[it] && hideBelow[it] != null && widths[it] < hideBelow[it]!! }
+            // A child that is narrower than `hideBelow` by nature (a short name) is not cut down: it stays.
+            val drop = visible.indices.filter { visible[it] && hideBelow[it] != null && widths[it] < minOf(hideBelow[it]!!, natural[it]) }
                 .minByOrNull { data[it]!!.rank } ?: break
             visible[drop] = false
             allocate()
