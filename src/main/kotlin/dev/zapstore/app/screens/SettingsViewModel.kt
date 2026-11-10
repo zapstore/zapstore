@@ -302,6 +302,9 @@ class SettingsViewModel(
 
     fun setBugReports(enabled: Boolean) = settings.update { it.copy(bugReports = enabled) }
 
+    /** Off signs out and deletes the social data: the app does that when it sees the setting change. */
+    fun setSocial(enabled: Boolean) = settings.update { it.copy(social = enabled) }
+
     fun wipe() {
         viewModelScope.launch {
             network.clearArtiCache()

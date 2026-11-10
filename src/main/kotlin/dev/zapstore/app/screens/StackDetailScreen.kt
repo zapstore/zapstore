@@ -37,6 +37,7 @@ import dev.zapstore.app.R
 import dev.zapstore.app.ZapCanvas
 import dev.zapstore.app.components.AuthorByline
 import dev.zapstore.app.components.LoadingIndicator
+import dev.zapstore.app.components.LocalSocial
 import dev.zapstore.app.components.StackCard
 import dev.zapstore.app.components.StatusText
 import dev.zapstore.app.components.appList
@@ -60,6 +61,7 @@ fun StackDetailScreen(
     onOpenUrl: (String) -> Unit = {},
     onShare: (() -> Unit)? = null,
 ) {
+    val social = LocalSocial.current
     val noApps = stringResource(R.string.no_stack_apps)
     val curatedBy = stringResource(R.string.curated_by)
     val removeLabel = stringResource(R.string.remove_from_stack)
@@ -167,35 +169,38 @@ fun StackDetailScreen(
         state.error?.let { item { StatusText(it) } }
 
         // Comments only: a stack takes no zaps here. The same section as an app's, minus the zap notes.
-        item(key = "commentsHeader", contentType = "header") {
-            GroupHeader(
-                stringResource(R.string.comments),
-                Modifier.padding(top = ZapSpacing.space2).testTag("stackComments"),
-                count = blocks.sumOf { it.size }.takeIf { it > 0 },
-            )
-        }
-        item(key = "commentComposer", contentType = "composer") {
-            AddCommentButton({ commenting = true })
-        }
-        if (blocks.isEmpty() && state.commentsLoading) {
-            item(key = "commentsLoading", contentType = "loading") {
-                LoadingIndicator(Modifier.padding(vertical = ZapSpacing.space3).testTag("commentsLoading"))
+        // With social off there are none, and nobody to write one.
+        if (social) {
+            item(key = "commentsHeader", contentType = "header") {
+                GroupHeader(
+                    stringResource(R.string.comments),
+                    Modifier.padding(top = ZapSpacing.space2).testTag("stackComments"),
+                    count = blocks.sumOf { it.size }.takeIf { it > 0 },
+                )
             }
-        }
-        items(blocks, key = { it.first().key }, contentType = { "thread" }) { block ->
-            FeedBlock(
-                block = block,
-                profiles = state.commentProfiles,
-                replyable = state.social.signedIn,
-                onReply = { replyingTo = it },
-                onOpenUrl = onOpenUrl,
-                onAuthorClick = onProfileClick,
-                modifier = Modifier.padding(bottom = ZapSpacing.space2),
-            )
-        }
-        if (state.commentsCanLoadMore) {
-            item(key = "commentsMore", contentType = "loading") {
-                LoadingIndicator(Modifier.padding(vertical = ZapSpacing.space4).testTag("activityLoadingMore"))
+            item(key = "commentComposer", contentType = "composer") {
+                AddCommentButton({ commenting = true })
+            }
+            if (blocks.isEmpty() && state.commentsLoading) {
+                item(key = "commentsLoading", contentType = "loading") {
+                    LoadingIndicator(Modifier.padding(vertical = ZapSpacing.space3).testTag("commentsLoading"))
+                }
+            }
+            items(blocks, key = { it.first().key }, contentType = { "thread" }) { block ->
+                FeedBlock(
+                    block = block,
+                    profiles = state.commentProfiles,
+                    replyable = state.social.signedIn,
+                    onReply = { replyingTo = it },
+                    onOpenUrl = onOpenUrl,
+                    onAuthorClick = onProfileClick,
+                    modifier = Modifier.padding(bottom = ZapSpacing.space2),
+                )
+            }
+            if (state.commentsCanLoadMore) {
+                item(key = "commentsMore", contentType = "loading") {
+                    LoadingIndicator(Modifier.padding(vertical = ZapSpacing.space4).testTag("activityLoadingMore"))
+                }
             }
         }
     }

@@ -53,6 +53,8 @@ data class DeviceState(
     val syncInterval: SyncInterval = SyncInterval.Hourly,
     /** Which entries Home's Recent activity lists. */
     val activityFilter: ActivityFilter = ActivityFilter.Releases,
+    /** Comments, zaps, other people's stacks, and signing in. Off, the phone loads none of it and keeps none. */
+    val social: Boolean = true,
 ) {
     val backgroundAutoUpdates: Boolean get() = backgroundUpdateInterval != UpdateInterval.Never
 
@@ -64,6 +66,7 @@ data class DeviceState(
         put("bugReports", bugReports)
         put("catalogSyncIntervalMinutes", syncInterval.minutes)
         put("activityFilter", activityFilter.name.lowercase())
+        put("social", social)
     }
 
     companion object {
@@ -93,6 +96,7 @@ data class DeviceState(
             },
             activityFilter = ActivityFilter.entries.firstOrNull { it.name.equals(json.optString("activityFilter"), ignoreCase = true) }
                 ?: defaults.activityFilter,
+            social = json.optBoolean("social", defaults.social),
         )
     }
 }
@@ -151,6 +155,7 @@ class DeviceSettings(
             .putBoolean(KEY_REPORTS, state.bugReports)
             .putInt(KEY_SYNC, state.syncInterval.minutes)
             .putString(KEY_ACTIVITY, state.activityFilter.name)
+            .putBoolean(KEY_SOCIAL, state.social)
             .apply()
         _state.value = state
     }
@@ -162,6 +167,7 @@ class DeviceSettings(
         bugReports = prefs.getBoolean(KEY_REPORTS, false),
         syncInterval = SyncInterval.fromMinutes(prefs.getInt(KEY_SYNC, SyncInterval.Hourly.minutes)),
         activityFilter = ActivityFilter.entries.firstOrNull { it.name == prefs.getString(KEY_ACTIVITY, null) } ?: ActivityFilter.Releases,
+        social = prefs.getBoolean(KEY_SOCIAL, true),
     )
 
     private companion object {
@@ -173,6 +179,7 @@ class DeviceSettings(
         const val KEY_REPORTS = "bug_reports"
         const val KEY_SYNC = "catalog_sync_interval_minutes"
         const val KEY_ACTIVITY = "activity_filter"
+        const val KEY_SOCIAL = "social"
         const val PUBLISH_DELAY_MS = 1_500L
     }
 }

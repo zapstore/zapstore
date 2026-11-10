@@ -279,6 +279,16 @@
     <string name="key_action_failed">That did not work. Try again.</string>
     <string name="key_working">Waiting for your signer…</string>
     <string name="key_sign_in_to_back_up">Sign in to back up the key to your signer.</string>
+    <string name="key_backup_needs_social">Turn Social on to back up the key to your signer.</string>
+    <string name="sign_in_needs_social">Social is off. Turn it on in Settings to sign in.</string>
+    <string name="settings_entry_hint">Updates, network, wallet, catalogs and Social</string>
+    <string name="social">Social</string>
+    <string name="social_hint">Comments, zaps, community stacks and sign-in. Off keeps the app to the catalog.</string>
+    <string name="social_off_title">Turn off Social?</string>
+    <string name="social_off_body">You will be signed out. Comments, zaps, reports and community stacks on this phone are deleted, and nothing social is loaded or sent.</string>
+    <string name="social_off_keeps">Saved apps, catalogs and your device key stay.</string>
+    <string name="social_off_backup">Backing up the device key to your signer is unavailable while Social is off.</string>
+    <string name="social_off_confirm">Turn off and delete</string>
     <string name="ignored">Ignored</string>
     <string name="more_actions">More actions</string>
     <string name="action_save">Save</string>

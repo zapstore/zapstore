@@ -1,8 +1,10 @@
 package dev.zapstore.app
 
+import dev.zapstore.iolite.CatalogRecord
 import dev.zapstore.iolite.QueryOptions
 import dev.zapstore.iolite.RelayUrl
 import dev.zapstore.iolite.RemoteMode
+import dev.zapstore.iolite.WhenSocialOff
 import dev.zapstore.iolite.normalizeRelayUrl
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.minutes
@@ -61,24 +63,40 @@ object AppConfig {
 
     private val stackRelays: Set<RelayUrl> = writeRelays + catalogRelay
 
+    /**
+     * With social off, a social read asks no relay and routes nobody: it reads what is stored, which is the
+     * catalog's data once the social rows are wiped. A kind 0 is still wanted, so it goes to the catalog relay only.
+     */
+    private val socialOff = WhenSocialOff.LocalOnly
+    private val profilesFromCatalogRelay = WhenSocialOff.Only(setOf(catalogRelay))
+
     val profileCacheDuration = 1.days
     /** Kind 0: one shot, cached for a day, author relays added when known. */
-    val profileQuery: QueryOptions = QueryOptions.localAndRemote(profileRelays, RemoteMode.OneShot(), cachedFor = profileCacheDuration, useAuthorRelays = true)
+    val profileQuery: QueryOptions = QueryOptions.localAndRemote(
+        profileRelays, RemoteMode.OneShot(), cachedFor = profileCacheDuration, useAuthorRelays = true,
+        whenSocialOff = profilesFromCatalogRelay,
+    )
 
     /** Social stacks, first page: streamed while the Stacks page is open. */
-    val socialStacksQuery: QueryOptions = QueryOptions.localAndRemote(stackRelays, RemoteMode.Stream)
+    val socialStacksQuery: QueryOptions = QueryOptions.localAndRemote(stackRelays, RemoteMode.Stream, whenSocialOff = socialOff)
 
     /** Social stacks, an older page: one shot; results land in SQLite and the page re-reads. */
-    val olderStacksQuery: QueryOptions = QueryOptions.localAndRemote(stackRelays, RemoteMode.OneShot())
+    val olderStacksQuery: QueryOptions = QueryOptions.localAndRemote(stackRelays, RemoteMode.OneShot(), whenSocialOff = socialOff)
 
     /** One person's stacks, or one stack by coordinate: one shot through their outbox relays. */
-    val authorStacksQuery: QueryOptions = QueryOptions.localAndRemote(stackRelays, RemoteMode.OneShot(), cachedFor = 10.minutes, useAuthorRelays = true)
+    val authorStacksQuery: QueryOptions = QueryOptions.localAndRemote(
+        stackRelays, RemoteMode.OneShot(), cachedFor = 10.minutes, useAuthorRelays = true, whenSocialOff = socialOff,
+    )
 
     /** Stacks that list one app: one shot, refreshed at most every ten minutes. */
-    val stackedByQuery: QueryOptions = QueryOptions.localAndRemote(stackRelays, RemoteMode.OneShot(), cachedFor = 10.minutes)
+    val stackedByQuery: QueryOptions = QueryOptions.localAndRemote(stackRelays, RemoteMode.OneShot(), cachedFor = 10.minutes, whenSocialOff = socialOff)
 
     /** The catalog key before the launch rotation; stacks made then still name apps under it. */
     const val LEGACY_CATALOG_PUBKEY = "78ce6faa72264387284e647ba6938995735ec8c7d5c5a65737e55130f026307d"
+
+    /** The keys whose stacks are catalog data, not social: every catalog's key and the one it signed with before the rotation. */
+    fun catalogStackAuthors(catalogs: List<CatalogRecord>): Set<String> =
+        catalogs.mapNotNull(CatalogRecord::manifestPubkey).toSet() + LEGACY_CATALOG_PUBKEY
 
     /** Where zap receipts are read, so a zap request asks for them there. */
     val zapRelays: Set<RelayUrl> = writeRelays + catalogRelay
@@ -87,30 +105,36 @@ object AppConfig {
      * Kind 9735 on an app page: streamed like its comments, so the feed fills in as receipts arrive,
      * and read from the inboxes of the catalog key and the C1 owner or listing signer as well.
      */
-    val zapQuery: QueryOptions = QueryOptions.localAndRemote(zapRelays, RemoteMode.Stream, useAuthorRelays = true)
+    val zapQuery: QueryOptions = QueryOptions.localAndRemote(zapRelays, RemoteMode.Stream, useAuthorRelays = true, whenSocialOff = socialOff)
 
     /**
      * Home's activity feed: newest comments and zaps across apps, streamed while Home is open so new ones
      * arrive as they are published, and read from the catalog key's inboxes as well.
      */
-    val activityQuery: QueryOptions = QueryOptions.localAndRemote(commentRelays + zapRelays, RemoteMode.Stream, useAuthorRelays = true)
+    val activityQuery: QueryOptions =
+        QueryOptions.localAndRemote(commentRelays + zapRelays, RemoteMode.Stream, useAuthorRelays = true, whenSocialOff = socialOff)
 
     /** The stacks Home's activity feed shows as changed: one shot, refreshed every few minutes. */
-    val activityStacksQuery: QueryOptions = QueryOptions.localAndRemote(stackRelays, RemoteMode.OneShot(), cachedFor = 5.minutes)
+    val activityStacksQuery: QueryOptions =
+        QueryOptions.localAndRemote(stackRelays, RemoteMode.OneShot(), cachedFor = 5.minutes, whenSocialOff = socialOff)
 
     /**
      * One person's activity (their comments and zaps): one shot through their outbox relays and the
      * relays comments and receipts are read from, refreshed every few minutes.
      */
-    val profileActivityQuery: QueryOptions = QueryOptions.localAndRemote(commentRelays + zapRelays, RemoteMode.OneShot(), cachedFor = 5.minutes, useAuthorRelays = true)
+    val profileActivityQuery: QueryOptions = QueryOptions.localAndRemote(
+        commentRelays + zapRelays, RemoteMode.OneShot(), cachedFor = 5.minutes, useAuthorRelays = true, whenSocialOff = socialOff,
+    )
 
     /** Kind 1111: always LocalAndRemote so comments are fetched even when other relays stay local. */
     val commentQuery: QueryOptions =
-        QueryOptions.localAndRemote(commentRelays, RemoteMode.Stream, useAuthorRelays = true)
+        QueryOptions.localAndRemote(commentRelays, RemoteMode.Stream, useAuthorRelays = true, whenSocialOff = socialOff)
 
     /** Kind 0 for comment authors; same always-remote rule as [commentQuery]. */
-    val commentProfileQuery: QueryOptions =
-        QueryOptions.localAndRemote(profileRelays, RemoteMode.OneShot(), cachedFor = profileCacheDuration, useAuthorRelays = true)
+    val commentProfileQuery: QueryOptions = QueryOptions.localAndRemote(
+        profileRelays, RemoteMode.OneShot(), cachedFor = profileCacheDuration, useAuthorRelays = true,
+        whenSocialOff = profilesFromCatalogRelay,
+    )
 
     private fun Set<String>.toRelayUrls(): Set<RelayUrl> = map(String::normalizeRelayUrl).toSet()
 }

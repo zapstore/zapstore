@@ -58,6 +58,17 @@ class DeviceStateTest {
     }
 
     @Test
+    fun socialDefaultsOnAndRoundTrips() {
+        assertTrue(DeviceState().social)
+        assertTrue(DeviceState.fromJson(JSONObject("""{"backgroundAutoUpdatesEnabled": true}""")).social)
+        val off = DeviceState(social = false)
+        assertFalse(off.toJson().getBoolean("social"))
+        assertEquals(off, DeviceState.fromJson(JSONObject(off.toJson().toString())))
+        // A state that lacks the field keeps what this phone already has.
+        assertFalse(DeviceState.fromJson(JSONObject("""{"networkMode": "tor"}"""), off).social)
+    }
+
+    @Test
     fun oldTrustedSignersAreIgnored() {
         val json = JSONObject("""{"trustedSigners": ["short", "${"b".repeat(64)}"]}""")
         assertEquals(DeviceState(), DeviceState.fromJson(json))

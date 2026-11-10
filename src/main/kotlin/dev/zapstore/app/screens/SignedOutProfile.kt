@@ -1,16 +1,18 @@
 package dev.zapstore.app.screens
 
 import dev.zapstore.app.components.GroupHeader
+import dev.zapstore.app.components.LocalSocial
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -22,13 +24,14 @@ import dev.zapstore.app.ZapCanvas
 import dev.zapstore.app.components.SettingsGroup
 import dev.zapstore.app.components.SettingsRow
 import dev.zapstore.app.components.StatusText
-import dev.zapstore.app.components.ZapButtonStyle
-import dev.zapstore.app.components.ZapIconButton
 import dev.zapstore.app.ZapSpacing
+import dev.zapstore.app.ZapText2
+import dev.zapstore.app.ZapText3
 
 /**
  * The Profile tab before sign-in: what an account adds, and the way in. Without a signer
- * installed it offers Amber from Zapstore instead. A gear opens the device's settings.
+ * installed it offers Amber from Zapstore instead. With social off the sign-in row is shown disabled,
+ * with a note. A Settings row opens the device's settings.
  */
 @Composable
 fun SignedOutProfile(
@@ -51,26 +54,24 @@ fun SignedOutProfile(
             .testTag("signedOutProfile"),
         verticalArrangement = Arrangement.spacedBy(ZapSpacing.space3),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Text(stringResource(R.string.profile), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
-            onSettings?.let {
-                ZapIconButton(
-                    icon = R.drawable.ic_settings,
-                    contentDescription = stringResource(R.string.settings),
-                    onClick = it,
-                    style = ZapButtonStyle.Ghost,
-                    modifier = Modifier.testTag("openSettings"),
-                )
-            }
-        }
+        Text(stringResource(R.string.profile), style = MaterialTheme.typography.headlineSmall)
         if (saved.ids.isNotEmpty()) {
             GroupHeader(stringResource(R.string.stacks))
             // Signed out there is no account to curate other stacks, so this shelf only ever carries
             // the device's own Saved list, shown the same way Home shows anyone's.
             StacksShelf(stacks = emptyList(), apps = emptyMap(), onStackClick = {}, saved = saved, onSavedClick = onSavedClick)
         }
+        val social = LocalSocial.current
         SettingsGroup(Modifier.testTag("profileSignIn")) {
-            if (hasSigner) {
+            if (!social) {
+                // With social off there is no account: the row stays so the way back is visible, but it does nothing.
+                SettingsRow(
+                    title = stringResource(if (hasSigner) R.string.sign_in_with_signer else R.string.get_amber),
+                    subtitle = stringResource(R.string.sign_in_needs_social),
+                    titleColor = ZapText3,
+                    modifier = Modifier.testTag("profileSignInOff"),
+                )
+            } else if (hasSigner) {
                 SettingsRow(
                     title = stringResource(R.string.sign_in_with_signer),
                     subtitle = stringResource(R.string.account_explainer),
@@ -86,6 +87,23 @@ fun SignedOutProfile(
                 )
             }
         }
-        error?.let { StatusText(it, Modifier.testTag("profileSignInError")) }
+        if (social) error?.let { StatusText(it, Modifier.testTag("profileSignInError")) }
+        onSettings?.let { SettingsEntry(it) }
+    }
+}
+
+/**
+ * The way into Settings, as a labelled row on the Profile tab. A lone gear in a corner went unnoticed,
+ * so the row says what is behind it.
+ */
+@Composable
+internal fun SettingsEntry(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    SettingsGroup(modifier.testTag("openSettings")) {
+        SettingsRow(
+            title = stringResource(R.string.settings),
+            subtitle = stringResource(R.string.settings_entry_hint),
+            onClick = onClick,
+            leading = { Icon(painterResource(R.drawable.ic_settings), null, tint = ZapText2, modifier = Modifier.size(22.dp)) },
+        )
     }
 }

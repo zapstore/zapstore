@@ -92,8 +92,15 @@ class HomeViewModel(
 ) : ViewModel() {
     private val searchQuery = savedStateHandle.getStateFlow(SEARCH_QUERY_KEY, "")
     private val submittedQuery = savedStateHandle.getStateFlow(SUBMITTED_QUERY_KEY, "")
-    /** Kept in the device settings, so it survives a restart and follows the device key. */
-    private val activityFilter: Flow<ActivityFilter> = settings.state.map { it.activityFilter }.distinctUntilChanged()
+    /**
+     * Kept in the device settings, so it survives a restart and follows the device key. With social off the feed is
+     * releases only; the stored choice is left alone and comes back when social does.
+     */
+    private val activityFilter: Flow<ActivityFilter> =
+        settings.state.map { if (it.social) it.activityFilter else ActivityFilter.Releases }.distinctUntilChanged()
+
+    /** The social entries are read only while the feed shows them. */
+    private val socialActivityWanted: Flow<Boolean> = activityFilter.map { it == ActivityFilter.All }.distinctUntilChanged()
     private val stackLimit = MutableStateFlow(STACK_PAGE)
     private val activityLimit = MutableStateFlow(ACTIVITY_PAGE)
 
@@ -197,7 +204,7 @@ class HomeViewModel(
      * (most receipts carry no `a`). The relays are asked for more than a page, since entries on apps the
      * catalog does not show are dropped, as the web page's Activity does.
      */
-    private val comments: Flow<ActivityPage> =
+    private val commentsFeed: Flow<ActivityPage> =
         combine(
             iolite.observeApps(AppFilter(limit = ACTIVITY_APPS))
                 .map { apps -> apps.map { AppCoordinate(it.eventPubkey, it.appId) } }
@@ -227,11 +234,15 @@ class HomeViewModel(
             }
             .onStart { emit(ActivityPage(QueryState(emptyList()), canLoadMore = false)) }
 
+    private val comments: Flow<ActivityPage> = socialActivityWanted.flatMapLatest { wanted ->
+        if (wanted) commentsFeed else flowOf(ActivityPage(QueryState(emptyList()), canLoadMore = false))
+    }
+
     /**
      * The stacks their curators published or changed last: public, one per curator, and naming at least one
      * catalog app, newest first. The web page's Activity does the same with six.
      */
-    private val changedStacks: Flow<Pair<List<StackRecord>, Map<String, AppRecord>>> =
+    private val changedStacksFeed: Flow<Pair<List<StackRecord>, Map<String, AppRecord>>> =
         iolite.query(Query.socialStacks(AppConfig.platforms, ACTIVITY_STACKS_READ), AppConfig.activityStacksQuery)
             .map { state -> state.items.filter { it.apps.isNotEmpty() } }
             .distinctUntilChanged()
@@ -241,6 +252,10 @@ class HomeViewModel(
                 }
             }
             .onStart { emit(emptyList<StackRecord>() to emptyMap()) }
+
+    private val changedStacks: Flow<Pair<List<StackRecord>, Map<String, AppRecord>>> = socialActivityWanted.flatMapLatest { wanted ->
+        if (wanted) changedStacksFeed else flowOf(emptyList<StackRecord>() to emptyMap())
+    }
 
     /** The newest release of each app, as entries, newest first. Read locally. */
     private val releases: Flow<List<ActivityItem>> = activityLimit.flatMapLatest { limit ->

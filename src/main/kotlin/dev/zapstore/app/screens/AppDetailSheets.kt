@@ -168,8 +168,10 @@ internal fun AppMoreMenu(
     saved: Boolean,
     onSave: () -> Unit,
     onShare: () -> Unit,
-    onReport: () -> Unit,
-    onAddToStack: () -> Unit,
+    /** Null leaves the entry out: reports are signed by an account, which social-off removes. */
+    onReport: (() -> Unit)?,
+    /** Null leaves the entry out, for the same reason. */
+    onAddToStack: (() -> Unit)?,
     onWebsite: (() -> Unit)?,
     onRepository: (() -> Unit)?,
     buttonTag: String,
@@ -197,10 +199,10 @@ internal fun AppMoreMenu(
                 "actionSave",
                 tint = if (saved) ZapActionText else ZapText,
             )
-            MenuAction(R.drawable.ic_stack, stringResource(R.string.action_add_to_stack), close(onAddToStack), "actionAddToStack")
+            onAddToStack?.let { MenuAction(R.drawable.ic_stack, stringResource(R.string.action_add_to_stack), close(it), "actionAddToStack") }
             onWebsite?.let { MenuAction(R.drawable.ic_external, stringResource(R.string.action_website), close(it), "actionWebsite") }
             onRepository?.let { MenuAction(R.drawable.ic_external, stringResource(R.string.repository), close(it), "actionRepository") }
-            MenuAction(R.drawable.ic_flag, stringResource(R.string.action_report), close(onReport), "actionReport", tint = ZapDanger)
+            onReport?.let { MenuAction(R.drawable.ic_flag, stringResource(R.string.action_report), close(it), "actionReport", tint = ZapDanger) }
         }
     }
 }

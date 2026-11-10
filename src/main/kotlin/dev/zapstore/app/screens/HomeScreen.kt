@@ -23,6 +23,7 @@ import androidx.compose.runtime.setValue
 import dev.zapstore.app.ZapLine
 import dev.zapstore.app.ZapText2
 import dev.zapstore.app.ZapTitle3Style
+import dev.zapstore.app.components.LocalSocial
 import dev.zapstore.app.components.SettingsGroup
 import dev.zapstore.app.components.SwitchRow
 import dev.zapstore.app.components.ZapChip
@@ -93,6 +94,7 @@ fun HomeScreen(
     onToggleFilter: (SearchFact) -> Unit = {},
     reselected: Flow<String> = emptyFlow(),
 ) {
+    val social = LocalSocial.current
     var filtersOpen by rememberSaveable { mutableStateOf(false) }
     var hideInstalled by rememberSaveable { mutableStateOf(false) }
     if (filtersOpen) {
@@ -178,7 +180,8 @@ fun HomeScreen(
                         else -> Column {
                             GroupHeader(
                                 stringResource(R.string.curated_stacks),
-                                action = stringResource(R.string.see_all),
+                                // See all opens everyone's stacks. With social off the shelf is the whole list.
+                                action = if (social) stringResource(R.string.see_all) else null,
                                 onAction = onSeeAllStacks,
                                 actionTag = "seeAllStacks",
                             )
@@ -199,7 +202,7 @@ fun HomeScreen(
                     GroupHeader(
                         stringResource(R.string.recent_activity),
                         Modifier.padding(top = ZapSpacing.space4),
-                        trailing = { SocialToggle(state.activityFilter, onActivityFilter) },
+                        trailing = if (LocalSocial.current) ({ SocialToggle(state.activityFilter, onActivityFilter) }) else null,
                     )
                 }
                 activityRows(

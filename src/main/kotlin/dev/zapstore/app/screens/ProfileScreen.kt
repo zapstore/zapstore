@@ -32,6 +32,7 @@ import dev.zapstore.app.ZapSurface2
 import dev.zapstore.app.ZapSpacing
 import dev.zapstore.app.ZapText2
 import dev.zapstore.app.components.GroupHeader
+import dev.zapstore.app.components.LocalSocial
 import dev.zapstore.app.components.ShareButton
 import dev.zapstore.app.components.ZapButtonStyle
 import dev.zapstore.app.components.ZapIconButton
@@ -62,6 +63,7 @@ fun ProfileScreen(
     onPersonalizeTrust: () -> Unit = {},
 ) {
     val own = onSettings != null
+    val social = LocalSocial.current
     val yourApps = stringResource(R.string.your_apps)
     val profile = state.profile
     val title = shortDisplayName(state.pubkey, profile)
@@ -112,15 +114,13 @@ fun ProfileScreen(
                     profile?.name?.takeIf { it != profile.displayName }?.let { StatusText("@$it") }
                 }
                 onShare?.let { ShareButton(it) }
-                onSettings?.let {
-                    ZapIconButton(
-                        icon = R.drawable.ic_settings,
-                        contentDescription = stringResource(R.string.settings),
-                        onClick = it,
-                        style = ZapButtonStyle.Ghost,
-                        modifier = Modifier.testTag("openSettings"),
-                    )
-                }
+            }
+        }
+
+        // Only the account's own profile has settings. A row says what is behind it; a lone gear went unnoticed.
+        onSettings?.let {
+            item(key = "settings", contentType = "settings") {
+                SettingsEntry(it, Modifier.padding(horizontal = ZapSpacing.space4))
             }
         }
 
@@ -139,7 +139,8 @@ fun ProfileScreen(
         }
 
         // Who vouches for this person, when there is something to show. A developer's page also offers the check.
-        val trust = state.trust
+        // The check from the user's own point of view needs an account; with social off only the catalog's signals show.
+        val trust = if (social) state.trust else state.trust.copy(canPersonalize = false)
         if (!own && (trust.hasSignals || trust.personal || (state.apps.apps.isNotEmpty() && trust.canPersonalize))) {
             item(key = "trust", contentType = "trust") {
                 TrustSignals(

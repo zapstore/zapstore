@@ -61,7 +61,9 @@ import androidx.navigation.NavGraph.Companion.findStartDestination
 import dev.zapstore.app.components.LocalInstalledCodes
 import dev.zapstore.app.components.LocalInstalledVersions
 import dev.zapstore.app.components.LocalPendingUpdates
+import dev.zapstore.app.components.LocalSocial
 import dev.zapstore.app.components.ZapNavigationBar
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.MutableSharedFlow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
@@ -359,7 +361,10 @@ class MainActivity : ComponentActivity() {
                 }
                 DeepLink.Stacks -> {
                     showTab(navController, Routes.HOME)
-                    navController.navigate(Routes.STACKS) { launchSingleTop = true }
+                    // That screen is everyone's stacks. With social off, Home's shelf is the list.
+                    if (zapstore.settings.state.value.social) {
+                        navController.navigate(Routes.STACKS) { launchSingleTop = true }
+                    }
                 }
                 DeepLink.MyApps -> showTab(navController, Routes.UPDATES)
                 is DeepLink.External -> openExternal(target.url)
@@ -399,8 +404,20 @@ class MainActivity : ComponentActivity() {
                 .map { NavAvatar(pubkey, it.items?.picture, it.items?.eventId) }
         }.collectAsStateWithLifecycle(null)
 
+        val social by remember { zapstore.settings.state.map { it.social }.distinctUntilChanged() }
+            .collectAsStateWithLifecycle(zapstore.settings.state.value.social)
+
         ToastHost()
-        CompositionLocalProvider(LocalPendingUpdates provides pendingUpdates, LocalInstalledVersions provides installedVersions, LocalInstalledCodes provides installedCodes) {
+        CompositionLocalProvider(
+            LocalPendingUpdates provides pendingUpdates,
+            LocalInstalledVersions provides installedVersions,
+            LocalInstalledCodes provides installedCodes,
+            LocalSocial provides social,
+        ) {
+        // See all is everyone's stacks. Leave that screen when social turns off.
+        LaunchedEffect(social) {
+            if (!social && navController.currentDestination?.route == Routes.STACKS) navController.popBackStack()
+        }
         Scaffold(
             containerColor = ZapCanvas,
             bottomBar = { ZapNavigationBar(currentTab, updateCount, selectTab, avatar = navAvatar) },
@@ -512,6 +529,7 @@ class MainActivity : ComponentActivity() {
                     onAnyNetworkChange = settingsModel::setAnyNetwork,
                     onOpenDiagnostics = { navController.navigate(Routes.DIAGNOSTICS) },
                     onBugReportsChange = settingsModel::setBugReports,
+                    onSocialChange = settingsModel::setSocial,
                     onBackUpKey = settingsModel::backUpKey,
                     onRestoreFromSigner = settingsModel::restoreFromSigner,
                     onCopyKey = {

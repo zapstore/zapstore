@@ -642,6 +642,8 @@ fun SettingsRow(
     subtitle: String? = null,
     onClick: (() -> Unit)? = null,
     titleColor: Color = ZapText,
+    /** An icon ahead of the text. */
+    leading: (@Composable () -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = if (onClick != null) {
         { Icon(painterResource(R.drawable.ic_chevron_right), null, tint = ZapText3, modifier = Modifier.size(18.dp)) }
     } else {
@@ -657,6 +659,7 @@ fun SettingsRow(
             .then(onClick?.let { Modifier.clickable(onClick = it) } ?: Modifier)
             .padding(horizontal = ZapSpacing.space4, vertical = ZapSpacing.space3),
     ) {
+        leading?.invoke()
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(title, color = titleColor, style = MaterialTheme.typography.bodyLarge)
             subtitle?.let { Text(it, color = ZapText2, style = MaterialTheme.typography.bodySmall) }

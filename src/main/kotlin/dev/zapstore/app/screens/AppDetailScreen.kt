@@ -70,6 +70,7 @@ import dev.zapstore.app.components.AppIcon
 import dev.zapstore.app.components.EmptyRow
 import dev.zapstore.app.components.GroupHeader
 import dev.zapstore.app.components.LoadingIndicator
+import dev.zapstore.app.components.LocalSocial
 import dev.zapstore.app.components.StatusText
 import dev.zapstore.app.components.ZapButton
 import dev.zapstore.app.components.ZapButtonStyle
@@ -138,9 +139,15 @@ fun AppDetailScreen(
     val app = state.app
     var showOriginal by remember(app?.appId) { mutableStateOf(false) }
     val comments = state.comments
+    // With social off there are no comments, zaps, reports or account: those parts of the page are left out.
+    val social = LocalSocial.current
+    // The check from the user's own point of view needs an account too; what the catalog knows stays.
+    val trust = if (social) state.install.trust else state.install.trust.copy(canPersonalize = false)
     // Zaps are in the zap row above; only the ones that came with a note are listed among the comments.
-    val feed = remember(comments.threads, comments.zaps) { feedBlocks(comments.threads, comments.zaps.filter { it.note.isNotBlank() }) }
-    val other = remember(comments.other) { feedBlocks(comments.other, emptyList()) }
+    val feed = remember(social, comments.threads, comments.zaps) {
+        if (social) feedBlocks(comments.threads, comments.zaps.filter { it.note.isNotBlank() }) else emptyList()
+    }
+    val other = remember(social, comments.other) { if (social) feedBlocks(comments.other, emptyList()) else emptyList() }
     val replyable = state.social.signedIn
     // The top comments come ten at a time, each with all of its replies; the rest wait behind Load more.
     var commentsShown by rememberSaveable(app?.appId) { mutableIntStateOf(COMMENTS_PAGE) }
@@ -150,7 +157,7 @@ fun AppDetailScreen(
     // Which optional items sit above the feed, so a comment's item index can be told.
     val showSigned = state.install.signedDifferently
     val showShots = app?.screenshots?.isNotEmpty() == true
-    val showZaps = state.social.zappable || state.zaps.zappers.isNotEmpty()
+    val showZaps = social && (state.social.zappable || state.zaps.zappers.isNotEmpty())
     val showStackedBy = state.stackedBy.stacks.isNotEmpty()
     // The head, about, the Security and Releases panels and the composer are always there; the header only with a feed.
     val showActivity = feed.isNotEmpty()
@@ -182,8 +189,8 @@ fun AppDetailScreen(
                 saved = saved,
                 onSave = { onSave(!saved) },
                 onShare = onShare,
-                onReport = { reporting = true },
-                onAddToStack = { if (state.userStacks == null) onSettingsClick() else stacking = true },
+                onReport = if (social) ({ reporting = true }) else null,
+                onAddToStack = if (social) ({ if (state.userStacks == null) onSettingsClick() else stacking = true }) else null,
                 onWebsite = app.website?.let { site -> { onOpenUrl(site) } },
                 onRepository = app.repository?.takeIf(::isHttpUrl)?.let { repository -> { onOpenUrl(repository) } },
                 buttonTag = tag,
@@ -334,10 +341,11 @@ fun AppDetailScreen(
                     GroupHeader(stringResource(R.string.comments), count = feed.sumOf { it.size }.takeIf { it > 0 })
                 }
             }
-            item(key = "commentComposer", contentType = "composer") {
+            if (social) item(key = "commentComposer", contentType = "composer") {
                 AddCommentButton({ commenting = true })
             }
             when {
+                !social -> Unit
                 comments.error != null && feed.isEmpty() -> item(key = "commentsError", contentType = "error") {
                     CommentsEmpty(error = comments.error, onRetry = onRetryComments, onSettings = onSettingsClick)
                 }
@@ -430,7 +438,7 @@ fun AppDetailScreen(
                 onDismiss = onDismissInstall,
                 onOpenReport = { report = true },
                 otherStore = state.install.otherStore,
-                trust = state.install.trust,
+                trust = trust,
                 onPersonalizeTrust = { if (state.social.signedIn) onPersonalizeTrust() else onSignIn() },
                 onOpenUrl = onOpenUrl,
             )
@@ -449,7 +457,7 @@ fun AppDetailScreen(
                     onProfileClick(pubkey)
                 },
                 onDismiss = { authorSheet = false },
-                trust = state.install.trust,
+                trust = trust,
                 onPersonalizeTrust = { if (state.social.signedIn) onPersonalizeTrust() else onSignIn() },
             )
         }

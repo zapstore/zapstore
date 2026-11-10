@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A Social switch in Settings, on by default. Turning it off asks first, signs you out, stops loading from your contacts' relays, and deletes the comments, zaps, reports and community stacks on the phone. Saved apps and catalogs stay. Stacks shows catalog stacks only, and comments, zaps, reports and sign-in are hidden
+- While Social is on, profiles read from other relays are copied to the catalog relay when they are newer
 - On a first install, or after Clear local storage, a catalog screen replaces the app until the catalog is in. It shows the connection, the download and the import, offers Tor or Direct, "Clear and start over", and "Copy diagnostics". It opens when the phone holds no app data, and on a first install of the APK that carries the catalog, until the first sync has brought that catalog up to date
 - A catalog screen with "Restore Zapstore's catalog" when no catalog is left
 

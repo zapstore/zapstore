@@ -57,6 +57,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Process-wide singletons: network, the Iolite client, and catalog sync. Screens get these from here. */
 class ZapstoreApplication : Application() {
@@ -140,6 +141,8 @@ class ZapstoreApplication : Application() {
                 indexerRelays = AppConfig.indexerRelays,
                 relayMonitors = AppConfig.relayMonitors,
                 monitorRelays = AppConfig.monitorRelays,
+                social = settings.state.value.social,
+                profileMirror = AppConfig.catalogRelay,
                 log = { message, error -> if (error == null) AppLog.i("iolite", message) else AppLog.w("iolite", message, error) },
             ),
             http = network.http,
@@ -186,6 +189,14 @@ class ZapstoreApplication : Application() {
         }
         watchPackages()
         settings.attach(iolite)
+        scope.launch {
+            SocialSwitch(
+                social = settings.state.map { it.social },
+                setReads = iolite::setSocial,
+                signOut = account::signOut,
+                wipe = { withContext(Dispatchers.IO) { iolite.wipeSocial(AppConfig.catalogStackAuthors(iolite.allCatalogs())) } },
+            ).run()
+        }
         scope.launch {
             settings.state.map { it.networkMode }.distinctUntilChanged().collect { mode ->
                 val changed = mode != network.mode.value

@@ -68,6 +68,7 @@ fun SettingsSection(
     onAnyNetworkChange: (Boolean) -> Unit = {},
     onOpenDiagnostics: () -> Unit = {},
     onBugReportsChange: (Boolean) -> Unit = {},
+    onSocialChange: (Boolean) -> Unit = {},
     onOpenUrl: (String) -> Unit = {},
     onBackUpKey: () -> Unit = {},
     onRestoreFromSigner: () -> Unit = {},
@@ -89,6 +90,7 @@ fun SettingsSection(
     onConfirmRemoveCatalog: () -> Unit = {},
 ) {
     var keys by rememberSaveable { mutableStateOf(false) }
+    var confirmingSocialOff by rememberSaveable { mutableStateOf(false) }
     BackHandler(enabled = keys) { keys = false }
     val canRemove = state.catalogs.size > 1
     Column(
@@ -156,6 +158,15 @@ fun SettingsSection(
                 }
 
                 SettingsGroup(Modifier.padding(top = ZapSpacing.space4)) {
+                    SwitchRow(
+                        title = stringResource(R.string.social),
+                        subtitle = stringResource(R.string.social_hint),
+                        checked = state.deviceState.social,
+                        // Turning it on is harmless. Turning it off deletes data, so it asks first.
+                        onCheckedChange = { on -> if (on) onSocialChange(true) else confirmingSocialOff = true },
+                        modifier = Modifier.testTag("social"),
+                    )
+                    HorizontalDivider(color = ZapLine)
                     SettingsRow(
                         title = stringResource(R.string.account_and_keys),
                         onClick = { keys = true },
@@ -224,7 +235,7 @@ fun SettingsSection(
                         subtitle = stringResource(R.string.device_key_subtitle),
                         trailing = null,
                     )
-                    if (state.account != null) {
+                    if (state.account != null && state.deviceState.social) {
                         HorizontalDivider(color = ZapLine)
                         SettingsRow(
                             title = stringResource(R.string.back_up_key),
@@ -257,6 +268,7 @@ fun SettingsSection(
                 when {
                     state.key.busy -> StatusText(stringResource(R.string.key_working), Modifier.testTag("keyStatus"))
                     state.key.message != null -> StatusText(state.key.message, Modifier.testTag("keyStatus"))
+                    !state.deviceState.social -> StatusText(stringResource(R.string.key_backup_needs_social))
                     state.account == null -> StatusText(stringResource(R.string.key_sign_in_to_back_up))
                 }
         }
@@ -274,6 +286,24 @@ fun SettingsSection(
         )
     }
     if (state.key.confirmReplace) ReplaceKeySheet(onConfirmReplace, onDismissReplace)
+    if (confirmingSocialOff) {
+        ConfirmSheet(
+            title = stringResource(R.string.social_off_title),
+            body = listOf(
+                stringResource(R.string.social_off_body),
+                stringResource(R.string.social_off_keeps),
+                stringResource(R.string.social_off_backup),
+            ),
+            confirm = stringResource(R.string.social_off_confirm),
+            onConfirm = {
+                confirmingSocialOff = false
+                onSocialChange(false)
+            },
+            onDismiss = { confirmingSocialOff = false },
+            confirmStyle = ZapButtonStyle.Danger,
+            confirmTag = "socialOffConfirm",
+        )
+    }
     if (state.catalogSheet.adding) {
         PasteSecretSheet(
             title = stringResource(R.string.catalog_add_title),
