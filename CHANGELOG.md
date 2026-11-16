@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Home no longer flashes "No stacks to show" or a blank screen while it reads the catalog from the phone. The last welcome slide, or the catalog screen, stays up until Home has its data, and a regular launch keeps the splash
 - The last catalog can no longer be removed in Settings
 - An empty catalog list arriving from another device no longer removes the catalogs on this one
+- ONNX Runtime, used for local search, is bumped to 1.24.3. 1.23.2 crashed immediately on search on some Snapdragon 8-series phones running Android 16, from a CPU feature detection bug fixed upstream in 1.24
 
 ## [2.0.4] - 2026-11-08
 
