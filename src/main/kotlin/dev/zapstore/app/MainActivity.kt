@@ -630,11 +630,7 @@ class MainActivity : ComponentActivity() {
                 val log by viewModel.log.collectAsStateWithLifecycle()
                 DiagnosticsScreen(
                     log = log,
-                    onShare = { shareText(it) },
-                    onCopy = { text ->
-                        getSystemService(ClipboardManager::class.java)
-                            .setPrimaryClip(ClipData.newPlainText(getString(R.string.diagnostics), text))
-                    },
+                    onShare = ::shareDiagnostics,
                     onClear = viewModel::clear,
                 )
             }
@@ -811,6 +807,15 @@ class MainActivity : ComponentActivity() {
     private fun shareText(text: String, title: String = getString(R.string.diagnostics)) {
         val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
         runCatching { startActivity(Intent.createChooser(send, title)) }
+    }
+
+    private fun shareDiagnostics() {
+        val uri = DiagnosticsExport.export(this) ?: return
+        val send = Intent(Intent.ACTION_SEND)
+            .setType("text/plain")
+            .putExtra(Intent.EXTRA_STREAM, uri)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        runCatching { startActivity(Intent.createChooser(send, getString(R.string.diagnostics))) }
     }
 
     private fun AnimatedContentTransitionScope<NavBackStackEntry>.switchingTabs(): Boolean =

@@ -62,7 +62,7 @@ class DiagnosticsViewModel : ViewModel() {
     }
 
     private companion object {
-        /** Keeps the share intent well under the binder transaction limit. */
+        /** Caps what the screen renders; Share exports the whole log as a file. */
         const val MAX_CHARS = 200_000
     }
 }
@@ -70,8 +70,7 @@ class DiagnosticsViewModel : ViewModel() {
 @Composable
 fun DiagnosticsScreen(
     log: String?,
-    onShare: (String) -> Unit,
-    onCopy: (String) -> Unit,
+    onShare: () -> Unit,
     onClear: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -111,16 +110,9 @@ fun DiagnosticsScreen(
             val ready = !log.isNullOrBlank()
             ZapButton(
                 text = stringResource(R.string.share_logs),
-                onClick = { log?.let(onShare) },
+                onClick = onShare,
                 enabled = ready,
                 modifier = Modifier.testTag("shareLogs"),
-            )
-            ZapButton(
-                text = stringResource(R.string.copy),
-                onClick = { log?.let(onCopy) },
-                style = ZapButtonStyle.Tonal,
-                enabled = ready,
-                modifier = Modifier.testTag("copyLogs"),
             )
             ZapButton(
                 text = stringResource(R.string.clear_logs),
