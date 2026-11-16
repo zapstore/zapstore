@@ -6,7 +6,6 @@ reference/
 .android-sdk/
 .adb-home/
 src/main/assets/catalog.db
-src/main/assets/bundle-0-1.tar.zst
 
 # OS
 .DS_Store

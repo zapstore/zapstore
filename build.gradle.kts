@@ -10,6 +10,26 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+val buildsRelease = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
+
+// The catalog bundle is what a new install imports on first open. -PcatalogBundle chooses it:
+//   none (default)  no bundle; the first open downloads the catalog. This is the update APK.
+//   pinned          the bundle named by catalog-bundle.lock, fetched and checked by sha256.
+//   <path>          a local file, for debug builds against a local relay or the e2e tests.
+// -PcatalogBundleUrl fetches the pinned bytes from another URL, or a file: URL; the sha256 still has to match.
+val catalogBundleAsset = "bundle-0-1.tar.zst"
+val catalogBundleLock = layout.projectDirectory.file("catalog-bundle.lock").asFile
+val catalogBundleStage = layout.projectDirectory.dir(".tools/catalog-bundle")
+val catalogBundleMode = providers.gradleProperty("catalogBundle").orElse("none").get().trim().ifEmpty { "none" }
+val catalogBundleUrl = providers.gradleProperty("catalogBundleUrl").orElse("")
+check(!buildsRelease || catalogBundleMode == "none" || catalogBundleMode == "pinned") {
+    "a release build ships no catalog bundle or the pinned one: -PcatalogBundle=none or pinned, not a file"
+}
+// A seed left in src/main/assets would ride along in every build, release included.
+check(!layout.projectDirectory.file("src/main/assets/$catalogBundleAsset").asFile.exists()) {
+    "src/main/assets/$catalogBundleAsset is a leftover seed; delete it and use -PcatalogBundle=<file>"
+}
+
 android {
     namespace = "dev.zapstore.app"
     compileSdk = providers.gradleProperty("iolite.compileSdk").orElse("37").get().toInt()
@@ -55,11 +75,6 @@ android {
 
     androidResources {
         localeFilters += "en"
-        // The update APK leaves the catalog out. New installs ship it so the first open has the list.
-        if (providers.gradleProperty("OMIT_CATALOG_BUNDLE").orElse("false").get().toBoolean()) {
-            ignoreAssetsPattern =
-                "!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~:!bundle-0-1.tar.zst"
-        }
     }
 
     // `make run` passes -PCATALOG_RELAY. The daemon ignores a new environment, so the property is the input.
@@ -77,7 +92,6 @@ android {
     check(catalogPubkey.isEmpty() || Regex("[0-9a-f]{64}").matches(catalogPubkey)) {
         "CATALOG_PUBKEY must be 64 hex characters"
     }
-    val buildsRelease = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
     check(!buildsRelease || catalogPubkey.isNotEmpty()) {
         "a release build needs CATALOG_PUBKEY for $catalogRelay"
     }
@@ -119,6 +133,7 @@ android {
 
     sourceSets.named("main") {
         assets.directories.add(layout.projectDirectory.dir(".tools/leaf-ir-assets").asFile.absolutePath)
+        assets.directories.add(catalogBundleStage.asFile.absolutePath)
     }
 }
 
@@ -196,30 +211,73 @@ val downloadLeafModel = tasks.register("downloadLeafModel") {
             Triple("dense.safetensors", base + "2_Dense/model.safetensors", "b3e7c0e1ef65e39a5ef1ca3bc5e4aef5feafb6e204bd161503145ed062f12c69"),
             Triple("model_quantized.onnx", base + "onnx/model_quantized.onnx", "8c08cb4ecc00bad721b117a85738c537ceb9b85b3eedc52d9c6906fddaa55718"),
             Triple("model_quantized.onnx_data", base + "onnx/model_quantized.onnx_data", "e77ea96a124230e23e5bac8e26c3ffe5410154973d8635673fa0220b06c13f8b"),
-        ).forEach { (name, url, sum) ->
-            val file = root.resolve(name)
-            if (file.isFile && sha256(file) == sum) return@forEach
-            val tmp = root.resolve("$name.tmp")
-            val connection = URI(url).toURL().openConnection() as HttpURLConnection
-            connection.instanceFollowRedirects = true
-            connection.setRequestProperty("User-Agent", "zapstore-android")
-            connection.connectTimeout = 30_000
-            connection.readTimeout = 180_000
-            connection.inputStream.use { input -> tmp.outputStream().use { output -> input.copyTo(output) } }
-            check(sha256(tmp) == sum) { "$name sha256 mismatch" }
-            check(tmp.renameTo(file)) { "could not replace $name" }
+        ).forEach { (name, url, sum) -> fetchVerified(url, sum, root.resolve(name)) }
+    }
+}
+
+// Puts the catalog bundle for -PcatalogBundle into .tools/catalog-bundle, an asset directory.
+// The directory is emptied first, so switching modes never leaves a bundle behind.
+val stageCatalogBundle = tasks.register("stageCatalogBundle") {
+    inputs.property("mode", catalogBundleMode)
+    inputs.property("url", catalogBundleUrl)
+    when (catalogBundleMode) {
+        "none" -> Unit
+        "pinned" -> inputs.files(catalogBundleLock)
+        else -> inputs.files(File(catalogBundleMode))
+    }
+    outputs.dir(catalogBundleStage)
+    doLast {
+        val stage = catalogBundleStage.asFile
+        stage.deleteRecursively()
+        stage.mkdirs()
+        val target = stage.resolve(catalogBundleAsset)
+        when (catalogBundleMode) {
+            "none" -> Unit
+            "pinned" -> {
+                check(catalogBundleLock.isFile) { "${catalogBundleLock.name} is missing; infra/misc/cut-mobile-release.sh writes it" }
+                val pin = catalogBundleLock.readLines()
+                    .filter { "=" in it && !it.trimStart().startsWith("#") }
+                    .associate { it.substringBefore('=').trim() to it.substringAfter('=').trim() }
+                fun pinned(key: String) = checkNotNull(pin[key]) { "${catalogBundleLock.name} has no $key" }
+                val sha = pinned("sha256")
+                val cached = layout.projectDirectory.file(".tools/catalog-cache/$sha.tar.zst").asFile
+                fetchVerified(catalogBundleUrl.get().ifEmpty { pinned("url") }, sha, cached)
+                check(cached.length() == pinned("bytes").toLong()) { "${cached.name} is ${cached.length()} bytes, pinned ${pinned("bytes")}" }
+                cached.copyTo(target, overwrite = true)
+            }
+            else -> File(catalogBundleMode).also { check(it.isFile) { "catalogBundle file not found: $it" } }
+                .copyTo(target, overwrite = true)
         }
     }
 }
 
 tasks.matching { it.name == "preBuild" || it.name.endsWith("UnitTest") || (it.name.startsWith("merge") && it.name.endsWith("Assets")) }.configureEach {
-    dependsOn(downloadLeafModel)
+    dependsOn(downloadLeafModel, stageCatalogBundle)
 }
 
 configurations.configureEach {
     if (name.endsWith("UnitTestRuntimeClasspath")) {
         exclude(group = "com.microsoft.onnxruntime", module = "onnxruntime-android")
     }
+}
+
+/** Fetches [url] (https or file) to [dest] unless [dest] already has [sha256]. Bytes that do not match are deleted and fail the build. */
+fun fetchVerified(url: String, sha256: String, dest: File) {
+    if (dest.isFile && sha256(dest) == sha256) return
+    dest.parentFile.mkdirs()
+    val tmp = File(dest.path + ".tmp")
+    val connection = URI(url).toURL().openConnection()
+    (connection as? HttpURLConnection)?.instanceFollowRedirects = true
+    connection.setRequestProperty("User-Agent", "zapstore-android")
+    connection.connectTimeout = 30_000
+    connection.readTimeout = 180_000
+    connection.getInputStream().use { input -> tmp.outputStream().use { output -> input.copyTo(output) } }
+    val actual = sha256(tmp)
+    if (actual != sha256) {
+        tmp.delete()
+        error("${dest.name} from $url has sha256 $actual, expected $sha256")
+    }
+    check(tmp.renameTo(dest)) { "could not replace ${dest.name}" }
 }
 
 fun sha256(file: File): String {
