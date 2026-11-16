@@ -1,6 +1,7 @@
 package dev.zapstore.app
 
 import android.util.Log
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -28,5 +29,31 @@ class AppLogTest {
         AppLog.line(Log.WARN, "T", "logged", error, 0)
 
         assertTrue(AppLog.line(Log.ASSERT, "crash", "Uncaught", error, 0).contains("\tat "))
+    }
+
+    @Test
+    fun onlyTheSystemDeathNamesCount() {
+        assertTrue(AppLog.isSystemDeathName("android.os.DeadSystemException"))
+        assertTrue(AppLog.isSystemDeathName("android.os.DeadSystemRuntimeException"))
+        assertFalse(AppLog.isSystemDeathName("android.os.DeadObjectException"))
+        assertFalse(AppLog.isSystemDeathName("java.lang.IllegalStateException"))
+    }
+
+    @Test
+    fun chainReachesCausesAndSuppressedErrors() {
+        val deepest = IllegalArgumentException("deepest")
+        val suppressed = IllegalStateException("suppressed")
+        val top = RuntimeException("top", RuntimeException("middle", deepest)).apply { addSuppressed(suppressed) }
+
+        assertTrue(AppLog.chain(top).containsAll(listOf(top, deepest, suppressed)))
+    }
+
+    @Test
+    fun chainEndsOnAChainThatPointsBackIntoItself() {
+        val loop = RuntimeException("loop")
+        val top = RuntimeException("top", loop).apply { addSuppressed(loop) }
+        loop.addSuppressed(top)
+
+        assertEquals(2, AppLog.chain(top).size)
     }
 }

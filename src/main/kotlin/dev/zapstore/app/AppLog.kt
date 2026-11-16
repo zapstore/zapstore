@@ -32,7 +32,9 @@ object AppLog {
         dir = logs
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
-            runCatching { writeCrash(logs, thread, error) }
+            runCatching {
+                if (isSystemDeath(error)) noteSystemDeath(logs, error) else writeCrash(logs, thread, error)
+            }
             previous?.uncaughtException(thread, error)
         }
     }
@@ -80,6 +82,38 @@ object AppLog {
         val text = line(Log.ASSERT, "crash", "Uncaught on ${thread.name}", error, now)
         File(crashes, "$now.txt").writeText("${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\n$text")
         File(logs, "app.log").appendText(text)
+    }
+
+    /**
+     * The system process died, so every binder call this process makes throws and the process is
+     * going down with it. Nothing here failed, so it is noted in one line and never queued as a
+     * report. Written straight to the file: the log's writer thread may not run again.
+     */
+    private fun noteSystemDeath(logs: File, error: Throwable) {
+        val text = line(Log.WARN, "crash", "system died while the process was tearing down: $error", null, System.currentTimeMillis())
+        File(logs, "app.log").appendText(text)
+    }
+
+    /** True when [error], or anything it carries, is the system process dying. */
+    internal fun isSystemDeath(error: Throwable): Boolean = chain(error).any { isSystemDeathName(it.javaClass.name) }
+
+    /** DeadSystemRuntimeException is hidden from the SDK, so both names are matched as text. */
+    internal fun isSystemDeathName(name: String): Boolean =
+        name == "android.os.DeadSystemException" || name == "android.os.DeadSystemRuntimeException"
+
+    /** [error] with its causes and suppressed errors, which a framework teardown nests several deep. */
+    internal fun chain(error: Throwable): List<Throwable> {
+        val seen = LinkedHashSet<Throwable>()
+        val queue = ArrayDeque<Throwable>()
+        queue.addLast(error)
+        while (queue.isNotEmpty()) {
+            val next = queue.removeFirst()
+            // A cause or a suppressed error can point back into the chain.
+            if (!seen.add(next)) continue
+            next.cause?.let(queue::addLast)
+            next.suppressed.forEach(queue::addLast)
+        }
+        return seen.toList()
     }
 
     internal fun line(priority: Int, tag: String, message: String, error: Throwable?, at: Long): String {

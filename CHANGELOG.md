@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- When Android's own system process dies, the app no longer keeps that as a crash to report. It is one line in the diagnostic log instead, since nothing in the app failed and the app is stopping along with the system
 - Home no longer flashes "No stacks to show" or a blank screen while it reads the catalog from the phone. The last welcome slide, or the catalog screen, stays up until Home has its data, and a regular launch keeps the splash
 - The last catalog can no longer be removed in Settings
 - An empty catalog list arriving from another device no longer removes the catalogs on this one
