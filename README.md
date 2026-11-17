@@ -74,6 +74,24 @@ Or call Gradle directly:
 ./gradlew connectedDebugAndroidTest
 ```
 
+## Verify a release
+
+Each release APK rebuilds byte for byte from its tag. You need git, python3 and a running Docker (or `--local` with your own JDK 21 and Android SDK).
+
+```bash
+git clone https://github.com/zapstore/zapstore && cd zapstore
+tools/release/verify.sh <version> https://github.com/zapstore/zapstore/releases/download/<version>/zapstore-<version>.apk
+tools/release/verify.sh <version> https://zapstore.dev/downloads/zapstore-<version>-bundle.apk
+```
+
+The first is the update APK, the second the bundle APK. `SAME: sha256 …` means the published file is the rebuild plus its signature, nothing else. A difference is reported with the byte where it starts.
+
+- The build runs in a pinned container (Temurin JDK 21.0.9, Android platform 37.0, build-tools 36.0.0). Gradle and every dependency are checked against `gradle/verification-metadata.xml`.
+- The bundle APK also ships the catalog bundle pinned in `gradle.properties`, fetched by its sha256.
+- The first run downloads the Android SDK and dependencies. Later runs reuse the image and a Docker volume.
+- On an Apple Silicon Mac the default `linux/amd64` container is emulated and slow. `PLATFORM=linux/arm64` runs the JDK natively.
+- Only releases cut with `make cut-mobile-release` can be verified. Earlier ones predate the pin and the pinned build environment.
+
 ## Releasing
 
 `make cut-mobile-release` in `infra/` (`infra/misc/cut-mobile-release.sh`) cuts a release. It pins the catalog, builds and signs two APKs from one commit, and puts them where they belong:
@@ -83,23 +101,11 @@ Or call Gradle directly:
 | update APK | none | an update from Zapstore | the GitHub release, as `zapstore-<version>.apk`, and Zapstore |
 | bundle APK | the pinned one | a new install, which opens with the catalog already there | `https://zapstore.dev/downloads/zapstore-<version>-bundle.apk` |
 
-The pinned catalog bundle sits next to the bundle APK, as `https://zapstore.dev/downloads/catalog-<epoch>.tar.zst`. The relay keeps only its latest epoch, so a build cannot ask it for an old one. The script takes the relay's current full bundle, checks its signer, writes `catalog-bundle.lock` (epoch, sha256, size, signer, and that URL), and commits the lock before it builds, so the tag holds what the release is rebuilt from. Gradle (`-PcatalogBundle=pinned`) fetches the bundle from the lock's URL and fails unless the sha256 matches. During the release itself it reads the copy the script saved under `build/release/`.
+The pinned catalog bundle sits next to the bundle APK, as `https://zapstore.dev/downloads/catalog-<epoch>.tar.zst`. The relay keeps only its latest epoch, so a build cannot ask it for an old one. The script takes the relay's current full bundle, checks its signer, writes the pin into `gradle.properties` (`catalogPinSha256` and `catalogPinUrl`), and commits it before it builds, so the tag holds what the release is rebuilt from. The tag is annotated (`Release <version> (build <code>)`) and sits on that commit, which is the commit the APKs record. Gradle (`-PcatalogBundle=pinned`) fetches the bundle from that URL and fails unless the sha256 matches. During the release itself it reads the copy the script saved under `build/release/`.
 
 The two files are copied to `/var/lib/zapstore/downloads` on production, which Caddy serves at `/downloads`, over the ssh control socket the other infra scripts use (`infra/README.md`). The script checks the sha256 on the server and the size at the public URL, and it does this before the push, so a failed copy leaves no tag that names a missing file. `make cut-mobile-release-check` only looks at the local tree and that the socket exists.
 
 `tools/release/build-apk.sh bundle|update` is the one recipe for an unsigned APK, and the script and a verifier both use it. It refuses a dirty tree, because the APK records its commit in `META-INF/version-control-info.textproto`.
-
-### Verify a release
-
-Anyone can rebuild a release from its tag and compare it with what was published:
-
-```bash
-tools/release/verify.sh <tag> <signed apk file or https URL>
-tools/release/verify.sh 2.0.5 https://github.com/zapstore/zapstore/releases/download/2.0.5/zapstore-2.0.5.apk
-tools/release/verify.sh 2.0.5 https://zapstore.dev/downloads/zapstore-2.0.5-bundle.apk
-```
-
-It checks the tag out into a clone under `build/verify`, builds it with `build-apk.sh` in a container that `verify.sh` defines, and compares the result with the signed APK file by file, ignoring only the signature. The container has Temurin JDK 21.0.9, Android platform 37.0 and build-tools 36.0.0, Gradle checked by sha256, and every dependency checked against `gradle/verification-metadata.xml`. The variant is read from the signed APK, so for the bundle APK it also fetches the bundle from the URL in `catalog-bundle.lock` and checks its sha256. It needs Docker (Docker Desktop, Colima or Lima running), git and python3, and downloads the dependencies and the 24 MB search model on every run. `--local` builds on your own machine instead of in the container, which is faster but only shows that your toolchain agrees.
 
 `libarti_android.so` is committed rather than built here. `tools/arti-build/verify-reproducible.sh` rebuilds it twice and compares.
 
@@ -112,7 +118,7 @@ When you change a dependency, regenerate the checksums with `./gradlew --write-v
   - `components/` — shared UI on Iolite records (`AppCard`, `StackCard`, `AppList`, `ProfileImage`, primitives)
   - `catalog/` — `CatalogSync` (foreground `GET /deltas`) and installed-package matching
   - `transport/` — Tor/direct network runtime
-- `tools/release/` — `build-apk.sh` builds a release APK and `verify.sh` rebuilds and checks one; `catalog-bundle.lock` is the pinned bundle that `infra/misc/cut-mobile-release.sh` writes
+- `tools/release/` — `build-apk.sh` builds a release APK and `verify.sh` rebuilds and checks one; `catalogPinSha256` and `catalogPinUrl` in `gradle.properties` are the pinned bundle that `infra/misc/cut-mobile-release.sh` writes
 - `tools/arti-build/` — reproducible Arti JNI build; `make vendor` writes `src/main/jniLibs/arm64-v8a/libarti_android.so`
 - `iolite/` — local-first Nostr client: SQLite rows derived from verified events, relay sessions, typed queries
 
