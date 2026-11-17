@@ -40,9 +40,10 @@ class PrefsSeenMark(context: Context, private val clock: () -> Long = System::cu
 
 /**
  * Updates count as made while the user was away when they landed after [after] and before the app came
- * to the screen at [until]. One made later is one the user started, and watched.
+ * to the screen at [until], outside every span in [onScreen]. One made while the app was on screen is
+ * one the user started, and watched.
  */
-data class AwayWindow(val after: Long, val until: Long)
+data class AwayWindow(val after: Long, val until: Long, val onScreen: List<LongRange> = emptyList())
 
 /**
  * The window of the notice that says which apps Zapstore updated in the background. It lives in memory
@@ -51,15 +52,31 @@ data class AwayWindow(val after: Long, val until: Long)
 class AwayUpdates(private val mark: SeenMark, private val clock: () -> Long = System::currentTimeMillis) {
     private val _window = MutableStateFlow(AwayWindow(after = mark.millis, until = clock()))
     val window: StateFlow<AwayWindow> = _window
+    private var onScreenSince: Long? = null
 
     /** The app came back to the screen: everything up to now happened while it was away. */
-    fun enteredForeground() = _window.update { it.copy(until = clock()) }
+    @Synchronized
+    fun enteredForeground() {
+        val now = clock()
+        onScreenSince = now
+        _window.update { it.copy(until = now) }
+    }
+
+    /** The app left the screen. What it updated while on screen the user saw happen. */
+    @Synchronized
+    fun leftForeground() {
+        val since = onScreenSince ?: return
+        onScreenSince = null
+        val now = clock()
+        _window.update { window -> window.copy(onScreen = (window.onScreen + listOf(since..now)).filter { it.last > window.after }) }
+    }
 
     /** The user closed the notice. The next one starts from here. */
+    @Synchronized
     fun dismiss() {
         val now = clock()
         mark.millis = now
-        _window.update { it.copy(after = now) }
+        _window.update { AwayWindow(after = now, until = it.until) }
     }
 }
 
@@ -74,6 +91,7 @@ fun awayUpdates(installed: List<InstalledApp>, ourPackage: String, window: AwayW
             it.installingPackage == ourPackage &&
                 it.updatedMillis > it.firstInstalledMillis &&
                 it.updatedMillis > window.after &&
-                it.updatedMillis <= window.until
+                it.updatedMillis <= window.until &&
+                window.onScreen.none { span -> it.updatedMillis in span }
         }
         .sortedBy { it.label.lowercase() }

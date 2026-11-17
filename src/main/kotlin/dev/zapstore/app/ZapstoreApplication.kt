@@ -146,7 +146,6 @@ class ZapstoreApplication : Application() {
                 relayMonitors = AppConfig.relayMonitors,
                 monitorRelays = AppConfig.monitorRelays,
                 social = settings.state.value.social,
-                profileMirror = AppConfig.catalogRelay,
                 log = { message, error -> if (error == null) AppLog.i("iolite", message) else AppLog.w("iolite", message, error) },
             ),
             http = network.http,
@@ -244,6 +243,7 @@ class ZapstoreApplication : Application() {
             }
 
             override fun onStop(owner: LifecycleOwner) {
+                awayUpdates.leftForeground()
                 foregroundSync?.cancel()
                 iolite.setRelayTrafficEnabled(false)
                 releaseNetwork()

@@ -58,6 +58,20 @@ class AwayUpdatesTest {
     }
 
     @Test
+    fun `an update made while the app was on screen is not listed after coming back`() {
+        var now = 100 * hour
+        val away = AwayUpdates(SeenMark.InMemory(millis = 50 * hour)) { now }
+        away.enteredForeground()
+        now = 102 * hour
+        away.leftForeground()
+        now = 110 * hour
+        away.enteredForeground()
+        val installed = listOf(app("watched", 101 * hour, first = hour), app("away", 105 * hour, first = hour))
+
+        assertEquals(listOf("away"), awayUpdates(installed, us, away.window.value).map { it.label })
+    }
+
+    @Test
     fun `dismissing moves the window start to now and keeps it`() {
         var now = 100 * hour
         val mark = SeenMark.InMemory(millis = 50 * hour)
