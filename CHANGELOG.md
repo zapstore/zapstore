@@ -7,22 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.5] - 2026-11-17
+
 ### Added
 
 - A Social switch in Settings, on by default. Turning it off asks first, signs you out, stops loading from your contacts' relays, and deletes the comments, zaps, reports and community stacks on the phone. Saved apps and catalogs stay. Stacks shows catalog stacks only, and comments, zaps, reports and sign-in are hidden
-- While Social is on, profiles read from other relays are copied to the catalog relay when they are newer
 - On a first install, or after Clear local storage, a catalog screen replaces the app until the catalog is in. It shows the connection, the download and the import, offers Tor or Direct, "Clear and start over", and "Copy diagnostics". It opens when the phone holds no app data, and on a first install of the APK that carries the catalog, until the first sync has brought that catalog up to date
 - A catalog screen with "Restore Zapstore's catalog" when no catalog is left
+- My apps lists the apps Zapstore updated while you were away, until you close the notice
 
 ### Changed
 
-- Two kinds of APK: the one on the website carries the catalog, and the one on Zapstore does not. Native libraries and dex are compressed, which makes both smaller
+- Two kinds of APK: the one on the website carries the catalog, and the one on Zapstore and GitHub does not. Native libraries and dex are compressed, which makes both smaller to download
 - The welcome flow opens on one slide: what Zapstore keeps on your phone, with a Tor or Direct choice under it. The Network slide is gone, and so is "Skip all" on that first slide
 - The first catalog download starts when you continue from that slide, instead of when the app opens
 - The Amber step, the install-permission step and the notifications step each offer "Not now". A phone with no signer app has no Amber step at all: installing Amber and signing in is on the Profile screen
-- The APK that carries the catalog opens on the latest apps: the first sync after install runs behind the same catalog screen, with "Continue for now" if it fails, instead of Home showing the apps of the day the APK was built
-- A catalog download that stops sending data for 45 seconds fails, instead of waiting
+- The APK that carries the catalog opens on the latest apps: the first sync after install runs behind the same catalog screen, with "Continue for now" if it fails or takes long, instead of Home showing the apps of the day the APK was built
+- A catalog download that stops sending data for 45 seconds fails, instead of waiting. A catalog screen still connecting after 15 seconds offers Retry
 - Changing between Tor and Direct restarts a catalog sync in progress
+- Tor runs inside the app, instead of through a proxy port on the phone
+- Diagnostics shares the whole log as a file. The Copy button is gone
+- In Recent activity, release icons are larger, a zap names who zapped, and short author names stay on release rows. On a tight line the app name gives way first
+- My apps no longer shows a sync error above search. A small cross beside "Checked …" means the last check failed
+- An app's page no longer lists the stacks it is in ("Stacked in")
+- Search ranks apps in catalog stacks a little higher, and a name several apps share no longer puts one of them first
 
 ### Fixed
 
@@ -31,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The last catalog can no longer be removed in Settings
 - An empty catalog list arriving from another device no longer removes the catalogs on this one
 - ONNX Runtime, used for local search, is bumped to 1.24.3. 1.23.2 crashed immediately on search on some Snapdragon 8-series phones running Android 16, from a CPU feature detection bug fixed upstream in 1.24
+- Rotating the phone, or switching dark mode, no longer freezes the screen for up to two seconds
+- A device key backup that Amber cannot read is no longer quoted in the error or the diagnostic log
 
 ## [2.0.4] - 2026-11-08
 
