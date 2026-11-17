@@ -14,11 +14,12 @@ val buildsRelease = gradle.startParameter.taskNames.any { it.contains("Release",
 
 // The catalog bundle is what a new install imports on first open. -PcatalogBundle chooses it:
 //   none (default)  no bundle; the first open downloads the catalog. This is the update APK.
-//   pinned          the bundle named by catalog-bundle.lock, fetched and checked by sha256.
+//   pinned          the bundle named by catalogPinUrl and catalogPinSha256 in gradle.properties.
 //   <path>          a local file, for debug builds against a local relay or the e2e tests.
 // -PcatalogBundleUrl fetches the pinned bytes from another URL, or a file: URL; the sha256 still has to match.
 val catalogBundleAsset = "bundle-0-1.tar.zst"
-val catalogBundleLock = layout.projectDirectory.file("catalog-bundle.lock").asFile
+val catalogPinSha256 = providers.gradleProperty("catalogPinSha256").orElse("")
+val catalogPinUrl = providers.gradleProperty("catalogPinUrl").orElse("")
 val catalogBundleStage = layout.projectDirectory.dir(".tools/catalog-bundle")
 val catalogBundleMode = providers.gradleProperty("catalogBundle").orElse("none").get().trim().ifEmpty { "none" }
 val catalogBundleUrl = providers.gradleProperty("catalogBundleUrl").orElse("")
@@ -222,7 +223,10 @@ val stageCatalogBundle = tasks.register("stageCatalogBundle") {
     inputs.property("url", catalogBundleUrl)
     when (catalogBundleMode) {
         "none" -> Unit
-        "pinned" -> inputs.files(catalogBundleLock)
+        "pinned" -> {
+            inputs.property("pinSha256", catalogPinSha256)
+            inputs.property("pinUrl", catalogPinUrl)
+        }
         else -> inputs.files(File(catalogBundleMode))
     }
     outputs.dir(catalogBundleStage)
@@ -234,15 +238,12 @@ val stageCatalogBundle = tasks.register("stageCatalogBundle") {
         when (catalogBundleMode) {
             "none" -> Unit
             "pinned" -> {
-                check(catalogBundleLock.isFile) { "${catalogBundleLock.name} is missing; infra/misc/cut-mobile-release.sh writes it" }
-                val pin = catalogBundleLock.readLines()
-                    .filter { "=" in it && !it.trimStart().startsWith("#") }
-                    .associate { it.substringBefore('=').trim() to it.substringAfter('=').trim() }
-                fun pinned(key: String) = checkNotNull(pin[key]) { "${catalogBundleLock.name} has no $key" }
-                val sha = pinned("sha256")
+                val sha = catalogPinSha256.get()
+                check(sha.isNotEmpty()) { "gradle.properties has no catalogPinSha256; infra/misc/cut-mobile-release.sh writes it" }
+                val url = catalogBundleUrl.get().ifEmpty { catalogPinUrl.get() }
+                check(url.isNotEmpty()) { "gradle.properties has no catalogPinUrl; infra/misc/cut-mobile-release.sh writes it" }
                 val cached = layout.projectDirectory.file(".tools/catalog-cache/$sha.tar.zst").asFile
-                fetchVerified(catalogBundleUrl.get().ifEmpty { pinned("url") }, sha, cached)
-                check(cached.length() == pinned("bytes").toLong()) { "${cached.name} is ${cached.length()} bytes, pinned ${pinned("bytes")}" }
+                fetchVerified(url, sha, cached)
                 cached.copyTo(target, overwrite = true)
             }
             else -> File(catalogBundleMode).also { check(it.isFile) { "catalogBundle file not found: $it" } }
