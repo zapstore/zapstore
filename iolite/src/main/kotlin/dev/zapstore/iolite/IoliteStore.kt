@@ -44,6 +44,8 @@ data class AppFilter(
     val soft: Int = 0,
     /** Fact bits that lower a listing when set. */
     val penalty: Int = 0,
+    /** Keys whose stacks are catalog data. A ranked app in one of their stacks gets [CURATED_SCORE]. */
+    val curators: Collection<String> = emptyList(),
     val limit: Int? = null,
 )
 
@@ -802,6 +804,7 @@ class IoliteStore internal constructor(
             soft = filter.soft,
             penalty = filter.penalty,
             admitAll = query == null,
+            curated = catalogStacks(filter.curators.toList()).flatMapTo(HashSet(), StackRecord::appIds),
         )
         db.prepare("$SELECT_SEARCH_KEY$where").use { statement ->
             binds.forEachIndexed { index, bind -> bind(statement, index + 1) }

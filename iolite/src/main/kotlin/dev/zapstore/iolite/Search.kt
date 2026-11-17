@@ -32,6 +32,9 @@ internal const val FACT_SCORE = 18_000
 /** About cosine 0.30. Stronger than [FACT_SCORE] and still under [PREFIX_BOOST]. */
 internal const val HARD_FACT_SCORE = 54_000
 
+/** About cosine 0.10, same as [FACT_SCORE]. An app in a catalog stack; reorders hits and admits none. */
+internal const val CURATED_SCORE = 18_000
+
 /** Trimmed, whitespace-collapsed, lowercased, and cut to [MAX_QUERY_BYTES]. */
 fun normalizeSearchQuery(query: String): String {
     val folded = foldSearchText(query)
@@ -84,6 +87,7 @@ internal fun foldSearchText(value: String): String {
  * A name, app-id, or keyword hit stays in the list without a vector.
  * Other listings are included only when [queryVector] clears [MIN_VECTOR_DOT].
  * [admitAll] keeps every row, used when the query is only fact phrases. A hard filter alone does not set it: it narrows text results, never widens them.
+ * App ids in [curated] get [CURATED_SCORE].
  * Keeps ids only, and at most [limit] of them, so the caller can load full rows for the survivors.
  */
 internal class SearchRanker(
@@ -94,6 +98,7 @@ internal class SearchRanker(
     private val soft: Int = 0,
     private val penalty: Int = 0,
     private val admitAll: Boolean = false,
+    private val curated: Set<String> = emptySet(),
 ) {
     private val vector = queryVector?.takeIf { it.size == VECTOR_DIMS }
     private val kept = ArrayList<Ranked>()
@@ -137,7 +142,8 @@ internal class SearchRanker(
             docVector?.takeIf { it.size == VECTOR_DIMS }?.let { vectorDot(left, it) }
         }
         if (!admitAll && text == 0 && (dot == null || dot < MIN_VECTOR_DOT)) return null
-        return text + (dot ?: 0) + factScore(factBits, boost, soft, penalty)
+        val curation = if (appId in curated) CURATED_SCORE else 0
+        return text + (dot ?: 0) + factScore(factBits, boost, soft, penalty) + curation
     }
 }
 
@@ -167,7 +173,10 @@ private fun textBoost(query: String, name: String, appId: String): Int {
     return 0
 }
 
-/** About cosine 0.30 per matched query word, same as [HARD_FACT_SCORE], and at most two words. */
+/**
+ * About cosine 0.10 per matched query word, same as [FACT_SCORE], and at most two words.
+ * Generic keywords such as "offline" or "chat" sit on many unrelated apps, so a keyword only reorders close vectors.
+ */
 private fun keywordScore(query: String, keywords: List<String>): Int {
     if (query.isEmpty() || keywords.isEmpty()) return 0
     val words = query.split(' ')
@@ -190,7 +199,7 @@ private fun keywordScore(query: String, keywords: List<String>): Int {
             start += parts.size
         }
     }
-    return minOf(matched, 2) * HARD_FACT_SCORE
+    return minOf(matched, 2) * FACT_SCORE
 }
 
 private fun covers(queryWords: List<String>, fieldWords: List<String>): Boolean {

@@ -42,6 +42,27 @@ class SearchRankTest {
         stem.consider(id("com.pod"), "com.pod", "Show", null, 0, listOf("podcasts"))
         assertEquals(listOf("com.pod"), ids(stem))
     }
+
+    @Test
+    fun aCloseVectorOutranksAGenericKeyword() {
+        val query = ByteArray(VECTOR_DIMS).also { it.fill(20, 0, 64) }
+        val close = ByteArray(VECTOR_DIMS).also { it.fill(100, 0, 64) }
+        val loose = ByteArray(VECTOR_DIMS).also { it.fill(60, 0, 64) }
+        val ranker = SearchRanker("offline hiking maps", query, null)
+        ranker.consider(id("com.workout"), "com.workout", "Workout", loose, 0, listOf("offline"))
+        ranker.consider(id("org.maps"), "org.maps", "Atlas", close, 0)
+        assertEquals(listOf("org.maps", "com.workout"), ids(ranker))
+    }
+
+    @Test
+    fun aCuratedAppOutranksAnEqualNeighborButAdmitsNothing() {
+        val neighbor = ByteArray(VECTOR_DIMS) { 12 }
+        val ranker = SearchRanker("notes", neighbor, null, curated = setOf("org.curated", "org.absent"))
+        ranker.consider(id("com.plain"), "com.plain", "Jotter", neighbor, 0)
+        ranker.consider(id("org.curated"), "org.curated", "Scribble", neighbor, 0)
+        ranker.consider(id("org.absent"), "org.absent", "Wallet", null, 0)
+        assertEquals(listOf("org.curated", "com.plain"), ids(ranker))
+    }
 }
 
 private fun id(name: String): ByteArray = name.encodeToByteArray()

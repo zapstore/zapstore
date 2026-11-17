@@ -142,6 +142,7 @@ class HomeViewModel(
                 hard = hard,
                 exclude = facts.fold(0) { bits, fact -> bits or fact.excludeBit },
                 boost = hard,
+                curators = withContext(Dispatchers.IO) { AppConfig.catalogStackAuthors(iolite.allCatalogs()) },
                 limit = SEARCH_LIMIT,
             )
         }
