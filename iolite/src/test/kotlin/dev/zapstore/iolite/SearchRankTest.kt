@@ -63,6 +63,35 @@ class SearchRankTest {
         ranker.consider(id("org.absent"), "org.absent", "Wallet", null, 0)
         assertEquals(listOf("org.curated", "com.plain"), ids(ranker))
     }
+
+    @Test
+    fun aNameSeveralAppsShareStopsBeingAnExactMatch() {
+        val close = ByteArray(VECTOR_DIMS) { 12 }
+        val far = ByteArray(VECTOR_DIMS) { 8 }
+        // Shared, "Notes" ranks as a prefix, level with "Notes Tech", so the closer vector decides.
+        val shared = SearchRanker("notes", close, null)
+        shared.consider(id("com.a"), "com.a", "Notes", far, 0)
+        shared.consider(id("com.b"), "com.b", "Notes", far, 0)
+        shared.consider(id("com.tech"), "com.tech", "Notes Tech", close, 0)
+        assertEquals("com.tech", ids(shared).first())
+
+        val unique = SearchRanker("notes", close, null)
+        unique.consider(id("com.a"), "com.a", "Notes", far, 0)
+        unique.consider(id("com.tech"), "com.tech", "Notes Tech", close, 0)
+        assertEquals("com.a", ids(unique).first())
+
+        val limited = SearchRanker("notes", close, 1)
+        limited.consider(id("com.a"), "com.a", "Notes", far, 0)
+        limited.consider(id("com.b"), "com.b", "Notes", far, 0)
+        limited.consider(id("com.tech"), "com.tech", "Notes Tech", close, 0)
+        assertEquals(listOf("com.tech"), ids(limited))
+
+        val byId = SearchRanker("com.a", close, 5)
+        byId.consider(id("com.a"), "com.a", "com.a", far, 0)
+        byId.consider(id("com.b"), "com.b", "com.a", far, 0)
+        byId.consider(id("com.other"), "com.other", "com.a plus", close, 0)
+        assertEquals("com.a", ids(byId).first())
+    }
 }
 
 private fun id(name: String): ByteArray = name.encodeToByteArray()

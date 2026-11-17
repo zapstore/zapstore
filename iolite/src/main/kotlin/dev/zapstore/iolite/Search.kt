@@ -104,6 +104,9 @@ internal class SearchRanker(
     private val kept = ArrayList<Ranked>()
     private val worstFirst = limit?.takeIf { it > 0 }?.let { PriorityQueue(it, dropFirst) }
 
+    /** Rows whose name is exactly the query and whose app id is not. Held back until [ids] knows how many there are. */
+    private val sameName = ArrayList<Ranked>()
+
     fun consider(
         id: ByteArray,
         appId: String,
@@ -114,26 +117,37 @@ internal class SearchRanker(
     ) {
         if (limit == 0) return
         val score = score(name, appId, docVector, factBits, keywords) ?: return
+        val ranked = Ranked(id, appId, score)
+        if (query == foldSearchText(name) && query != appId.lowercase()) sameName += ranked else offer(ranked)
+    }
+
+    private fun offer(ranked: Ranked) {
         val heap = worstFirst
         if (heap == null) {
-            kept += Ranked(id, appId, score)
+            kept += ranked
             return
         }
         if (heap.size < limit!!) {
-            heap += Ranked(id, appId, score)
+            heap += ranked
             return
         }
         val worst = checkNotNull(heap.peek())
-        if (score > worst.score || (score == worst.score && appId < worst.appId)) {
+        if (ranked.score > worst.score || (ranked.score == worst.score && ranked.appId < worst.appId)) {
             heap.poll()
-            heap += Ranked(id, appId, score)
+            heap += ranked
         }
     }
 
+    /**
+     * An exact name is the top boost, unless several rows carry it: a shared name does not say which app the
+     * user means, so each of them ranks as a prefix instead. An exact app id is unique and keeps the boost.
+     */
     fun ids(): List<ByteArray> {
-        val ranked = worstFirst?.toMutableList() ?: kept
+        val ranked = worstFirst?.toMutableList() ?: ArrayList(kept)
+        val shared = sameName.size > 1
+        for (row in sameName) ranked += if (shared) Ranked(row.id, row.appId, row.score - EXACT_BOOST + PREFIX_BOOST) else row
         ranked.sortWith(bestFirst)
-        return ranked.map { it.id }
+        return (if (limit == null) ranked else ranked.take(limit)).map { it.id }
     }
 
     private fun score(name: String, appId: String, docVector: ByteArray?, factBits: Int, keywords: List<String>): Int? {
