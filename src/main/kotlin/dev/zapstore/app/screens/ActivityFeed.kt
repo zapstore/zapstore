@@ -201,9 +201,10 @@ private fun ReleaseRow(
 /**
  * One comment, zap or stack update, led by who did it: "[avatar] <name> on [icon] <app>",
  * "[avatar] <name> zapped [bolt] N sats to [icon] <app>" or "... updated [tile] <stack>" on one line, and a
- * comment's text under it. A catalog key reads "The catalog"; anyone else with no profile name reads as their
- * short npub. On a person's own page ([showWho] false) nobody is named and the verb leads. With no app or
- * stack, the entry belongs to the stack whose page lists it.
+ * comment's text under it. On a zap the person's name keeps its width and the app's name yields, down to
+ * nothing, so a tight line still says who zapped. A catalog key reads "The catalog"; anyone else with no
+ * profile name reads as their short npub. On a person's own page ([showWho] false) nobody is named and the
+ * verb leads. With no app or stack, the entry belongs to the stack whose page lists it.
  */
 @Composable
 private fun SocialRow(
@@ -247,11 +248,16 @@ private fun SocialRow(
                             Verb(stringResource(if (showWho) R.string.activity_zapped else R.string.activity_zapped_lead))
                             Sats(item.sats)
                             Verb(stringResource(R.string.activity_to))
+                            // The icon stays. The name is what yields, so the sender stays readable.
+                            Box(Modifier.size(ACTIVITY_ICON), contentAlignment = Alignment.Center) {
+                                AppIcon(title = app.name, iconUrl = app.iconUrl, iconFile = app.iconFile, size = ACTIVITY_ICON)
+                            }
+                            Strong(app.name, Modifier.shrink(rank = 0, min = 0.dp, hideBelow = APP_NAME_HIDE))
                         } else {
                             Verb(stringResource(if (showWho) R.string.activity_on else R.string.activity_commented_on))
-                        }
-                        Target(app.name, Modifier.shrink(rank = 0, min = TARGET_MIN)) {
-                            AppIcon(title = app.name, iconUrl = app.iconUrl, iconFile = app.iconFile, size = ACTIVITY_ICON)
+                            Target(app.name, Modifier.shrink(rank = 0, min = TARGET_MIN)) {
+                                AppIcon(title = app.name, iconUrl = app.iconUrl, iconFile = app.iconFile, size = ACTIVITY_ICON)
+                            }
                         }
                     }
                     item.sats != null -> {
@@ -398,6 +404,8 @@ private const val PREFETCH = 6
 private val RELEASE_NAME_MIN = 72.dp
 private val TARGET_MIN = 80.dp
 private val PERSON_NAME_MIN = 56.dp
+/** A zap's app name is dropped once it would be a letter or two. The sender's name has already kept its width. */
+private val APP_NAME_HIDE = 32.dp
 private val AUTHOR_NAME_HIDE_BELOW = 28.dp
 /** The avatars and app or stack icons inside a line. */
 /** Icons and avatars inside a line: 5% over the earlier 20 and 18 dp. */
