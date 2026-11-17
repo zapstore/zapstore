@@ -1,7 +1,5 @@
 package dev.zapstore.app.screens
 
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.layout.layout
 import dev.zapstore.app.components.shortDisplayName
 import dev.zapstore.app.components.animationsEnabled
 import androidx.compose.ui.graphics.TransformOrigin
@@ -114,7 +112,6 @@ fun AppDetailScreen(
     onPayInvoice: (String) -> Unit = {},
     onToggleStack: (StackRecord) -> Unit = {},
     onCreateStack: (String) -> Unit = {},
-    onStackClick: (StackRecord) -> Unit = {},
     /** The event id of a comment to scroll to once the feed lists it; the jump happens once per visit. */
     focusComment: String? = null,
 ) {
@@ -158,10 +155,9 @@ fun AppDetailScreen(
     val showSigned = state.install.signedDifferently
     val showShots = app?.screenshots?.isNotEmpty() == true
     val showZaps = social && (state.social.zappable || state.zaps.zappers.isNotEmpty())
-    val showStackedBy = state.stackedBy.stacks.isNotEmpty()
     // The head, about, the Security and Releases panels and the composer are always there; the header only with a feed.
     val showActivity = feed.isNotEmpty()
-    val leadingItems = 4 + listOf(showSigned, showShots, showZaps, showStackedBy, showActivity).count { it }
+    val leadingItems = 4 + listOf(showSigned, showShots, showZaps, showActivity).count { it }
     val feedItems = if (feed.isEmpty() && (comments.error != null || comments.loading)) 1 else visibleFeed.size + if (moreComments) 1 else 0
     var pendingComment by rememberSaveable(focusComment) { mutableStateOf(focusComment) }
     // A comment to jump to may sit past the ones shown; show up to it.
@@ -315,13 +311,6 @@ fun AppDetailScreen(
                         onProfileClick = onProfileClick,
                         onZap = if (state.social.zappable) ({ zapping = true }) else null,
                     )
-                }
-            }
-
-            if (showStackedBy) {
-                item(key = "stackedBy", contentType = "stackedBy") {
-                    // Sits closer to the zap row above than the list's spacing puts it; the gap to the card below stays.
-                    StackedByRow(state.stackedBy, onStackClick, Modifier.pullUp(ZapSpacing.space2))
                 }
             }
 
@@ -624,10 +613,3 @@ private val COMPACT_BAR_HEIGHT = 52.dp
 
 /** Head icon (64 dp) over bar icon (28 dp): where the morph starts. */
 private const val HEAD_ICON_RATIO = 64f / 28f
-
-/** Moves a list item up by [by], taking that much off its height, so the item before it is closer and the one after is not. */
-private fun Modifier.pullUp(by: Dp): Modifier = layout { measurable, constraints ->
-    val placeable = measurable.measure(constraints)
-    val pull = by.roundToPx().coerceAtMost(placeable.height)
-    layout(placeable.width, placeable.height - pull) { placeable.placeRelative(0, -pull) }
-}

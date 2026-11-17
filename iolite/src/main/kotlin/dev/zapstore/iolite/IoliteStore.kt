@@ -140,18 +140,15 @@ class IoliteStore internal constructor(
     // --- ingest ------------------------------------------------------------------------------------
 
     /** Relay path: verified non-catalog events, one transaction. Returns how many rows changed. */
-    internal fun ingest(events: List<Event>, context: IngestContext): Int = ingestWritten(events, context).size
-
-    /** [ingest], returning the events whose rows changed: the ones newer than what was stored. */
-    internal fun ingestWritten(events: List<Event>, context: IngestContext): List<Event> {
+    internal fun ingest(events: List<Event>, context: IngestContext): Int {
         val admissible = events.filter {
             it.kind !in ListingRows.KINDS && !EventRows.isEmptyCatalogList(it, context.deviceSigner) && it.verify()
         }
-        if (admissible.isEmpty()) return emptyList()
-        val written = ArrayList<Event>()
+        if (admissible.isEmpty()) return 0
+        var written = 0
         write { tx ->
-            written.clear()
-            admissible.forEach { if (EventRows.persist(tx, it, context)) written += it }
+            written = 0
+            admissible.forEach { if (EventRows.persist(tx, it, context)) written++ }
         }
         if (admissible.any { it.kind == Kinds.CatalogRelayList }) pruneIconDirs()
         return written
@@ -1019,30 +1016,6 @@ class IoliteStore internal constructor(
                     updatedAt = getLong(6),
                 )
             }
-        }
-    }
-
-    /** Public stacks listing any of [anchors], newest first. */
-    fun stacksListing(anchors: List<AppCoordinate>, limit: Int): List<StackRecord> = read { db ->
-        val wanted = anchors.toSet()
-        val appIds = wanted.map(AppCoordinate::appId).distinct()
-        if (appIds.isEmpty()) return@read emptyList()
-        db.prepare(
-            "SELECT pubkey, identifier, event_id, name, description, public_apps, updated_at FROM stacks " +
-                "WHERE ${appIds.joinToString(" OR ") { "public_apps LIKE ?" }} ORDER BY updated_at DESC",
-        ).use { statement ->
-            appIds.forEachIndexed { index, appId -> statement.bindText(index + 1, "%:$appId\"%") }
-            statement.rows {
-                StackRecord(
-                    pubkey = Hex.encode(getBlob(0)),
-                    identifier = getText(1),
-                    eventId = Hex.encode(getBlob(2)),
-                    name = getText(3),
-                    description = textOrNull(4).orEmpty(),
-                    apps = JSONArray(getText(5)).toStringList().mapNotNull(AppCoordinate::parse),
-                    updatedAt = getLong(6),
-                )
-            }.filter { stack -> stack.apps.any(wanted::contains) }.take(limit)
         }
     }
 

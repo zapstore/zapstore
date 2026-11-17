@@ -63,9 +63,6 @@ class Iolite private constructor(
     private val ingestContext = IngestContext(device, deviceSigner, config.relayMonitors)
     private val pendingIngest = ArrayList<Event>()
     private val socialGate = SocialGate(config.social)
-    private val profileMirror: ProfileMirror? = pool?.let { relays ->
-        config.profileMirror?.let { ProfileMirror(it, relays, config.profileMirrorTimeout, config.log) }
-    }
 
     /** Whether social reads are on. See [setSocial]. */
     val socialEnabled: StateFlow<Boolean> get() = socialGate.enabled
@@ -408,7 +405,7 @@ class Iolite private constructor(
      * Turns social reads on or off, at once and for sessions already open. Off, no query routes by NIP-65,
      * no relay list or report is fetched, no publish goes to anyone's inbox, and comments, zaps, other
      * people's stacks, relay lists and reports are dropped as they arrive. Stored rows are not touched;
-     * see [wipeSocial]. Profiles are copied to `profileMirror` only while on.
+     * see [wipeSocial].
      */
     fun setSocial(enabled: Boolean) {
         checkOpen()
@@ -854,7 +851,7 @@ class Iolite private constructor(
             eoseGrace = config.eoseGrace,
             firstResponseTimeout = config.firstResponseTimeout,
             oneShotTimeout = oneShot?.let { it.timeout ?: config.oneShotTimeout },
-            onEvent = { relay, event -> if (event.verify()) enqueueIngest(event, relay) },
+            onEvent = { _, event -> if (event.verify()) enqueueIngest(event) },
             onSettled = { answered ->
                 flushIngest()
                 if (answered && oneShot != null) store.recordRefresh(fingerprint, nowMillis())
@@ -961,7 +958,7 @@ class Iolite private constructor(
             eoseGrace = config.eoseGrace,
             firstResponseTimeout = config.firstResponseTimeout,
             oneShotTimeout = timeout,
-            onEvent = { relay, event -> if (event.verify()) enqueueIngest(event, relay) },
+            onEvent = { _, event -> if (event.verify()) enqueueIngest(event) },
             onSettled = { answered ->
                 flushIngest()
                 onSettled(answered)
@@ -969,8 +966,7 @@ class Iolite private constructor(
         ).reconcile(plan)
     }
 
-    private fun enqueueIngest(event: Event, from: RelayUrl) {
-        profileMirror?.heard(event, from)
+    private fun enqueueIngest(event: Event) {
         val flushNow = synchronized(pendingIngest) {
             pendingIngest += event
             pendingIngest.size >= config.ingestBatchSize
@@ -983,8 +979,7 @@ class Iolite private constructor(
             if (pendingIngest.isEmpty()) return
             pendingIngest.toList().also { pendingIngest.clear() }
         }
-        val written = runCatching { store.ingestWritten(batch.filter(::admitted), ingestContext) }.getOrDefault(emptyList())
-        profileMirror?.flushed(batch, written, enabled = socialGate.enabled.value)
+        runCatching { store.ingest(batch.filter(::admitted), ingestContext) }
     }
 
     private fun start() {

@@ -7,13 +7,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.job
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
-import org.json.JSONArray
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -152,83 +149,6 @@ class SocialOffTest {
             job.cancel()
         }
     }
-
-    @Test
-    fun aNewProfileIsCopiedToTheMirrorOnce() = runBlocking {
-        val network = MemoryNetwork()
-        val source = "ws://source.test".normalizeRelayUrl()
-        val mirror = "ws://mirror.test".normalizeRelayUrl()
-        withIolite(network = network, config = mirrorConfig(mirror)) { iolite ->
-            val profile = author.sign(1_700_000_003, Kinds.Profile, emptyList(), """{"name":"Ada"}""")
-            readProfile(iolite, network, source, profile)
-            val copy = network.awaitSent(mirror.url) { it.startsWith("""["EVENT"""") && it.contains(profile.id) }
-            assertEquals(profile.id, JSONArray(copy).getJSONObject(1).getString("id"))
-
-            // The same event again is not newer than what is stored, so it is not sent again.
-            readProfile(iolite, network, source, profile)
-            delay(100)
-            assertEquals(1, network.relays.getValue(mirror.url).sent.count { it.contains(profile.id) })
-        }
-    }
-
-    @Test
-    fun aProfileFromTheMirrorIsNotSentBack() = runBlocking {
-        val network = MemoryNetwork()
-        val mirror = "ws://mirror.test".normalizeRelayUrl()
-        withIolite(network = network, config = mirrorConfig(mirror)) { iolite ->
-            val profile = author.sign(1_700_000_003, Kinds.Profile, emptyList(), """{"name":"Ada"}""")
-            readProfile(iolite, network, mirror, profile)
-            delay(100)
-            assertFalse(network.relays.getValue(mirror.url).sent.any { it.startsWith("""["EVENT"""") })
-        }
-    }
-
-    @Test
-    fun noProfileIsCopiedWhileOff() = runBlocking {
-        val network = MemoryNetwork()
-        val source = "ws://source.test".normalizeRelayUrl()
-        val mirror = "ws://mirror.test".normalizeRelayUrl()
-        withIolite(network = network, config = mirrorConfig(mirror, social = false)) { iolite ->
-            val profile = author.sign(1_700_000_003, Kinds.Profile, emptyList(), """{"name":"Ada"}""")
-            readProfile(iolite, network, source, profile)
-            delay(100)
-            assertTrue(network.relays[mirror.url]?.sent.orEmpty().none { it.startsWith("""["EVENT"""") })
-        }
-    }
-
-    @Test
-    fun aRefusedCopyIsNotSentAgainWhenTheSocketReconnects() = runBlocking {
-        val network = MemoryNetwork()
-        val source = "ws://source.test".normalizeRelayUrl()
-        val mirror = "ws://mirror.test".normalizeRelayUrl()
-        withIolite(network = network, config = mirrorConfig(mirror)) { iolite ->
-            val profile = author.sign(1_700_000_003, Kinds.Profile, emptyList(), """{"name":"Ada"}""")
-            readProfile(iolite, network, source, profile)
-            network.awaitSent(mirror.url) { it.contains(profile.id) }
-            network.push(mirror.url, JSONArray().put("OK").put(profile.id).put(false).put("blocked: no").toString())
-            val before = network.relays.getValue(mirror.url).sent.count { it.contains(profile.id) }
-            network.relays.getValue(mirror.url).listener?.onOpen()
-            delay(100)
-            assertEquals(before, network.relays.getValue(mirror.url).sent.count { it.contains(profile.id) })
-        }
-    }
-
-    /** Runs a one-shot profile read on [relay] and answers it with [profile]. */
-    private suspend fun readProfile(iolite: Iolite, network: MemoryNetwork, relay: RelayUrl, profile: Event) = coroutineScope {
-        val read = async {
-            withTimeout(5_000) {
-                iolite.query(Query.profile(profile.pubkey), QueryOptions.localAndRemote(setOf(relay), RemoteMode.OneShot(2.seconds)))
-                    .first { it.settled }
-            }
-        }
-        val req = network.awaitReq(relay.url, Kinds.Profile)
-        network.push(relay.url, JSONArray().put("EVENT").put(req).put(profile.toJsonObject()).toString())
-        network.push(relay.url, JSONArray().put("EOSE").put(req).toString())
-        read.await()
-    }
-
-    private fun mirrorConfig(mirror: RelayUrl, social: Boolean = true) =
-        IoliteConfig(eoseGrace = 5.milliseconds, oneShotTimeout = 2.seconds, social = social, profileMirror = mirror)
 
     private suspend fun withIolite(
         network: MemoryNetwork? = null,

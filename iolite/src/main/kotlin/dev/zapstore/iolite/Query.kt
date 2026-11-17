@@ -89,18 +89,6 @@ class Query<T> internal constructor(
             read = { store, signer -> store.stacks(author, identifier, limit = 1, deviceSigner = signer).firstOrNull() },
         )
 
-        /** Public stacks whose `a` tags list one of [anchors], one app's coordinates. Newest first. */
-        fun stackedBy(anchors: List<AppCoordinate>, limit: Int): Query<List<StackRecord>> = Query(
-            filters = listOf(
-                Filter(kinds = listOf(Kinds.AppStack), tags = mapOf("a" to anchors.map(AppCoordinate::toString)), limit = limit),
-            ),
-            tables = setOf(Table.Stacks),
-            outboxAuthors = emptyList(),
-            inboxAuthors = emptyList(),
-            empty = emptyList(),
-            read = { store, _ -> store.stacksListing(anchors, limit) },
-        )
-
         /** The device key's private events, fetched once when a key is restored. */
         fun devicePrivate(devicePubkey: String): Query<String?> = Query(
             filters = listOf(

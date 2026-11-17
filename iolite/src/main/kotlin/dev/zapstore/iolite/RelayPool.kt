@@ -3,7 +3,6 @@ package dev.zapstore.iolite
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.time.Duration
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -66,27 +65,6 @@ internal class RelayPool(
 
     fun publish(event: Event, relays: Set<RelayUrl>, onOk: (RelayUrl, Boolean, String) -> Unit) {
         relays.forEach { url -> connection(url).publish(event, onOk) }
-    }
-
-    /**
-     * Sends [event] to [relay] once. [publish] resends what a relay has not accepted on every reconnect;
-     * here a refusal, or no answer within [timeout], drops the event instead. [onDone] gets the outcome once.
-     */
-    fun publishOnce(event: Event, relay: RelayUrl, timeout: Duration, onDone: (accepted: Boolean, reason: String) -> Unit) {
-        val answered = AtomicBoolean(false)
-        val deadline = scope.launch {
-            delay(timeout)
-            if (answered.compareAndSet(false, true)) {
-                connections[relay]?.forget(event.id)
-                onDone(false, "no answer")
-            }
-        }
-        publish(event, setOf(relay)) { _, accepted, reason ->
-            if (!answered.compareAndSet(false, true)) return@publish
-            deadline.cancel()
-            if (!accepted) connections[relay]?.forget(event.id)
-            onDone(accepted, reason)
-        }
     }
 
     fun close() {
@@ -159,15 +137,6 @@ private class RelayConnection(
         ensureOpen()
         synchronized(lock) {
             if (connected) sendEvent(event)
-        }
-    }
-
-    /** Stops resending [eventId], and closes the socket when nothing else needs it. */
-    fun forget(eventId: String) {
-        pendingEvents.remove(eventId)
-        okWaiters.remove(eventId)
-        if (subscriptions.isEmpty() && pendingEvents.isEmpty()) {
-            close("idle")
         }
     }
 

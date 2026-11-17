@@ -131,9 +131,8 @@
     <string name="activity_on">on</string>
     <string name="activity_commented_on">Commented on</string>
     <string name="activity_updated_lead">Updated</string>
-    <string name="activity_the_catalog">The catalog</string>
+    <string name="activity_zapstore">Zapstore</string>
     <string name="activity_filter_social">Social</string>
-    <string name="stacked_by">Stacked in</string>
     <string name="curated_by">Curated by</string>
     <string name="activity_just_now">just now</string>
     <string name="activity_ago_minutes">%dm ago</string>

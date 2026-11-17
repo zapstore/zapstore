@@ -223,12 +223,6 @@ data class UserStacksUi(
     }
 }
 
-/** One public stack per curator that lists this app, newest first, with the curators' profiles. */
-data class StackedByUi(
-    val stacks: List<StackRecord> = emptyList(),
-    val profiles: Map<String, ProfileRecord> = emptyMap(),
-)
-
 data class AppDetailUiState(
     val app: AppRecord? = null,
     /** False until the first SQLite read; afterwards a null [app] means "not in the catalog". */
@@ -240,7 +234,6 @@ data class AppDetailUiState(
     val install: InstallUi = InstallUi(),
     val social: SocialUi = SocialUi(),
     val userStacks: UserStacksUi? = null,
-    val stackedBy: StackedByUi = StackedByUi(),
     /** The NIP-C1 proof behind [AppRecord.proofPubkey], when one is stored. */
     val proof: CertificateProof? = null,
 )
@@ -452,20 +445,6 @@ class AppDetailViewModel(
         )
     }
 
-    private val stackedBy: Flow<StackedByUi> = app
-        .map { app -> app?.let { it.anchors + AppCoordinate(AppConfig.LEGACY_CATALOG_PUBKEY, it.appId) }?.distinct() }
-        .distinctUntilChanged()
-        .flatMapLatest { anchors ->
-            if (anchors == null) flowOf(emptyList())
-            else iolite.query(Query.stackedBy(anchors, STACKED_BY_LIMIT), AppConfig.stackedByQuery).map { state -> state.items.distinctBy { it.pubkey } }
-        }
-        .flatMapLatest { stacks ->
-            val curators = stacks.map(StackRecord::pubkey).toSet()
-            if (curators.isEmpty()) flowOf(StackedByUi())
-            else iolite.query(Query.profiles(curators), AppConfig.commentProfileQuery).map { StackedByUi(stacks, it.items) }
-        }
-        .onStart { emit(StackedByUi()) }
-
     private val lnurl = Lnurl(calls)
     private val social = MutableStateFlow(SocialUi())
     private val socialUi = combine(social, appContext.account.account, appContext.wallet.connection, app) { social, account, wallet, app ->
@@ -484,7 +463,7 @@ class AppDetailViewModel(
         }
 
     val uiState: StateFlow<AppDetailUiState> = combine(
-        combine(catalog, stackedBy, proof) { catalog, stackedBy, proof -> catalog.copy(stackedBy = stackedBy, proof = proof) },
+        combine(catalog, proof) { catalog, proof -> catalog.copy(proof = proof) },
         originState,
         installUi,
         socialUi,
@@ -783,7 +762,6 @@ class AppDetailViewModel(
         /** The summary is a recent-activity signal, not a ledger. */
         private const val ZAP_LIMIT = 500
         private const val COMMENT_LIMIT = 50
-        private const val STACKED_BY_LIMIT = 50
         private val PROFILE_WAIT = 15.seconds
 
         fun factory(app: ZapstoreApplication): ViewModelProvider.Factory = viewModelFactory {

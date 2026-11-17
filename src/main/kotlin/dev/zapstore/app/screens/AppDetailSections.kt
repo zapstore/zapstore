@@ -14,14 +14,9 @@ import dev.zapstore.app.components.ZapTextLink
 import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import dev.zapstore.iolite.StackRecord
-import dev.zapstore.app.ZapSurface2
 import dev.zapstore.app.ZapRadius
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.LazyRow
 import dev.zapstore.app.ZapText3
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.foundation.background
@@ -63,7 +58,6 @@ import dev.zapstore.app.components.BadgeTone
 import dev.zapstore.app.components.EmptyRow
 import dev.zapstore.app.components.EvidenceCard
 import dev.zapstore.app.components.ProfileImage
-import dev.zapstore.app.components.SectionLabel
 import dev.zapstore.app.components.VersionPill
 import dev.zapstore.app.components.VersionStatus
 import dev.zapstore.app.components.ZapBadge
@@ -736,53 +730,3 @@ internal fun CommentsEmpty(error: CommentsError?, onRetry: () -> Unit, onSetting
 
 internal fun formatDate(createdAt: Long): String =
     DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(createdAt * 1_000))
-
-/** Curators whose public stacks list this app: avatar, name, and the stack; tapping opens it. */
-@Composable
-internal fun StackedByRow(stackedBy: StackedByUi, onStackClick: (StackRecord) -> Unit, modifier: Modifier = Modifier) {
-    Column(modifier.testTag("stackedBy")) {
-        SectionLabel(stringResource(R.string.stacked_by), Modifier.padding(bottom = ZapSpacing.space2))
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2)) {
-            items(stackedBy.stacks, key = { it.eventId }) { stack ->
-                val profile = stackedBy.profiles[stack.pubkey]
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space2),
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(ZapRadius.full))
-                        .background(ZapSurface2)
-                        .clickable { onStackClick(stack) }
-                        .padding(start = 4.dp, end = ZapSpacing.space3, top = 4.dp, bottom = 4.dp)
-                        .widthIn(max = 220.dp)
-                        .testTag("stackedBy:${stack.pubkey}"),
-                ) {
-                    Box(Modifier.size(28.dp).clip(CircleShape).background(ZapSurface3)) {
-                        ProfileImage(
-                            pubkey = stack.pubkey,
-                            pictureUrl = profile?.picture,
-                            profileVersion = profile?.eventId,
-                            contentDescription = null,
-                            modifier = Modifier.matchParentSize(),
-                        )
-                    }
-                    Column {
-                        Text(
-                            shortDisplayName(stack.pubkey, profile),
-                            color = ZapText,
-                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            stack.name.ifBlank { stack.identifier },
-                            color = ZapText3,
-                            style = MaterialTheme.typography.bodySmall,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-            }
-        }
-    }
-}

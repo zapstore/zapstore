@@ -89,10 +89,12 @@ object AppConfig {
     )
 
     /** Stacks that list one app: one shot, refreshed at most every ten minutes. */
-    val stackedByQuery: QueryOptions = QueryOptions.localAndRemote(stackRelays, RemoteMode.OneShot(), cachedFor = 10.minutes, whenSocialOff = socialOff)
 
     /** The catalog key before the launch rotation; stacks made then still name apps under it. */
     const val LEGACY_CATALOG_PUBKEY = "78ce6faa72264387284e647ba6938995735ec8c7d5c5a65737e55130f026307d"
+
+    /** The keys that are Zapstore itself: the catalog this build pins, and the one it used before the rotation. */
+    val zapstoreKeys: Set<String> get() = setOfNotNull(catalogPubkey, LEGACY_CATALOG_PUBKEY)
 
     /** The keys whose stacks are catalog data, not social: every catalog's key and the one it signed with before the rotation. */
     fun catalogStackAuthors(catalogs: List<CatalogRecord>): Set<String> =

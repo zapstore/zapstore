@@ -34,6 +34,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.zapstore.app.AppConfig
 import dev.zapstore.app.R
 import dev.zapstore.app.ZapMarkdown
 import dev.zapstore.app.ZapSpacing
@@ -134,7 +135,7 @@ internal fun LazyListScope.activityRows(
                 if (releaseApp != null) {
                     ReleaseRow(item, releaseApp, profiles[item.pubkey], showWho, catalogKeys, onClick = { onOpen(item) }, modifier = modifier)
                 } else {
-                    SocialRow(item, profiles[item.pubkey], stackApps, catalogKeys, showWho, onClick = { onOpen(item) }, modifier = modifier)
+                    SocialRow(item, profiles[item.pubkey], stackApps, showWho, onClick = { onOpen(item) }, modifier = modifier)
                 }
             }
             if (canLoadMore) {
@@ -165,6 +166,8 @@ private fun ReleaseRow(
     val named = showWho && app.authorPubkey != null && item.pubkey !in catalogKeys
     Row(
         horizontalArrangement = Arrangement.spacedBy(ACTIVITY_APP_ICON_GAP),
+        // The icon sits on the middle of the two lines, not on their top edge.
+        verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
@@ -172,7 +175,7 @@ private fun ReleaseRow(
             .testTag("activity:${item.eventId}"),
     ) {
         AppIcon(title = app.name, iconUrl = app.iconUrl, iconFile = app.iconFile, size = ACTIVITY_APP_ICON)
-        Column(Modifier.weight(1f)) {
+        Column(Modifier.weight(1f).padding(top = if (app.tagline.isNotEmpty()) RELEASE_TEXT_DROP else 0.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3)) {
                 // One line, always: the app's name is abbreviated first, then the author's name is cut and
                 // finally left out. The version pill, "by" and the avatar stay whole.
@@ -193,7 +196,7 @@ private fun ReleaseRow(
                 }
                 Ago(item.createdAt)
             }
-            app.tagline.takeIf { it.isNotEmpty() }?.let { SecondLine(it) }
+            app.tagline.takeIf { it.isNotEmpty() }?.let { SecondLine(it, gap = RELEASE_TAGLINE_GAP) }
         }
     }
 }
@@ -202,8 +205,8 @@ private fun ReleaseRow(
  * One comment, zap or stack update, led by who did it: "[avatar] <name> on [icon] <app>",
  * "[avatar] <name> zapped [bolt] N sats to [icon] <app>" or "... updated [tile] <stack>" on one line, and a
  * comment's text under it. On a zap the person's name keeps its width and the app's name yields, down to
- * nothing, so a tight line still says who zapped. A catalog key reads "The catalog"; anyone else with no
- * profile name reads as their short npub. On a person's own page ([showWho] false) nobody is named and the
+ * nothing, so a tight line still says who zapped. Zapstore's own keys read "Zapstore", with their avatar; anyone
+ * else with no profile name reads as their short npub. On a person's own page ([showWho] false) nobody is named and the
  * verb leads. With no app or stack, the entry belongs to the stack whose page lists it.
  */
 @Composable
@@ -211,15 +214,14 @@ private fun SocialRow(
     item: ActivityItem,
     profile: ProfileRecord?,
     stackApps: Map<String, AppRecord>,
-    catalogKeys: Set<String>,
     showWho: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val app = item.app
     val stack = item.stack
-    val byCatalog = showWho && item.pubkey in catalogKeys
-    val hasAvatar = showWho && !byCatalog
+    val byZapstore = showWho && item.pubkey in AppConfig.zapstoreKeys
+    val hasAvatar = showWho
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -230,10 +232,10 @@ private fun SocialRow(
         Row(horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space3)) {
             // One line, always: the target's name is abbreviated first, then the person's.
             OneLine(modifier = Modifier.weight(1f), gap = ACTIVITY_GAP) {
-                if (byCatalog) Strong(stringResource(R.string.activity_the_catalog))
                 if (hasAvatar) {
                     Avatar(item.pubkey, profile)
-                    Strong(shortDisplayName(item.pubkey, profile), Modifier.shrink(rank = 1, min = PERSON_NAME_MIN))
+                    val name = if (byZapstore) stringResource(R.string.activity_zapstore) else shortDisplayName(item.pubkey, profile)
+                    Strong(name, Modifier.shrink(rank = 1, min = PERSON_NAME_MIN))
                 }
                 when {
                     stack != null -> {
@@ -288,14 +290,14 @@ private fun Ago(createdAt: Long) {
 
 /** A row's about or comment, one line under the first. */
 @Composable
-private fun SecondLine(text: String, modifier: Modifier = Modifier, italic: Boolean = false) {
+private fun SecondLine(text: String, modifier: Modifier = Modifier, italic: Boolean = false, gap: Dp = ACTIVITY_GAP) {
     Text(
         text,
         color = ZapText2,
         style = MaterialTheme.typography.bodyMedium.copy(fontStyle = if (italic) FontStyle.Italic else FontStyle.Normal),
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
-        modifier = modifier.padding(top = ACTIVITY_GAP),
+        modifier = modifier.padding(top = gap),
     )
 }
 
@@ -411,8 +413,15 @@ private val AUTHOR_NAME_HIDE_BELOW = 28.dp
 /** Icons and avatars inside a line: 5% over the earlier 20 and 18 dp. */
 private val ACTIVITY_ICON = 21.dp
 private val RELEASE_BYLINE_AVATAR = 19.dp
-/** The app's icon leading a release row: 5% over the earlier 46 dp. It grows down; its top edge stays. */
-private val ACTIVITY_APP_ICON = 48.dp
+/** The app's icon leading a release row, centered on its two lines. */
+private val ACTIVITY_APP_ICON = 50.dp
+/**
+ * With a tagline, the text block starts this far below the icon's top. The block is centered on the icon by its
+ * boxes, but its ink ends at the tagline's baseline, which leaves the icon looking low; this evens the two margins.
+ */
+private val RELEASE_TEXT_DROP = 4.dp
+/** A release row's tagline sits 2 dp closer to the name line than a comment sits to its first line. */
+private val RELEASE_TAGLINE_GAP = 4.dp
 private val ACTIVITY_APP_ICON_GAP = 10.dp
 /** Between the parts of a line, and between a row's two lines. */
 private val ACTIVITY_GAP = 6.dp
