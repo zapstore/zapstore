@@ -190,9 +190,6 @@ fun UpdatesScreen(
                     )
                 }
             }
-            state.status.error?.let {
-                StatusText(it, Modifier.padding(horizontal = ZapSpacing.space4).testTag("updatesError"))
-            }
             AppSearchField(
                 value = state.searchQuery,
                 onValueChange = onSearchQueryChanged,
@@ -470,19 +467,32 @@ private fun InstallerLabel(name: String) {
 private fun LazyListScope.checkedItem(state: UpdatesUiState) {
     val text = if (state.status.syncing) null else state.status.lastSyncedAtMillis
     if (text == null) return
-    item(key = "catalogChecked", contentType = "checked") { CatalogChecked(checkedText(text)) }
+    item(key = "catalogChecked", contentType = "checked") {
+        CatalogChecked(checkedText(text), failed = state.status.error != null)
+    }
 }
 
-/** A tiny sync mark, then the time of the last catalog check. */
+/**
+ * A tiny sync mark, then the time of the last catalog check. A small cross follows when the latest
+ * attempt failed: syncing keeps trying, so the cause is left to Settings and not shown here.
+ */
 @Composable
-private fun CatalogChecked(text: String) {
+private fun CatalogChecked(text: String, failed: Boolean) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZapSpacing.space1),
         modifier = Modifier.padding(top = ZapSpacing.space2, bottom = ZapSpacing.space1),
     ) {
         Icon(painterResource(R.drawable.ic_refresh), contentDescription = null, tint = ZapText3, modifier = Modifier.size(12.dp))
-        CatalogUpdatedText(text)
+        CatalogUpdatedText(text, modifier = Modifier.weight(1f, fill = false))
+        if (failed) {
+            Icon(
+                painterResource(R.drawable.ic_close),
+                contentDescription = stringResource(R.string.last_check_failed),
+                tint = ZapText3,
+                modifier = Modifier.size(12.dp).testTag("catalogCheckFailed"),
+            )
+        }
     }
 }
 

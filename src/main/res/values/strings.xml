@@ -44,6 +44,7 @@
         <item quantity="other">Checked %d hours ago</item>
     </plurals>
     <string name="checked_at">Checked %1$s</string>
+    <string name="last_check_failed">The latest check failed</string>
     <string name="sync_now">Sync</string>
     <string name="syncing">Syncing</string>
     <string name="account">Account</string>
