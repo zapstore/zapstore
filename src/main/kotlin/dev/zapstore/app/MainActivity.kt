@@ -63,7 +63,6 @@ import dev.zapstore.app.components.LocalInstalledVersions
 import dev.zapstore.app.components.LocalPendingUpdates
 import dev.zapstore.app.components.LocalSocial
 import dev.zapstore.app.components.ZapNavigationBar
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.MutableSharedFlow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
@@ -136,6 +135,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         zapstore.account.bridge.attach(this)
         if (savedInstanceState == null) pendingLink.value = intent.deepLink()
+        // Recreated (rotation, theme, process restore): the user was already looking at the app, maybe not at Home.
+        if (savedInstanceState != null) homeShown = true
         setContent {
             ZapstoreTheme {
                 Surface(
@@ -165,7 +166,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        holdForFirstScreen()
+        if (savedInstanceState == null) holdForFirstScreen()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -404,8 +405,8 @@ class MainActivity : ComponentActivity() {
                 .map { NavAvatar(pubkey, it.items?.picture, it.items?.eventId) }
         }.collectAsStateWithLifecycle(null)
 
-        val social by remember { zapstore.settings.state.map { it.social }.distinctUntilChanged() }
-            .collectAsStateWithLifecycle(zapstore.settings.state.value.social)
+        val settings by zapstore.settings.state.collectAsStateWithLifecycle()
+        val social = settings.social
 
         ToastHost()
         CompositionLocalProvider(
@@ -414,10 +415,6 @@ class MainActivity : ComponentActivity() {
             LocalInstalledCodes provides installedCodes,
             LocalSocial provides social,
         ) {
-        // See all is everyone's stacks. Leave that screen when social turns off.
-        LaunchedEffect(social) {
-            if (!social && navController.currentDestination?.route == Routes.STACKS) navController.popBackStack()
-        }
         Scaffold(
             containerColor = ZapCanvas,
             bottomBar = { ZapNavigationBar(currentTab, updateCount, selectTab, avatar = navAvatar) },
@@ -434,7 +431,7 @@ class MainActivity : ComponentActivity() {
             composable(Routes.HOME) {
                 val viewModel: HomeViewModel = viewModel(factory = HomeViewModel.factory(iolite, zapstore.settings, zapstore.queryEncoder::encode))
                 val state by viewModel.uiState.collectAsStateWithLifecycle()
-                // Only ever set here: going deeper and coming back must not cover Home again.
+                // Set here, and on recreation: going deeper and coming back must not cover Home again.
                 SideEffect { if (state.ready) homeShown = true }
                 HomeScreen(
                     state = state,
@@ -456,6 +453,12 @@ class MainActivity : ComponentActivity() {
             }
 
             composable(Routes.STACKS) {
+                // See all is everyone's stacks. Social is switched in Settings, on another tab, so this screen
+                // can still be on the Home tab's back stack when it turns off.
+                if (!social) {
+                    LaunchedEffect(Unit) { navController.popBackStack(Routes.STACKS, inclusive = true) }
+                    return@composable
+                }
                 val viewModel: StacksViewModel = viewModel(factory = StacksViewModel.factory(iolite))
                 val state by viewModel.uiState.collectAsStateWithLifecycle()
                 StacksScreen(
@@ -631,7 +634,10 @@ class MainActivity : ComponentActivity() {
                 DiagnosticsScreen(
                     log = log,
                     onShare = ::shareDiagnostics,
-                    onClear = viewModel::clear,
+                    onClear = {
+                        viewModel.clear()
+                        DiagnosticsExport.clear(this@MainActivity)
+                    },
                 )
             }
 
@@ -674,7 +680,6 @@ class MainActivity : ComponentActivity() {
                 AppDetailScreen(
                     state = state,
                     focusComment = entry.arguments?.getString(Routes.COMMENT_ARG),
-                    onStackClick = { navController.navigate(Routes.stack(it.pubkey, it.identifier)) },
                     saved = appId != null && appId in saved,
                     onSave = { on ->
                         appId?.let {

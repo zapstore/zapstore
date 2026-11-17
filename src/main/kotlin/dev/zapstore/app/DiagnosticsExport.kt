@@ -20,4 +20,9 @@ object DiagnosticsExport {
         target.outputStream().use { out -> files.forEach { it.inputStream().use { input -> input.copyTo(out) } } }
         return FileProvider.getUriForFile(context, authority(context), target)
     }
+
+    /** Deletes the last shared copy, so clearing the log leaves none of it behind. */
+    fun clear(context: Context) {
+        File(context.cacheDir, DIR).deleteRecursively()
+    }
 }

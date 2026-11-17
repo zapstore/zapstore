@@ -1,5 +1,6 @@
 package dev.zapstore.app
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 
@@ -20,9 +21,24 @@ class SocialSwitch(
         social.distinctUntilChanged().collect { on ->
             setReads(on)
             if (!on) {
-                signOut()
-                wipe()
+                // A failure here would crash every launch while off, and stop this from following the setting.
+                guarded("sign out") { signOut() }
+                guarded("social wipe") { wipe() }
             }
         }
+    }
+
+    private suspend fun guarded(what: String, block: suspend () -> Unit) {
+        try {
+            block()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            AppLog.e(TAG, "$what failed", failure)
+        }
+    }
+
+    private companion object {
+        const val TAG = "SocialSwitch"
     }
 }

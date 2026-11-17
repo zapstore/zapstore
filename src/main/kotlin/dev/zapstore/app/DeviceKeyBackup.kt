@@ -45,10 +45,11 @@ class DeviceKeyBackup(
             ),
             relays = AppConfig.writeRelays + AppConfig.catalogRelay,
         ).firstOrNull() ?: return null
-        // Amber answers a failed decrypt with its error text as the result.
+        // Amber answers a failed decrypt with its error text as the result. That text is not shown or logged:
+        // a backup that decrypted but is not JSON could be the key itself.
         val plaintext = accounts.decryptFromSelf(event.content)
         val backup = runCatching { JSONObject(plaintext) }.getOrNull()
-            ?: error("Amber could not read your device key backup: ${plaintext.take(80)}")
+            ?: error("Amber could not read your device key backup")
         return DeviceKeys.parse(backup.optString("deviceKey"))
     }
 
