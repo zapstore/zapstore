@@ -17,8 +17,8 @@ GRADLE_ARGS := -PCATALOG_RELAY="$(CATALOG_RELAY)" \
 .DEFAULT_GOAL := help
 .PHONY: help build install run reload watch refresh reverse link-adb vendor
 
-help: ## This list
-	@awk 'BEGIN { FS = ":.*## " } /^[a-z-]+:.*## / { printf "  %-16s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+help: ## List targets
+	@awk 'BEGIN { FS = ":.*## " } /^[a-zA-Z0-9_.-]+:.*## / { printf "  %-20s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
 # --- Develop ------------------------------------------------------------------------------------
 

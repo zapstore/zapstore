@@ -4,17 +4,13 @@
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.4.0-7F52FF?logo=kotlin)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-BOM%202026.05.01-4285F4?logo=jetpackcompose)](https://developer.android.com/compose)
 
-**Zapstore is an open Android app store where apps can be published directly by developers and curated by communities.**
+Zapstore is an open Android app store. Developers publish their apps directly, and communities curate them.
 
-It combines app discovery, publisher identity, direct APK distribution, and social trust signals into a different model for Android app distribution.
-
-This repo is the [Kotlin](https://kotlinlang.org) / [Jetpack Compose](https://developer.android.com/compose) client for [Zapstore](https://zapstore.dev). Catalog listings, curated stacks, releases, and publisher profiles sync from Nostr relays through the local `iolite` module.
+This repo is the [Kotlin](https://kotlinlang.org) / [Jetpack Compose](https://developer.android.com/compose) client (`dev.zapstore.app`). Catalog listings, curated stacks, releases, and publisher profiles sync from Nostr relays through the local `iolite` module.
 
 ## Get the app
 
-The production APK is still published from the [Flutter client](https://github.com/zapstore/zapstore/releases). This tree is the Kotlin rewrite (`dev.zapstore.beta`).
-
-[GitHub Releases](https://github.com/zapstore/zapstore/releases) · [zapstore.dev](https://zapstore.dev)
+Download it from [GitHub Releases](https://github.com/zapstore/zapstore/releases) or [zapstore.dev](https://zapstore.dev).
 
 ## Requirements
 
