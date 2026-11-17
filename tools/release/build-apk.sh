@@ -4,7 +4,7 @@
 #
 #   tools/release/build-apk.sh bundle|update [OUT_FILE]
 #
-#   bundle     ships the catalog bundle pinned by catalog-bundle.lock, so a new install opens with the catalog
+#   bundle     ships the catalog bundle pinned in gradle.properties, so a new install opens with the catalog
 #   update  ships no bundle; the app downloads the catalog on first open
 #
 # Environment:
@@ -12,14 +12,14 @@
 #   GRADLE_FLAGS       extra gradle flags, such as --no-daemon
 #   CATALOG_RELAY      default wss://relay.zapstore.dev
 #   CATALOG_PUBKEY     empty means the default for that relay
-#   CATALOG_BUNDLE_URL fetch the pinned bundle from here (https or file:) instead of the lock's URL; its
+#   CATALOG_BUNDLE_URL fetch the pinned bundle from here (https or file:) instead of the pinned URL; its
 #                      sha256 must still match. Default: build/release/<name>, where cut-mobile-release.sh saved it
 #   ALLOW_DIRTY=1      build with uncommitted changes
 set -euo pipefail
 
 die() { echo "build-apk.sh: $*" >&2; exit 1; }
 sha256_stdin() { if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -d' ' -f1; else shasum -a 256 | cut -d' ' -f1; fi; }
-lock_get() { sed -n "s/^$1=//p" catalog-bundle.lock 2>/dev/null | head -n 1; }
+prop() { sed -n "s/^$1=//p" gradle.properties | head -n 1; }
 # The listing is captured first: with pipefail, grep -q closing the pipe early would fail the pipeline.
 apk_has() { local entries; entries=$(unzip -Z1 "$1") && grep -qxF "$2" <<<"$entries"; }
 
@@ -48,9 +48,9 @@ args=(-PCATALOG_RELAY="${CATALOG_RELAY:-wss://relay.zapstore.dev}" -PcatalogBund
 [ -z "${CATALOG_PUBKEY:-}" ] || args+=(-PCATALOG_PUBKEY="$CATALOG_PUBKEY")
 [ -z "${CATALOG_BUNDLE_URL:-}" ] || args+=(-PcatalogBundleUrl="$CATALOG_BUNDLE_URL")
 if [ "$mode" = pinned ]; then
-	[ -n "$(lock_get sha256)" ] || die "no catalog-bundle.lock; cut-mobile-release.sh writes it"
+	[ -n "$(prop catalogPinSha256)" ] || die "gradle.properties has no catalogPinSha256; cut-mobile-release.sh writes it"
 	# Before the release is published the pinned URL is not live; cut-mobile-release.sh saved the file.
-	saved=build/release/$(basename "$(lock_get url)")
+	saved=build/release/$(basename "$(prop catalogPinUrl)")
 	if [ -z "${CATALOG_BUNDLE_URL:-}" ] && [ -f "$saved" ]; then
 		args+=(-PcatalogBundleUrl="file://$PWD/$saved")
 	fi
@@ -61,10 +61,13 @@ rm -f "$unsigned"
 "$GRADLE" ${GRADLE_FLAGS:-} --console=plain assembleRelease "${args[@]}"
 [ -f "$unsigned" ] || die "no $unsigned after the build"
 
+# Search needs nothing but the catalog, so every APK carries the model.
+apk_has "$unsigned" assets/leaf-ir-v1/model_quantized.onnx_data || die "APK has no search model"
+
 if [ "$mode" = pinned ]; then
 	apk_has "$unsigned" "assets/$asset" || die "bundle APK has no catalog bundle"
 	got=$(unzip -p "$unsigned" "assets/$asset" | sha256_stdin)
-	[ "$got" = "$(lock_get sha256)" ] || die "bundle APK carries catalog $got, the lock pins $(lock_get sha256)"
+	[ "$got" = "$(prop catalogPinSha256)" ] || die "bundle APK carries catalog $got, gradle.properties pins $(prop catalogPinSha256)"
 else
 	! apk_has "$unsigned" "assets/$asset" || die "update APK carries a catalog bundle"
 fi
