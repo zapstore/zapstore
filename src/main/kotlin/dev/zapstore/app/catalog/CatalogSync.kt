@@ -99,8 +99,6 @@ class CatalogSync(
     private val now: () -> Long = System::currentTimeMillis,
 ) {
     private val mutex = Mutex()
-    /** Set by [wipe]: the next sync fetches the full bundle from the relay instead of the APK's snapshot. */
-    @Volatile private var skipBundled = false
     /** A sync stopped at [remoteAllowed], so [resumeIfHeld] has something to resume. */
     @Volatile private var heldBack = false
     private val _status = MutableStateFlow(SyncStatus(catchingUp = catchUpMark.pending))
@@ -233,6 +231,12 @@ class CatalogSync(
                 // A restart or a network change cut this pass short. The pass that replaces it reports.
                 _status.update { it.copy(syncing = false, phase = SyncPhase.Idle) }
                 throw cancelled
+            } catch (failure: Throwable) {
+                // Runs on the process scope: rethrowing would crash the app, and the next launch would sync into it again.
+                AppLog.e(TAG, "catalog sync stopped", failure)
+                _status.update {
+                    it.copy(syncing = false, phase = SyncPhase.Idle, error = failure.message ?: failure::class.simpleName)
+                }
             }
         }
     }
@@ -272,7 +276,7 @@ class CatalogSync(
         val error = failure?.let { it.message ?: it::class.simpleName } ?: pass.errors.firstOrNull()
         val succeeded = error == null
         if (succeeded) {
-            skipBundled = false
+            catchUpMark.skipBundled = false
             catchUpMark.pending = false
         }
         _status.update {
@@ -298,11 +302,11 @@ class CatalogSync(
      */
     private fun importSnapshot() {
         val snapshot = bundledSnapshot ?: return
-        if (skipBundled) return
+        if (catchUpMark.skipBundled) return
         val key = snapshotKey ?: return
-        if (iolite.needsDefaultCatalog()) iolite.seedDefaultCatalog(key, AppConfig.catalogRelay)
-        val catalog = iolite.catalogs().firstOrNull { it.manifestPubkey == key } ?: return
         try {
+            if (iolite.needsDefaultCatalog()) iolite.seedDefaultCatalog(key, AppConfig.catalogRelay)
+            val catalog = iolite.catalogs().firstOrNull { it.manifestPubkey == key } ?: return
             // Imported only into a catalog with no data. From then until a sync succeeds, the phone is a build date behind.
             if (iolite.importBundledSnapshot(catalog.id, snapshot, AppConfig.catalogRelay, progress) != null) {
                 catchUpMark.pending = true
@@ -426,13 +430,13 @@ class CatalogSync(
     }
 
     private suspend fun wipeNow() {
-        mutex.withLock {
+        val cleared = mutex.withLock {
             _status.update { it.copy(syncing = true, error = null) }
             val result = runCatching { withContext(Dispatchers.IO) { iolite.wipeLocalData() } }
             result.exceptionOrNull()?.let { AppLog.e(TAG, "clear local storage failed", it) }
                 ?: AppLog.i(TAG, "local storage cleared; resyncing without the bundled snapshot")
             if (result.isSuccess) {
-                skipBundled = true
+                catchUpMark.skipBundled = true
                 // The snapshot was cleared with the rest; the screen for an empty catalog takes over from here.
                 catchUpMark.pending = false
             }
@@ -447,8 +451,9 @@ class CatalogSync(
                     error = result.exceptionOrNull()?.let { failure -> failure.message ?: failure::class.simpleName },
                 )
             }
+            result.isSuccess
         }
-        if (skipBundled) request(force = true)
+        if (cleared) request(force = true)
     }
 
     /** One package change arrives as removed, added and replaced; a burst reads the device once. */

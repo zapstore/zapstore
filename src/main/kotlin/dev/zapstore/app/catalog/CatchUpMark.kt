@@ -13,8 +13,11 @@ import android.content.Context
 interface CatchUpMark {
     var pending: Boolean
 
+    /** Set by Clear local storage: the APK's snapshot stays unused until a sync from the relay succeeds. */
+    var skipBundled: Boolean
+
     /** Kept for the life of the process. Tests, and builds that have no place to write. */
-    class InMemory(override var pending: Boolean = false) : CatchUpMark
+    class InMemory(override var pending: Boolean = false, override var skipBundled: Boolean = false) : CatchUpMark
 }
 
 class PrefsCatchUpMark(context: Context) : CatchUpMark {
@@ -27,8 +30,15 @@ class PrefsCatchUpMark(context: Context) : CatchUpMark {
             prefs.edit().putBoolean(PENDING, value).commit()
         }
 
+    override var skipBundled: Boolean
+        get() = prefs.getBoolean(SKIP_BUNDLED, false)
+        set(value) {
+            prefs.edit().putBoolean(SKIP_BUNDLED, value).commit()
+        }
+
     private companion object {
         const val PREFS = "catalog_catch_up"
         const val PENDING = "pending"
+        const val SKIP_BUNDLED = "skip_bundled"
     }
 }

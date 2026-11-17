@@ -16,6 +16,11 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -34,6 +39,9 @@ import dev.zapstore.app.components.ZapButton
 import dev.zapstore.app.components.ZapButtonStyle
 import dev.zapstore.app.components.animationsEnabled
 import dev.zapstore.app.transport.NetworkMode
+import kotlinx.coroutines.delay
+
+private const val SLOW_LOAD_MS = 15_000L
 
 /**
  * What the app shows while it has no app data: the catalog loading, failing, or missing. It is laid out
@@ -56,6 +64,18 @@ fun CatalogGateScreen(
     val failed = gate is CatalogGate.Failed
     // The phone has the catalog the APK came with and is fetching what is newer. Starting over would throw that away.
     val catchUp = (gate as? CatalogGate.Loading)?.catchUp == true || (gate as? CatalogGate.Failed)?.catchUp == true
+    // A sync a background job started can be stopped with nothing to replace it, and a slow one can hold the
+    // phone for minutes. After a while the way on shows even without a failure.
+    val loading = gate is CatalogGate.Loading
+    var waitedLong by remember { mutableStateOf(false) }
+    LaunchedEffect(loading) {
+        waitedLong = false
+        if (loading) {
+            delay(SLOW_LOAD_MS)
+            waitedLong = true
+        }
+    }
+    val stalled = waitedLong && (gate as? CatalogGate.Loading)?.phase.let { it == SyncPhase.Idle || it == SyncPhase.Connecting }
     Column(
         modifier
             .fillMaxSize()
@@ -119,13 +139,13 @@ fun CatalogGateScreen(
                 loading = ui.restoring,
                 modifier = Modifier.fillMaxWidth().testTag("gateRestore"),
             )
-            failed -> ZapButton(
+            failed || (stalled && !catchUp) -> ZapButton(
                 text = stringResource(R.string.retry),
                 onClick = onRetry,
                 modifier = Modifier.fillMaxWidth().testTag("gateRetry"),
             )
         }
-        if (catchUp && failed) {
+        if (catchUp && (failed || waitedLong)) {
             ZapButton(
                 text = stringResource(R.string.gate_catchup_continue),
                 onClick = onContinue,
