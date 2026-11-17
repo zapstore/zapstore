@@ -88,7 +88,10 @@ internal class TorSocketImpl(
         if (closed.get()) throw SocketException("Socket closed")
         val opened = streams.connect(torTargetHost(target), target.port, isolation, timeout)
         handle = opened
-        if (closed.get()) streams.close(opened)
+        if (closed.get()) {
+            streams.close(opened)
+            throw SocketException("Socket closed")
+        }
         this.address = target.address ?: InetAddress.getByAddress(target.hostString, ByteArray(4))
         this.port = target.port
     }
@@ -177,6 +180,8 @@ internal class TorSocketImpl(
  * Reads [InetSocketAddress.getHostString], not `getHostName`, which can resolve outside Tor.
  */
 internal fun torTargetHost(address: InetSocketAddress): String {
-    address.address?.let(TorFakeDns::hostnameFor)?.let { return it }
-    return address.hostString.takeIf { it.isNotBlank() } ?: throw IOException("Tor target host is missing")
+    val host = address.hostString.takeIf { it.isNotBlank() } ?: throw IOException("Tor target host is missing")
+    // Fake addresses can collide; the table is only for an address that lost its hostname.
+    if (host != address.address?.hostAddress) return host
+    return address.address?.let(TorFakeDns::hostnameFor) ?: host
 }

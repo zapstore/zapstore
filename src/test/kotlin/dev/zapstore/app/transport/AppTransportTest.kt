@@ -169,6 +169,15 @@ class AppTransportTest {
     }
 
     @Test
+    fun torTargetHostSendsTheAddressHostnameWhenFakeAddressesCollide() {
+        val taken = TorFakeDns.lookup("first.example").single()
+        val sameBytes = java.net.InetAddress.getByAddress("second.example", taken.address)
+        assertEquals("second.example", torTargetHost(java.net.InetSocketAddress(sameBytes, 443)))
+        val bare = java.net.InetAddress.getByAddress(taken.address)
+        assertEquals("first.example", torTargetHost(java.net.InetSocketAddress(bare, 443)))
+    }
+
+    @Test
     fun closedTorSocketRejectsReads() {
         okhttp3.mockwebserver.MockWebServer().use { server ->
             server.start()

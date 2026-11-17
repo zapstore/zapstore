@@ -80,6 +80,7 @@ class NetworkRuntime(
             _torState.value = TorRuntimeState.Stopped
             scope.launch(Dispatchers.IO) {
                 lock.withLock {
+                    if (_mode.value.usesTor) return@withLock
                     closeConnections()
                     stopArtiLocked(clearCache = true)
                 }
