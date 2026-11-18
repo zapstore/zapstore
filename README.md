@@ -4,133 +4,53 @@
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.4.0-7F52FF?logo=kotlin)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-BOM%202026.05.01-4285F4?logo=jetpackcompose)](https://developer.android.com/compose)
 
-Zapstore is a private, open app store for degoogled Android. It is a companion to F-Droid and Obtainium on GrapheneOS, LineageOS, and similar systems. Browsing, installing, and updating are free and need no account.
+Zapstore is a private, open app store for degoogled Android, built for GrapheneOS, LineageOS, and similar systems. Browsing, installing, and updating are free and need no account. The [help pages](https://zapstore.dev/help) explain how to use it.
 
 ## What it does
 
-- **Shows what it knows before you install.** The install screen shows who signed the app, whether the developer claimed it, who follows that developer, and a security report: Google services, trackers, ads, permissions, and whether the source is available.
-- **Keeps your list on the device.** The catalog syncs to the phone as a signed bundle. Search, update checks, and your installed apps stay local. Nothing is reported about what you install.
+- **Shows what it knows before you install.** The install screen shows who signed the app, whether the developer [claimed](https://zapstore.dev/help/security#claimed-and-unclaimed) it, who follows that developer, and a [security report](https://zapstore.dev/help/security): Google services, trackers, ads, permissions, and whether the source is available.
+- **Keeps your list on the device.** The catalog syncs to the phone as a signed bundle. Search, update checks, and your installed apps stay local. Nothing is reported about what you install. See [Privacy](https://zapstore.dev/help/privacy).
 - **Updates in the background** on the interval you pick. Zapstore installs updates without a prompt when Android allows it.
-- **Takes any catalog.** One default catalog ships, and you can remove it or add others by key. When two catalogs list an app, the one you added first wins.
-- **Pays developers directly.** Zap an app from a connected wallet. Developers pay no fee on what they earn.
-- **Has a social layer you can turn off.** Comments, zaps, and stacks (shared lists of apps) are public. Turn Social off in Settings and the app shows only the catalog.
-- **Reaches the network over Tor** if you choose it in Settings. The default is a direct connection, which exposes your IP address to relays and download hosts.
+- **Takes any [catalog](https://zapstore.dev/help/catalogs).** One default catalog ships, and you can remove it or add others by key. When two catalogs list an app, the one you added first wins.
+- **Pays developers directly.** [Zap](https://zapstore.dev/help/social#zaps) an app from a connected wallet. Developers pay no fee on what they earn.
+- **Has a social layer you can turn off.** Comments, zaps, and stacks (shared lists of apps) are public. Turn Social off in Settings and the app shows only the catalog. See [Social](https://zapstore.dev/help/social).
+- **Reaches the network over [Tor](https://zapstore.dev/help/privacy#using-tor)** if you choose it in Settings. The default is a direct connection, which exposes your IP address to relays and download hosts.
 
-Zapstore finds apps and lists them. A developer who claims an app takes priority over that listing, publishes with [`zsp`](https://github.com/zapstore/zsp), and can remove the app. The catalog lists `arm64-v8a` apps only.
+Zapstore finds apps and lists them. A developer who claims an app takes priority over that listing, publishes with [`zsp`](https://zapstore.dev/help/publish), and can remove the app. The catalog lists `arm64-v8a` apps only.
 
 ## Under the hood
 
-This repo is the [Kotlin](https://kotlinlang.org) / [Jetpack Compose](https://developer.android.com/compose) client (`dev.zapstore.app`). Catalog listings, stacks, releases, and publisher profiles are Nostr events. They sync from the catalog relay through the local `iolite` module, and [Blossom](https://github.com/hzrd149/blossom) serves the APKs.
+This repo is the [Kotlin](https://kotlinlang.org) / [Jetpack Compose](https://developer.android.com/compose) client (`dev.zapstore.app`). Catalog listings, stacks, releases, and publisher profiles are Nostr events. They sync from the catalog relay through the local `iolite` module, and [Blossom](https://github.com/hzrd149/blossom) serves the APKs. [Protocols](https://zapstore.dev/help/protocols) explains Nostr, Blossom, and Lightning.
 
 ## Get the app
 
-Download it from [GitHub Releases](https://github.com/zapstore/zapstore/releases) or [zapstore.dev](https://zapstore.dev).
+Download it from [GitHub Releases](https://github.com/zapstore/zapstore/releases) or [zapstore.dev](https://zapstore.dev). [Getting started](https://zapstore.dev/help/getting-started) walks through the first install.
 
-## Requirements
+## Build
 
-- JDK **21**
-- Android SDK (compile / target API **37**, min SDK **29**)
-- An **arm64-v8a** device for `make run` (this is the only ABI the app ships).
-
-## Build from source
+You need JDK 21 and the Android SDK. Running the app needs an `arm64-v8a` device.
 
 ```bash
-make build
+make build     # debug APK in build/outputs/apk/debug/
+make run       # install, launch, press r to rebuild
+make reload    # rebuild and relaunch, keeping app data
+make help      # every target
 ```
 
-That runs `./gradlew assembleDebug`. The debug APK lands in `build/outputs/apk/debug/` and ships no catalog bundle, so the first launch requests `GET /v1/bundle?from=0` from `wss://relay.zapstore.dev` and imports it. `make help` lists every target.
-
-A debug build can ship a bundle of your choosing, for a local relay or a test:
-
-```bash
-CATALOG_RELAY=ws://127.0.0.1:3334 CATALOG_PUBKEY=<hex> CATALOG_BUNDLE=path/to/bundle-0-1.tar.zst make run
-```
-
-That passes `-PcatalogBundle=<file>` to Gradle. Release builds take `none` or `pinned` and refuse a file; see "Releasing".
-
-Tor uses a size-optimized `libarti_android.so` from `tools/arti-build` (Amethyst's JNI wrapper, zapstore package names). Rebuild the arm64-v8a library and commit it when bumping Arti:
-
-```bash
-make vendor
-```
-
-That needs rustup, `cargo-ndk` at the version in `tools/arti-build/CARGO_NDK_VERSION`, and the NDK revision in `tools/arti-build/ANDROID_NDK_VERSION`.
-
-```bash
-make run            # installDebug, launch, then press r to rebuild
-make reload         # one-shot build, install, relaunch (keeps app data). For scripts and agents
-make watch          # same, on every saved change
-```
-
-`make reload` takes about 3s with a warm Gradle daemon. It prints one line on success. On failure it prints the compiler errors or the crash log and exits non-zero. Run `make run` once before it.
-
-`make install` clears app data. `make build` only builds.
-
-The catalog relay URLs and signer come from that bundle's signed manifest, not from the build. `make reverse` forwards port 3334 so a bundle that lists `ws://127.0.0.1:3334` can reach a relay on the host.
-
-Release builds run R8 (minify + optimize + shrink resources, English locales only). Mapping lands in `build/outputs/mapping/release/`.
-
-Or call Gradle directly:
-
-```bash
-./gradlew assembleDebug
-./gradlew installDebug
-./gradlew test
-```
-
-`./gradlew test` runs unit tests for the app and `iolite`. Instrumented UI tests need a connected device:
-
-```bash
-./gradlew connectedDebugAndroidTest
-```
+`./gradlew test` runs the unit tests. `make install` clears app data.
 
 ## Verify a release
 
-Each release APK rebuilds byte for byte from its tag. You need git, python3 and a running Docker (or `--local` with your own JDK 21 and Android SDK).
+Each release APK rebuilds byte for byte from its tag. You need git, python3, and Docker.
 
 ```bash
 git clone https://github.com/zapstore/zapstore && cd zapstore
 tools/release/verify.sh <version> https://github.com/zapstore/zapstore/releases/download/<version>/zapstore-<version>.apk
-tools/release/verify.sh <version> https://zapstore.dev/downloads/zapstore-<version>-bundle.apk
 ```
 
-The first is the update APK, the second the bundle APK. `SAME: sha256 …` means the published file is the rebuild plus its signature, nothing else. A difference is reported with the byte where it starts.
+`SAME: sha256 …` means the published file matches the rebuild. For the bundle APK (the one with the catalog included), use `https://zapstore.dev/downloads/zapstore-<version>-bundle.apk`.
 
-- The build runs in a pinned container (Temurin JDK 21.0.9, Android platform 37.0, build-tools 36.0.0). Gradle and every dependency are checked against `gradle/verification-metadata.xml`.
-- The bundle APK also ships the catalog bundle pinned in `gradle.properties`, fetched by its sha256.
-- The first run downloads the Android SDK and dependencies. Later runs reuse the image and a Docker volume.
-- On an Apple Silicon Mac the default `linux/amd64` container is emulated and slow. `PLATFORM=linux/arm64` runs the JDK natively.
-- Only releases that pin the catalog can be verified. Earlier ones predate the pin and the pinned build environment.
-
-## Releasing
-
-A release pins the catalog, then builds and signs two APKs from one commit:
-
-| APK | Catalog bundle | For | Published at |
-| --- | --- | --- | --- |
-| update APK | none | an update from Zapstore | the GitHub release, as `zapstore-<version>.apk`, and Zapstore |
-| bundle APK | the pinned one | a new install, which opens with the catalog already there | `https://zapstore.dev/downloads/zapstore-<version>-bundle.apk` |
-
-The pinned catalog bundle sits next to the bundle APK, as `https://zapstore.dev/downloads/catalog-<epoch>.tar.zst`. The relay keeps only its latest epoch, so a build cannot ask it for an old one. The release takes the relay's current full bundle, checks its signer, writes the pin into `gradle.properties` (`catalogPinSha256` and `catalogPinUrl`), and commits it before it builds, so the tag holds what the release is rebuilt from. The tag is annotated (`Release <version> (build <code>)`) and sits on that commit, which is the commit the APKs record. Gradle (`-PcatalogBundle=pinned`) fetches the bundle from that URL and fails unless the sha256 matches. During the release itself it reads a local copy saved under `build/release/`.
-
-Both files are uploaded and their sha256 and size are checked at the public URL before the tag is pushed, so a failed upload leaves no tag that names a missing file.
-
-`tools/release/build-apk.sh bundle|update` is the one recipe for an unsigned APK, and both the release and the verifier use it. It refuses a dirty tree, because the APK records its commit in `META-INF/version-control-info.textproto`.
-
-`libarti_android.so` is committed rather than built here. `tools/arti-build/verify-reproducible.sh` rebuilds it twice and compares.
-
-When you change a dependency, regenerate the checksums with `./gradlew --write-verification-metadata sha256 assembleDebug assembleRelease assembleDebugAndroidTest testDebugUnitTest :iolite:testDebugUnitTest :iolite:assembleDebugAndroidTest lintDebug`. Also add the Linux build tools' checksums from the container, since a Mac only resolves the macOS ones.
-
-## Layout
-
-- `src/main/kotlin/dev/zapstore/app/` — `ZapstoreApplication` (singletons), `MainActivity` (routes), `AppConfig` (build-time endpoints and query options)
-  - `screens/` — one `*Screen.kt` + `*ViewModel.kt` per destination (Home, AppDetail, StackDetail, Profile, Updates, Settings)
-  - `components/` — shared UI on Iolite records (`AppCard`, `StackCard`, `AppList`, `ProfileImage`, primitives)
-  - `catalog/` — `CatalogSync` (foreground `GET /deltas`) and installed-package matching
-  - `transport/` — Tor/direct network runtime
-- `tools/release/` — `build-apk.sh` builds a release APK and `verify.sh` rebuilds and checks one; `catalogPinSha256` and `catalogPinUrl` in `gradle.properties` are the pinned bundle that a release writes
-- `tools/arti-build/` — reproducible Arti JNI build; `make vendor` writes `src/main/jniLibs/arm64-v8a/libarti_android.so`
-- `iolite/` — local-first Nostr client: SQLite rows derived from verified events, relay sessions, typed queries
+The first run is slow because it downloads the Android SDK. On an Apple Silicon Mac, set `PLATFORM=linux/arm64` for a faster run.
 
 ## Contributing
 
