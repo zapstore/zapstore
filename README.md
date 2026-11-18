@@ -54,4 +54,10 @@ The first run is slow because it downloads the Android SDK. On an Apple Silicon 
 
 ## Contributing
 
-Minor fixes: PRs welcome. For larger changes, please reach out first while the project is in beta.
+Open issues only. Pull requests are not welcome.
+
+An issue must be prefaced with a human paragraph. AI-assisted text can follow that paragraph. Issues without it will be ignored.
+
+## License
+
+[MIT](https://opensource.org/licenses/MIT).
