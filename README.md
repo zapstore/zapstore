@@ -4,9 +4,23 @@
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.4.0-7F52FF?logo=kotlin)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-BOM%202026.05.01-4285F4?logo=jetpackcompose)](https://developer.android.com/compose)
 
-Zapstore is an open Android app store. Developers publish their apps directly, and communities curate them.
+Zapstore is a private, open app store for degoogled Android. It is a companion to F-Droid and Obtainium on GrapheneOS, LineageOS, and similar systems. Browsing, installing, and updating are free and need no account.
 
-This repo is the [Kotlin](https://kotlinlang.org) / [Jetpack Compose](https://developer.android.com/compose) client (`dev.zapstore.app`). Catalog listings, curated stacks, releases, and publisher profiles sync from Nostr relays through the local `iolite` module.
+## What it does
+
+- **Shows what it knows before you install.** The install screen shows who signed the app, whether the developer claimed it, who follows that developer, and a security report: Google services, trackers, ads, permissions, and whether the source is available.
+- **Keeps your list on the device.** The catalog syncs to the phone as a signed bundle. Search, update checks, and your installed apps stay local. Nothing is reported about what you install.
+- **Updates in the background** on the interval you pick. Zapstore installs updates without a prompt when Android allows it.
+- **Takes any catalog.** One default catalog ships, and you can remove it or add others by key. When two catalogs list an app, the one you added first wins.
+- **Pays developers directly.** Zap an app from a connected wallet. Developers pay no fee on what they earn.
+- **Has a social layer you can turn off.** Comments, zaps, and stacks (shared lists of apps) are public. Turn Social off in Settings and the app shows only the catalog.
+- **Reaches the network over Tor** if you choose it in Settings. The default is a direct connection, which exposes your IP address to relays and download hosts.
+
+Zapstore finds apps and lists them. A developer who claims an app takes priority over that listing, publishes with [`zsp`](https://github.com/zapstore/zsp), and can remove the app. The catalog lists `arm64-v8a` apps only.
+
+## Under the hood
+
+This repo is the [Kotlin](https://kotlinlang.org) / [Jetpack Compose](https://developer.android.com/compose) client (`dev.zapstore.app`). Catalog listings, stacks, releases, and publisher profiles are Nostr events. They sync from the catalog relay through the local `iolite` module, and [Blossom](https://github.com/hzrd149/blossom) serves the APKs.
 
 ## Get the app
 
